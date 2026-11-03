@@ -69,7 +69,7 @@ export function sumDuesPaid(lines: InstallmentScheduleLineWithInvoice[]): number
  * the Paid/Due/Overdue language a customer-facing schedule actually needs. */
 export const DUE_STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
-  SENT: 'Due',
+  SENT: 'To pay',
   PARTIAL: 'Partially Paid',
   PAID: 'Paid',
   OVERDUE: 'Overdue',

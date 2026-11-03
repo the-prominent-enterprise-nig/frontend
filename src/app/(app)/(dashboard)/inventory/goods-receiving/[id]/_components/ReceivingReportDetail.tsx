@@ -161,6 +161,8 @@ export default function ReceivingReportDetail({
   }
 
   const lines = record?.lines ?? []
+  // Costs reach the inventory RR document for the Business Owner only.
+  const showsAmounts = (doc.document.lines ?? []).some((l) => l.unitCost != null)
   // Only worth a table of its own when the paper genuinely omits something.
   const hasRecordOnly = lines.some(
     (l) =>
@@ -253,8 +255,10 @@ export default function ReceivingReportDetail({
 
       {/* Pricing as received — the discount chain the receipt itself carries,
           which is the one that priced the stock. It can differ from the PO's:
-          receiving is where a supplier's actual invoice terms get corrected. */}
-      {!editing && lines.length > 0 && (
+          receiving is where a supplier's actual invoice terms get corrected.
+          Business Owner only: the inventory RR document carries costs for no
+          one else (getReceivingDocument), so its lines say whether to show it. */}
+      {!editing && lines.length > 0 && showsAmounts && (
         <section className="mt-4 rounded-lg border border-gray-200 bg-white p-5">
           <h2 className="mb-1 text-[14px] font-semibold text-prominent-purple-900">Pricing</h2>
           <p className="mb-3 text-[12px] text-gray-500">

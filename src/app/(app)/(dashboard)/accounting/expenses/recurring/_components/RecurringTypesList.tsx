@@ -6,7 +6,6 @@ import Link from 'next/link'
 import { Pencil, Plus, Repeat, Trash2 } from 'lucide-react'
 import { RecurringExpenseTypes, type RecurringExpenseType } from '@/src/libs/data/AccountingV2Data'
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
-import ExpensesTabs from '../../_components/ExpensesTabs'
 import { RECURRING_PATH } from './recurringListShared'
 
 /**
@@ -49,7 +48,6 @@ export default function RecurringTypesList() {
 
   return (
     <div className="px-6 py-5 lg:px-10">
-      <ExpensesTabs />
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold text-prominent-purple-900">

@@ -6,6 +6,7 @@ import { getTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-ac
 import { customersApi } from '@/src/libs/api/crm'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import type { PosTransaction } from '@/src/schema/pos'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 const STATUS_STYLES: Record<string, string> = {
   completed: 'bg-emerald-100 text-emerald-700',
@@ -91,7 +92,7 @@ export default function RecentOrdersWidget() {
             className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-zinc-50 transition"
           >
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold text-zinc-800">{t.transactionNumber}</p>
+              <p className="truncate text-xs font-semibold text-zinc-800">{saleDocNo(t)}</p>
               {!isCompact && <p className="truncate text-[10px] text-zinc-500">{customerName}</p>}
             </div>
             <div className="flex shrink-0 items-center gap-2">

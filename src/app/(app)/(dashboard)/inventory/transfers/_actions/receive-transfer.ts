@@ -37,6 +37,7 @@ export async function receiveTransfer(
       itemId: line.itemId,
       quantity: line.quantity,
       notes: line.notes || undefined,
+      serialNumbers: line.serialNumbers?.length ? line.serialNumbers : undefined,
     })),
   }
 

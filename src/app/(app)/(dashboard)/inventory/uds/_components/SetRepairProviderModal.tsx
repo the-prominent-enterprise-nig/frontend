@@ -1,7 +1,7 @@
 'use client'
 
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
-import { useForm, Controller } from 'react-hook-form'
+import { useForm, Controller, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2 } from 'lucide-react'
 import {
@@ -10,6 +10,11 @@ import {
   type Uds,
 } from '@/src/schema/inventory/uds'
 import type { ApiResponse } from '@/src/libs/api/client'
+import {
+  NoSupplierOnFileNote,
+  ProviderCoverageWarning,
+  useProviderOptions,
+} from './ProviderCoverageWarning'
 
 export type SupplierOption = { id: string; code: string; name: string }
 
@@ -38,6 +43,11 @@ export default function SetRepairProviderModal({
     resolver: zodResolver(SetRepairProviderFormSchema),
     defaultValues: { repairProviderId: uds?.repairProviderId ?? '' },
   })
+  const providerId = useWatch({ control, name: 'repairProviderId' })
+  const { options: providerOptions, noneOnFile } = useProviderOptions(
+    supplierOptions,
+    uds?.lines.map((l) => l.serialNumberId) ?? []
+  )
 
   if (!isOpen || !uds) return null
 
@@ -52,7 +62,7 @@ export default function SetRepairProviderModal({
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div>
             <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#17171c]">
-              {uds.repairProvider ? 'Change Repair Provider' : 'Set Repair Provider'}
+              {uds.repairProvider ? 'Change Service Center' : 'Set Service Center'}
             </h2>
             <p className="mt-0.5 font-mono text-xs text-zinc-400">{uds.code}</p>
           </div>
@@ -73,7 +83,7 @@ export default function SetRepairProviderModal({
           <div className="mx-auto w-full max-w-2xl flex-1 space-y-4 overflow-y-auto px-6 py-5">
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Repair Provider <span className="text-red-500">*</span>
+                Service Center <span className="text-red-500">*</span>
               </label>
               <Controller
                 name="repairProviderId"
@@ -82,18 +92,20 @@ export default function SetRepairProviderModal({
                   <SearchableSelect
                     value={field.value ?? ''}
                     onChange={(v) => field.onChange(v)}
-                    placeholder="Search repair provider…"
+                    placeholder="Search service center…"
                     portal
-                    options={supplierOptions.map((s) => ({
-                      value: s.id,
-                      label: `${s.code} — ${s.name}`,
-                    }))}
+                    options={providerOptions}
                   />
                 )}
               />
               {errors.repairProviderId && (
                 <p className="mt-1 text-xs text-red-600">{errors.repairProviderId.message}</p>
               )}
+              <NoSupplierOnFileNote show={noneOnFile} />
+              <ProviderCoverageWarning
+                supplierId={providerId}
+                serialIds={uds.lines.map((l) => l.serialNumberId)}
+              />
             </div>
           </div>
 

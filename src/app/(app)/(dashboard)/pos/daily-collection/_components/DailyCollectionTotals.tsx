@@ -104,7 +104,6 @@ function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.El
             label={line.label}
             amount={line.amount}
             note={line.note ?? LINE_NOTES[line.label]}
-            indent={line.indent}
           />
         )
       )}
@@ -112,37 +111,13 @@ function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.El
       {report.pendingCashOnHand > 0.005 && (
         <PlainRow label="Not yet counted (open drawers)" amount={report.pendingCashOnHand} />
       )}
-      {/* One row per counter, named — "At Pandan", "At Caravan · Lemery".
-          Naming them needs no heading, no note and no collective noun, and
-          reads the same whether there is one or four. (No collective noun on
-          purpose: a caravan is not a satellite branch, and "satellite" means
-          something specific in the client's own data.) */}
+      {/* One row per satellite counter, named — "At Pandan". Naming them
+          needs no heading, no note and no collective noun, and reads the same
+          whether there is one or four. (No collective noun on purpose:
+          "satellite" means something specific in the client's own data.) */}
       {report.offsiteCash.map((counter) => (
         <PlainRow key={counter.id} label={`At ${counter.name}`} amount={counter.amount} />
       ))}
-
-      {/* Scenario 60 Part 4 — how much of the day came from the caravans this
-          branch hosts. Already inside the totals, so it sits below them. */}
-      {report.caravanSales.length > 0 && (
-        <>
-          <p className={`${PANE_HEAD} border-t bg-gray-50`}>Caravan sales (included above)</p>
-          {report.caravanSales.map((c) => (
-            <div key={c.caravanId} className={`${ROW} border-b border-gray-100`}>
-              <span className="min-w-0 truncate pl-4 text-gray-600">
-                {c.caravanName}
-                <span className="ml-2 text-xs text-gray-400">
-                  {c.units} {c.units === 1 ? 'unit' : 'units'}
-                </span>
-              </span>
-              <span className={FIGURE}>{peso(c.amount)}</span>
-            </div>
-          ))}
-          <div className={`${ROW} border-b border-gray-100`}>
-            <span className="pl-4 text-gray-600">Caravan total</span>
-            <span className={`${FIGURE} font-medium`}>{peso(report.caravanSalesTotal)}</span>
-          </div>
-        </>
-      )}
     </div>
   )
 }
@@ -163,16 +138,14 @@ function RecapRow({
   label,
   amount,
   note,
-  indent,
 }: {
   label: string
   amount: number | null
   note?: string
-  indent?: boolean
 }): React.JSX.Element {
   return (
     <div className={`${ROW} border-b border-gray-100`}>
-      <span className={`flex min-w-0 items-baseline gap-2 ${indent ? 'pl-4' : ''}`}>
+      <span className="flex min-w-0 items-baseline gap-2">
         <span
           className={`font-mono text-xs font-semibold ${
             amount ? 'text-prominent-purple-900' : 'text-gray-400'
@@ -317,19 +290,19 @@ function Verdict({
       : over
         ? 'bg-blue-50 text-blue-900'
         : 'bg-red-50 text-red-900'
-  // An over/short is a claim about a counted drawer. With nothing closed
-  // there is no counted drawer, so the heading names the cause instead of
-  // calling the day's whole take an overage.
-  const title = balanced
-    ? 'Cash balances'
-    : nothingClosedYet
-      ? 'No drawer count to check this against yet'
-      : `${over ? 'Over' : 'Short'} by ${peso(Math.abs(variance))}`
+  // A variance's figure is the CASH VARIANCE line directly above, so this box
+  // carries only the colour and what to do about it. With no variance line —
+  // the drawer balances, or nothing has closed to count — it says why.
+  const title = nothingClosedYet
+    ? 'No drawer count to check this against yet'
+    : balanced
+      ? 'Cash balances'
+      : null
 
   return (
     <div className={`mt-auto border-t border-gray-200 px-4 py-3 ${tone}`}>
-      <p className="text-sm font-semibold">{title}</p>
-      <p className="mt-0.5 text-xs leading-relaxed">
+      {title && <p className="text-sm font-semibold">{title}</p>}
+      <p className={`text-xs leading-relaxed ${title ? 'mt-0.5' : ''}`}>
         {nothingClosedYet ? (
           <>
             Close the day’s sessions in POS — each closing count lands here on its own. This block

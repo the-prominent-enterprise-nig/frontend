@@ -223,7 +223,7 @@ function CardLedger({ lines }: { lines: FormLine[] }): React.JSX.Element {
     <div className="lg:hidden">
       {lines.map((line, i) => {
         // Only the columns that actually hold a number. `field` is the
-        // collector and `others` the caravan now, so including them here
+        // collector and `others` the counter now, so including them here
         // would label an agent's name "CR".
         const receipt = line.office || line.cashInvoice
         const isDeposit = line.type === 'deposit'
@@ -239,7 +239,6 @@ function CardLedger({ lines }: { lines: FormLine[] }): React.JSX.Element {
                   ? `${line.creditLabel}: ${line.customer}`
                   : line.customer || '↳ same customer'}
                 {line.sourceCounter && <OffsiteCounterTag name={line.sourceCounter} />}
-                {line.caravan && <CaravanTag name={line.caravan} />}
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 {line.si && (
@@ -280,22 +279,12 @@ function DescChip({ desc }: { desc: string }): React.JSX.Element | null {
 }
 
 /** Marks a collection taken at a counter other than this branch's own — a
- * satellite office filing under it, or a caravan register. That cash is in
+ * satellite office filing under it. That cash is in
  * another drawer, outside this sheet's count, so the row has to say so:
  * otherwise a variance cannot be traced back to a drawer. */
 function OffsiteCounterTag({ name }: { name: string }): React.JSX.Element {
   return (
     <span className="ml-2 inline-block rounded bg-amber-50 px-1.5 py-px align-middle text-[10.5px] font-medium text-amber-800 normal-case">
-      {name}
-    </span>
-  )
-}
-
-/** Scenario 60 Part 4 — marks a sale whose units came out of a caravan this
- * branch hosts. The money is still this branch's collection. */
-function CaravanTag({ name }: { name: string }): React.JSX.Element {
-  return (
-    <span className="ml-2 inline-block rounded bg-[#f5f0fd] px-1.5 py-px align-middle text-[10.5px] font-medium text-[#3f1490] normal-case">
       {name}
     </span>
   )

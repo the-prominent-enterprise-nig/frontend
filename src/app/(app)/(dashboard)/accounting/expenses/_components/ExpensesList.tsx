@@ -7,10 +7,10 @@ import { Plus, Pencil, Trash2, CheckCircle, Ban, Search, Printer, Eye } from 'lu
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 import { printExpenseVoucherDocument } from '@/src/libs/print/printInventoryDocument'
 import { Expenses, type BusinessExpense, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
-import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
-import ExpensesTabs from './ExpensesTabs'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 const STATUS_OPTIONS = [
   { value: 'DRAFT', label: 'Draft' },
@@ -94,6 +94,23 @@ function referenceLabel(x: BusinessExpense): string {
   return first ? first + extra(x) : '—'
 }
 
+/** Scenario 78 Part 3 — the client's "SI and amount disbursed" columns. The
+ * lines tied to a sale are the Commissions - Sales and Commissions - SMI lines
+ * (each names the POS sale it releases): their SI/DR numbers, and what they
+ * pay out between them — "amount disbursed" is the commission (Kian, Oct 23).
+ * An entry with none falls back to its own Sales Invoice reference, if any. */
+function releaseColumns(x: BusinessExpense): { si: string; disbursed: number | null } {
+  const linked = x.lines.filter((l) => l.posTransaction)
+  if (linked.length === 0) {
+    return { si: x.salesInvoiceNumber?.trim() || '—', disbursed: null }
+  }
+  const numbers = [...new Set(linked.map((l) => saleDocNo(l.posTransaction!)))]
+  return {
+    si: numbers.join(', '),
+    disbursed: linked.reduce((sum, l) => sum + Number(l.amount || 0), 0),
+  }
+}
+
 export default function ExpensesList() {
   const router = useRouter()
   const [items, setItems] = useState<BusinessExpense[]>([])
@@ -128,7 +145,7 @@ export default function ExpensesList() {
     BranchesApi.list().then((r) => setBranches(r.data?.data ?? []))
   }, [])
   useEffect(() => {
-    getAccounts({ limit: 500 }).then((r) =>
+    getAccountOptions().then((r) =>
       setAccounts(((r.data as any)?.items ?? r.data ?? []) as Account[])
     )
   }, [])
@@ -195,7 +212,6 @@ export default function ExpensesList() {
 
   return (
     <div className="p-6">
-      <ExpensesTabs />
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-prominent-purple-900">Expenses</h2>
@@ -260,6 +276,8 @@ export default function ExpensesList() {
               <tr>
                 <th className="px-5 py-3 text-left font-semibold">Date</th>
                 <th className="px-5 py-3 text-left font-semibold">Payee</th>
+                <th className="px-5 py-3 text-left font-semibold">SI No.</th>
+                <th className="px-5 py-3 text-right font-semibold">Amount Disbursed</th>
                 <th className="px-5 py-3 text-right font-semibold">Amount</th>
                 <th className="px-5 py-3 text-left font-semibold">Status</th>
                 <th className="w-12 px-3 py-3">
@@ -270,19 +288,20 @@ export default function ExpensesList() {
             <tbody className="divide-y divide-zinc-100">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-12 text-center text-zinc-400">
+                  <td colSpan={7} className="px-5 py-12 text-center text-zinc-400">
                     Loading...
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-12 text-center text-zinc-400">
+                  <td colSpan={7} className="px-5 py-12 text-center text-zinc-400">
                     No expenses.
                   </td>
                 </tr>
               ) : (
                 items.map((x) => {
                   const ref = referenceLabel(x)
+                  const release = releaseColumns(x)
                   return (
                     <tr
                       key={x.id}
@@ -303,8 +322,19 @@ export default function ExpensesList() {
                           {ref !== '—' && <span className="font-sans"> · Ref {ref}</span>}
                         </span>
                       </td>
+                      <td className="px-5 py-2.5 font-mono text-xs text-zinc-700">{release.si}</td>
+                      <td className="whitespace-nowrap px-5 py-2.5 text-right tabular-nums text-zinc-700">
+                        {release.disbursed == null ? '—' : fmtMoney(release.disbursed)}
+                      </td>
                       <td className="whitespace-nowrap px-5 py-2.5 text-right font-semibold tabular-nums text-zinc-900">
-                        {fmtMoney(x.totalAmount)}
+                        {/* A liquidated cash advance can net to zero or below: what came
+                            back in, not what went out. */}
+                        {x.totalAmount < 0 ? fmtMoney(-x.totalAmount) : fmtMoney(x.totalAmount)}
+                        {x.totalAmount <= 0 && x.lines.some((l) => l.amount < 0) && (
+                          <span className="block text-[11px] font-normal text-zinc-500">
+                            {x.totalAmount < 0 ? 'change returned' : 'advance liquidated'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-2.5">
                         <span

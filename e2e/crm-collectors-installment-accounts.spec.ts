@@ -8,6 +8,9 @@ import {
   gotoReady,
   sweepE2ECustomers,
 } from './utils'
+import { REMINDERS_ENABLED } from '../src/libs/features'
+
+const REMINDERS_HIDDEN = 'Reminders are hidden for now (src/libs/features.ts)'
 
 const CUSTOMER_NAME_PREFIX = 'E2E IaFixture'
 
@@ -372,41 +375,12 @@ test.describe('CRM — Installment Accounts', () => {
     createdCustomerIds = []
   })
 
-  test('price checker modal computes financing terms without creating an account', async ({
+  test('the price checker has moved to POS Price Maker — no button on this page any more', async ({
     page,
   }) => {
     await gotoReady(page, '/crm/installment-accounts')
     await expect(page.getByRole('heading', { name: 'Installment Accounts' })).toBeVisible()
-
-    const before = await page.request.get(
-      '/api/crm/installment-accounts?limit=1&search=__price_check_probe__'
-    )
-    expect(before.ok()).toBeTruthy()
-
-    await clickStable(
-      page.getByRole('button', { name: 'Price checker' }),
-      page.getByRole('heading', { name: 'Installment price checker' })
-    )
-
-    await fillAllStable([
-      { locator: page.getByLabel('Listed cash price (₱)'), value: '50000' },
-      { locator: page.getByLabel('Down payment (₱)'), value: '10000' },
-      { locator: page.getByLabel('Term (months, 1-12)'), value: '12' },
-      { locator: page.getByLabel('MI factor'), value: '0.0954' },
-    ])
-
-    // AF = 40000, MI = round2(40000*0.0954) = 3816, PNV = 3816*12 = 45792,
-    // Total price = 45792+10000 = 55792, ID = 55792-50000 = 5792
-    await expect(page.getByText('₱40,000.00')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText('₱3,816.00')).toBeVisible()
-    await expect(page.getByText('₱45,792.00')).toBeVisible()
-    await expect(page.getByText('₱55,792.00')).toBeVisible()
-    await expect(page.getByText('₱5,792.00')).toBeVisible()
-
-    // Two "Close" buttons exist: the icon (aria-label="Close") and the
-    // bottom text button — the text one is rendered last.
-    await page.getByRole('button', { name: 'Close' }).last().click()
-    await expect(page.getByRole('heading', { name: 'Installment price checker' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Price checker' })).toHaveCount(0)
   })
 
   test('suggests and auto-selects a collector by the customer’s barangay coverage', async ({
@@ -754,7 +728,14 @@ test.describe('CRM — Installment Accounts', () => {
     expect(del.ok()).toBeTruthy()
   })
 
-  test('settles an active account early via the Settle early action', async ({ page }) => {
+  // Scenario 79 — Settle Early now collects the payoff on a receipt and books
+  // the forgiven interest against the account's AR invoice. A hand-entered
+  // account with no invoice linked has no receivable to post either against,
+  // so the Settle early page explains that and won't settle (it used to just flip the
+  // status to early_closed with nothing posted).
+  test('Settle early explains a hand-entered account with no AR invoice cannot be settled', async ({
+    page,
+  }) => {
     const suffix = Date.now()
     const { fullName, customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
@@ -778,27 +759,20 @@ test.describe('CRM — Installment Accounts', () => {
     const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
 
     await clickStable(
-      page.getByRole('button', { name: 'Settle early' }),
+      page.getByRole('link', { name: 'Settle early' }),
       page.getByRole('heading', { name: 'Settle account early' })
     )
-    await submitStable(
-      () =>
-        fillAllStable([
-          { locator: page.getByLabel('Payoff amount (₱) *'), value: '20000' },
-          { locator: page.getByLabel('Paid at *'), value: '2026-08-01' },
-        ]),
-      () => page.getByRole('button', { name: 'Settle account' }).click(),
-      () =>
-        expect(page.getByRole('heading', { name: 'Settle account early' })).toHaveCount(0, {
-          timeout: 8_000,
-        })
-    )
+    await expect(page).toHaveURL(/\/settle-early$/)
+    await expect(page.getByText('This account has no AR invoice to settle against.')).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByRole('button', { name: /^Settle for / })).toBeDisabled()
 
-    await expect(page.getByText('early closed')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText('₱0.00').first()).toBeVisible()
-    // Settled accounts can no longer be paid or re-settled
-    await expect(page.getByRole('button', { name: 'Settle early' })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Record payment' })).toHaveCount(0)
+    // Nothing was settled: still active, still offered.
+    await page.getByRole('link', { name: 'Cancel' }).click()
+    await expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/)
+    await expect(page.getByText('early closed')).toHaveCount(0)
+    await expect(page.getByRole('link', { name: 'Settle early' })).toBeVisible()
 
     const del = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
     expect(del.ok()).toBeTruthy()
@@ -972,6 +946,7 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
   test('schedules a reminder against an installment account and completes it with outcome/contact phone', async ({
     page,
   }) => {
+    test.skip(!REMINDERS_ENABLED, REMINDERS_HIDDEN)
     const suffix = Date.now()
     const { fullName, customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
@@ -1066,6 +1041,7 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
   test('blocks scheduling a second open reminder on the same account until the first is completed', async ({
     page,
   }) => {
+    test.skip(!REMINDERS_ENABLED, REMINDERS_HIDDEN)
     const suffix = Date.now()
     const { fullName, customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
@@ -1158,6 +1134,7 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
   })
 
   test('recording a payment auto-closes the account’s open reminder', async ({ page }) => {
+    test.skip(!REMINDERS_ENABLED, REMINDERS_HIDDEN)
     const suffix = Date.now()
     const { fullName, customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
@@ -1243,6 +1220,7 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
   })
 
   test('captures a structured Promise to Pay when completing a reminder', async ({ page }) => {
+    test.skip(!REMINDERS_ENABLED, REMINDERS_HIDDEN)
     const suffix = Date.now()
     const { fullName, customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
@@ -1378,6 +1356,7 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
   test('the global Reminders page shows a linked account badge for collections tasks', async ({
     page,
   }) => {
+    test.skip(!REMINDERS_ENABLED, REMINDERS_HIDDEN)
     const suffix = Date.now()
     const { fullName, customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)

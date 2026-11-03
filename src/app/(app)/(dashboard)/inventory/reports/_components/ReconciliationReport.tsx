@@ -2,6 +2,7 @@
 
 import { AlertOctagon, PackageSearch, Truck, ClipboardList, X } from 'lucide-react'
 import type { ReconciliationReportResponse } from '@/src/schema/inventory/reports'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 interface Props {
   data: ReconciliationReportResponse | null | undefined
@@ -190,7 +191,7 @@ export default function ReconciliationReport({
                     {data.missingPosMovements.sample.map((t) => (
                       <tr key={t.transactionId}>
                         <td className="px-4 py-2 font-mono text-xs text-zinc-700">
-                          {t.transactionNumber}
+                          {saleDocNo(t)}
                         </td>
                         <td className="px-4 py-2 text-zinc-600">{t.transactionType}</td>
                         <td className="px-4 py-2 text-zinc-500">

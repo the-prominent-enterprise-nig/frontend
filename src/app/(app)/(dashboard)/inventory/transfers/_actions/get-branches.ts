@@ -6,6 +6,7 @@ export type BranchLookup = {
   id: string
   name: string
   region?: 'panay' | 'negros' | null
+  type?: string
 }
 
 export async function getBranches(): Promise<

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { UpdateItemFormSchema } from '@/src/schema/inventory/items'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
@@ -12,7 +12,7 @@ export async function updateItem(id: string, input: unknown): Promise<ApiRespons
     return { success: false, error: 'Invalid item ID', message: 'Item ID is required' }
   }
 
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   if (!can(session, INVENTORY_PERMISSIONS.ITEMS_UPDATE)) {
     return {
@@ -70,7 +70,7 @@ export async function updateItemLifecycle(
     return { success: false, error: 'Invalid item ID', message: 'Item ID is required' }
   }
 
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   if (!can(session, INVENTORY_PERMISSIONS.ITEMS_MANAGE_LIFECYCLE)) {
     return {

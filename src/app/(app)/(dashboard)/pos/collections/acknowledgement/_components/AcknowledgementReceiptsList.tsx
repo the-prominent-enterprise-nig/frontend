@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Download, Eye, Loader2, Pencil, Plus, RefreshCw } from 'lucide-react'
+import { Download, Eye, Loader2, Pencil, Plus, Upload } from 'lucide-react'
 import {
   AcknowledgementReceipts,
   fmtMoney,
@@ -21,7 +22,11 @@ function accountLabel(account: AcknowledgementReceipt['account']): string {
  * link (developer correction, 2026-09-21 — moved off Accounting's AR
  * Invoices page onto POS Collections, matching the client's own notes). No
  * search/filter yet, matching Collection Receipt's own initial scope. */
-export default function AcknowledgementReceiptsList() {
+export default function AcknowledgementReceiptsList({
+  canImport,
+}: {
+  canImport: boolean
+}): React.JSX.Element {
   const router = useRouter()
   const [receipts, setReceipts] = useState<AcknowledgementReceipt[]>([])
   const [loading, setLoading] = useState(true)
@@ -41,16 +46,19 @@ export default function AcknowledgementReceiptsList() {
         <div>
           <h2 className="text-2xl font-bold text-prominent-purple-900">New Receipts</h2>
           <p className="text-sm text-gray-500">
-            Money received with no customer or invoice behind it.
+            Money received outside the regular sales flow — walk-in payments, and customer
+            settlements recorded one at a time or imported from a file.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={load}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-purple-700 hover:bg-purple-50 rounded-lg"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-          </button>
+          {canImport && (
+            <button
+              onClick={() => router.push('/pos/collections/acknowledgement/import')}
+              className="flex items-center gap-2 rounded-lg border border-purple-700 px-4 py-2 text-sm font-semibold text-purple-700 hover:bg-purple-50"
+            >
+              <Upload className="w-4 h-4" /> Import receipts
+            </button>
+          )}
           <button
             onClick={() => router.push('/pos/collections/acknowledgement/new')}
             className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
@@ -98,7 +106,19 @@ export default function AcknowledgementReceiptsList() {
                   >
                     <td className="px-4 py-2.5 font-medium text-gray-900">{r.number ?? '—'}</td>
                     <td className="px-4 py-2.5 text-gray-600">{fmtDate(r.paymentDate)}</td>
-                    <td className="px-4 py-2.5 text-gray-900">{r.payerName}</td>
+                    <td className="px-4 py-2.5 text-gray-900">
+                      {r.customerId ? (
+                        <Link
+                          href={`/pos/customers/${r.customerId}/ledger`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="hover:text-prominent-purple-700 hover:underline"
+                        >
+                          {r.payerName}
+                        </Link>
+                      ) : (
+                        r.payerName
+                      )}
+                    </td>
                     <td className="px-4 py-2.5 text-gray-600">{accountLabel(r.account)}</td>
                     <td className="px-4 py-2.5 text-gray-600">{r.reason ?? '—'}</td>
                     <td className="px-4 py-2.5 text-gray-600">{r.branch?.name ?? '—'}</td>

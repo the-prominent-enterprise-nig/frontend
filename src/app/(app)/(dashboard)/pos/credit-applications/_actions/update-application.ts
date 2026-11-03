@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
 import { UpdateCreditApplicationFormSchema } from '@/src/schema/credit/applications'
 import type { CreditApplication } from '@/src/schema/credit/applications'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 
@@ -12,7 +12,7 @@ export async function updateCreditApplication(
   id: string,
   input: unknown
 ): Promise<ApiResponse<CreditApplication>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }
@@ -53,9 +53,18 @@ export async function updateCreditApplication(
       itemId,
       serialNumberId: serialNumberId ?? null,
     })),
+    // The edit form's two paper-record boxes arrive as text. A blank PPD
+    // rebate means none (null clears it, since the box is optional); a blank
+    // FMI date leaves the recorded one alone — an application always has one.
+    ppdRebate:
+      parsed.data.ppdRebate === undefined
+        ? undefined
+        : parsed.data.ppdRebate === ''
+          ? null
+          : Number(parsed.data.ppdRebate),
+    firstDueDate: parsed.data.firstDueDate || undefined,
     // Form-only figures behind the down-payment check — not API fields.
     resolvedItemTotal: undefined,
-    downPaymentFloor: undefined,
     downPaymentFixed: undefined,
   }
 

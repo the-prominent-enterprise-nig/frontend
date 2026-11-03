@@ -4,14 +4,14 @@ import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
 import { CreateCreditApplicationFormSchema } from '@/src/schema/credit/applications'
 import type { CreditApplication } from '@/src/schema/credit/applications'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 
 export async function createCreditApplication(
   input: unknown
 ): Promise<ApiResponse<CreditApplication>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }
@@ -87,10 +87,13 @@ export async function createCreditApplication(
     // a claim about money that nobody made.
     lcp: parsed.data.lcp ? Number(parsed.data.lcp) : undefined,
     ppdRebate: parsed.data.ppdRebate ? Number(parsed.data.ppdRebate) : undefined,
+    // The applicant's current address as given on this application. Kept on
+    // the application; the customer's own record is not updated from it.
+    applicantAddress: parsed.data.applicantAddress?.trim() || undefined,
+    applicantBarangayCode: parsed.data.applicantBarangayCode?.trim() || undefined,
     // Same for the selects — @IsOptional() skips undefined/null, not ''.
     firstDueDate: parsed.data.firstDueDate || undefined,
     downPaymentCollection: parsed.data.downPaymentCollection || undefined,
-    posDraftReference: parsed.data.posDraftReference || undefined,
     // Tri-state on purpose: unasked is not the same answer as "no", so an
     // untouched dropdown stays null on the record instead of reading as a
     // recorded denial.

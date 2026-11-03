@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
 import { CreateItemFormSchema, CreateItemFormValues } from '@/src/schema/inventory/items'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
@@ -17,7 +17,7 @@ const INITIAL_STOCK_KEYS = [
 ] as const
 
 export async function createItem(input: unknown): Promise<ApiResponse<{ id: string }>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   if (!can(session, INVENTORY_PERMISSIONS.ITEMS_CREATE)) {
     return {

@@ -7,6 +7,8 @@ import {
   gotoReady,
   pickComboboxOption,
   sweepE2EStockTransfers,
+  findStockedTransferSource,
+  pickTransferSource,
 } from './utils'
 
 const REASON_PREFIX = 'E2E-TRF-AR-'
@@ -48,25 +50,13 @@ async function createBulkRequest(page: import('@playwright/test').Page, uniqueRe
   // out against elements that no longer exist. The destination list already
   // excludes whatever the source is set to, so index 0 of each is a valid
   // distinct pair.
-  await pickComboboxOption(page, 'Search source branch…')
+  // A source that actually holds a bulk item — index 0 / the first catalog
+  // item asked for stock the source didn't have (test DB no longer seeds
+  // every item everywhere).
+  const stocked = await findStockedTransferSource(page.request, { serialTracked: false })
+  await pickTransferSource(page, stocked.sourceName)
   await pickComboboxOption(page, 'Search destination branch…')
-
-  // Resolve a real non-serial-tracked item from the catalog rather than
-  // naming an SKU — this spec used to hardcode TN-FAN-001, which is no longer
-  // in the seed (the third stale SKU found in this directory, after TN-REF-001
-  // and TN-FURN-SET-001). Non-serial keeps this a plain bulk request.
-  const itemsRes = await page.request.get('/api/inventory/items', {
-    params: { limit: '100', lifecycle: 'active' },
-  })
-  const bulkItem = (
-    ((await itemsRes.json()).data ?? []) as {
-      id: string
-      sku: string
-      isSerialTracked: boolean
-      isService?: boolean
-    }[]
-  ).find((i) => !i.isSerialTracked && !i.isService)
-  if (!bulkItem) throw new Error('no non-serial-tracked active item found in the catalog')
+  const bulkItem = { sku: stocked.sku }
 
   // Items are added from the Items card's own "Add item" search — there is no
   // per-row item picker. SearchCombobox renders a BUTTON when closed and only
@@ -178,6 +168,10 @@ test.describe('Inventory — Stock Transfer accept/reject + receiving report', (
       modal.getByRole('button', { name: 'Mark Received' }),
       modal.getByRole('button', { name: 'Confirm Receipt' })
     )
+    // Serial units start unticked (Scenario 71 item 23); a quantity-only
+    // line has no such control and already defaults to the full amount.
+    const markAll = modal.getByRole('button', { name: 'Mark all received' })
+    if (await markAll.isVisible()) await markAll.click()
     await modal.getByRole('button', { name: 'Confirm Receipt' }).click()
     // `.first()` because the detail panel is an in-page overlay, so the list
     // behind it is still in the DOM — "Received" also matches that table's

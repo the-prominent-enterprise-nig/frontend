@@ -62,6 +62,7 @@ export default function TaxClosingDetail({ id, canReverse }: { id: string; canRe
   if (!run) return <div className="px-6 py-6 text-sm text-gray-400 lg:px-10">Loading…</div>
 
   const vat = run.type === 'VAT_SETTLEMENT'
+  const incomeTax = run.type === 'INCOME_TAX_CLOSING'
 
   return (
     <div className="px-6 py-6 lg:px-10">
@@ -91,9 +92,25 @@ export default function TaxClosingDetail({ id, canReverse }: { id: string; canRe
       <p className="mt-1 text-sm text-gray-500">{SETTLEMENT_TYPE_LABEL[run.type]}</p>
 
       <dl className="mt-5 grid gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Item label={vat ? 'Settled through' : 'Remitted through'} value={run.asOfDate} />
+        <Item
+          label={incomeTax ? 'Period ended' : vat ? 'Settled through' : 'Remitted through'}
+          value={run.asOfDate}
+        />
         <Item label={vat ? 'Entry dated' : 'Paid on'} value={run.postingDate} />
-        {vat ? (
+        {incomeTax ? (
+          <>
+            <Item
+              label="Return"
+              value={`${run.taxQuarter ? `Q${run.taxQuarter}` : 'Annual'} ${run.taxYear ?? ''}`}
+            />
+            <Item label="Income tax due" value={fmtMoney(run.taxDue ?? 0)} testId="run-tax-due" />
+            <Item label="CWT applied" value={fmtMoney(run.cwtApplied ?? 0)} />
+            <Item label="Paid in cash" value={fmtMoney(run.netAmount)} testId="run-amount" />
+            <Item label="Paid from" value={run.bankName ?? '—'} />
+            <Item label="Return reference" value={run.reference ?? '—'} />
+            <Item label="Approved by" value={run.approvedBy ?? '—'} />
+          </>
+        ) : vat ? (
           <>
             <Item label="Output VAT cleared" value={fmtMoney(run.outputVat)} />
             <Item label="Input VAT cleared" value={fmtMoney(run.inputVat)} />

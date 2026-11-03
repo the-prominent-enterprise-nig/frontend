@@ -73,6 +73,11 @@ export default function ARInvoiceForm({ id }: { id?: string }) {
     subtotal: '',
     taxAmount: '',
   })
+  // Contractual retention: the share the customer holds back until acceptance,
+  // completion or the end of the warranty. Blank = none.
+  const [retentionPercent, setRetentionPercent] = useState('')
+  const [retentionReleaseDate, setRetentionReleaseDate] = useState('')
+  const [retentionMilestone, setRetentionMilestone] = useState('')
   // The output VAT class and the certificate a restricted one rests on.
   const [vatCode, setVatCode] = useState<string>(OUTPUT_VAT_STANDARD)
   const [ref, setRef] = useState('')
@@ -111,6 +116,9 @@ export default function ARInvoiceForm({ id }: { id?: string }) {
         subtotal: String(inv.subtotal ?? ''),
         taxAmount: String(inv.taxAmount ?? ''),
       })
+      setRetentionPercent(inv.retentionPercent ? String(inv.retentionPercent) : '')
+      setRetentionReleaseDate(inv.retentionReleaseDate?.slice(0, 10) ?? '')
+      setRetentionMilestone(inv.retentionMilestone ?? '')
       setCustomerLabel(inv.customer?.name ?? '')
       setCustomerExempt(!!inv.customer?.isTaxExempt)
       // A draft from before classification carries no code: read it as the
@@ -205,6 +213,8 @@ export default function ARInvoiceForm({ id }: { id?: string }) {
   const notEditable = !!initial && initial.status !== 'DRAFT'
 
   const total = (Number(form.subtotal) || 0) + (Number(form.taxAmount) || 0)
+  const retentionRate = Number(retentionPercent) || 0
+  const retained = Math.round(total * retentionRate) / 100
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -226,11 +236,27 @@ export default function ARInvoiceForm({ id }: { id?: string }) {
       setError(reasonMissingMessage(freshOverrides))
       return
     }
+    if (retentionRate < 0 || retentionRate > 100) {
+      setError('The retention percentage must be between 0 and 100.')
+      return
+    }
     setSaving(true)
     const payload = {
       ...form,
       subtotal: Number(form.subtotal),
       taxAmount: Number(form.taxAmount || 0),
+      // 0 on an edit takes a retention off; nothing is sent for a new invoice with none.
+      ...(retentionRate > 0 || (id && initial?.retentionPercent)
+        ? {
+            retentionPercent: retentionRate,
+            retentionReleaseDate:
+              retentionRate > 0 && retentionReleaseDate ? retentionReleaseDate : undefined,
+            retentionMilestone:
+              retentionRate > 0 && retentionMilestone.trim()
+                ? retentionMilestone.trim()
+                : undefined,
+          }
+        : {}),
       outputVatCode: vatCode || undefined,
       taxExemptionRef: restricted ? ref.trim() : undefined,
       taxOverrideReason: freshOverrides.length > 0 ? overrideReason.trim() : undefined,
@@ -533,6 +559,69 @@ export default function ARInvoiceForm({ id }: { id?: string }) {
               />
             </div>
           )}
+        </section>
+
+        <section
+          className="rounded-xl border border-gray-200 bg-white p-4"
+          data-testid="invoice-retention"
+        >
+          <h2 className="text-sm font-semibold text-prominent-purple-900">Retention</h2>
+          <p className="mt-1 text-xs text-gray-500">
+            For a contract where the customer holds back a share of the invoice until acceptance,
+            completion or the end of the warranty. The invoice still bills its whole total; the
+            retained part is carried in Retention Receivable from Customers, not Accounts
+            Receivable, until it is released, offset against a claim or written off.
+          </p>
+          <div className="mt-3 grid gap-3 lg:grid-cols-4">
+            <Field label="Retention (%)">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step="0.01"
+                disabled={notEditable}
+                value={retentionPercent}
+                onChange={(e) => setRetentionPercent(e.target.value)}
+                placeholder="None"
+                className={inputClass}
+                data-testid="invoice-retention-percent"
+              />
+            </Field>
+            <Field label="Release due">
+              <input
+                type="date"
+                disabled={notEditable || retentionRate <= 0}
+                value={retentionReleaseDate}
+                onChange={(e) => setRetentionReleaseDate(e.target.value)}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Released on (milestone)">
+              <input
+                disabled={notEditable || retentionRate <= 0}
+                value={retentionMilestone}
+                maxLength={255}
+                onChange={(e) => setRetentionMilestone(e.target.value)}
+                placeholder="e.g. Acceptance of the installed units"
+                className={inputClass}
+              />
+            </Field>
+            <div className="flex items-end pb-2 text-sm" data-testid="invoice-retention-split">
+              {retentionRate > 0 ? (
+                <span className="text-gray-600">
+                  Collectible now{' '}
+                  <span className="font-semibold text-gray-900">
+                    {fmtMoney(Math.round((total - retained) * 100) / 100)}
+                  </span>
+                  <br />
+                  Held back{' '}
+                  <span className="font-semibold text-gray-900">{fmtMoney(retained)}</span>
+                </span>
+              ) : (
+                <span className="text-gray-400">No retention</span>
+              )}
+            </div>
+          </div>
         </section>
 
         <div className="grid gap-3 lg:grid-cols-3">

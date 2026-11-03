@@ -51,16 +51,26 @@ const TYPE_COLORS: Record<SerialMovementType, string> = {
   uds: 'bg-[#fdf3e7] text-[#8a4b06]',
 }
 
-function formatDate(iso: string): string {
+// A date-only value is midnight UTC; reading it in UTC keeps its calendar
+// day wherever the browser is.
+function formatDate(iso: string, dateOnly = false): string {
   return new Date(iso).toLocaleDateString('en-PH', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+    ...(dateOnly && { timeZone: 'UTC' }),
   })
 }
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
+}
+
+/** "Oct 14, 2026 · 3:42 PM" — or just the date when the movement only has a
+ * date (transfers, adjustments, memos), rather than a made-up 8:00 AM. */
+function formatWhen(entry: { occurredAt: string; dateOnly?: boolean }): string {
+  if (entry.dateOnly) return formatDate(entry.occurredAt, true)
+  return `${formatDate(entry.occurredAt)} · ${formatTime(entry.occurredAt)}`
 }
 
 /** "Where is it now", in one line — the question the panel is opened for. */
@@ -95,7 +105,7 @@ function Header({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p
-            className={`${MONO} text-[11px] font-semibold tracking-[.08em] text-[#8b8b9b] uppercase`}
+            className={`${MONO} text-[11px] font-semibold tracking-[.08em] text-[#6f6f7f] uppercase`}
           >
             Serial history
           </p>
@@ -139,7 +149,7 @@ function Header({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="shrink-0 rounded-lg p-1.5 text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
+            className="shrink-0 rounded-lg p-1.5 text-[#6f6f7f] hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
           >
             <X className="h-4 w-4" />
           </button>
@@ -151,7 +161,7 @@ function Header({
 
 function TimelineEntry({ entry, isLast }: { entry: SerialMovementEntry; isLast: boolean }) {
   const Icon = TYPE_ICONS[entry.type] ?? Package
-  const color = TYPE_COLORS[entry.type] ?? 'bg-[#f1f1f4] text-[#5b5b6b]'
+  const color = TYPE_COLORS[entry.type] ?? 'bg-[#f1f1f4] text-[#4b4b5a]'
 
   return (
     <li className="relative flex gap-3 pb-5" data-testid="serial-history-entry">
@@ -164,13 +174,11 @@ function TimelineEntry({ entry, isLast }: { entry: SerialMovementEntry; isLast: 
       <div className="min-w-0 flex-1 pt-1">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3">
           <p className="text-[13.5px] font-semibold text-[#17171c]">{entry.label}</p>
-          <p className="text-[11.5px] text-[#8b8b9b]">
-            {formatDate(entry.occurredAt)} · {formatTime(entry.occurredAt)}
-          </p>
+          <p className="text-[11.5px] text-[#6f6f7f]">{formatWhen(entry)}</p>
         </div>
-        <p className="mt-0.5 text-[13px] text-[#5b5b6b]">{entry.description}</p>
+        <p className="mt-0.5 text-[13px] text-[#4b4b5a]">{entry.description}</p>
         {(entry.referenceCode || entry.invoiceNumber) && (
-          <p className={`${MONO} mt-1 text-[11.5px] text-[#8b8b9b]`}>
+          <p className={`${MONO} mt-1 text-[11.5px] text-[#6f6f7f]`}>
             {[entry.referenceCode, entry.invoiceNumber && `Invoice ${entry.invoiceNumber}`]
               .filter(Boolean)
               .join(' · ')}
@@ -185,8 +193,8 @@ function Timeline({ entries }: { entries: SerialMovementEntry[] }) {
   if (entries.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <History className="mb-3 h-10 w-10 text-[#c9c9d3]" />
-        <p className="text-[13px] font-medium text-[#5b5b6b]">No movements recorded yet</p>
+        <History className="mb-3 h-10 w-10 text-[#b0b0bc]" />
+        <p className="text-[13px] font-medium text-[#4b4b5a]">No movements recorded yet</p>
       </div>
     )
   }
@@ -236,12 +244,12 @@ export default function SerialHistoryContent({
     <div className={`${PLEX} flex min-h-0 flex-1 flex-col`}>
       {timelineOnly ? (
         <div className="flex shrink-0 items-center justify-between border-b border-[#eeeef1] px-5 py-2.5">
-          <p className="text-[12px] font-medium text-[#5b5b6b]">Movements</p>
+          <p className="text-[12px] font-medium text-[#4b4b5a]">Movements</p>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close movements"
-            className="rounded p-1 text-[#8b8b9b] hover:bg-zinc-100 hover:text-zinc-700"
+            className="rounded p-1 text-[#6f6f7f] hover:bg-zinc-100 hover:text-zinc-700"
           >
             <X className="h-4 w-4" />
           </button>

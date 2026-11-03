@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useVisiblePolling } from '@/src/hooks/useVisiblePolling'
 import {
   CalendarDays,
   List,
@@ -19,6 +20,7 @@ import {
 } from '@/src/libs/api/crm'
 import { getBranches } from '../../installment-accounts/_actions/get-branches'
 import { Select } from '@/src/components/ui/Select'
+import { REMINDERS_ENABLED } from '@/src/libs/features'
 import type {
   CollectionsCalendarPayment,
   CollectionsCalendarReminder,
@@ -377,26 +379,16 @@ export default function CollectionsCalendar({ compact = false }: { compact?: boo
   // refetch-on-focus) — this widget used to only refetch when a filter or
   // month changed, so a reminder someone else added wouldn't show up until
   // you touched a control.
-  useEffect(() => {
-    const interval = setInterval(loadCalendar, 30_000)
-    function handleVisibilityChange() {
-      if (document.visibilityState === 'visible') loadCalendar()
-    }
-    window.addEventListener('focus', loadCalendar)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => {
-      clearInterval(interval)
-      window.removeEventListener('focus', loadCalendar)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [year, month, branchId, collectorId, person])
+  // The effect above already loads on mount and whenever a filter changes, so
+  // this only adds the poll + refetch-on-return (no immediate run). The hook
+  // always calls the latest loadCalendar, so filter changes need no re-subscribe.
+  useVisiblePolling(loadCalendar, 30_000, { immediate: false })
 
   const items: CalendarItem[] = [
     ...(data?.payments ?? []).map(
       (p): CalendarItem => ({ kind: 'payment', date: p.dueDate.slice(0, 10), data: p })
     ),
-    ...(data?.reminders ?? []).map(
+    ...(REMINDERS_ENABLED ? (data?.reminders ?? []) : []).map(
       (r): CalendarItem => ({ kind: 'reminder', date: r.dueAt.slice(0, 10), data: r })
     ),
   ]
@@ -449,9 +441,9 @@ export default function CollectionsCalendar({ compact = false }: { compact?: boo
           <div>
             <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Collections Calendar</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              Installment dues and reminders, grouped by day. Only shows dues from POS-originated
-              installment plans — manually entered CRM collections accounts aren&apos;t itemized by
-              due date yet.
+              Installment dues{REMINDERS_ENABLED && ' and reminders'}, grouped by day. Only shows
+              dues from POS-originated installment plans — manually entered CRM collections accounts
+              aren&apos;t itemized by due date yet.
             </p>
           </div>
         )}
@@ -535,10 +527,15 @@ export default function CollectionsCalendar({ compact = false }: { compact?: boo
             </p>
             {data && (
               <p className="text-[11px] text-zinc-400">
-                {data.meta.totalPaymentsDue} due · {formatPeso(data.meta.totalPaymentsAmount)} ·{' '}
-                {data.meta.totalReminders} reminder{data.meta.totalReminders !== 1 ? 's' : ''}
-                {data.meta.totalOverdueReminders > 0 &&
-                  ` (${data.meta.totalOverdueReminders} overdue)`}
+                {data.meta.totalPaymentsDue} due · {formatPeso(data.meta.totalPaymentsAmount)}
+                {REMINDERS_ENABLED && (
+                  <>
+                    {' '}
+                    · {data.meta.totalReminders} reminder{data.meta.totalReminders !== 1 ? 's' : ''}
+                    {data.meta.totalOverdueReminders > 0 &&
+                      ` (${data.meta.totalOverdueReminders} overdue)`}
+                  </>
+                )}
               </p>
             )}
           </div>

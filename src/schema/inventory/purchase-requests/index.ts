@@ -72,6 +72,7 @@ export const PurchaseRequestSummarySchema = z.object({
   supplier: PrSupplierSchema.nullable(),
   warehouseId: z.string().nullable(),
   warehouse: PrWarehouseSchema.nullable(),
+  orderDate: z.string().nullable().optional(),
   expectedDeliveryDate: z.string().nullable(),
   deliveryInstructions: z.string().nullable(),
   paymentTerms: z.string().nullable(),

@@ -168,7 +168,7 @@ export default function ReceiveFromProviderModal({
                 {variance === 0
                   ? 'Matching the estimate posts no entry at all.'
                   : variance > 0
-                    ? 'The overrun is added to repair expense and to what we owe the provider.'
+                    ? 'The overrun is added to repair expense and to what we owe the service center.'
                     : 'The saving reverses part of the accrual and reduces what we owe.'}
               </p>
             </div>

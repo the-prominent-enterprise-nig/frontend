@@ -270,7 +270,7 @@ export default function TransactionsList({ session }: Props) {
                 invoice, a receipt's transaction #, or a bank memo's
                 invoice # all land on the same transaction. */}
             <label className="mb-1 block text-xs font-semibold text-gray-600">
-              Sales Invoice, Transaction # or Invoice #
+              SI / DR No. or Invoice #
             </label>
             <div className="relative">
               <Search
@@ -378,7 +378,7 @@ export default function TransactionsList({ session }: Props) {
               <thead className="border-b border-gray-200 bg-gray-50">
                 <tr>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
-                    Sales Invoice No.
+                    SI / DR No.
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                     Type
@@ -426,7 +426,7 @@ export default function TransactionsList({ session }: Props) {
               <thead className="border-b border-gray-200 bg-gray-50">
                 <tr>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
-                    Sales Invoice No.
+                    SI / DR No.
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                     Type

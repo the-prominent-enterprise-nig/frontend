@@ -1,6 +1,6 @@
 'use client'
 
-import { RefreshCw, X, ClipboardCheck } from 'lucide-react'
+import { X, ClipboardCheck } from 'lucide-react'
 import { useAdjustments } from '../_hooks/useAdjustments'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -53,7 +53,6 @@ export default function AdjustmentList({ session }: { session: SessionUser }) {
     isRejecting,
     withdraw,
     isWithdrawing,
-    refetch,
   } = useAdjustments()
 
   const hasFilters = warehouseFilter || statusFilter
@@ -69,15 +68,6 @@ export default function AdjustmentList({ session }: { session: SessionUser }) {
               Review and act on pending adjustments through the approval chain.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-50"
-          >
-            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
         </div>
 
         <div className="flex flex-wrap gap-3">

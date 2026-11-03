@@ -15,6 +15,7 @@ import {
   CreditApplicationStatusSchema,
   type CreditApplicationStatus,
 } from '@/src/schema/credit/applications'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 export default function CreditApplicationList({ session }: { session: SessionUser }) {
   const router = useRouter()
@@ -193,14 +194,14 @@ export default function CreditApplicationList({ session }: { session: SessionUse
                           <span
                             title={
                               app.posTransaction
-                                ? `Consumed by sale ${app.posTransaction.transactionNumber}`
+                                ? `Consumed by sale ${saleDocNo(app.posTransaction)}`
                                 : 'Already used for a sale'
                             }
                             className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500"
                           >
                             <Link2 className="h-2.5 w-2.5 shrink-0" />
                             Used
-                            {app.posTransaction ? ` · ${app.posTransaction.transactionNumber}` : ''}
+                            {app.posTransaction ? ` · ${saleDocNo(app.posTransaction)}` : ''}
                           </span>
                         )}
                       </div>
@@ -278,16 +279,14 @@ export default function CreditApplicationList({ session }: { session: SessionUse
                               <span
                                 title={
                                   app.posTransaction
-                                    ? `Consumed by sale ${app.posTransaction.transactionNumber}`
+                                    ? `Consumed by sale ${saleDocNo(app.posTransaction)}`
                                     : 'Already used for a sale'
                                 }
                                 className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500"
                               >
                                 <Link2 className="h-2.5 w-2.5 shrink-0" />
                                 Used
-                                {app.posTransaction
-                                  ? ` · ${app.posTransaction.transactionNumber}`
-                                  : ''}
+                                {app.posTransaction ? ` · ${saleDocNo(app.posTransaction)}` : ''}
                               </span>
                             )}
                           </div>

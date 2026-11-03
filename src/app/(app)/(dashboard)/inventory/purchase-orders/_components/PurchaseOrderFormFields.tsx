@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFieldArray, useWatch, Controller } from 'react-hook-form'
+import { useQuery } from '@tanstack/react-query'
 import type { Control, UseFormRegister, UseFormSetValue, FieldErrors } from 'react-hook-form'
 import { ChevronDown, ChevronUp, Copy, RotateCcw, Trash2 } from 'lucide-react'
 import type { CreatePoFormValues } from '@/src/schema/inventory/purchase-orders'
@@ -9,8 +10,10 @@ import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSearchCombobox'
 import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import { getSupplierItems } from '@/src/app/(app)/(dashboard)/accounting/suppliers/_actions/get-supplier-items'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from './procurementTokens'
+import { NoDestinationWarning } from './NoDestinationWarning'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +33,9 @@ type Props = {
   /** Rendered into the summary rail's footer by the parent, so the sticky
    * action bar and the rail agree on what submitting will do. */
   submitted?: boolean
+  /** Whether the "Where should this be delivered?" warning may show yet — held back
+   * on a brand-new, untouched form so it doesn't greet every buyer. */
+  warnNoDestination?: boolean
 }
 
 const EMPTY_LINE = {
@@ -83,6 +89,7 @@ export function PurchaseOrderFormFields({
   initialSupplierLabel,
   initialWarehouseLabel,
   submitted,
+  warnNoDestination,
 }: Props): React.ReactElement {
   const [openLines, setOpenLines] = useState<Record<string, boolean>>({})
   const searchRef = useRef<HTMLDivElement>(null)
@@ -99,6 +106,7 @@ export function PurchaseOrderFormFields({
           initialSupplierLabel={initialSupplierLabel}
           initialWarehouseLabel={initialWarehouseLabel}
           submitted={submitted}
+          warnNoDestination={warnNoDestination}
         />
         <OrderSummaryRail control={control} />
       </div>
@@ -127,6 +135,7 @@ function PurchaseDetailsCard({
   initialSupplierLabel,
   initialWarehouseLabel,
   submitted,
+  warnNoDestination,
 }: {
   control: Control<CreatePoFormValues>
   register: UseFormRegister<CreatePoFormValues>
@@ -134,8 +143,10 @@ function PurchaseDetailsCard({
   initialSupplierLabel?: string
   initialWarehouseLabel?: string
   submitted?: boolean
+  warnNoDestination?: boolean
 }): React.ReactElement {
   const instructions = useWatch({ control, name: 'deliveryInstructions' })
+  const warehouseId = useWatch({ control, name: 'warehouseId' })
 
   return (
     <div className={CARD}>
@@ -163,17 +174,36 @@ function PurchaseDetailsCard({
             locks the field once this is set). Every location is on offer,
             the standalone warehouses and each branch's own stock location
             alike, so ordering for another branch doesn't need a separate
-            transfer afterward. */}
-        <Field label="Location" required>
+            transfer afterward. Optional — a drop-ship PO goes from the
+            supplier straight to the customer and never lands at one. */}
+        <Field label="Location">
           <Controller
             name="warehouseId"
             control={control}
             render={({ field }) => (
               <WarehouseSearchCombobox
-                value={field.value}
+                value={field.value ?? ''}
                 onChange={field.onChange}
                 error={errors.warehouseId?.message}
                 initialLabel={initialWarehouseLabel}
+              />
+            )}
+          />
+        </Field>
+
+        {/* On a request this is the date the PO it converts into will carry
+            (a submitted request becomes its PO straight away). */}
+        <Field label="PO Date" error={errors.orderDate?.message}>
+          <Controller
+            name="orderDate"
+            control={control}
+            render={({ field }) => (
+              <input
+                type="date"
+                value={field.value ?? ''}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+                className="h-10 w-full rounded-lg border border-[#d3d3db] px-3 text-[13px] text-[#3d3d4a] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
               />
             )}
           />
@@ -187,7 +217,7 @@ function PurchaseDetailsCard({
             >
               Delivery instructions
             </label>
-            <span className="text-[11px] text-[#a3a3b2]">
+            <span className="text-[11px] text-[#8e8e9d]">
               {(instructions ?? '').length} / 1000 characters
             </span>
           </div>
@@ -201,6 +231,12 @@ function PurchaseDetailsCard({
           />
           {errors.deliveryInstructions && (
             <ErrorLine message={errors.deliveryInstructions.message ?? ''} />
+          )}
+        </div>
+
+        <div className="min-[1240px]:col-span-2 empty:hidden">
+          {warnNoDestination && (
+            <NoDestinationWarning warehouseId={warehouseId} deliveryInstructions={instructions} />
           )}
         </div>
       </div>
@@ -282,7 +318,7 @@ function OrderSummaryRail({
       <div className={`${CARD} flex h-full flex-col overflow-hidden`}>
         <div className="flex items-center justify-between border-b border-[#eeeef1] px-4 py-[13px]">
           <span className="text-[13px] font-semibold">Order summary</span>
-          <span className={`${MONO} text-[10px] tracking-[.08em] text-[#a3a3b2]`}>PHP</span>
+          <span className={`${MONO} text-[10px] tracking-[.08em] text-[#8e8e9d]`}>PHP</span>
         </div>
 
         <div className="flex flex-1 flex-col gap-[9px] px-4 py-3.5">
@@ -292,13 +328,13 @@ function OrderSummaryRail({
             value={`−${peso(Math.max(0, totals.gross - totals.net))}`}
             valueClass="text-[#0b6644]"
           />
-          <div className="flex items-baseline justify-between gap-2.5 border-t border-[#eeeef1] pt-[9px] text-[11.5px] text-[#8b8b9b]">
+          <div className="flex items-baseline justify-between gap-2.5 border-t border-[#eeeef1] pt-[9px] text-[11.5px] text-[#6f6f7f]">
             <span>Lines / units</span>
             <span className={MONO}>
               {totals.lineCount} / {totals.units.toLocaleString('en-PH')}
             </span>
           </div>
-          <div className="flex items-baseline justify-between gap-2.5 text-[11.5px] text-[#8b8b9b]">
+          <div className="flex items-baseline justify-between gap-2.5 text-[11.5px] text-[#6f6f7f]">
             <span>Freebies (not billed)</span>
             <span className={MONO}>
               {totals.freeUnits ? `${totals.freeUnits.toLocaleString('en-PH')} units` : 'None'}
@@ -307,7 +343,7 @@ function OrderSummaryRail({
         </div>
 
         <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[#eee7fb] bg-[#faf7ff] px-4 py-[13px]">
-          <span className="text-[11.5px] text-[#5b5b6b]">Grand total</span>
+          <span className="text-[11.5px] text-[#4b4b5a]">Grand total</span>
           <span className={`${MONO} text-[20px] font-semibold tracking-[-.01em] text-[#3f1490]`}>
             ₱{peso(totals.net)}
           </span>
@@ -328,7 +364,7 @@ function SummaryRow({
 }): React.ReactElement {
   return (
     <div className="flex items-baseline justify-between gap-2.5 text-[12.5px]">
-      <span className="text-[#5b5b6b]">{label}</span>
+      <span className="text-[#4b4b5a]">{label}</span>
       <span className={`${MONO} ${valueClass ?? ''}`}>{value}</span>
     </div>
   )
@@ -365,6 +401,18 @@ function LineItemsCard({
   searchRef: React.RefObject<HTMLDivElement | null>
 }): React.ReactElement {
   const { fields, append, insert, remove } = useFieldArray({ control, name: 'lines' })
+  // Scenario 71 — the search lists the chosen supplier's approved items.
+  const supplierId = useWatch({ control, name: 'supplierId' })
+  const supplierItemsQuery = useQuery({
+    queryKey: ['supplier-items', supplierId],
+    queryFn: () => getSupplierItems(supplierId),
+    enabled: !!supplierId,
+    staleTime: 5 * 60 * 1000,
+  })
+  const noSupplierItems =
+    !!supplierId &&
+    supplierItemsQuery.isSuccess &&
+    (supplierItemsQuery.data?.data ?? []).length === 0
 
   // Names/SKUs for lines the form only knows by itemId: seeded from the
   // record being edited, then extended as the catalog search adds lines.
@@ -393,7 +441,7 @@ function LineItemsCard({
           <span className="text-[13.5px] font-semibold">
             Line items <span className="text-[#b42318]">*</span>
           </span>
-          <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+          <span className={`${MONO} text-[11px] text-[#6f6f7f]`}>
             {fields.length} {fields.length === 1 ? 'line' : 'lines'}
           </span>
         </div>
@@ -409,8 +457,14 @@ function LineItemsCard({
             onChange={() => {}}
             onSelect={addFromCatalog}
             compact
+            supplierId={supplierId || undefined}
             placeholder="Search item by name or SKU to add a line…"
           />
+          {noSupplierItems && (
+            <p className="mt-1 text-[11px] text-[#6f6f7f]">
+              No approved items on file for this supplier — searching the full catalog.
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -420,7 +474,7 @@ function LineItemsCard({
               if (!anyOpen) fields.forEach((_, i) => (next[String(i)] = true))
               setOpenLines(next)
             }}
-            className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12.5px] text-[#5b5b6b] hover:border-[#a3a3b2] hover:text-[#17171c]"
+            className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12.5px] text-[#4b4b5a] hover:border-[#a3a3b2] hover:text-[#17171c]"
           >
             {anyOpen ? 'Collapse all stacks' : 'Expand all stacks'}
           </button>
@@ -446,7 +500,7 @@ function LineItemsCard({
             <div className="flex flex-col items-center gap-2 rounded-[10px] border border-dashed border-[#d3d3db] bg-[#fbfbfc] px-[22px] py-[30px] text-center">
               <div className="h-8 w-8 rounded-lg border border-[#ddd0f7] bg-[#f1ebfb]" />
               <div className="mt-1 text-[14px] font-semibold">No line items yet</div>
-              <div className="max-w-[430px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+              <div className="max-w-[430px] text-[12.5px] leading-[1.55] text-[#4b4b5a]">
                 Search the catalog below to add a line. Discounts can be stacked on any line at any
                 point.
               </div>
@@ -464,7 +518,7 @@ function LineItemsCard({
             {/* Wide: table */}
             <div className="hidden min-[1240px]:block">
               <div
-                className={`${LINE_GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-[18px] py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+                className={`${LINE_GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-[18px] py-[9px] text-[10px] uppercase tracking-[.09em] text-[#6f6f7f]`}
               >
                 <span />
                 <span>Item / SKU</span>
@@ -797,7 +851,7 @@ function UnitPriceCell(p: RenderProps): React.ReactElement {
           </button>
         </Tooltip>
       ) : p.discounted && !p.isFreebie ? (
-        <span className={`${MONO} text-[9.5px] text-[#a3a3b2] line-through`}>
+        <span className={`${MONO} text-[9.5px] text-[#8e8e9d] line-through`}>
           {peso(Number(p.srp) || 0)}
         </span>
       ) : null}
@@ -815,7 +869,7 @@ function LineRowWide(p: RenderProps): React.ReactElement {
     >
       <div className={`${LINE_GRID_ROW} px-[18px] py-[9px]`}>
         <span
-          className={`${MONO} flex min-h-8 items-center justify-end text-[11px] text-[#a3a3b2]`}
+          className={`${MONO} flex min-h-8 items-center justify-end text-[11px] text-[#8e8e9d]`}
         >
           {index + 1}
         </span>
@@ -829,7 +883,7 @@ function LineRowWide(p: RenderProps): React.ReactElement {
                 </span>
                 {p.isFreebie && <FreebieTag />}
               </div>
-              <span className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>{label?.sku ?? ''}</span>
+              <span className={`${MONO} text-[10.5px] text-[#6f6f7f]`}>{label?.sku ?? ''}</span>
               <InternalNoteInput index={index} control={control} />
             </>
           ) : (
@@ -903,12 +957,12 @@ function LineRowWide(p: RenderProps): React.ReactElement {
               </span>
             </span>
           ) : (
-            <span className="whitespace-nowrap text-[12px] text-[#8b8b9b]">+ Add discount</span>
+            <span className="whitespace-nowrap text-[12px] text-[#6f6f7f]">+ Add discount</span>
           )}
           {open ? (
-            <ChevronUp className="h-3.5 w-3.5 shrink-0 text-[#8b8b9b]" />
+            <ChevronUp className="h-3.5 w-3.5 shrink-0 text-[#6f6f7f]" />
           ) : (
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#8b8b9b]" />
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#6f6f7f]" />
           )}
         </button>
 
@@ -943,7 +997,7 @@ function LineRowWide(p: RenderProps): React.ReactElement {
                   isFreebie: p.isFreebie,
                 })
               }
-              className="flex h-6 w-6 items-center justify-center rounded-md text-[#a3a3b2] hover:bg-[#f1ebfb] hover:text-[#3f1490]"
+              className="flex h-6 w-6 items-center justify-center rounded-md text-[#8e8e9d] hover:bg-[#f1ebfb] hover:text-[#3f1490]"
             >
               <Copy className="h-3.25 w-3.25" />
             </button>
@@ -953,7 +1007,7 @@ function LineRowWide(p: RenderProps): React.ReactElement {
               type="button"
               aria-label="Remove line"
               onClick={p.onRemove}
-              className="flex h-6 w-6 items-center justify-center rounded-md text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
+              className="flex h-6 w-6 items-center justify-center rounded-md text-[#8e8e9d] hover:bg-[#fdeceb] hover:text-[#b42318]"
             >
               <Trash2 className="h-3.25 w-3.25" />
             </button>
@@ -994,7 +1048,7 @@ function InternalNoteInput({
           onChange={(e) => field.onChange(e.target.value || undefined)}
           maxLength={500}
           placeholder="Internal note (not printed)"
-          className="mt-1 w-full rounded-md border border-dashed border-[#e4e4e9] bg-transparent px-2 py-1 text-[11.5px] text-[#5b5b6b] outline-none placeholder:text-[#b4b4c0] focus:border-[#a78bfa]"
+          className="mt-1 w-full rounded-md border border-dashed border-[#e4e4e9] bg-transparent px-2 py-1 text-[11.5px] text-[#4b4b5a] outline-none placeholder:text-[#b4b4c0] focus:border-[#a78bfa]"
         />
       )}
     />
@@ -1069,7 +1123,7 @@ function DiscountStack(p: RenderProps): React.ReactElement {
             type="button"
             onClick={p.onToggle}
             aria-label="Collapse discounts"
-            className="flex h-6 w-6 items-center justify-center rounded-md text-[#a3a3b2] hover:bg-white hover:text-[#3f1490]"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-[#8e8e9d] hover:bg-white hover:text-[#3f1490]"
           >
             <ChevronUp className="h-3.5 w-3.5" />
           </button>
@@ -1078,7 +1132,7 @@ function DiscountStack(p: RenderProps): React.ReactElement {
 
       <div className="flex min-w-0 flex-col gap-[9px] px-4 py-[13px]">
         <div
-          className={`${MONO} hidden grid-cols-[22px_minmax(0,1fr)_76px_124px_120px_28px] gap-x-2 pb-0.5 text-[9.5px] uppercase tracking-[.09em] text-[#a3a3b2] min-[1240px]:grid`}
+          className={`${MONO} hidden grid-cols-[22px_minmax(0,1fr)_76px_124px_120px_28px] gap-x-2 pb-0.5 text-[9.5px] uppercase tracking-[.09em] text-[#8e8e9d] min-[1240px]:grid`}
         >
           <span />
           <span>Discount</span>
@@ -1094,7 +1148,7 @@ function DiscountStack(p: RenderProps): React.ReactElement {
               key={field.id}
               className="grid grid-cols-[22px_minmax(0,1fr)_76px_124px_120px_28px] items-center gap-x-2"
             >
-              <span className={`${MONO} text-center text-[10.5px] text-[#a3a3b2]`}>{di + 1}</span>
+              <span className={`${MONO} text-center text-[10.5px] text-[#8e8e9d]`}>{di + 1}</span>
 
               <Controller
                 name={`lines.${index}.discounts.${di}.name`}
@@ -1165,7 +1219,7 @@ function DiscountStack(p: RenderProps): React.ReactElement {
                   type="button"
                   aria-label="Remove discount"
                   onClick={() => p.removeDiscount(di)}
-                  className="flex h-[22px] w-[22px] items-center justify-center rounded-[5px] text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                  className="flex h-[22px] w-[22px] items-center justify-center rounded-[5px] text-[#8e8e9d] hover:bg-[#fdeceb] hover:text-[#b42318]"
                 >
                   <Trash2 className="h-3 w-3" />
                 </button>
@@ -1173,7 +1227,7 @@ function DiscountStack(p: RenderProps): React.ReactElement {
             </div>
           ))}
           {p.discountFields.length === 0 && (
-            <span className="py-0.5 pl-[30px] text-[12px] text-[#8b8b9b]">
+            <span className="py-0.5 pl-[30px] text-[12px] text-[#6f6f7f]">
               No discounts on this line — it will be purchased at SRP.
             </span>
           )}
@@ -1192,7 +1246,7 @@ function DiscountStack(p: RenderProps): React.ReactElement {
             <span className={`${MONO} text-[15px] font-semibold text-[#3f1490]`}>
               ₱{peso(p.unit)}
             </span>
-            <span className="text-[11.5px] text-[#8b8b9b]">× {p.qty}</span>
+            <span className="text-[11.5px] text-[#6f6f7f]">× {p.qty}</span>
             <span className={`${MONO} text-[13px] font-semibold`}>₱{peso(p.lineTotal)}</span>
           </span>
         </div>
@@ -1212,7 +1266,7 @@ function DiscountUnit({
 }): React.ReactElement {
   const type = useWatch({ control, name: `lines.${index}.discounts.${di}.type` })
   return (
-    <span className={`${MONO} text-[11px] text-[#a3a3b2]`}>{type === 'amount' ? '₱' : '%'}</span>
+    <span className={`${MONO} text-[11px] text-[#8e8e9d]`}>{type === 'amount' ? '₱' : '%'}</span>
   )
 }
 
@@ -1237,7 +1291,7 @@ function LineCardNarrow(p: RenderProps): React.ReactElement {
                   </span>
                   {p.isFreebie && <FreebieTag />}
                 </div>
-                <span className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>{label?.sku ?? ''}</span>
+                <span className={`${MONO} text-[10.5px] text-[#6f6f7f]`}>{label?.sku ?? ''}</span>
                 <InternalNoteInput index={index} control={control} />
               </>
             ) : (
@@ -1261,7 +1315,7 @@ function LineCardNarrow(p: RenderProps): React.ReactElement {
               type="button"
               aria-label="Remove line"
               onClick={p.onRemove}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#8e8e9d] hover:bg-[#fdeceb] hover:text-[#b42318]"
             >
               <Trash2 className="h-3.75 w-3.75" />
             </button>
@@ -1278,7 +1332,7 @@ function LineCardNarrow(p: RenderProps): React.ReactElement {
                   type="button"
                   aria-label="Decrease quantity"
                   onClick={() => field.onChange(Math.max(0, (Number(field.value) || 0) - 1))}
-                  className="flex h-10 w-11 items-center justify-center border-r border-[#e4e4e9] bg-white text-[16px] text-[#5b5b6b]"
+                  className="flex h-10 w-11 items-center justify-center border-r border-[#e4e4e9] bg-white text-[16px] text-[#4b4b5a]"
                 >
                   −
                 </button>
@@ -1295,7 +1349,7 @@ function LineCardNarrow(p: RenderProps): React.ReactElement {
                   type="button"
                   aria-label="Increase quantity"
                   onClick={() => field.onChange((Number(field.value) || 0) + 1)}
-                  className="flex h-10 w-11 items-center justify-center border-l border-[#e4e4e9] bg-white text-[16px] text-[#5b5b6b]"
+                  className="flex h-10 w-11 items-center justify-center border-l border-[#e4e4e9] bg-white text-[16px] text-[#4b4b5a]"
                 >
                   +
                 </button>
@@ -1303,7 +1357,7 @@ function LineCardNarrow(p: RenderProps): React.ReactElement {
             )}
           />
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
-            <span className="shrink-0 text-[12px] text-[#5b5b6b]">Unit price</span>
+            <span className="shrink-0 text-[12px] text-[#4b4b5a]">Unit price</span>
             <div className="min-w-0 flex-1">
               <UnitPriceCell {...p} />
             </div>
@@ -1311,7 +1365,7 @@ function LineCardNarrow(p: RenderProps): React.ReactElement {
         </div>
 
         <div className="flex items-center gap-2.5">
-          <span className="text-[12px] text-[#5b5b6b]">SRP</span>
+          <span className="text-[12px] text-[#4b4b5a]">SRP</span>
           <Controller
             name={`lines.${index}.srp`}
             control={control}
@@ -1356,7 +1410,7 @@ function LineCardNarrow(p: RenderProps): React.ReactElement {
       <div className="flex items-center justify-between gap-2.5 border-t border-[#eeeef1] bg-[#fbfbfc] px-3 py-2.5">
         <FreebieToggleNarrow index={index} control={control} setValue={p.setValue} />
         <div className="flex items-baseline gap-2">
-          <span className="text-[11.5px] text-[#8b8b9b]">Line total</span>
+          <span className="text-[11.5px] text-[#6f6f7f]">Line total</span>
           <span
             className={`${MONO} text-[13px] font-semibold ${
               p.isFreebie ? 'text-[#0b6644]' : 'text-[#17171c]'
@@ -1397,7 +1451,7 @@ function FreebieToggleNarrow({
           className={`flex min-h-9 items-center gap-1.5 rounded-lg border px-[11px] py-1.5 text-[12px] ${
             field.value
               ? 'border-[#b6e0cd] bg-[#e7f5ef] text-[#0b6644]'
-              : 'border-[#d3d3db] bg-white text-[#5b5b6b]'
+              : 'border-[#d3d3db] bg-white text-[#4b4b5a]'
           }`}
         >
           {field.value ? '✓ Freebie' : 'Mark as freebie'}

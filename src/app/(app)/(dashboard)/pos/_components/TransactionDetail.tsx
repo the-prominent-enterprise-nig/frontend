@@ -26,9 +26,11 @@ import { type SessionUser, can, canAccessModule } from '@/src/libs/guards/permis
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { showToast } from '@/src/components/ui/toast'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
-import { deliveryFeeReceiptTenderLabel } from '../checkout/_utils/delivery'
+import PosExceptionPanel from '@/src/components/common/PosExceptionPanel'
+import { deliveryFeeReceiptTenderLabel, qrTenderLabel } from '../checkout/_utils/delivery'
 import { outputVatLabel } from '@/src/libs/tax/output-vat'
 import { TaxOverrideSummary } from '@/src/components/accounting/TaxOverride'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
@@ -122,10 +124,12 @@ export function TransactionDetail({
           >
             <X size={18} />
           </button>
-          {/* Lead with the Sales Invoice No. — that's the document anyone
-              looking this up actually has in hand. Falls back to the
-              internal transaction number for rows without one (refunds,
-              and sales predating the required-SI rule). */}
+          {/* Lead with the Sales Invoice No. (or the Delivery Receipt No. on a
+              DR sale, which is stored here too and labelled in the rows
+              below) — that's the document anyone looking this up actually
+              has in hand. Falls back to the internal transaction number for
+              rows without one (refunds, and sales predating the
+              required-SI rule). */}
           <h2 className="mb-1 text-lg font-bold text-gray-900">
             {tx.salesInvoiceNumber ?? tx.transactionNumber}
           </h2>
@@ -246,6 +250,10 @@ export function TransactionDetail({
                 )}
               </div>
 
+              {/* Scenario 71 — a price override / typed terms / waived credit
+                  application, with its reason and note. */}
+              {tx.exception && <PosExceptionPanel exception={tx.exception} />}
+
               <div className="rounded-xl bg-gray-50 p-4 text-sm space-y-1">
                 <Row label="Subtotal" value={formatCurrency(tx.subtotal)} />
                 {(() => {
@@ -325,10 +333,6 @@ export function TransactionDetail({
                 {tx.isXDeal && tx.xDealReference && (
                   <Row label="X-Deal Reference" value={tx.xDealReference} />
                 )}
-                {/* Only when it isn't already the heading above. */}
-                {tx.salesInvoiceNumber && (
-                  <Row label="Transaction No." value={tx.transactionNumber} muted />
-                )}
                 <div className="border-t border-gray-200 pt-2">
                   <Row label="Total" value={formatCurrency(tx.totalAmount)} bold />
                 </div>
@@ -340,7 +344,9 @@ export function TransactionDetail({
                   {tx.payments.map((p) => (
                     <div key={p.id} className="flex justify-between gap-2 py-1 text-sm">
                       <span className="capitalize text-gray-600">
-                        {p.paymentMethod.replace('_', ' ')}
+                        {p.paymentMethod === 'qr'
+                          ? qrTenderLabel(p.paymentMethodOption?.name)
+                          : p.paymentMethod.replace('_', ' ')}
                         {p.referenceNumber && (
                           <span className="block font-mono text-[10px] normal-case text-gray-400">
                             CR# {p.referenceNumber}
@@ -656,7 +662,7 @@ function RefundModal({
       const itemNameSummary =
         transaction.lines && transaction.lines.length === 1
           ? transaction.lines[0].itemName
-          : `${transaction.transactionNumber} (${transaction.lines?.length ?? 0} items)`
+          : `${saleDocNo(transaction)} (${transaction.lines?.length ?? 0} items)`
 
       usePosPendingRefundStore.getState().add({
         returnRefundRequestId,
@@ -669,7 +675,7 @@ function RefundModal({
 
       showToast({
         title: 'Refund submitted',
-        description: `${transaction.transactionNumber} — pending manager approval before funds are released.`,
+        description: `${saleDocNo(transaction)} — pending manager approval before funds are released.`,
         status: 'info',
       })
       setSubmitting(false)
@@ -696,7 +702,7 @@ function RefundModal({
             </div>
             <div>
               <h2 className="text-lg font-bold text-gray-900">Refund Transaction</h2>
-              <p className="font-mono text-xs text-gray-500">{transaction.transactionNumber}</p>
+              <p className="font-mono text-xs text-gray-500">{saleDocNo(transaction)}</p>
             </div>
           </div>
 
@@ -823,7 +829,7 @@ function installmentInvoiceLabel(inv: PosTransactionInvoice): string {
 
 const INVOICE_STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
-  SENT: 'Due',
+  SENT: 'To pay',
   PARTIAL: 'Partially Paid',
   PAID: 'Paid',
   OVERDUE: 'Overdue',

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { MoreHorizontal, MoreVertical } from 'lucide-react'
+import { ChevronDown, MoreHorizontal, MoreVertical } from 'lucide-react'
 import type { ComponentType } from 'react'
 
 export type RowMenuItem = {
@@ -27,8 +27,12 @@ export function RowActionsMenu({
   items,
   horizontal = false,
   bordered = false,
+  trigger,
 }: {
   items: RowMenuItem[]
+  /** A labelled button ("Transfer ▾") in place of the dots, when the menu
+   * is a primary action with a few variants rather than overflow. */
+  trigger?: { label: string; icon?: ComponentType<{ className?: string }>; className: string }
   /** Three dots in a row (…) instead of a column, for page headers. */
   horizontal?: boolean
   /** Outlined button sized to sit beside the header's other buttons. */
@@ -69,14 +73,28 @@ export function RowActionsMenu({
         type="button"
         onClick={handleToggle}
         className={
-          bordered
-            ? 'inline-flex items-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-700 hover:bg-gray-50'
-            : 'rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700'
+          trigger
+            ? trigger.className
+            : bordered
+              ? 'inline-flex items-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-gray-700 hover:bg-gray-50'
+              : 'rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700'
         }
-        title="More actions"
-        aria-label="More actions"
+        title={trigger ? undefined : 'More actions'}
+        aria-label={trigger ? undefined : 'More actions'}
+        aria-haspopup="menu"
+        aria-expanded={open}
       >
-        {horizontal ? <MoreHorizontal className="h-4 w-4" /> : <MoreVertical className="h-4 w-4" />}
+        {trigger ? (
+          <>
+            {trigger.icon && <trigger.icon className="h-3.5 w-3.5" />}
+            {trigger.label}
+            <ChevronDown className="h-3.5 w-3.5" />
+          </>
+        ) : horizontal ? (
+          <MoreHorizontal className="h-4 w-4" />
+        ) : (
+          <MoreVertical className="h-4 w-4" />
+        )}
       </button>
 
       {open && pos && (

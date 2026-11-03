@@ -8,8 +8,10 @@ import {
   ClipboardList,
   ClipboardX,
   PackageCheck,
+  PackagePlus,
   PackageX,
   ShieldCheck,
+  Truck,
   ShoppingCart,
   Undo2,
   type LucideIcon,
@@ -19,16 +21,17 @@ import { can, type SessionUser } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 import type { ProcurementHubPermissions } from '../../purchase-orders/_permissions/procurement-hub-permissions'
-import { PurchaseOrderList } from '../../purchase-orders/_components/PurchaseOrderList'
-import { PurchaseRequestList } from '../../purchase-requests/_components/PurchaseRequestList'
 import ReceivingReportsTab from '../../goods-receiving/_components/ReceivingReportsTab'
 import { TransferList } from '../../transfers/_components'
+import StockRequestTab from '../../transfers/_components/StockRequestTab'
 import { ReturnList } from '../../returns/_components'
 import { QualityHoldList } from '../../quality-hold/_components'
 import { BackordersPageView } from '../../backorders/_components'
 import { AdjustmentList } from '../../adjustments/_components'
 import DebitMemoList from '../../debit-memos/_components/DebitMemoList'
 import UdsList from '../../uds/_components/UdsList'
+import DeliveryReceiptList from '../../delivery-receipts/_components/DeliveryReceiptList'
+import { PurchaseOrderList } from '../../purchase-orders/_components/PurchaseOrderList'
 
 type TransactionTab = NavTab & { icon: LucideIcon; permissions: string[]; hidden?: boolean }
 
@@ -44,22 +47,37 @@ const TABS: TransactionTab[] = [
     permissions: [INVENTORY_PERMISSIONS.RECEIVE_READ],
   },
   {
+    // New stock transfer requests are raised here; the Stock Transfer tab
+    // lists and works them.
+    id: 'stock-request',
+    label: 'Stock Request',
+    icon: PackagePlus,
+    permissions: [INVENTORY_PERMISSIONS.TRANSFERS_CREATE],
+  },
+  {
+    // Kept as 'transfers' so existing ?tab=transfers links still land here.
     id: 'transfers',
     label: 'Stock Transfer',
     icon: ArrowLeftRight,
     permissions: [INVENTORY_PERMISSIONS.TRANSFERS_READ],
   },
   {
+    // Purchase requests are managed here too, in the list's open-requests section.
     id: 'purchase-orders',
     label: 'Purchase Order',
     icon: ShoppingCart,
     permissions: [PROCUREMENT_PERMISSIONS.PO_READ, PROCUREMENT_PERMISSIONS.PR_READ],
   },
   {
-    id: 'stock-requests',
-    label: 'Stock Request',
-    icon: ClipboardList,
-    permissions: [PROCUREMENT_PERMISSIONS.PR_READ],
+    // Scenario 72 — stock leaving without a sale.
+    id: 'delivery-receipts',
+    label: 'Delivery Receipt',
+    icon: Truck,
+    permissions: [
+      INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_READ,
+      INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_CREATE,
+      INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_APPROVE,
+    ],
   },
   {
     id: 'debit-memos',
@@ -123,6 +141,8 @@ function TabBody({
           <ReceivingReportsTab />
         </div>
       )
+    case 'stock-request':
+      return <StockRequestTab session={session} />
     case 'transfers':
       return <TransferList session={session} />
     case 'returns':
@@ -146,14 +166,15 @@ function TabBody({
           canViewCost={procurement.canViewCost}
           canViewApBill={procurement.canViewApBill}
           currentUserBranchId={session.branchId}
+          session={session}
         />
       )
-    case 'stock-requests':
-      return <PurchaseRequestList session={session} />
     case 'debit-memos':
       return <DebitMemoList session={session} />
     case 'uds':
       return <UdsList session={session} />
+    case 'delivery-receipts':
+      return <DeliveryReceiptList session={session} />
     default:
       return null
   }

@@ -29,6 +29,9 @@ import {
   UserCheck,
   AlertTriangle,
   ExternalLink,
+  Lock,
+  Repeat,
+  Pencil,
 } from 'lucide-react'
 import {
   DispatchTransferFormSchema,
@@ -41,6 +44,9 @@ import {
   RejectTransferFormValues,
   RejectManagerTransferFormSchema,
   RejectManagerTransferFormValues,
+  ProposeSubstitutionFormSchema,
+  ProposeSubstitutionFormValues,
+  ConfirmSubstitutionFormValues,
   TransferSummary,
 } from '@/src/schema/inventory/transfers'
 import type { ApiResponse } from '@/src/libs/api/client'
@@ -48,19 +54,37 @@ import { getTransferDocument } from '../_actions/get-transfer-document'
 import { printStockTransferDocument } from '@/src/libs/print/printInventoryDocument'
 import { QtyVarianceBadge } from '@/src/components/ui/QtyVarianceBadge'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
-import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import { ConfirmDialog, Modal } from '@/src/components/ui/Modal'
+import {
+  ItemSearchCombobox,
+  type ItemSearchMeta,
+} from '../../purchase-requests/_components/ItemSearchCombobox'
+import {
+  advanceOnScan,
+  serialScanProps,
+} from '../../purchase-orders/_components/receive-po/serialScan'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
-import { VehicleAutocompleteInput } from './VehicleAutocompleteInput'
+import { VehicleAutocompleteInput, type AutocompleteOption } from './VehicleAutocompleteInput'
 import { searchVehicles } from '../_actions/search-vehicles'
-import type { VehicleSummary } from '@/src/schema/inventory/vehicles'
+import { searchDrivers } from '../_actions/search-drivers'
 import { warehouseLabel } from '@/src/schema/inventory/warehouses'
 import { LocationName } from './transferStatus'
 import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
+import { formatAge } from '@/src/libs/format/date'
 
 /** A transfer line's unit, opening its history when the line has one. */
+/** Statuses in which a serial-tracked line has no unit yet because the
+ * source hasn't dispatched — the only time "Assigned at dispatch" is true. */
+const PRE_DISPATCH_STATUSES: string[] = [
+  'pending_manager_approval',
+  'requested',
+  'pending_hq_approval',
+  'draft',
+]
+
 function LineSerial({
   line,
 }: {
@@ -123,6 +147,11 @@ const STATUS_CONFIG = {
     icon: AlertTriangle,
   },
   cancelled: { label: 'Cancelled', color: 'bg-[#fdeceb] text-[#b42318]', icon: XCircle },
+  pending_substitution_confirmation: {
+    label: 'Substitution Proposed',
+    color: 'bg-[#f1ebfb] text-[#3f1490]',
+    icon: Repeat,
+  },
 }
 
 // A request can be withdrawn any time before physical movement starts
@@ -186,6 +215,7 @@ function ItemSerialGroup({
   itemLabel,
   fromWarehouseId,
   slotIndices,
+  pinnedSerials = [],
   canOverride,
   errors,
 }: {
@@ -195,6 +225,9 @@ function ItemSerialGroup({
   itemLabel: string
   fromWarehouseId: string | undefined
   slotIndices: number[]
+  /** Units the requester already picked (Scenario 71 item 18) — shown
+   * locked, never re-asked; the backend only re-verifies them. */
+  pinnedSerials?: string[]
   canOverride: boolean
   errors?: FieldErrors<DispatchTransferFormValues>['serialAssignments']
 }) {
@@ -287,11 +320,30 @@ function ItemSerialGroup({
   return (
     <div>
       <label className="mb-1 block text-xs font-medium text-zinc-600">
-        {itemLabel} <span className="text-red-500">*</span>{' '}
+        {itemLabel} {slotIndices.length > 0 && <span className="text-red-500">*</span>}{' '}
         <span className="font-normal text-zinc-400">
-          ({filledIndices.length} of {slotIndices.length} assigned)
+          {slotIndices.length === 0
+            ? `(all ${pinnedSerials.length} picked by the requester)`
+            : pinnedSerials.length > 0
+              ? `(${pinnedSerials.length} picked by the requester · ${filledIndices.length} of ${slotIndices.length} left to assign)`
+              : `(${filledIndices.length} of ${slotIndices.length} assigned)`}
         </span>
       </label>
+
+      {pinnedSerials.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          {pinnedSerials.map((sn) => (
+            <span
+              key={sn}
+              title="Picked by the requester — re-verified at dispatch, not chosen again"
+              className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-100 py-1 pl-2.5 pr-3 font-mono text-[13.5px] font-semibold text-[#17171c]"
+            >
+              <Lock className="h-3 w-3 text-zinc-400" aria-hidden />
+              {sn}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div>
         {firstEmptyIndex !== undefined && (
@@ -339,11 +391,23 @@ function ItemSerialGroup({
                 multiple
                 value={pickedSerialIds}
                 onChange={handleMultiSelectChange}
-                options={serialOptions.map((s) => ({ value: s.id, label: s.serialNumber }))}
+                options={serialOptions.map((s) => ({
+                  value: s.id,
+                  label: s.serialNumber,
+                  // Scenario 71 item 17 — the inbound age beside the serial
+                  // (the Serial Numbers list's "Inbound Age": since its
+                  // original RR), so the oldest unit can go out first.
+                  description: s.firstReceivedAt
+                    ? `Inbound ${formatAge(s.firstReceivedAt)}`
+                    : undefined,
+                }))}
                 loading={serialsQuery.isLoading}
                 loadingLabel="Loading serials…"
                 placeholder="Search serial number…"
                 summaryNoun="serials assigned"
+                // The dispatcher scans the unit off the shelf: a scan that
+                // names one serial is assigned as it lands, no click needed.
+                pickOnScan
               />
             )}
             {activeError && <p className="mt-1 text-xs text-red-600">{activeError}</p>}
@@ -382,7 +446,9 @@ function ItemSerialGroup({
             {filledIndices.map((i) => (
               <span
                 key={i}
-                className="inline-flex items-center gap-1.5 rounded-full bg-prominent-purple-100 py-1 pl-3 pr-1.5 text-xs font-medium text-prominent-purple-700"
+                // Scenario 71 item 20 — the serial is read off the screen and
+                // checked against a physical sticker: near-black, larger, mono.
+                className="inline-flex items-center gap-1.5 rounded-full border border-prominent-purple-200 bg-prominent-purple-50 py-1 pl-3 pr-1.5 font-mono text-[13.5px] font-semibold text-[#17171c]"
               >
                 {allAssignments[i]?.serialLabel || allAssignments[i]?.serialNumberId}
                 {allAssignments[i]?.override && (
@@ -404,6 +470,85 @@ function ItemSerialGroup({
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Gap 2 fix — an unlisted item that turns out to be serial-tracked (e.g. the
+ * wrong model arrived) now captures its actual serial(s) instead of being
+ * excluded from the picker outright. One box per unit, scan-friendly;
+ * duplicates are checked across every unlisted line on this receipt, since
+ * that is the scope the backend itself rejects a repeat within.
+ */
+function UnlistedSerialInputs({
+  control,
+  setValue,
+  index,
+  isDuplicate,
+}: {
+  control: Control<ReceiveTransferFormValues>
+  setValue: UseFormSetValue<ReceiveTransferFormValues>
+  index: number
+  isDuplicate: (index: number, unitIndex: number, value: string) => boolean
+}) {
+  const serials = useWatch({ control, name: `extraLines.${index}.serialNumbers` }) ?? []
+  const slots = serials.length > 0 ? serials : ['']
+
+  function commit(next: string[]): void {
+    setValue(`extraLines.${index}.serialNumbers`, next, { shouldValidate: false })
+    setValue(`extraLines.${index}.quantity`, next.filter((s) => s.trim()).length || 0, {
+      shouldValidate: false,
+    })
+  }
+
+  return (
+    <div className="mt-1.5 space-y-1.5 rounded-lg border border-zinc-100 bg-zinc-50 p-2">
+      {slots.map((value, unitIndex) => {
+        const duplicate = !!value.trim() && isDuplicate(index, unitIndex, value)
+        return (
+          <div key={unitIndex} className="flex items-center gap-1.5">
+            <input
+              {...serialScanProps}
+              value={value}
+              onChange={(e) => {
+                const next = slots.slice()
+                next[unitIndex] = e.target.value
+                commit(next)
+              }}
+              onKeyDown={advanceOnScan}
+              type="text"
+              autoComplete="off"
+              placeholder={`Serial ${unitIndex + 1}`}
+              className={`flex-1 rounded-md border px-2 py-1 text-xs outline-none ${
+                duplicate
+                  ? 'border-red-400 bg-red-50'
+                  : 'border-zinc-200 bg-white focus:border-prominent-purple-500'
+              }`}
+            />
+            {slots.length > 1 && (
+              <button
+                type="button"
+                onClick={() => commit(slots.filter((_, i) => i !== unitIndex))}
+                className="shrink-0 text-zinc-400 hover:text-red-600"
+                aria-label={`Remove serial ${unitIndex + 1}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            {duplicate && (
+              <span className="shrink-0 text-[11px] text-red-600">Already used above</span>
+            )}
+          </div>
+        )
+      })}
+      <button
+        type="button"
+        onClick={() => commit([...slots, ''])}
+        className="text-xs font-medium text-prominent-purple-700 hover:text-prominent-purple-800"
+      >
+        + Add another unit
+      </button>
     </div>
   )
 }
@@ -442,13 +587,7 @@ function SerialReceiveCorrection({
   })
   const correctionReason = useWatch({ control, name: `lines.${index}.correctionReason` }) ?? ''
 
-  // Hidden for now (2026-09-22) — "Wrong serial received?" correction entry
-  // point disabled at the developer's request, unconditionally, regardless
-  // of canOverrideSerial. Backend correction logic (typo-fix / unit-swap in
-  // transfers.service.ts's receive()) is untouched, just unreachable from
-  // this screen.
   if (!canOverrideSerial) return null
-  return null
 
   const activeMode: 'typo' | 'swap' | null = correctedSerialNumber
     ? 'typo'
@@ -602,10 +741,10 @@ function Fact({
 }) {
   return (
     <div className="min-w-0">
-      <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>{label}</p>
+      <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#6f6f7f]`}>{label}</p>
       <p
         className={`mt-1 truncate text-[13px] font-medium ${mono ? MONO : ''} ${
-          value ? 'text-[#17171c]' : 'text-[#8b8b9b]'
+          value ? 'text-[#17171c]' : 'text-[#6f6f7f]'
         }`}
       >
         {value || 'Not set'}
@@ -634,6 +773,8 @@ type Props = {
   // warehouse may belong to a different branch than theirs.
   canAccept: boolean
   canReject: boolean
+  canProposeSubstitution: boolean
+  canConfirmSubstitution: boolean
   canDispatch: boolean
   /** Scenario 29 SN-01 — dispatch a mismatched serial past the normal
    * in-stock/source-warehouse check, with a required reason. */
@@ -644,13 +785,28 @@ type Props = {
   canManagerApprove: boolean
   canManagerReject: boolean
   currentUserBranchId?: string | null
-  // The region of the caller's own branch — drives whether they can act on
-  // a transfer touching a real standalone warehouse (branchId: null,
+  // The dispatcher is never the receiver (WH-01) — compared against the
+  // transfer's dispatchedById to withhold Receive from whoever shipped it.
+  currentUserId?: string
+  // The region of the caller's own warehouse branch — drives whether they can
+  // act on a transfer touching a real standalone warehouse (branchId: null,
   // Scenario 27), which exact branch-ownership can never match. null/
-  // undefined for an unrestricted caller, or a branch with no region set.
+  // undefined for an unrestricted caller or anyone on a store branch.
   currentUserRegion?: string | null
   onAccept: (id: string) => Promise<ApiResponse<unknown>>
   onReject: (id: string, data: RejectTransferFormValues) => Promise<ApiResponse<unknown>>
+  onProposeSubstitution: (
+    id: string,
+    lineId: string,
+    data: ProposeSubstitutionFormValues
+  ) => Promise<ApiResponse<unknown>>
+  onConfirmSubstitution: (
+    id: string,
+    lineId: string,
+    data: ConfirmSubstitutionFormValues
+  ) => Promise<ApiResponse<unknown>>
+  isProposingSubstitution: boolean
+  isConfirmingSubstitution: boolean
   onDispatch: (id: string, data?: DispatchTransferFormValues) => Promise<ApiResponse<unknown>>
   onReceive: (id: string, data: ReceiveTransferFormValues) => Promise<ApiResponse<unknown>>
   onCancel: (id: string) => Promise<ApiResponse<unknown>>
@@ -685,6 +841,8 @@ export default function TransferDetailModal({
   onClose,
   canAccept,
   canReject,
+  canProposeSubstitution,
+  canConfirmSubstitution,
   canDispatch,
   canOverrideSerial,
   canReceive,
@@ -693,9 +851,14 @@ export default function TransferDetailModal({
   canManagerApprove,
   canManagerReject,
   currentUserBranchId,
+  currentUserId,
   currentUserRegion,
   onAccept,
   onReject,
+  onProposeSubstitution,
+  onConfirmSubstitution,
+  isProposingSubstitution,
+  isConfirmingSubstitution,
   onDispatch,
   onReceive,
   onCancel,
@@ -720,6 +883,9 @@ export default function TransferDetailModal({
   const [showRejectHqForm, setShowRejectHqForm] = useState(false)
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [showRejectManagerForm, setShowRejectManagerForm] = useState(false)
+  // The dispatch form only validates; the stock moves once the dispatcher
+  // confirms in the dispatch modal — a dispatch can't be undone.
+  const [pendingDispatch, setPendingDispatch] = useState<DispatchTransferFormValues | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [isPrinting, setIsPrinting] = useState(false)
 
@@ -750,19 +916,34 @@ export default function TransferDetailModal({
   // itself watches that.
   const serialGroups = useMemo(() => {
     const order: string[] = []
-    const byItemId = new Map<string, { itemLabel: string; slotIndices: number[] }>()
-    serialAssignmentFields.forEach((f, i) => {
-      const key = f.itemId ?? ''
-      const existing = byItemId.get(key)
-      if (existing) {
-        existing.slotIndices.push(i)
-      } else {
-        byItemId.set(key, { itemLabel: f.itemLabel ?? 'Item', slotIndices: [i] })
+    const byItemId = new Map<
+      string,
+      { itemLabel: string; slotIndices: number[]; pinnedSerials: string[] }
+    >()
+    const groupFor = (key: string, label: string) => {
+      let g = byItemId.get(key)
+      if (!g) {
+        g = { itemLabel: label, slotIndices: [], pinnedSerials: [] }
+        byItemId.set(key, g)
         order.push(key)
       }
+      return g
+    }
+    // Units the requester pinned at request time (Scenario 71 item 18) sit
+    // in the same item's group, shown locked — so a part-picked line reads
+    // as "2 picked, pick 1 more" rather than asking for units again.
+    ;(transfer?.lines ?? []).forEach((line) => {
+      if (!line.item?.isSerialTracked || !line.serialNumberId) return
+      const key = line.itemId ?? line.item?.id ?? ''
+      groupFor(key, line.item?.name ?? 'Item').pinnedSerials.push(
+        line.serialNumber?.serialNumber ?? line.serialNumberId
+      )
+    })
+    serialAssignmentFields.forEach((f, i) => {
+      groupFor(f.itemId ?? '', f.itemLabel ?? 'Item').slotIndices.push(i)
     })
     return order.map((itemId) => ({ itemId, ...byItemId.get(itemId)! }))
-  }, [serialAssignmentFields])
+  }, [serialAssignmentFields, transfer?.lines])
 
   const receiveForm = useForm<ReceiveTransferFormValues>({
     resolver: zodResolver(ReceiveTransferFormSchema),
@@ -785,6 +966,23 @@ export default function TransferDetailModal({
     control: receiveForm.control,
     name: 'extraLines',
   })
+  const watchedExtraLines = useWatch({ control: receiveForm.control, name: 'extraLines' }) ?? []
+  function isDuplicateExtraSerial(lineIndex: number, unitIndex: number, value: string): boolean {
+    const needle = value.trim()
+    let seenSelf = false
+    for (let li = 0; li < watchedExtraLines.length; li++) {
+      const serials = watchedExtraLines[li]?.serialNumbers ?? []
+      for (let ui = 0; ui < serials.length; ui++) {
+        if (serials[ui]?.trim() !== needle) continue
+        if (li === lineIndex && ui === unitIndex && !seenSelf) {
+          seenSelf = true
+          continue
+        }
+        return true
+      }
+    }
+    return false
+  }
 
   const rejectHqForm = useForm<RejectHqTransferFormValues>({
     resolver: zodResolver(RejectHqTransferFormSchema),
@@ -799,6 +997,14 @@ export default function TransferDetailModal({
   const rejectManagerForm = useForm<RejectManagerTransferFormValues>({
     resolver: zodResolver(RejectManagerTransferFormSchema),
     defaultValues: { reason: '' },
+  })
+
+  // Gap: the warehouse's only lever used to be rejecting the whole request —
+  // this opens a per-line proposal form instead. null = closed.
+  const [proposingLineId, setProposingLineId] = useState<string | null>(null)
+  const proposeForm = useForm<ProposeSubstitutionFormValues>({
+    resolver: zodResolver(ProposeSubstitutionFormSchema),
+    defaultValues: { proposedItemId: '', proposedQuantity: 1, reason: '' },
   })
 
   if (!isOpen) return null
@@ -823,10 +1029,25 @@ export default function TransferDetailModal({
     canAccept && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
   const canRejectThis =
     canReject && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
+  const canProposeSubstitutionThis =
+    canProposeSubstitution &&
+    inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
+  const canConfirmSubstitutionThis =
+    canConfirmSubstitution &&
+    inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
   const canDispatchThis =
     canDispatch && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
-  const canReceiveThis =
+  // Mirrors the backend's receive() refusal: whoever dispatched a transfer
+  // can't also confirm it arrived, even head office, which inScope lets
+  // through. A transfer dispatched before dispatchedById existed has none.
+  const dispatchedByMe = !!transfer?.dispatchedById && transfer.dispatchedById === currentUserId
+  const canReceiveInScope =
     canReceive && inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+  const canReceiveThis = canReceiveInScope && !dispatchedByMe
+  const receiveBlockedForDispatcher =
+    canReceiveInScope &&
+    dispatchedByMe &&
+    (status === 'in_transit' || status === 'partially_received')
   // Manager approval is scoped to the TO warehouse's branch too — it's the
   // requester's own branch manager signing off, same direction as receive.
   const canManagerApproveThis =
@@ -861,7 +1082,15 @@ export default function TransferDetailModal({
 
   // Only worth a column when at least one line actually carries a serial —
   // otherwise every row just shows a distracting "—".
-  const hasSerialLine = !!transfer?.lines?.some((line) => line.serialNumber?.serialNumber)
+  // Scenario 71 item 19 — the column shows for any serial-tracked line, not
+  // only once a serial is assigned, so a pre-dispatch transfer says which
+  // lines will carry one ("Assigned at dispatch") instead of hiding it.
+  // Only before dispatch is a missing serial "to come" — afterwards (or on a
+  // rejected/cancelled request that never left) it is simply absent.
+  const awaitingDispatch = PRE_DISPATCH_STATUSES.includes(status)
+  const hasSerialLine = !!transfer?.lines?.some(
+    (line) => line.serialNumber?.serialNumber || line.item?.isSerialTracked
+  )
   const isReceivedStatus = status === 'received' || status === 'partially_received'
   const totalUnits = (transfer?.lines ?? []).reduce((sum, l) => sum + Number(l.quantity), 0)
   const receivedUnits = (transfer?.lines ?? []).reduce(
@@ -909,8 +1138,22 @@ export default function TransferDetailModal({
   // here for one of those, even for a serial-tracked line.
   const isUdsLinked = (transfer?.linkedUds?.length ?? 0) > 0
 
+  // An inline form (dispatch, receive) takes over the drawer's actions — the
+  // footer and the header's Edit step aside while one is open. The cancel
+  // confirm and the reject reasons are modals over the drawer, so they
+  // aren't among these.
+  const inlineFormOpen = showDispatchForm || showReceiveForm
+
+  // The modal starts from the list row, whose lines carry no `item` — so no
+  // `isSerialTracked` — until the detail query lands. openDispatchForm builds
+  // its serial slots once, from whatever it is handed at the click, so a click
+  // in that window built none: no "Assign Serial Numbers" section, and a
+  // dispatch the server then refused for missing serials. Only open the form
+  // once the lines actually say what they are.
+  const lineDetailReady = !isLoading && (transfer?.lines ?? []).every((line) => line.item)
+
   function openDispatchForm() {
-    if (!transfer) return
+    if (!transfer || !lineDetailReady) return
     // One entry per serial-tracked StockTransferLine (the backend's own
     // per-line invariant), but ItemSerialGroup below groups these by itemId
     // and shows one search box per item — so no per-line "(i of N)" label
@@ -941,8 +1184,9 @@ export default function TransferDetailModal({
     setShowDispatchForm(true)
   }
 
-  async function handleDispatchSubmit(data: DispatchTransferFormValues) {
-    if (!transfer) return
+  async function handleDispatchConfirmed() {
+    if (!transfer || !pendingDispatch) return
+    const data = pendingDispatch
     const result = await onDispatch(transfer.id, {
       expectedArrival: data.expectedArrival,
       notes: data.notes || undefined,
@@ -959,8 +1203,11 @@ export default function TransferDetailModal({
       driverName: data.driverName?.trim() || undefined,
       driverPhone: data.driverPhone?.trim() || undefined,
       vehiclePlate: data.vehiclePlate,
-      carrierName: data.carrierName,
+      carrierName: data.carrierName?.trim() || undefined,
     })
+    // Closed either way: on a refusal the toast says why and the form is
+    // still there to correct.
+    setPendingDispatch(null)
     if (result.success) {
       setShowDispatchForm(false)
       dispatchForm.reset()
@@ -971,10 +1218,12 @@ export default function TransferDetailModal({
     if (!transfer) return
     // Only lines not yet at their full dispatched quantity are actionable —
     // on a first receive that's every line; on a reopened partially_received
-    // transfer it's just what's still short. Default each to its full
-    // remaining amount — the common case is everything arrived; the user
-    // reduces the number or unchecks a serial only for the exceptional
-    // shortfall.
+    // transfer it's just what's still short. Serial lines start unticked
+    // (Scenario 71 item 23): ticking each unit is the receiver saying they
+    // physically saw it, so a pre-ticked box would let a delivery be
+    // confirmed unseen — "Mark all received" keeps a complete one to a
+    // click. Quantity lines still default to the full remaining amount;
+    // there is no per-unit sighting to confirm there.
     const outstanding = (transfer.lines ?? []).filter(
       (line) => Number(line.receivedQuantity ?? 0) < Number(line.quantity)
     )
@@ -999,7 +1248,9 @@ export default function TransferDetailModal({
         itemLabel:
           (line.id && labelByLineId.get(line.id)) || line.item?.name || line.itemId || undefined,
         itemId: line.itemId ?? line.item?.id ?? '',
-        quantityReceived: Number(line.quantity) - Number(line.receivedQuantity ?? 0),
+        quantityReceived: line.serialNumberId
+          ? 0
+          : Number(line.quantity) - Number(line.receivedQuantity ?? 0),
       })),
       extraLines: [],
     })
@@ -1008,6 +1259,16 @@ export default function TransferDetailModal({
 
   async function handleReceiveSubmit(data: ReceiveTransferFormValues) {
     if (!transfer) return
+    // With serials unticked by default, an untouched form would post a
+    // receipt of nothing — refuse it rather than record an empty RR.
+    const receivedAny =
+      data.lines.some((l) => Number(l.quantityReceived) > 0) || (data.extraLines?.length ?? 0) > 0
+    if (!receivedAny) {
+      receiveForm.setError('root', {
+        message: 'Tick at least one unit (or enter a quantity) to record a receipt.',
+      })
+      return
+    }
     const result = await onReceive(transfer.id, {
       ...data,
       notes: data.notes || undefined,
@@ -1066,28 +1327,52 @@ export default function TransferDetailModal({
     }
   }
 
+  async function handleProposeSubmit(data: ProposeSubstitutionFormValues) {
+    if (!transfer || !proposingLineId) return
+    const result = await onProposeSubstitution(transfer.id, proposingLineId, data)
+    if (result.success) {
+      setProposingLineId(null)
+      proposeForm.reset()
+    }
+  }
+
+  async function handleConfirmDecision(lineId: string, decision: 'accept' | 'reject') {
+    if (!transfer) return
+    await onConfirmSubstitution(transfer.id, lineId, { decision })
+  }
+
   const fieldClass =
     'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
-  // Fleet roster (Vehicle model) lookup for the dispatch form — scoped to
-  // the source branch a vehicle is on file for, same as the branch the
+  // Fleet roster (drivers and vehicles) lookups for the dispatch form — scoped
+  // to the source branch they are on file for, same as the branch the
   // dispatching stock is leaving from. A caravan has no fleet of its own
-  // (vehicles are registered to real branches), so stock leaving a caravan
-  // goes out on its host branch's vehicles.
+  // (drivers and vehicles are registered to real branches), so stock leaving a
+  // caravan goes out on its host branch's drivers and vehicles.
   const fromBranch = transfer?.fromWarehouse?.branch
   const dispatchFromBranchId = fromBranch?.isTemporary
     ? (fromBranch.hostBranch?.id ?? fromBranch.id)
     : fromBranch?.id
-  async function searchDispatchVehicles(query: string) {
+  // Plates come from the vehicle roster, driver names from the driver roster —
+  // two separate lists, neither tied to the other (a driver is not assigned to
+  // a plate; who drives what varies per trip). Phone/license/carrier stay
+  // manual, they are not on either roster.
+  async function searchDispatchVehicles(query: string): Promise<AutocompleteOption[]> {
     const result = await searchVehicles({ q: query, branchId: dispatchFromBranchId })
-    return result.success && result.data ? result.data : []
+    if (!result.success || !result.data) return []
+    return result.data.map((v) => ({ id: v.id, label: v.plateNo, sublabel: v.tag }))
   }
-  // Picking a roster entry from either field fills both — driverName and
-  // vehiclePlate are the only two fields the Vehicle model actually carries
-  // (phone/license/carrier stay manual, they're not in the fleet sheet).
-  function pickDispatchVehicle(vehicle: VehicleSummary) {
-    dispatchForm.setValue('driverName', vehicle.driverName ?? '', { shouldValidate: true })
-    dispatchForm.setValue('vehiclePlate', vehicle.plateNo, { shouldValidate: true })
+  async function searchDispatchDrivers(query: string): Promise<AutocompleteOption[]> {
+    const result = await searchDrivers({ q: query, branchId: dispatchFromBranchId })
+    if (!result.success || !result.data) return []
+    return result.data.map((d) => ({ id: d.id, label: d.name }))
+  }
+  // Scenario 71 item 22 — a pick fills only the field it is for.
+  function pickDispatchVehicle(option: AutocompleteOption) {
+    dispatchForm.setValue('vehiclePlate', option.label, { shouldValidate: true })
+  }
+  function pickDispatchDriver(option: AutocompleteOption) {
+    dispatchForm.setValue('driverName', option.label, { shouldValidate: true })
   }
 
   return (
@@ -1100,15 +1385,15 @@ export default function TransferDetailModal({
     <div onClick={onClose} className="fixed inset-0 z-50 flex justify-end bg-[#17171c]/40">
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`${PLEX} flex h-full w-full max-w-[min(860px,94vw)] flex-col bg-white text-[#17171c] antialiased shadow-[-24px_0_60px_-30px_rgba(10,4,26,0.5)]`}
+        className={`${PLEX} flex h-full w-full max-w-[min(1200px,96vw)] flex-col bg-white text-[#17171c] antialiased shadow-[-24px_0_60px_-30px_rgba(10,4,26,0.5)]`}
       >
         {/* Header — the transfer's own reference is the title, the way the
-            design has it; "Transfer Details" stays as the dialog's accessible
+            design has it; "Request Details" stays as the dialog's accessible
             name (and the anchor e2e opens the drawer on). */}
         <div className="border-b border-[#e4e4e9] px-6 pb-3 pt-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="sr-only">Transfer Details</h2>
+              <h2 className="sr-only">Request Details</h2>
               <div className="flex items-center gap-2.5">
                 <p className={`${MONO} truncate text-[19px] font-semibold tracking-[-0.02em]`}>
                   {transfer?.transferNumber ??
@@ -1125,7 +1410,7 @@ export default function TransferDetailModal({
                 )}
               </div>
               {transfer && (
-                <p className="mt-1 truncate text-[12.5px] text-[#5b5b6b]">
+                <p className="mt-1 truncate text-[12.5px] text-[#4b4b5a]">
                   Requested {formatDateOnly(transfer.createdAt ?? transfer.transferDate)}
                   {transfer.requestedByName ? ` by ${transfer.requestedByName}` : ''}
                 </p>
@@ -1135,12 +1420,30 @@ export default function TransferDetailModal({
               type="button"
               onClick={onClose}
               aria-label="Close dialog"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#e4e4e9] text-[#5b5b6b] hover:bg-[#f7f7f8] hover:text-[#17171c]"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#e4e4e9] text-[#4b4b5a] hover:bg-[#f7f7f8] hover:text-[#17171c]"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
-          {transfer && <TransferStageTrail transfer={transfer} status={status} />}
+          {transfer && (
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <TransferStageTrail transfer={transfer} status={status} />
+              {/* Edit acts on the request itself, so it rides on its
+                  progress row — an outlined button, not a text link (WH-02).
+                  Cancel sits with the footer's actions. Hidden while an
+                  inline form is open, same as the footer. */}
+              {!inlineFormOpen && canEditThis && onEdit && (
+                <button
+                  type="button"
+                  onClick={() => onEdit(transfer)}
+                  className="ml-auto flex items-center gap-1.5 rounded-lg border border-[#ddd0f7] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-[#f5f0ff]"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit Request
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {isLoading || !transfer ? (
@@ -1156,15 +1459,15 @@ export default function TransferDetailModal({
                 <div className="min-w-0 flex-1">
                   {/* Scenario 56 — who asks whom: the destination requests,
                       the source supplies. */}
-                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>
+                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#6f6f7f]`}>
                     From · Supplying branch
                   </p>
                   <LocationName
                     wh={transfer.fromWarehouse}
                     className="mt-1 text-[16px] font-semibold"
-                    subtitleClassName="text-[12px] text-[#5b5b6b]"
+                    subtitleClassName="text-[12px] text-[#4b4b5a]"
                   />
-                  <p className="mt-0.5 truncate text-[11.5px] text-[#8b8b9b]">
+                  <p className="mt-0.5 truncate text-[11.5px] text-[#6f6f7f]">
                     Sends the stock · deducted on dispatch
                   </p>
                 </div>
@@ -1172,15 +1475,15 @@ export default function TransferDetailModal({
                   <ArrowRight className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 flex-1 text-right">
-                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>
+                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#6f6f7f]`}>
                     To · Requesting branch
                   </p>
                   <LocationName
                     wh={transfer.toWarehouse}
                     className="mt-1 text-[16px] font-semibold"
-                    subtitleClassName="text-[12px] text-[#5b5b6b]"
+                    subtitleClassName="text-[12px] text-[#4b4b5a]"
                   />
-                  <p className="mt-0.5 truncate text-[11.5px] text-[#8b8b9b]">
+                  <p className="mt-0.5 truncate text-[11.5px] text-[#6f6f7f]">
                     Asked for the stock · added on receipt
                   </p>
                 </div>
@@ -1337,7 +1640,7 @@ export default function TransferDetailModal({
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <p className="text-[13.5px] font-semibold">Items</p>
                   <span
-                    className={`${MONO} rounded-full bg-white px-2.5 py-1 text-[10.5px] uppercase tracking-[0.07em] text-[#5b5b6b] ring-1 ring-[#e4e4e9]`}
+                    className={`${MONO} rounded-full bg-white px-2.5 py-1 text-[10.5px] uppercase tracking-[0.07em] text-[#4b4b5a] ring-1 ring-[#e4e4e9]`}
                   >
                     {receivedUnits} of {totalUnits} units received
                   </span>
@@ -1347,25 +1650,25 @@ export default function TransferDetailModal({
                     <thead>
                       <tr className="border-b border-[#eeeef1] bg-[#fbfbfc]">
                         <th
-                          className={`${MONO} px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                          className={`${MONO} px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.09em] text-[#6f6f7f]`}
                         >
                           Item
                         </th>
                         {hasSerialLine && (
                           <th
-                            className={`${MONO} px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                            className={`${MONO} px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.09em] text-[#6f6f7f]`}
                           >
                             Serial
                           </th>
                         )}
                         <th
-                          className={`${MONO} px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                          className={`${MONO} px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.09em] text-[#6f6f7f]`}
                         >
                           Qty
                         </th>
                         {isReceivedStatus && (
                           <th
-                            className={`${MONO} px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                            className={`${MONO} px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.09em] text-[#6f6f7f]`}
                           >
                             Received
                           </th>
@@ -1380,14 +1683,20 @@ export default function TransferDetailModal({
                               {line.item?.name ?? line.itemId ?? '—'}
                             </p>
                             {line.item?.sku && (
-                              <p className={`${MONO} mt-0.5 text-[10.5px] text-[#8b8b9b]`}>
+                              <p className={`${MONO} mt-0.5 text-[10.5px] text-[#6f6f7f]`}>
                                 {line.item.sku}
                               </p>
                             )}
                           </td>
                           {hasSerialLine && (
-                            <td className="px-3 py-2 font-mono text-xs text-zinc-500">
-                              {line.receiptCorrectedFromSerial ? (
+                            <td className="px-3 py-2 font-mono text-[13px] text-[#17171c]">
+                              {awaitingDispatch &&
+                              !line.serialNumber?.serialNumber &&
+                              line.item?.isSerialTracked ? (
+                                <span className="font-sans text-xs italic text-zinc-400">
+                                  Assigned at dispatch
+                                </span>
+                              ) : line.receiptCorrectedFromSerial ? (
                                 <span
                                   title={`Corrected at receipt — was ${line.receiptCorrectedFromSerial.serialNumber}.${line.receiptCorrectionReason ? ` ${line.receiptCorrectionReason}` : ''}`}
                                 >
@@ -1417,6 +1726,12 @@ export default function TransferDetailModal({
                                   <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
                                     Lost in Transit
                                   </span>
+                                ) : Number(line.receivedQuantity ?? 0) < 1 ? (
+                                  // Scenario 71 — left unticked on a partial
+                                  // receive: still on its way, not lost.
+                                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                                    Not received yet
+                                  </span>
                                 ) : (
                                   <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
                                     Received
@@ -1442,6 +1757,168 @@ export default function TransferDetailModal({
                 </div>
               </div>
             )}
+
+            {/* Substitution — the warehouse's "we don't have that" lever */}
+            {status === 'requested' &&
+              canProposeSubstitutionThis &&
+              (transfer.lines ?? [])
+                .filter((line) => line.id)
+                .map((line) => (
+                  <div key={`propose-${line.id}`}>
+                    {proposingLineId === line.id ? (
+                      <form
+                        onSubmit={proposeForm.handleSubmit(handleProposeSubmit)}
+                        className="space-y-2 rounded-xl border border-[#ddd0f7] bg-[#fcfaff] p-3"
+                      >
+                        <p className="text-[12.5px] font-semibold text-[#3f1490]">
+                          Propose a substitute for {line.item?.name ?? 'this item'}
+                        </p>
+                        <Controller
+                          name="proposedItemId"
+                          control={proposeForm.control}
+                          render={({ field }) => (
+                            <ItemSearchCombobox
+                              value={field.value}
+                              onChange={(id) => field.onChange(id)}
+                              error={proposeForm.formState.errors.proposedItemId?.message}
+                              placeholder="Search item by name or SKU…"
+                            />
+                          )}
+                        />
+                        <div className="flex items-center gap-2">
+                          <Controller
+                            name="proposedQuantity"
+                            control={proposeForm.control}
+                            render={({ field }) => (
+                              <input
+                                type="number"
+                                min={0.01}
+                                step="any"
+                                value={Number.isNaN(field.value) ? '' : field.value}
+                                onChange={(e) =>
+                                  field.onChange(
+                                    e.target.value === '' ? NaN : Number(e.target.value)
+                                  )
+                                }
+                                placeholder="Qty"
+                                className="w-24 rounded-lg border border-zinc-200 px-2 py-1.5 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                              />
+                            )}
+                          />
+                          {proposeForm.formState.errors.proposedQuantity && (
+                            <span className="text-[11px] text-red-600">
+                              {proposeForm.formState.errors.proposedQuantity.message}
+                            </span>
+                          )}
+                        </div>
+                        <Controller
+                          name="reason"
+                          control={proposeForm.control}
+                          render={({ field }) => (
+                            <textarea
+                              {...field}
+                              rows={2}
+                              placeholder="Why the requested item can't be fulfilled…"
+                              className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[12.5px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                            />
+                          )}
+                        />
+                        {proposeForm.formState.errors.reason && (
+                          <span className="text-[11px] text-red-600">
+                            {proposeForm.formState.errors.reason.message}
+                          </span>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="submit"
+                            disabled={isProposingSubstitution}
+                            className="rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
+                          >
+                            {isProposingSubstitution ? 'Proposing…' : 'Propose substitution'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProposingLineId(null)
+                              proposeForm.reset()
+                            }}
+                            className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProposingLineId(line.id ?? null)
+                          proposeForm.reset({
+                            proposedItemId: '',
+                            proposedQuantity: Number(line.quantity) || 1,
+                            reason: '',
+                          })
+                        }}
+                        className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:text-prominent-purple-800"
+                      >
+                        <Repeat className="h-3 w-3" /> Propose different item for{' '}
+                        {line.item?.name ?? 'this line'}
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+            {status === 'pending_substitution_confirmation' &&
+              (transfer.lines ?? [])
+                .filter((line) => line.id && line.proposedItemId)
+                .map((line) => (
+                  <div
+                    key={`confirm-${line.id}`}
+                    className="space-y-2 rounded-xl border border-[#ddd0f7] bg-[#fcfaff] p-3"
+                  >
+                    <p className="text-[12.5px] font-semibold text-[#3f1490]">
+                      Substitution proposed for {line.item?.name ?? 'this line'}
+                    </p>
+                    <p className="text-[12.5px] text-[#17171c]">
+                      <span className="text-zinc-400 line-through">{line.item?.name}</span>{' '}
+                      <ArrowRight className="inline h-3 w-3" />{' '}
+                      <span className="font-medium">
+                        {line.proposedItem?.name ?? line.proposedItemId}
+                      </span>
+                      {' · Qty '}
+                      {line.proposedQuantity}
+                    </p>
+                    {line.substitutionReason && (
+                      <p className="text-[11.5px] text-zinc-500">
+                        Reason: {line.substitutionReason}
+                      </p>
+                    )}
+                    {canConfirmSubstitutionThis ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmDecision(line.id as string, 'accept')}
+                          disabled={isConfirmingSubstitution}
+                          className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                        >
+                          Accept substitution
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmDecision(line.id as string, 'reject')}
+                          disabled={isConfirmingSubstitution}
+                          className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-[11.5px] italic text-zinc-400">
+                        Waiting on the requesting branch to confirm.
+                      </p>
+                    )}
+                  </div>
+                ))}
 
             {/* Ledger timeline */}
             <div>
@@ -1566,7 +2043,7 @@ export default function TransferDetailModal({
             {/* Dispatch form (inline) */}
             {showDispatchForm && (
               <form
-                onSubmit={dispatchForm.handleSubmit(handleDispatchSubmit)}
+                onSubmit={dispatchForm.handleSubmit((data) => setPendingDispatch(data))}
                 className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 space-y-3"
               >
                 <p className="flex items-center gap-1.5 text-sm font-semibold text-blue-800">
@@ -1601,7 +2078,7 @@ export default function TransferDetailModal({
                   />
                 </div>
 
-                {serialAssignmentFields.length > 0 && (
+                {serialGroups.length > 0 && (
                   <div>
                     <p className="mb-2 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
                       Assign Serial Numbers
@@ -1620,6 +2097,7 @@ export default function TransferDetailModal({
                           itemLabel={g.itemLabel}
                           fromWarehouseId={transfer?.fromWarehouse?.id}
                           slotIndices={g.slotIndices}
+                          pinnedSerials={g.pinnedSerials}
                           canOverride={canOverrideSerial}
                           errors={dispatchForm.formState.errors.serialAssignments}
                         />
@@ -1642,11 +2120,12 @@ export default function TransferDetailModal({
                       control={dispatchForm.control}
                       render={({ field }) => (
                         <VehicleAutocompleteInput
+                          noun="drivers"
                           value={field.value ?? ''}
                           onChange={field.onChange}
-                          onPickVehicle={pickDispatchVehicle}
-                          search={searchDispatchVehicles}
-                          queryKey={`dispatch-vehicle-search-${transfer?.id}`}
+                          onPick={pickDispatchDriver}
+                          search={searchDispatchDrivers}
+                          queryKey={`dispatch-driver-search-${transfer?.id}`}
                           placeholder="e.g. Juan dela Cruz"
                           error={dispatchForm.formState.errors.driverName?.message}
                         />
@@ -1679,9 +2158,10 @@ export default function TransferDetailModal({
                       control={dispatchForm.control}
                       render={({ field }) => (
                         <VehicleAutocompleteInput
+                          mono
                           value={field.value}
                           onChange={field.onChange}
-                          onPickVehicle={pickDispatchVehicle}
+                          onPick={pickDispatchVehicle}
                           search={searchDispatchVehicles}
                           queryKey={`dispatch-vehicle-search-${transfer?.id}`}
                           placeholder="e.g. ABC 1234"
@@ -1694,7 +2174,7 @@ export default function TransferDetailModal({
 
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Carrier / Logistics Company <span className="text-red-500">*</span>
+                    Carrier / Logistics Company
                   </label>
                   <Controller
                     name="carrierName"
@@ -1727,7 +2207,7 @@ export default function TransferDetailModal({
                     className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
                   >
                     {isDispatching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Confirm Dispatch
+                    Dispatch
                   </button>
                 </div>
               </form>
@@ -1760,9 +2240,28 @@ export default function TransferDetailModal({
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Items Received
-                  </label>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-xs font-medium text-zinc-600">
+                      Items Received
+                    </label>
+                    {receiveLineFields.some((f) => f.isSerial) && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          receiveLineFields.forEach((f, i) => {
+                            if (f.isSerial) {
+                              receiveForm.setValue(`lines.${i}.quantityReceived`, 1, {
+                                shouldDirty: true,
+                              })
+                            }
+                          })
+                        }
+                        className="text-xs font-medium text-prominent-purple-600 hover:text-prominent-purple-800 hover:underline"
+                      >
+                        Mark all received
+                      </button>
+                    )}
+                  </div>
                   <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3">
                     {receiveLineFields.map((lineField, idx) => (
                       <div
@@ -1855,7 +2354,15 @@ export default function TransferDetailModal({
                     </label>
                     <button
                       type="button"
-                      onClick={() => appendExtraLine({ itemId: '', quantity: 1, notes: '' })}
+                      onClick={() =>
+                        appendExtraLine({
+                          itemId: '',
+                          quantity: 1,
+                          notes: '',
+                          isSerialTracked: false,
+                          serialNumbers: undefined,
+                        })
+                      }
                       className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:text-prominent-purple-800"
                     >
                       + Add unlisted item
@@ -1863,64 +2370,98 @@ export default function TransferDetailModal({
                   </div>
                   {extraLineFields.length > 0 && (
                     <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3">
-                      {extraLineFields.map((extraField, idx) => (
-                        <div
-                          key={extraField.id}
-                          className="flex items-center gap-2 border-b border-zinc-100 pb-2 last:border-0 last:pb-0"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <Controller
-                              name={`extraLines.${idx}.itemId`}
-                              control={receiveForm.control}
-                              render={({ field }) => (
-                                <ItemSearchCombobox
-                                  value={field.value ?? ''}
-                                  onChange={(id) => field.onChange(id)}
-                                  error={
-                                    receiveForm.formState.errors.extraLines?.[idx]?.itemId?.message
-                                  }
-                                  excludeSerialTracked
-                                  placeholder="Search item by name or SKU… (non-serialized only)"
+                      {extraLineFields.map((extraField, idx) => {
+                        const isSerialTracked = !!watchedExtraLines[idx]?.isSerialTracked
+                        return (
+                          <div
+                            key={extraField.id}
+                            className="border-b border-zinc-100 pb-2 last:border-0 last:pb-0"
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className="min-w-0 flex-1">
+                                <Controller
+                                  name={`extraLines.${idx}.itemId`}
+                                  control={receiveForm.control}
+                                  render={({ field }) => (
+                                    <ItemSearchCombobox
+                                      value={field.value ?? ''}
+                                      onChange={(id) => field.onChange(id)}
+                                      onSelect={(option) => {
+                                        const meta = option.meta as ItemSearchMeta | undefined
+                                        const tracked = !!meta?.isSerialTracked
+                                        receiveForm.setValue(
+                                          `extraLines.${idx}.isSerialTracked`,
+                                          tracked,
+                                          { shouldValidate: false }
+                                        )
+                                        receiveForm.setValue(
+                                          `extraLines.${idx}.serialNumbers`,
+                                          tracked ? [''] : undefined,
+                                          { shouldValidate: false }
+                                        )
+                                        receiveForm.setValue(
+                                          `extraLines.${idx}.quantity`,
+                                          tracked ? 0 : 1,
+                                          { shouldValidate: false }
+                                        )
+                                      }}
+                                      error={
+                                        receiveForm.formState.errors.extraLines?.[idx]?.itemId
+                                          ?.message
+                                      }
+                                      placeholder="Search item by name or SKU…"
+                                    />
+                                  )}
+                                />
+                              </div>
+                              {!isSerialTracked && (
+                                <Controller
+                                  name={`extraLines.${idx}.quantity`}
+                                  control={receiveForm.control}
+                                  render={({ field }) => (
+                                    <input
+                                      type="number"
+                                      min={0.01}
+                                      step="any"
+                                      value={Number.isNaN(field.value) ? '' : field.value}
+                                      onChange={(e) =>
+                                        field.onChange(
+                                          e.target.value === '' ? NaN : Number(e.target.value)
+                                        )
+                                      }
+                                      onBlur={() => {
+                                        if (Number.isNaN(field.value)) field.onChange(0)
+                                      }}
+                                      className="w-20 shrink-0 rounded-lg border border-zinc-200 px-2 py-1 text-right text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                                    />
+                                  )}
                                 />
                               )}
-                            />
-                          </div>
-                          <Controller
-                            name={`extraLines.${idx}.quantity`}
-                            control={receiveForm.control}
-                            render={({ field }) => (
-                              <input
-                                type="number"
-                                min={0.01}
-                                step="any"
-                                value={Number.isNaN(field.value) ? '' : field.value}
-                                onChange={(e) =>
-                                  field.onChange(
-                                    e.target.value === '' ? NaN : Number(e.target.value)
-                                  )
-                                }
-                                onBlur={() => {
-                                  if (Number.isNaN(field.value)) field.onChange(0)
-                                }}
-                                className="w-20 shrink-0 rounded-lg border border-zinc-200 px-2 py-1 text-right text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                              <button
+                                type="button"
+                                onClick={() => removeExtraLine(idx)}
+                                className="shrink-0 rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                                aria-label="Remove unlisted item"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                            {isSerialTracked && (
+                              <UnlistedSerialInputs
+                                control={receiveForm.control}
+                                setValue={receiveForm.setValue}
+                                index={idx}
+                                isDuplicate={isDuplicateExtraSerial}
                               />
                             )}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeExtraLine(idx)}
-                            className="shrink-0 rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
-                            aria-label="Remove unlisted item"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                   <p className="mt-1 text-xs text-zinc-400">
-                    Serial-tracked items aren&apos;t shown here — register those through the serial
-                    numbers module instead.
+                    A serial-tracked pick switches to serial entry — one box per unit, scanner
+                    ready.
                   </p>
                 </div>
 
@@ -1939,6 +2480,11 @@ export default function TransferDetailModal({
                     )}
                   />
                 </div>
+                {receiveForm.formState.errors.root && (
+                  <p className="text-xs text-red-600">
+                    {receiveForm.formState.errors.root.message}
+                  </p>
+                )}
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -1961,368 +2507,250 @@ export default function TransferDetailModal({
                 </div>
               </form>
             )}
-
-            {/* Reject at HQ form (inline) */}
-            {showRejectHqForm && (
-              <form
-                onSubmit={rejectHqForm.handleSubmit(handleRejectHqSubmit)}
-                className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3"
-              >
-                <p className="text-sm font-medium text-red-800">Reject Request at HQ</p>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Reason <span className="text-red-500">*</span>
-                  </label>
-                  <Controller
-                    name="reason"
-                    control={rejectHqForm.control}
-                    render={({ field }) => (
-                      <textarea
-                        {...field}
-                        rows={3}
-                        placeholder="Why is this request being rejected?"
-                        className={`${fieldClass} resize-none bg-white`}
-                      />
-                    )}
-                  />
-                  {rejectHqForm.formState.errors.reason && (
-                    <p className="mt-1 text-xs text-red-600">
-                      {rejectHqForm.formState.errors.reason.message}
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowRejectHqForm(false)
-                      rejectHqForm.reset()
-                    }}
-                    className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isRejectingHq}
-                    className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-                  >
-                    {isRejectingHq && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Confirm Rejection
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* Reject (source branch) form (inline) */}
-            {showRejectForm && (
-              <form
-                onSubmit={rejectForm.handleSubmit(handleRejectSubmit)}
-                className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3"
-              >
-                <p className="text-sm font-medium text-red-800">Reject Incoming Request</p>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Reason <span className="text-red-500">*</span>
-                  </label>
-                  <Controller
-                    name="reason"
-                    control={rejectForm.control}
-                    render={({ field }) => (
-                      <textarea
-                        {...field}
-                        rows={3}
-                        placeholder="Why is this request being rejected?"
-                        className={`${fieldClass} resize-none bg-white`}
-                      />
-                    )}
-                  />
-                  {rejectForm.formState.errors.reason && (
-                    <p className="mt-1 text-xs text-red-600">
-                      {rejectForm.formState.errors.reason.message}
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowRejectForm(false)
-                      rejectForm.reset()
-                    }}
-                    className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isRejecting}
-                    className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-                  >
-                    {isRejecting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Confirm Rejection
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* Reject (branch manager) form (inline) */}
-            {showRejectManagerForm && (
-              <form
-                onSubmit={rejectManagerForm.handleSubmit(handleRejectManagerSubmit)}
-                className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3"
-              >
-                <p className="text-sm font-medium text-red-800">Reject Request</p>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Reason <span className="text-red-500">*</span>
-                  </label>
-                  <Controller
-                    name="reason"
-                    control={rejectManagerForm.control}
-                    render={({ field }) => (
-                      <textarea
-                        {...field}
-                        rows={3}
-                        placeholder="Why is this request being rejected?"
-                        className={`${fieldClass} resize-none bg-white`}
-                      />
-                    )}
-                  />
-                  {rejectManagerForm.formState.errors.reason && (
-                    <p className="mt-1 text-xs text-red-600">
-                      {rejectManagerForm.formState.errors.reason.message}
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowRejectManagerForm(false)
-                      rejectManagerForm.reset()
-                    }}
-                    className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isRejectingManager}
-                    className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-                  >
-                    {isRejectingManager && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Confirm Rejection
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* Cancel confirm */}
-            {confirmCancel && (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-                <p className="text-sm font-medium text-red-800">Cancel this transfer?</p>
-                <p className="mt-1 text-xs text-red-600">
-                  No stock movements will be recorded. This cannot be undone.
-                </p>
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setConfirmCancel(false)}
-                    className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCancel}
-                    disabled={isCancelling}
-                    className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-                  >
-                    {isCancelling && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Yes, Cancel Transfer
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
         {/* Footer actions */}
-        {transfer &&
-          !showDispatchForm &&
-          !showReceiveForm &&
-          !showRejectHqForm &&
-          !showRejectForm &&
-          !showRejectManagerForm &&
-          !confirmCancel && (
-            <div className="flex items-center justify-between gap-4 border-t border-[#e4e4e9] bg-white px-6 py-3.5">
-              <div className="min-w-0">
-                <p className="text-[11.5px] text-[#8b8b9b]">
-                  {totalUnits} {totalUnits === 1 ? 'unit' : 'units'} ·{' '}
-                  {(transfer.lines ?? []).length}{' '}
-                  {(transfer.lines ?? []).length === 1 ? 'line' : 'lines'}
+        {transfer && !inlineFormOpen && (
+          <div className="flex items-center justify-between gap-4 border-t border-[#e4e4e9] bg-white px-6 py-3.5">
+            <div className="min-w-0">
+              <p className="text-[11.5px] text-[#6f6f7f]">
+                {totalUnits} {totalUnits === 1 ? 'unit' : 'units'} · {(transfer.lines ?? []).length}{' '}
+                {(transfer.lines ?? []).length === 1 ? 'line' : 'lines'}
+              </p>
+              {receiveBlockedForDispatcher && (
+                <p className="mt-0.5 flex items-center gap-1 text-[12px] text-[#8a4b06]">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  You dispatched this transfer, so someone else at the receiving branch has to
+                  receive it.
                 </p>
-                <div className="mt-0.5 flex items-center gap-3">
-                  {canEditThis && onEdit && (
-                    <button
-                      type="button"
-                      onClick={() => onEdit(transfer)}
-                      className="text-[12.5px] font-medium text-[#5b21b6] hover:underline"
-                    >
-                      Edit Request
-                    </button>
-                  )}
-                  {canCancelThis && (
-                    <button
-                      type="button"
-                      onClick={() => setConfirmCancel(true)}
-                      className="text-[12.5px] font-medium text-[#b42318] hover:underline"
-                    >
-                      Cancel Transfer
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="flex gap-3">
-                {(status === 'in_transit' || isReceivedStatus) && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setIsPrinting(true)
-                      try {
-                        const res = await getTransferDocument(transfer.id)
-                        if (res.success && res.data) printStockTransferDocument(res.data)
-                      } finally {
-                        setIsPrinting(false)
-                      }
-                    }}
-                    disabled={isPrinting}
-                    className="flex items-center gap-1.5 rounded-lg border border-[#e4e4e9] px-3 py-2 text-[13px] font-medium text-[#5b5b6b] hover:bg-[#f7f7f8] disabled:opacity-60"
-                  >
-                    {isPrinting ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Printer className="h-3.5 w-3.5" />
-                    )}
-                    Print
-                  </button>
-                )}
+              )}
+            </div>
+            <div className="flex gap-3">
+              {canCancelThis && (
                 <button
                   type="button"
-                  onClick={onClose}
-                  className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#5b5b6b] hover:bg-[#f7f7f8]"
+                  onClick={() => setConfirmCancel(true)}
+                  className="flex items-center gap-1.5 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
                 >
-                  Close
+                  <XCircle className="h-4 w-4" />
+                  Cancel
                 </button>
-                {status === 'draft' && canDispatchThis && (
-                  <button
-                    type="button"
-                    onClick={openDispatchForm}
-                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
-                  >
-                    <Truck className="h-4 w-4" />
-                    Dispatch
-                  </button>
-                )}
-                {status === 'in_transit' && canReceiveThis && (
-                  <button
-                    type="button"
-                    onClick={openReceiveForm}
-                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
-                  >
+              )}
+              {(status === 'in_transit' || isReceivedStatus) && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsPrinting(true)
+                    try {
+                      const res = await getTransferDocument(transfer.id)
+                      if (res.success && res.data) printStockTransferDocument(res.data)
+                    } finally {
+                      setIsPrinting(false)
+                    }
+                  }}
+                  disabled={isPrinting}
+                  className="flex items-center gap-1.5 rounded-lg border border-[#e4e4e9] px-3 py-2 text-[13px] font-medium text-[#4b4b5a] hover:bg-[#f7f7f8] disabled:opacity-60"
+                >
+                  {isPrinting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Printer className="h-3.5 w-3.5" />
+                  )}
+                  Print
+                </button>
+              )}
+              {status === 'draft' && canDispatchThis && (
+                <button
+                  type="button"
+                  onClick={openDispatchForm}
+                  disabled={!lineDetailReady}
+                  className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Truck className="h-4 w-4" />
+                  Dispatch
+                </button>
+              )}
+              {status === 'in_transit' && canReceiveThis && (
+                <button
+                  type="button"
+                  onClick={openReceiveForm}
+                  className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  Mark Received
+                </button>
+              )}
+              {status === 'partially_received' && canReceiveThis && (
+                <button
+                  type="button"
+                  onClick={openReceiveForm}
+                  className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  Receive Remaining
+                </button>
+              )}
+              {status === 'pending_manager_approval' && canManagerRejectThis && (
+                <button
+                  type="button"
+                  onClick={() => setShowRejectManagerForm(true)}
+                  className="flex items-center gap-2 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
+                >
+                  <Ban className="h-4 w-4" />
+                  Reject
+                </button>
+              )}
+              {status === 'pending_manager_approval' && canManagerApproveThis && (
+                <button
+                  type="button"
+                  onClick={handleApproveManager}
+                  disabled={isApprovingManager}
+                  className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:opacity-60"
+                >
+                  {isApprovingManager ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
                     <CheckCircle className="h-4 w-4" />
-                    Mark Received
-                  </button>
-                )}
-                {status === 'partially_received' && canReceiveThis && (
-                  <button
-                    type="button"
-                    onClick={openReceiveForm}
-                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
-                  >
-                    <AlertTriangle className="h-4 w-4" />
-                    Receive Remaining
-                  </button>
-                )}
-                {status === 'pending_manager_approval' && canManagerRejectThis && (
-                  <button
-                    type="button"
-                    onClick={() => setShowRejectManagerForm(true)}
-                    className="flex items-center gap-2 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
-                  >
-                    <Ban className="h-4 w-4" />
-                    Reject
-                  </button>
-                )}
-                {status === 'pending_manager_approval' && canManagerApproveThis && (
-                  <button
-                    type="button"
-                    onClick={handleApproveManager}
-                    disabled={isApprovingManager}
-                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:opacity-60"
-                  >
-                    {isApprovingManager ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <CheckCircle className="h-4 w-4" />
-                    )}
-                    Approve
-                  </button>
-                )}
-                {status === 'pending_hq_approval' && canHqReject && (
-                  <button
-                    type="button"
-                    onClick={() => setShowRejectHqForm(true)}
-                    className="flex items-center gap-2 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
-                  >
-                    <Ban className="h-4 w-4" />
-                    Reject
-                  </button>
-                )}
-                {status === 'pending_hq_approval' && canHqApprove && (
-                  <button
-                    type="button"
-                    onClick={handleApproveHq}
-                    disabled={isApprovingHq}
-                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:opacity-60"
-                  >
-                    {isApprovingHq ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <CheckCircle className="h-4 w-4" />
-                    )}
-                    Approve
-                  </button>
-                )}
-                {status === 'requested' && canRejectThis && (
-                  <button
-                    type="button"
-                    onClick={() => setShowRejectForm(true)}
-                    className="flex items-center gap-2 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
-                  >
-                    <Ban className="h-4 w-4" />
-                    Reject
-                  </button>
-                )}
-                {status === 'requested' && canAcceptThis && (
-                  <button
-                    type="button"
-                    onClick={handleAccept}
-                    disabled={isAccepting}
-                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:opacity-60"
-                  >
-                    {isAccepting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <CheckCircle className="h-4 w-4" />
-                    )}
-                    Accept
-                  </button>
-                )}
-              </div>
+                  )}
+                  Approve
+                </button>
+              )}
+              {status === 'pending_hq_approval' && canHqReject && (
+                <button
+                  type="button"
+                  onClick={() => setShowRejectHqForm(true)}
+                  className="flex items-center gap-2 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
+                >
+                  <Ban className="h-4 w-4" />
+                  Reject
+                </button>
+              )}
+              {status === 'pending_hq_approval' && canHqApprove && (
+                <button
+                  type="button"
+                  onClick={handleApproveHq}
+                  disabled={isApprovingHq}
+                  className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:opacity-60"
+                >
+                  {isApprovingHq ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4" />
+                  )}
+                  Approve
+                </button>
+              )}
+              {status === 'requested' && canRejectThis && (
+                <button
+                  type="button"
+                  onClick={() => setShowRejectForm(true)}
+                  className="flex items-center gap-2 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
+                >
+                  <Ban className="h-4 w-4" />
+                  Reject
+                </button>
+              )}
+              {status === 'requested' && canAcceptThis && (
+                <button
+                  type="button"
+                  onClick={handleAccept}
+                  disabled={isAccepting}
+                  className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:opacity-60"
+                >
+                  {isAccepting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4" />
+                  )}
+                  Accept
+                </button>
+              )}
             </div>
-          )}
+          </div>
+        )}
+
+        {/* Rendered inside the panel so a click on its backdrop stays in the
+            drawer instead of bubbling up and closing it. */}
+        <ConfirmDialog
+          open={!!pendingDispatch}
+          title="Dispatch this transfer?"
+          message={
+            <>
+              <p>
+                {totalUnits} {totalUnits === 1 ? 'unit leaves' : 'units leave'}{' '}
+                <span className="font-medium text-zinc-800">
+                  {branchLabel(transfer?.fromWarehouse, 'the source branch')}
+                </span>{' '}
+                for{' '}
+                <span className="font-medium text-zinc-800">
+                  {branchLabel(transfer?.toWarehouse, 'the destination branch')}
+                </span>
+                .
+              </p>
+              <p>
+                Stock is deducted from the source now and the transfer goes in transit. This cannot
+                be undone.
+              </p>
+            </>
+          }
+          confirmLabel="Yes, dispatch"
+          cancelLabel="Back"
+          confirmColorClassName="bg-[#5b21b6] hover:bg-[#4c1a99]"
+          loading={isDispatching}
+          onConfirm={handleDispatchConfirmed}
+          onCancel={() => setPendingDispatch(null)}
+        />
+        <ConfirmDialog
+          open={confirmCancel}
+          title="Cancel this transfer?"
+          message="No stock movements will be recorded. This cannot be undone."
+          confirmLabel="Yes, cancel"
+          cancelLabel="Back"
+          loading={isCancelling}
+          destructive
+          onConfirm={handleCancel}
+          onCancel={() => setConfirmCancel(false)}
+        />
+        <RejectReasonModal
+          open={showRejectHqForm}
+          title="Reject request at HQ"
+          formId="reject-hq-transfer"
+          control={rejectHqForm.control}
+          error={rejectHqForm.formState.errors.reason?.message}
+          submitting={isRejectingHq}
+          onSubmit={rejectHqForm.handleSubmit(handleRejectHqSubmit)}
+          onClose={() => {
+            setShowRejectHqForm(false)
+            rejectHqForm.reset()
+          }}
+        />
+        <RejectReasonModal
+          open={showRejectForm}
+          title="Reject incoming request"
+          formId="reject-transfer"
+          control={rejectForm.control}
+          error={rejectForm.formState.errors.reason?.message}
+          submitting={isRejecting}
+          onSubmit={rejectForm.handleSubmit(handleRejectSubmit)}
+          onClose={() => {
+            setShowRejectForm(false)
+            rejectForm.reset()
+          }}
+        />
+        <RejectReasonModal
+          open={showRejectManagerForm}
+          title="Reject request"
+          formId="reject-manager-transfer"
+          control={rejectManagerForm.control}
+          error={rejectManagerForm.formState.errors.reason?.message}
+          submitting={isRejectingManager}
+          onSubmit={rejectManagerForm.handleSubmit(handleRejectManagerSubmit)}
+          onClose={() => {
+            setShowRejectManagerForm(false)
+            rejectManagerForm.reset()
+          }}
+        />
       </div>
     </div>
   )
@@ -2333,6 +2761,85 @@ export default function TransferDetailModal({
 // Rejected/cancelled transfers skip the trail entirely: forcing a stopped
 // request into 4 forward-moving dots would misrepresent what happened, and
 // the actual reason is already surfaced as its own red banner + log entry.
+/** The three rejections (HQ, source branch, the requester's manager) all
+ * ask for the same thing — a required reason — so they share one modal over
+ * the drawer. The submit button sits in the modal's footer, outside the
+ * <form>, and reaches it through `form={formId}`. */
+function RejectReasonModal({
+  open,
+  title,
+  formId,
+  control,
+  error,
+  submitting,
+  onSubmit,
+  onClose,
+}: {
+  open: boolean
+  title: string
+  formId: string
+  control: Control<{ reason: string }>
+  error?: string
+  submitting: boolean
+  onSubmit: React.FormEventHandler<HTMLFormElement>
+  onClose: () => void
+}): React.JSX.Element {
+  return (
+    <Modal
+      open={open}
+      title={title}
+      description="The requester sees this reason on the transfer."
+      onClose={onClose}
+      size="sm"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Back
+          </button>
+          <button
+            type="submit"
+            form={formId}
+            disabled={submitting}
+            className="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Confirm Rejection
+          </button>
+        </div>
+      }
+    >
+      <form id={formId} onSubmit={onSubmit}>
+        <label
+          htmlFor={`${formId}-reason`}
+          className="mb-1 block text-xs font-medium text-zinc-600"
+        >
+          Reason <span className="text-red-500">*</span>
+        </label>
+        <Controller
+          name="reason"
+          control={control}
+          render={({ field }) => (
+            <textarea
+              {...field}
+              id={`${formId}-reason`}
+              rows={3}
+              autoFocus
+              placeholder="Why is this request being rejected?"
+              className="w-full resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+            />
+          )}
+        />
+        {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      </form>
+    </Modal>
+  )
+}
+
 function TransferStageTrail({ transfer, status }: { transfer: TransferSummary; status: string }) {
   if (status === 'rejected' || status === 'cancelled') return null
 
@@ -2385,7 +2892,7 @@ function TransferStageTrail({ transfer, status }: { transfer: TransferSummary; s
   ]
 
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       {steps.map((step, i) => {
         const done = i < stageOf
         const active = i === stageOf
@@ -2404,12 +2911,12 @@ function TransferStageTrail({ transfer, status }: { transfer: TransferSummary; s
               <div className="leading-tight">
                 <p
                   className={`text-[11.5px] font-semibold ${
-                    done ? 'text-[#0b6644]' : active ? 'text-[#3f1490]' : 'text-[#8b8b9b]'
+                    done ? 'text-[#0b6644]' : active ? 'text-[#3f1490]' : 'text-[#6f6f7f]'
                   }`}
                 >
                   {step.label}
                 </p>
-                <p className="text-[10.5px] text-[#8b8b9b]">{step.meta}</p>
+                <p className="text-[10.5px] text-[#6f6f7f]">{step.meta}</p>
               </div>
             </div>
             {i < steps.length - 1 && (
@@ -2442,7 +2949,7 @@ function LedgerEvent({
       </span>
       <div>
         <p className="text-[12.5px] font-medium text-[#17171c]">{label}</p>
-        <p className="text-[11px] text-[#8b8b9b]">{formatDate(timestamp)}</p>
+        <p className="text-[11px] text-[#6f6f7f]">{formatDate(timestamp)}</p>
       </div>
     </li>
   )

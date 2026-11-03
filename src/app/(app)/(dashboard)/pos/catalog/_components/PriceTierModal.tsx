@@ -113,7 +113,6 @@ function TierTable({
             <th className="w-36 px-2 py-2">Price Use</th>
             <th className="px-2 py-2 text-right">Price</th>
             <th className="px-2 py-2 text-right">Down Payment</th>
-            <th className="px-2 py-2 text-right">LCP</th>
             {termMonths.map((m) => (
               <TermHeaders key={m} months={m} />
             ))}
@@ -150,8 +149,6 @@ function TierRow({ entry, termMonths }: { entry: ItemPriceGuideEntry; termMonths
       </td>
       <td className="px-2 py-1.5 text-right font-medium text-zinc-900">{money(entry.price)}</td>
       <td className="px-2 py-1.5 text-right text-zinc-700">{money(entry.downPayment)}</td>
-      {/* LCP is not part of the price-guide data yet, so it shows a dash. */}
-      <td className="px-2 py-1.5 text-right text-zinc-400">—</td>
       {termMonths.map((m) => {
         const term = entry.terms.find((t) => t.termMonths === m)
         return <TermCells key={m} monthly={term?.monthlyInstallment} ppd={term?.ppd} />

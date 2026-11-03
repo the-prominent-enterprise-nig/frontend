@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, ArrowRight, BellPlus, Pencil } from 'lucide-react'
 import { leadsApi } from '@/src/libs/api/crm'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
+import { REMINDERS_ENABLED } from '@/src/libs/features'
 import type { Lead, PipelineStage, Interaction, Reminder } from '@/src/schema/crm/types'
 
 type LeadDetailData = Lead & {
@@ -210,24 +211,26 @@ export default function LeadDetail({
         </section>
       </div>
 
-      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Open reminders</h2>
-        {lead.reminders.length === 0 && (
-          <p className="py-4 text-center text-[13px] text-gray-400">No open reminders.</p>
-        )}
-        <ul className="divide-y divide-gray-100">
-          {lead.reminders.map((r) => (
-            <li key={r.id} className="flex items-center justify-between py-2.5">
-              <div>
-                <div className="text-[13px] text-gray-800">{r.note ?? r.reminderType}</div>
-                <div className="text-[12px] text-gray-500">
-                  Due {new Date(r.dueAt).toLocaleString()} · {r.status}
+      {REMINDERS_ENABLED && (
+        <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Open reminders</h2>
+          {lead.reminders.length === 0 && (
+            <p className="py-4 text-center text-[13px] text-gray-400">No open reminders.</p>
+          )}
+          <ul className="divide-y divide-gray-100">
+            {lead.reminders.map((r) => (
+              <li key={r.id} className="flex items-center justify-between py-2.5">
+                <div>
+                  <div className="text-[13px] text-gray-800">{r.note ?? r.reminderType}</div>
+                  <div className="text-[12px] text-gray-500">
+                    Due {new Date(r.dueAt).toLocaleString()} · {r.status}
+                  </div>
                 </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <ScheduleReminderModal
         open={reminderOpen}

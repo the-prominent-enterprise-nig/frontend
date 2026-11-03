@@ -1,5 +1,15 @@
 import { api } from '@/src/libs/api/client'
 import type { TaxOverrideEntry } from '@/src/libs/tax/tax-override'
+import {
+  commitAcknowledgementReceiptImport,
+  previewAcknowledgementReceiptImport,
+} from '@/src/libs/data/acknowledgement-import-actions'
+import { humanizeAcknowledgementImportError } from '@/src/libs/data/acknowledgement-import-errors'
+import type {
+  AcknowledgementImportPreview,
+  AcknowledgementImportResult,
+  AcknowledgementImportRowInput,
+} from '@/src/schema/pos/acknowledgement-import'
 
 // ============ Fixed Assets v2 (ACC-21) ============
 export type DepreciationMethod = 'STRAIGHT_LINE' | 'DECLINING_BALANCE' | 'UNITS_OF_PRODUCTION'
@@ -191,6 +201,10 @@ export const Reports = {
     api.get<any>('/reports/cash-flow', { startDate, endDate }),
   aging: (type: 'ar' | 'ap', asOf?: string) =>
     api.get<any>(`/reports/aging/${type}`, asOf ? { asOf } : undefined),
+  // Bucket totals only (five numbers) for charts — aging() above is one row per open document
+  // (2.9 MB of AR rows on the dev data).
+  agingBuckets: (type: 'ar' | 'ap', asOf?: string) =>
+    api.get<AgingBuckets>(`/reports/aging/${type}`, { view: 'summary', ...(asOf ? { asOf } : {}) }),
   // Scenario 36 Gap 2 — receipts already posted to the GL but not yet
   // matched to a supplier bill/invoice.
   grni: () => api.get<any>('/reports/grni'),
@@ -409,6 +423,20 @@ export interface ResolveWithholdingVarianceInput {
   notes?: string
 }
 
+/**
+ * One payment of a collection taken with several methods. The CR number is not
+ * here: the collection has one (`reference`), shared by every tender's receipt.
+ */
+export interface ArTenderInput {
+  method: PaymentMethod
+  amount: number
+  paymentMethodConfigId?: string
+  paymentMethodOptionId?: string
+  /** The bank's own transaction reference — a BANK_TRANSFER tender only. */
+  bankReferenceNumber?: string
+  bankAccountId?: string
+}
+
 export interface RecordArPaymentInput {
   amount: number
   paymentDate: string
@@ -437,6 +465,9 @@ export interface RecordArPaymentInput {
    * field collections and Accounting-side entries.
    */
   posSessionId?: string
+  /** The collection taken with SEVERAL methods (two or more); their amounts
+   * add up to the collection's amount. Omit for a single method. */
+  tenders?: ArTenderInput[]
 }
 
 export interface ARInvoiceSerialGoodsReceipt {
@@ -473,6 +504,9 @@ export interface ARInvoiceDue {
 }
 
 export interface ARInvoiceInstallmentDetail {
+  /** The InstallmentSchedule behind this receivable — what the Collections
+   * deep link keys on to land on the plan's next open due. */
+  scheduleId?: string
   termMonths: number | null
   rebate: number | string | null
   items: ARInvoiceInstallmentItem[]
@@ -535,6 +569,16 @@ export interface ARInvoice {
   /** Scenario 69 Part I — the class when it was changed from the one the invoice
    * started on, with why, who and when. Null when it was not. */
   taxOverride?: TaxOverrideEntry[] | null
+  /** Contractual retention: the share the customer holds back until acceptance,
+   * completion or the end of the warranty. totalAmount still bills the whole;
+   * the retained part sits in Retention Receivable until it is released,
+   * offset or written off. */
+  retentionPercent?: number | null
+  retentionAmount?: number
+  /** Released + offset + written off. */
+  retentionSettledAmount?: number
+  retentionReleaseDate?: string | null
+  retentionMilestone?: string | null
   payments?: ARPayment[]
   /** Scenario 25 — present only when this invoice is one due-date line of a
    * POS installment schedule; null for charge-mode invoices. */
@@ -595,12 +639,76 @@ export interface BulkRecordArPaymentInput {
    * field collections and Accounting-side entries.
    */
   posSessionId?: string
+  /** The collection taken with SEVERAL methods (two or more); their amounts
+   * add up to the collection's amount. Omit for a single method. */
+  tenders?: ArTenderInput[]
 }
 
 export interface BulkRecordPaymentResult {
   payments: RecordPaymentResult[]
   totalCollected: number
   invoiceCount: number
+}
+
+/** An invoice as the dashboard lists show it: the summary list's columns, nothing heavier. */
+export type ARInvoiceDashboardRow = Pick<
+  ARInvoice,
+  | 'id'
+  | 'invoiceNumber'
+  | 'customerId'
+  | 'invoiceDate'
+  | 'dueDate'
+  | 'totalAmount'
+  | 'amountPaid'
+  | 'status'
+> & { customer: { id: string; name: string } | null }
+
+/**
+ * The dashboards' invoice figures, worked out on the server over every invoice (the same filter and
+ * order as the list) so the browser stops downloading the whole list to add it up. Every "overdue"
+ * figure is the same one: a live invoice (sent, partial or overdue — not paid, draft or cancelled)
+ * with a balance owing that is past its due date.
+ */
+export interface ARInvoiceDashboardStats {
+  /** Invoices the list would return, any status. */
+  invoiceCount: number
+  /** Σ max(0, total − paid). */
+  outstanding: number
+  /** Not PAID/VOID: count and Σ(total − paid) (accounting dashboard). */
+  open: { count: number; outstanding: number }
+  /**
+   * Overdue invoices: how many, what they owe, the earliest due date (ISO, null when none) and the
+   * first few in list order.
+   */
+  overdue: {
+    count: number
+    outstanding: number
+    oldestDueDate: string | null
+    top: ARInvoiceDashboardRow[]
+  }
+  /** Positive balance, earliest due first (Outstanding Invoices widget). */
+  outstandingTop: ARInvoiceDashboardRow[]
+  /** The list's first rows (accounting dashboard's recent invoices). */
+  recent: ARInvoiceDashboardRow[]
+  /** Distinct customers across the invoices; only present when a branch was asked for. */
+  customerIds?: string[]
+}
+
+/** Totals per aging bucket, for charting without downloading a row per document. */
+export interface AgingBuckets {
+  buckets: { bucket: string; outstanding: number; count: number }[]
+}
+
+/** One row of the AR Invoices landing: everything a customer owes, rolled up on the server. */
+export interface ARInvoiceCustomerRollup {
+  customerId: string
+  customerName: string
+  invoiceCount: number
+  total: number
+  paid: number
+  outstanding: number
+  /** Invoices whose displayed status is OVERDUE. */
+  overdueCount: number
 }
 
 export interface ARInvoiceCustomerResult {
@@ -670,9 +778,124 @@ export interface ARInvoiceDocument {
   } | null
   document: ARInvoice
 }
+// ── Customer retention (rows 11K-11O) ──────────────────────────────────────
+
+export type RetentionActionType = 'RELEASE' | 'OFFSET' | 'WRITE_OFF' | 'PROVISION'
+export type RetentionOffsetReason = 'SALES_RETURN' | 'WARRANTY' | 'PENALTY' | 'OTHER'
+
+export interface RetentionActionRow {
+  id: string
+  type: RetentionActionType
+  amount: number
+  actionDate: string
+  reference: string | null
+  reasonCode: string | null
+  offsetAccount: string | null
+  method: string | null
+  approvedBy: string | null
+  notes: string | null
+  journalEntryId: string | null
+}
+
+export interface RetentionHistory {
+  invoiceNumber: string
+  retentionPercent: number | null
+  retentionAmount: number
+  /** Still held by the customer. */
+  held: number
+  actions: RetentionActionRow[]
+}
+
+export interface RetentionScheduleItem {
+  arInvoiceId: string
+  invoiceNumber: string
+  invoiceDate: string
+  customerId: string
+  customerName: string
+  invoiceTotal: number
+  retentionPercent: number | null
+  retained: number
+  released: number
+  offset: number
+  writtenOff: number
+  /** Set aside as doubtful but still held. */
+  provided: number
+  held: number
+  releaseDate: string | null
+  milestone: string | null
+  daysPastDue: number
+}
+
+export interface RetentionSchedule {
+  items: RetentionScheduleItem[]
+  totals: { held: number; pastDue: number }
+  /** What the Retention Receivable account holds; difference is that less the schedule. */
+  glBalance: number | null
+  difference: number | null
+}
+
 export const ARInvoices = {
-  list: (params?: { search?: string; status?: string; customerId?: string; branchId?: string }) =>
-    api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
+  retentionSchedule: () => api.get<RetentionSchedule>('/ar-invoices/retention/schedule'),
+  retentionHistory: (id: string) => api.get<RetentionHistory>(`/ar-invoices/${id}/retention`),
+  releaseRetention: (
+    id: string,
+    body: {
+      amount: number
+      releaseDate: string
+      method: 'CASH' | 'CARD' | 'CHECK' | 'BANK_TRANSFER' | 'QR'
+      bankAccountId?: string
+      reference: string
+      notes?: string
+    }
+  ) => api.post<RetentionActionRow>(`/ar-invoices/${id}/retention/release`, body),
+  offsetRetention: (
+    id: string,
+    body: {
+      amount: number
+      offsetDate: string
+      offsetAccountId: string
+      reasonCode: RetentionOffsetReason
+      reference: string
+      approvedBy: string
+      notes?: string
+    }
+  ) => api.post<RetentionActionRow>(`/ar-invoices/${id}/retention/offset`, body),
+  doubtfulRetention: (
+    id: string,
+    body: {
+      mode: 'WRITE_OFF' | 'PROVISION'
+      amount: number
+      actionDate: string
+      reference: string
+      approvedBy: string
+      notes?: string
+    }
+  ) => api.post<RetentionActionRow>(`/ar-invoices/${id}/retention/doubtful`, body),
+  // Without `limit` this is every invoice, in full (~2 KB each — 25 MB at 12.7k). Dashboard
+  // widgets only count and sum, so they pass view: 'summary' (a handful of columns); callers that
+  // want a page pass limit/offset and read `total` for the full count.
+  list: (params?: {
+    search?: string
+    status?: string
+    customerId?: string
+    branchId?: string
+    limit?: number
+    offset?: number
+    view?: 'summary'
+  }) => api.get<{ items: ARInvoice[]; total: number }>('/ar-invoices', params as any),
+  // One row per customer (count / total / paid / outstanding / overdue), customers owing the most
+  // first — the landing page's table, grouped on the server so it receives a page of customers
+  // instead of every invoice. `total` is the number of customers.
+  byCustomer: (params?: { search?: string; limit?: number; offset?: number }) =>
+    api.get<{ items: ARInvoiceCustomerRollup[]; total: number }>(
+      '/ar-invoices/by-customer',
+      params as any
+    ),
+  // The home and accounting dashboards' tiles (outstanding, overdue, the few rows their widgets
+  // list), summed on the server — a few KB instead of the whole invoice list. Pass branchId to
+  // scope to one branch (the response then also carries that branch's customerIds).
+  dashboardStats: (params?: { branchId?: string }) =>
+    api.get<ARInvoiceDashboardStats>('/ar-invoices/dashboard-stats', params as any),
   // Scenario 44 — flat cross-customer Receipts register (one row per
   // ARPayment) backing the AR Invoices landing page, distinct from list()
   // above which returns ARInvoice rows for the customer-grouped rollup.
@@ -757,16 +980,24 @@ export interface AcknowledgementReceipt {
    * matching the client's own reference tool. Null means it fell back to
    * the MISC_COLLECTIONS mapping. */
   accountId: string | null
+  /** Posted as a credit to Accounts Receivable — so it is on the customer's
+   * ledger and in AR Aging. */
+  creditsAr?: boolean
+  receivedInAccountId?: string | null
   account?: { id: string; name: string; number: string | null } | null
   reason: string | null
   amount: number
+  /** What cleared deposits have banked of it — above 0 for one a short
+   * deposit left partly to bank. */
+  depositedAmount?: number | string
   paymentDate: string
   /** Which of the two this record is — drives which title/download shows on
    * the detail page. Null on records saved before this field existed. */
   receiptType: 'COLLECTION' | 'ACKNOWLEDGEMENT' | null
   method: PaymentMethod | null
-  /** SAME_DATE | LATER_DATE — whether the payment clears the bank on
-   * paymentDate itself or on a later date. Informational only. */
+  /** SAME_DATE | LATER_DATE | PAST_DATE — whether the payment clears the
+   * bank on paymentDate itself, on a later date, or already cleared on an
+   * earlier date (receipts imported after the fact). Informational only. */
   clearedType: string | null
   clearedDate: string | null
   /** Which of the tenant's own bank/cash accounts this landed in — matches
@@ -779,13 +1010,39 @@ export interface AcknowledgementReceipt {
   collectorId: string | null
   collector?: { id: string; name: string; stubNumber: string } | null
   journalEntryId: string | null
+  /** Settlement receipts — the customer and sales invoice this money is
+   * for. The invoice number is a reference only: it does not change the
+   * invoice's balance. All null on a plain receipt. */
+  customerId?: string | null
+  customer?: { id: string; name: string; customerCode: string } | null
+  invoiceNo?: string | null
+  arInvoiceId?: string | null
+  /** The gross AR amount; `amount` above is then the Net that reached the
+   * bank (gross − subsidy − withholding). Null on a plain receipt. */
+  grossAmount?: number | null
+  subsidyAmount?: number | null
+  subsidyAccountId?: string | null
+  subsidyAccount?: { id: string; name: string; number: string | null } | null
+  withholdingAmount?: number | null
+  withholdingAccountId?: string | null
+  withholdingAccount?: { id: string; name: string; number: string | null } | null
   createdAt: string
   /** Letterhead info for the printed document — only present on get(id), not list(). */
   enterprise?: { companyLegalName?: string | null; address?: string | null } | null
 }
 export interface CreateAcknowledgementReceiptInput {
   payerName: string
+  /** The account the money was received in — the debit side. Left out, it is
+   * Cash in Bank / Cash on Hand by the receipt's branch. */
+  receivedInAccountId?: string
+  /** Overrides the credit. Left out, a receipt with a customer credits
+   * Accounts Receivable (their ledger) and one without credits Other /
+   * Miscellaneous Collections. */
   accountId?: string
+  /** The third-party financing partner this settles (Tonik, Salmon, Skyro…).
+   * The credit goes to that partner's own receivable instead of the customer's
+   * Accounts Receivable, and the receipt stays off the customer's ledger. */
+  tpfProviderId?: string
   reason?: string
   amount: number
   paymentDate: string
@@ -798,6 +1055,16 @@ export interface CreateAcknowledgementReceiptInput {
   notes?: string
   branchId?: string
   collectorId?: string
+  customerId?: string
+  invoiceNo?: string
+  arInvoiceId?: string
+  /** Settlement receipt: gross AR amount. `amount` is then the Net (gross −
+   * subsidy − withholding), which the backend recomputes. */
+  grossAmount?: number
+  subsidyAmount?: number
+  subsidyAccountId?: string
+  withholdingAmount?: number
+  withholdingAccountId?: string
 }
 /** Everything is editable (developer decision, 2026-09-27). Changing amount
  * and/or accountId requires correctionReason — the backend posts a new
@@ -827,15 +1094,65 @@ export const AcknowledgementReceipts = {
     api.get<AcknowledgementReceipt[]>('/accounting/acknowledgement-receipts', params as any),
   get: (id: string) =>
     api.get<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`),
+  /** The form's "+ Add as new customer" — a name is all a settlement needs, so
+   * this skips the phone and email the CRM form insists on, and needs no CRM
+   * permission. An existing customer of the same name is returned as-is. */
+  createCustomer: (body: { name: string; phone?: string }) =>
+    api.post<{ id: string; name: string; customerCode: string }>(
+      '/accounting/acknowledgement-receipts/customers',
+      body
+    ),
   create: (body: CreateAcknowledgementReceiptInput) =>
     api.post<AcknowledgementReceipt>('/accounting/acknowledgement-receipts', body),
   update: (id: string, body: UpdateAcknowledgementReceiptInput) =>
     api.patch<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`, body),
+  /** Bulk upload, step 1 — reads the CSV and reports what each row would do.
+   * Writes nothing. Multipart, so it goes through a server action rather than
+   * the JSON api client. */
+  importPreview: (file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    return previewAcknowledgementReceiptImport(body)
+  },
+  /** Bulk upload, step 2 — posts every row (all or none). A row whose uploaded
+   * Net differs from the calculated one is only a warning; it posts with the
+   * calculated Net. */
+  importCommit: (file: File) => {
+    const body = new FormData()
+    body.append('file', file)
+    return commitAcknowledgementReceiptImport(body)
+  },
+  /** The review screen's re-check — the same preview as `importPreview`, but
+   * for rows the user has edited on screen instead of a file. Plain JSON, so
+   * it goes through the normal api client. Writes nothing; 500 rows at most. */
+  importPreviewRows: async (rows: AcknowledgementImportRowInput[]) => {
+    const res = await api.post<AcknowledgementImportPreview>(
+      '/accounting/acknowledgement-receipts/import/rows/preview',
+      { rows }
+    )
+    return res.success ? res : { ...res, message: humanizeAcknowledgementImportError(res.message) }
+  },
+  /** The real import for edited rows — all or none, same errors as the file
+   * commit. */
+  importCommitRows: async (rows: AcknowledgementImportRowInput[]) => {
+    const res = await api.post<AcknowledgementImportResult>(
+      '/accounting/acknowledgement-receipts/import/rows',
+      { rows }
+    )
+    return res.success ? res : { ...res, message: humanizeAcknowledgementImportError(res.message) }
+  },
 }
 
 // ============ Credit Memos ============
 export type CreditMemoStatus = 'ISSUED' | 'VOID'
-export type CreditMemoType = 'sales_return' | 'billing_adjustment' | 'goodwill' | 'x_deal'
+export type CreditMemoType =
+  | 'sales_return'
+  | 'billing_adjustment'
+  | 'goodwill'
+  | 'x_deal'
+  // Scenario 79 — the interest an early settlement forgives; issued with the
+  // payoff from the CRM account page, voided through EarlySettlementMemos.
+  | 'early_settlement'
 export interface CreditMemoLine {
   id: string
   itemId: string
@@ -921,6 +1238,7 @@ export interface XDealCandidate {
 export interface XDealPreview {
   posTransactionId: string
   transactionNumber: string
+  salesInvoiceNumber?: string | null
   invoiceNumber: string
   xDealReference: string | null
   outstanding: number
@@ -935,6 +1253,11 @@ export const XDealMemos = {
   issue: (body: { posTransactionId: string; reason?: string; memoDate?: string }) =>
     api.post<CreditMemo>('/credit-memos/x-deal', body),
   void: (id: string) => api.post<CreditMemo>(`/credit-memos/x-deal/${id}/void`, {}),
+}
+
+/** Scenario 79 — voiding one reopens the installment account it settled. */
+export const EarlySettlementMemos = {
+  void: (id: string) => api.post<CreditMemo>(`/credit-memos/early-settlement/${id}/void`, {}),
 }
 
 // ============ Debit Memos ============
@@ -1272,6 +1595,9 @@ export interface DisbursementDeduction {
   supplierId?: string
   description?: string
   amount: number
+  /** Scenario 72 Part 8 — applies this posted supplier debit memo. The server
+   * credits Due from Suppliers for the memo's amount, whatever is sent. */
+  supplierDebitMemoId?: string
 }
 /** One funding source of a disbursement. */
 export interface DisbursementSource {
@@ -1319,6 +1645,9 @@ export interface APDisbursementListItem {
     supplier: { id: string; name: string } | null
     description: string | null
     amount: number
+    /** Set when the deduction applies a supplier debit memo. */
+    supplierDebitMemoId?: string | null
+    supplierDebitMemo?: { id: string; memoNumber: string; amount: number } | null
   }[]
   clearedType: string | null
   clearedDate: string | null
@@ -1633,7 +1962,9 @@ export interface SupplierDebitMemo {
   id: string
   tenantId: string
   memoNumber: string
-  apBillId: string
+  /** Scenario 72 Part 8 — null until an AP voucher applies the memo. A memo
+   * raised before Part 8 carries the bill it named and settled directly. */
+  apBillId: string | null
   apBill?: {
     id: string
     billNumber: string | null
@@ -1661,6 +1992,15 @@ export interface SupplierDebitMemo {
   voidedBy?: string | null
   voidedAt?: string | null
   voidReason?: string | null
+  /** The "Return units to supplier" DR whose approval drafted this memo. Its
+   * goods follow the DR: prices may change here, the units may not. */
+  deliveryReceiptId?: string | null
+  deliveryReceipt?: { id: string; drNumber: string; status: string } | null
+  /** The voucher deduction that applied it. Applied memos are locked. */
+  appliedDeduction?: {
+    id: string
+    disbursement: { id: string; voucherNumber: string | null; status: string }
+  } | null
   lines: SupplierDebitMemoLine[]
 }
 
@@ -1678,7 +2018,7 @@ export interface SupplierDebitMemoLineInput {
 }
 
 export interface SupplierDebitMemoInput {
-  apBillId: string
+  supplierId: string
   warehouseId: string
   lines: SupplierDebitMemoLineInput[]
   deliveryReceiptNumber?: string
@@ -1694,6 +2034,8 @@ export const SupplierDebitMemos = {
     status?: SupplierDebitMemoStatus
     supplierId?: string
     apBillId?: string
+    /** 'true' — posted and not yet applied: what the AP voucher can pick. */
+    unapplied?: 'true' | 'false'
     fromDate?: string
     toDate?: string
   }) =>
@@ -1978,6 +2320,12 @@ export interface SpecialAccountRow {
   entries: number
   lastActivity: string | null
 }
+/** One name on a control account, as the Expense form sees it. */
+export interface SpecialAccountOption {
+  name: string
+  balance: number
+  employee: { id: string; name: string } | null
+}
 export interface SpecialAccountRegister {
   rows: SpecialAccountRow[]
   totals: { people: number; balance: number }
@@ -2093,9 +2441,15 @@ export const Expenses = {
     api.get<ExpenseAgentOption[]>('/expenses/lookups/agents', search ? { search } : undefined),
   agentSales: (agentId: string, params?: { search?: string; excludeExpenseId?: string }) =>
     api.get<ExpenseAgentSale[]>(`/expenses/lookups/agents/${agentId}/sales`, params as any),
-  /** The sales a commission line can release — one agent's with `agentId`, any agent's without. */
-  commissionSales: (params?: { agentId?: string; search?: string; excludeExpenseId?: string }) =>
-    api.get<ExpenseAgentSale[]>('/expenses/lookups/sales', params as any),
+  /** The sales a commission line can release — one agent's with `agentId`, any agent's without.
+   * With `kind: 'SMI'`, the sales an SMI line can be paid on: any completed sale, and
+   * `releasedOn` means already on another SMI line. */
+  commissionSales: (params?: {
+    agentId?: string
+    search?: string
+    excludeExpenseId?: string
+    kind?: 'AGENT_COMMISSION' | 'SMI'
+  }) => api.get<ExpenseAgentSale[]>('/expenses/lookups/sales', params as any),
   list: (params?: {
     search?: string
     status?: string
@@ -2119,6 +2473,14 @@ export const Expenses = {
    * carried against, under the control account carrying it. */
   specialAccounts: (params?: { search?: string; accountId?: string }) =>
     api.get<SpecialAccountRegister>('/expenses/special-accounts', params),
+  /** The Special Account control accounts (1-01-320 …) the caller's role may
+   * use (Access Levels Part 2). */
+  specialAccountControls: () =>
+    api.get<{ id: string; number: string; name: string }[]>('/expenses/special-accounts/controls'),
+  /** The names on one control account with their balances — the Expense
+   * form's picker. Open to expense roles; the register above is not. */
+  specialAccountOptions: (params: { accountId: string; search?: string }) =>
+    api.get<SpecialAccountOption[]>('/expenses/special-accounts/options', params),
   /** Open a named balance under a control account, before anything has been
    * posted to it. */
   createSpecialAccount: (body: CreateSpecialAccountBody) =>
@@ -2168,6 +2530,11 @@ export interface BankAccount {
   /** The fund's control-voucher series, e.g. PCFBCBN0926- — null when it has none. */
   voucherPrefix?: string | null
 }
+/** A bank account as the picker returns it: no balance. */
+export type BankAccountOption = Pick<
+  BankAccount,
+  'id' | 'name' | 'bankName' | 'accountNumber' | 'accountType' | 'isActive'
+>
 // Scenario 42 — the itemized worksheet. sourceType/direction mirror the
 // backend's BankReconciliationLineSourceType/Direction enums.
 export type BankReconciliationLineSourceType =
@@ -2178,6 +2545,8 @@ export type BankReconciliationLineSourceType =
   | 'FUND_TRANSFER_IN'
   /** Scenario 61 Part 6 — a cleared POS deposit, on its deposit date. */
   | 'POS_DEPOSIT'
+  /** A recorded expense's (or payroll's) bank-paid row — a check until it clears. */
+  | 'EXPENSE_PAYMENT'
 export type BankReconciliationLineDirection = 'DEPOSIT' | 'WITHDRAWAL'
 
 /**
@@ -2204,15 +2573,22 @@ export function adjustedStatementBalance(
  * Until then a worksheet is In Progress (still a difference) or For Review
  * (zero — ready for someone to sign it off).
  */
-export type ReconStatus = 'Reconciled' | 'For Review' | 'In Progress'
-export function reconStatus(reconciled: boolean, discrepancy: number): ReconStatus {
+export type ReconStatus = 'Reconciled' | 'For Review' | 'In Progress' | 'Draft'
+export function reconStatus(
+  reconciled: boolean,
+  discrepancy: number,
+  // An auto-created draft that does not have its statement balance yet.
+  awaitingStatement = false
+): ReconStatus {
   if (reconciled) return 'Reconciled'
+  if (awaitingStatement) return 'Draft'
   return Math.abs(discrepancy) < 0.01 ? 'For Review' : 'In Progress'
 }
 export const RECON_STATUS_STYLE: Record<ReconStatus, string> = {
   Reconciled: 'text-emerald-700 font-medium',
   'For Review': 'text-blue-700 font-medium',
   'In Progress': 'text-amber-700 font-medium',
+  Draft: 'text-purple-700 font-medium',
 }
 export interface BankReconciliationLine {
   id: string
@@ -2235,6 +2611,11 @@ export interface BankReconciliation {
   /** Persisted at Complete time only — null until then. */
   discrepancy?: number | null
   reconciled: boolean
+  /** Made by the month-end job (or "Create drafts"), not typed in by a person. */
+  autoCreated?: boolean
+  /** True until the bank statement's closing balance is entered; the statement
+   * balance is then a placeholder and Mark Reconciled is locked. */
+  awaitingStatement?: boolean
   notes?: string | null
   reconciledAt?: string | null
   lines: BankReconciliationLine[]
@@ -2270,6 +2651,12 @@ export interface BankLedgerWindow {
 }
 export const BankAccounts = {
   list: () => api.get<BankAccount[]>('/bank-accounts'),
+  /** The bank-account picker (Access Levels Part 2): names and numbers, no
+   * balances, limited to the accounts the caller's role may use. Opened by
+   * every feature that picks a bank account, so it needs no Cash & Banking
+   * permission. purpose 'expense-fund' narrows it to an expense's "Paid from". */
+  options: (purpose?: 'expense-fund') =>
+    api.get<BankAccountOption[]>('/bank-accounts/options', purpose ? { purpose } : undefined),
   get: (id: string) => api.get<BankAccount>(`/bank-accounts/${id}`),
   create: (body: any) => api.post<BankAccount>('/bank-accounts', body),
   update: (id: string, body: any) => api.patch<BankAccount>(`/bank-accounts/${id}`, body),
@@ -2587,11 +2974,24 @@ export type FundTransferBank = Pick<
   'id' | 'name' | 'bankName' | 'accountNumber' | 'accountType'
 >
 
+export type FundTransferStatus = 'POSTED' | 'VOID'
+// Scenario 72 Part 3 — derived by the backend from the clearing date.
+export type FundTransferClearingStatus = 'pending' | 'cleared' | 'void'
+
 export interface FundTransfer {
   id: string
   transferNumber: string
   date: string
   clearingDate: string | null
+  // Scenario 72 — a void transfer keeps its row; its journal entry is reversed.
+  status: FundTransferStatus
+  clearingStatus: FundTransferClearingStatus
+  // Scenario 72 Part 6 — the branch / location responsible; null = head office.
+  branchId: string | null
+  branch?: { id: string; name: string; code?: string | null } | null
+  voidedAt: string | null
+  voidedById: string | null
+  voidReason: string | null
   sourceBankAccountId: string
   destinationBankAccountId: string
   sourceBankAccount: FundTransferBank
@@ -2619,18 +3019,24 @@ export const BankTransfers = {
     clearingDate?: string
     reference?: string
     description?: string
+    branchId?: string
   }) => api.post<FundTransfer>('/bank-accounts/transfer', body),
   list: (params?: {
     bankAccountId?: string
     startDate?: string
     endDate?: string
     search?: string
+    status?: FundTransferClearingStatus
+    branchId?: string
   }) => api.get<FundTransfer[]>('/bank-accounts/transfers', params),
   get: (id: string) => api.get<FundTransfer>(`/bank-accounts/transfers/${id}`),
   // Only these two fields are editable once posted; null clears a field.
   update: (id: string, body: { clearingDate?: string | null; reference?: string | null }) =>
     api.patch<FundTransfer>(`/bank-accounts/transfers/${id}`, body),
   getDocument: (id: string) => api.get<unknown>(`/bank-accounts/transfers/${id}/document`),
+  // Scenario 72 — reverses the transfer's journal entry; the reason is required.
+  void: (id: string, reason: string) =>
+    api.post<FundTransfer>(`/bank-accounts/transfers/${id}/void`, { reason }),
 }
 
 // ============ Clearing Settlements & Unidentified Bank Credits (Scenario 38 Gap 1) ============

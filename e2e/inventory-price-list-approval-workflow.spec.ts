@@ -17,7 +17,7 @@ test.describe('Inventory — Price List Approval Workflow', () => {
   })
 
   async function createDraftPriceList(page: import('@playwright/test').Page, name: string) {
-    await gotoReady(page, '/inventory/price-lists')
+    await gotoReady(page, '/pos/catalog/price-lists')
     await clickStable(
       page.getByRole('button', { name: 'New Price List' }),
       page.getByRole('heading', { name: 'New Price List' })

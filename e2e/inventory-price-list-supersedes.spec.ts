@@ -23,7 +23,7 @@ test.describe('Inventory — Price List Supersedes picker', () => {
   })
 
   async function createAndApprove(page: import('@playwright/test').Page, name: string) {
-    await gotoReady(page, '/inventory/price-lists')
+    await gotoReady(page, '/pos/catalog/price-lists')
     await clickStable(
       page.getByRole('button', { name: 'New Price List' }),
       page.getByRole('heading', { name: 'New Price List' })
@@ -56,7 +56,7 @@ test.describe('Inventory — Price List Supersedes picker', () => {
 
     // ─── Create B, superseding A ────────────────────────────────────────
     const nameB = `${NAME_PREFIX}B ${Date.now()}`
-    await gotoReady(page, '/inventory/price-lists')
+    await gotoReady(page, '/pos/catalog/price-lists')
     await clickStable(
       page.getByRole('button', { name: 'New Price List' }),
       page.getByRole('heading', { name: 'New Price List' })
@@ -100,7 +100,7 @@ test.describe('Inventory — Price List Supersedes picker', () => {
     const nameSkyro = `${NAME_PREFIX}Skyro ${Date.now()}`
     await createAndApprove(page, nameSkyro)
 
-    await gotoReady(page, '/inventory/price-lists')
+    await gotoReady(page, '/pos/catalog/price-lists')
     await clickStable(
       page.getByRole('button', { name: 'New Price List' }),
       page.getByRole('heading', { name: 'New Price List' })

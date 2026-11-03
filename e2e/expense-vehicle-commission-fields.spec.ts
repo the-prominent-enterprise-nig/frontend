@@ -121,14 +121,24 @@ test.describe('Expense lines — Fuel, Vehicle Repair, Commission', () => {
     expect(labels).toContain('60109 - TOP DOWN')
   })
 
-  test('the Drivers screen calls the roster tag "Vehicle Type", not "Tag / Area"', async ({
+  test('the Vehicles screen calls the roster tag "Vehicle Type", not "Tag / Area"', async ({
     page,
   }) => {
-    await gotoReady(page, '/inventory/master-data?tab=drivers')
+    await gotoReady(page, '/accounting/vehicles')
     await expect(page.getByRole('columnheader', { name: 'Vehicle Type' })).toBeVisible({
       timeout: 15_000,
     })
     await expect(page.getByText('Tag / Area')).toHaveCount(0)
+  })
+
+  test('the Drivers screen no longer shows a plate, category or vehicle type', async ({ page }) => {
+    await gotoReady(page, '/accounting/drivers')
+    await expect(page.getByRole('columnheader', { name: 'Driver', exact: true })).toBeVisible({
+      timeout: 15_000,
+    })
+    for (const name of ['Plate No.', 'Category', 'Vehicle Type']) {
+      await expect(page.getByRole('columnheader', { name })).toHaveCount(0)
+    }
   })
 
   test('moving the line to Vehicle Repairs swaps the columns and asks for the kind of job', async ({

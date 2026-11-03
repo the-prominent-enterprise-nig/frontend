@@ -41,10 +41,11 @@ type Props = {
  * applicant is picked.
  *
  * "Prefill for returning customers, then confirm or edit": every box here is
- * seeded from the customer's own record and writes back to it on submit (see
- * NewCreditApplicationForm's handleFormSubmit), not into the credit
- * application. The application stores an applicantCustomerId; the profile is
- * the customer's.
+ * seeded from the customer's own record. The profile is the customer's, so a
+ * change to any box except the address writes back to it on submit (see
+ * NewCreditApplicationForm's handleFormSubmit). The ADDRESS is the exception
+ * (client, 2026-10-15): it is kept on the credit application and never
+ * written to the customer's record.
  *
  * It was phone and email only until 2026-09-30. The other ten fields existed
  * on the customer and came back on the very same API call this page already

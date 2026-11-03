@@ -30,6 +30,26 @@ export const ProjectionListResponseSchema = z.object({
   items: z.array(ProjectionItemSchema),
 })
 
+/**
+ * `GET /inventory/projection?view=summary`: each item without its per-day
+ * timeline (31+ entries per item, ~40 MB across a full catalog), carrying the
+ * horizon totals the list shows instead. `total` is the full item count and is
+ * only present on paged calls.
+ */
+export const ProjectionSummaryItemSchema = ProjectionItemSchema.omit({
+  dailyProjections: true,
+}).extend({
+  incomingQty: z.number(),
+  outgoingQty: z.number(),
+})
+
+export const ProjectionSummaryResponseSchema = ProjectionListResponseSchema.omit({
+  items: true,
+}).extend({
+  items: z.array(ProjectionSummaryItemSchema),
+  total: z.number().optional(),
+})
+
 export const StockoutAlertSchema = z.object({
   itemId: z.string(),
   sku: z.string(),
@@ -47,5 +67,7 @@ export const StockoutAlertListResponseSchema = z.object({
 
 export type ProjectionItem = z.infer<typeof ProjectionItemSchema>
 export type ProjectionListResponse = z.infer<typeof ProjectionListResponseSchema>
+export type ProjectionSummaryItem = z.infer<typeof ProjectionSummaryItemSchema>
+export type ProjectionSummaryResponse = z.infer<typeof ProjectionSummaryResponseSchema>
 export type StockoutAlert = z.infer<typeof StockoutAlertSchema>
 export type StockoutAlertListResponse = z.infer<typeof StockoutAlertListResponseSchema>

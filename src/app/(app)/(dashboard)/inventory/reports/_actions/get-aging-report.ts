@@ -7,6 +7,8 @@ type Params = {
   warehouseId?: string
   categoryId?: string
   itemId?: string
+  typeId?: string
+  asOf?: string
   search?: string
   serialNumber?: string
   brandId?: string
@@ -25,6 +27,8 @@ export async function getAgingReport(params: Params = {}) {
     warehouseId: params.warehouseId,
     categoryId: params.categoryId,
     itemId: params.itemId,
+    typeId: params.typeId,
+    asOf: params.asOf,
     search: params.search,
     serialNumber: params.serialNumber,
     brandId: params.brandId,

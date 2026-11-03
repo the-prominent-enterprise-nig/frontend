@@ -10,6 +10,7 @@ import {
   Ban,
   UserCheck,
   AlertTriangle,
+  Repeat,
 } from 'lucide-react'
 import type { TransferStatus } from '@/src/schema/inventory/transfers'
 import { warehouseLabel } from '@/src/schema/inventory/warehouses'
@@ -60,7 +61,7 @@ export const STATUS_CONFIG: Record<
   pending_manager_approval: {
     label: 'Pending',
     badge: 'bg-[#f1f1f4] text-[#3d3d4a]',
-    tone: 'text-[#5b5b6b]',
+    tone: 'text-[#4b4b5a]',
     icon: UserCheck,
   },
   pending_hq_approval: {
@@ -77,9 +78,15 @@ export const STATUS_CONFIG: Record<
   },
   cancelled: {
     label: 'Cancelled',
-    badge: 'bg-[#f6f6f8] text-[#5b5b6b]',
-    tone: 'text-[#8b8b9b]',
+    badge: 'bg-[#f6f6f8] text-[#4b4b5a]',
+    tone: 'text-[#6f6f7f]',
     icon: XCircle,
+  },
+  pending_substitution_confirmation: {
+    label: 'Substitution Proposed',
+    badge: 'bg-[#f1ebfb] text-[#3f1490]',
+    tone: 'text-[#7c4fd1]',
+    icon: Repeat,
   },
 }
 
@@ -99,7 +106,7 @@ export function branchLabel(wh: Parameters<typeof warehouseLabel>[0]): string {
 export function LocationName({
   wh,
   className = '',
-  subtitleClassName = 'text-[11px] text-[#8b8b9b]',
+  subtitleClassName = 'text-[11px] text-[#6f6f7f]',
 }: {
   wh: Parameters<typeof warehouseLabel>[0]
   className?: string

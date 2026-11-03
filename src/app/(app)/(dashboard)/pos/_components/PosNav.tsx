@@ -2,128 +2,115 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import {
-  BookOpen,
-  LayoutDashboard,
-  ShoppingCart,
-  BookmarkCheck,
-  ReceiptText,
-  Clock,
-  Wallet,
-  Tag,
-  Gift,
-  Star,
-  GitBranch,
-  PauseCircle,
-  type LucideIcon,
-} from 'lucide-react'
+import { usePosOverridePendingCount } from '../_hooks/usePosOverridePendingCount'
+import { isPosTabActive, posNavModel, resolvePosTabHref } from '../_shared/pos-hubs'
 
-type NavItem = {
-  label: string
-  href: string
-  exact?: boolean
-  icon: LucideIcon
-  /** Business Owner / Branch Manager only — hidden from everyone else (e.g. Cashier). */
-  configOnly?: boolean
+// Where the tabs come from: _shared/pos-hubs.ts. Pages no hub owns — Product
+// Catalog, Customers, and the detail and form pages inside a hub — show no strip.
+
+type NavProps = {
+  canConfigurePos: boolean
+  /** Hrefs of the pages this user may open — worked out on the server, where the permissions are. */
+  visibleHrefs: string[]
 }
 
-const GROUPS: { label: string; paths: string[]; items: NavItem[] }[] = [
-  {
-    label: 'Operations',
-    // Parked Sales tab hidden for now (still a real, working feature — the
-    // route/controller/service are untouched, and Scenario 09 still depends
-    // on ParkedSalesService as-is — just no nav entry into it at the moment).
-    paths: [
-      '/pos',
-      '/pos/checkout',
-      '/pos/catalog',
-      '/pos/reservations',
-      '/pos/transactions',
-      '/pos/parked-sales',
-    ],
-    items: [
-      { label: 'Overview', href: '/pos', exact: true, icon: LayoutDashboard },
-      { label: 'Checkout', href: '/pos/checkout', icon: ShoppingCart },
-      // Item Master's product browse moved here from Inventory (Scenario 62):
-      // brands, models, prices and stock for the branch's sellable items.
-      { label: 'Product Catalog', href: '/pos/catalog', icon: BookOpen },
-      { label: 'Reservations', href: '/pos/reservations', icon: BookmarkCheck },
-      { label: 'Transactions', href: '/pos/transactions', icon: ReceiptText },
-      // The page existed but was linked from nowhere — not here, not the
-      // sidebar, not checkout — so a cashier could park a sale and then had
-      // no way back to it except by typing the URL.
-      { label: 'Parked Sales', href: '/pos/parked-sales', icon: PauseCircle },
-    ] satisfies NavItem[],
-  },
-  {
-    label: 'Management',
-    paths: ['/pos/sessions', '/pos/cash-drawer'],
-    items: [
-      { label: 'Sessions', href: '/pos/sessions', icon: Clock },
-      { label: 'Cash Drawer', href: '/pos/cash-drawer', icon: Wallet },
-    ] satisfies NavItem[],
-  },
-  {
-    label: 'Promotions',
-    paths: ['/pos/promo-codes', '/pos/gift-cards', '/pos/loyalty', '/pos/branch-pricing'],
-    items: [
-      { label: 'Promo Codes', href: '/pos/promo-codes', icon: Tag },
-      { label: 'Gift Cards', href: '/pos/gift-cards', icon: Gift },
-      { label: 'Loyalty', href: '/pos/loyalty', icon: Star },
-      { label: 'Branch Pricing', href: '/pos/branch-pricing', icon: GitBranch },
-    ] satisfies NavItem[],
-  },
-  // No "Configuration" group: /pos/settings/* has its own left-rail tabs
-  // (PosSettingsTabs) and the Sidebar already highlights "Configuration" as
-  // active there — a single-item PosNav tab bar with nothing else to switch
-  // to had no navigational purpose, so these routes intentionally match no
-  // group here and PosNav renders nothing, same as /pos/pin below.
-]
+const TAB_BASE =
+  'flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-3 text-[13px] font-medium whitespace-nowrap transition-colors md:px-4'
+const TAB_ACTIVE = 'border-purple-600 text-purple-700'
+const TAB_IDLE = 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-800'
 
-/** Whether `pathname` belongs to one of PosNav's own tab groups — used by
- * PosTopBar to decide whether the shared branch switcher belongs in this bar
- * at all, since a page with no PosNav tabs usually surfaces it elsewhere
- * (e.g. inline with its own page title) or doesn't need it. */
-export function isPosNavRoute(pathname: string): boolean {
-  return GROUPS.some((g) => g.paths.includes(pathname))
-}
-
-export function PosNav({ canConfigurePos }: { canConfigurePos: boolean }) {
+export function PosNav({ canConfigurePos, visibleHrefs }: NavProps) {
   const pathname = usePathname()
+  const model = posNavModel(pathname, visibleHrefs, canConfigurePos)
 
-  // Standalone pages (approvals, void/refund requests, cancellation
-  // requests, payment methods, receipt branding, customer display, etc.)
-  // aren't part of any group — they used to silently fall back to the
-  // Operations tabs (Overview/Checkout/Parked Sales/Transactions), which
-  // don't apply there. Show nothing instead.
-  const activeGroup = GROUPS.find((g) => g.paths.includes(pathname))
-  if (!activeGroup) return null
+  const overrideTab = model?.tabs.find((tab) => tab.id === 'override-review')
+  const overridePending = usePosOverridePendingCount(!!overrideTab)
 
-  const visibleItems = activeGroup.items.filter((item) => canConfigurePos || !item.configOnly)
+  if (!model) return null
+
+  // A strip with one tab has nothing to switch to — the sidebar item already
+  // says where you are. But when that one tab fronts a second row (Promotions),
+  // the second row is the only navigation there is, so it takes the strip's place.
+  if (model.tabs.length < 2) {
+    if (model.subTabs.length < 2) return null
+    return (
+      <nav
+        aria-label="POS section tabs"
+        className="flex min-w-0 flex-1 items-center overflow-x-auto bg-white px-4 lg:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {model.subTabs.map((sub) => (
+          <Link
+            key={sub.href}
+            href={sub.href}
+            className={`${TAB_BASE} ${pathname === sub.href ? TAB_ACTIVE : TAB_IDLE}`}
+          >
+            <sub.icon className="h-3.5 w-3.5" />
+            {sub.label}
+          </Link>
+        ))}
+      </nav>
+    )
+  }
 
   return (
     <nav
       aria-label="POS section tabs"
       className="flex min-w-0 flex-1 items-center overflow-x-auto bg-white px-4 lg:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
-      {visibleItems.map((item) => {
-        const { label, href, exact } = item
-        const active = exact ? pathname === href : pathname.startsWith(href)
+      {model.tabs.map((tab) => {
+        const href = resolvePosTabHref(tab, visibleHrefs)
+        if (!href) return null
+        const badge = tab === overrideTab && overridePending > 0 ? overridePending : 0
         return (
           <Link
-            key={href}
+            key={tab.id}
             href={href}
-            className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-3 text-[13px] font-medium whitespace-nowrap transition-colors md:px-4 ${
-              active
-                ? 'border-purple-600 text-purple-700'
-                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-800'
-            }`}
+            className={`${TAB_BASE} ${isPosTabActive(tab, pathname) ? TAB_ACTIVE : TAB_IDLE}`}
           >
-            {item.icon && <item.icon className="h-3.5 w-3.5" />}
-            {label}
+            <tab.icon className="h-3.5 w-3.5" />
+            {tab.label}
+            {badge > 0 && (
+              <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-semibold leading-none text-white">
+                {badge}
+              </span>
+            )}
           </Link>
         )
       })}
+    </nav>
+  )
+}
+
+/**
+ * The second row, under the strip: the pages of the lit tab that fronts one
+ * (Management → Sessions | Cash Drawer). Only when the strip itself is showing —
+ * with a lone tab, PosNav draws these pages in the strip's place instead.
+ */
+export function PosSubNav({ canConfigurePos, visibleHrefs }: NavProps) {
+  const pathname = usePathname()
+  const model = posNavModel(pathname, visibleHrefs, canConfigurePos)
+
+  if (!model || model.tabs.length < 2 || model.subTabs.length < 2) return null
+
+  return (
+    <nav
+      aria-label="POS sub tabs"
+      className="flex min-w-0 items-center gap-1.5 overflow-x-auto border-b border-gray-100 bg-gray-50/70 px-4 py-2 lg:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      {model.subTabs.map((sub) => (
+        <Link
+          key={sub.href}
+          href={sub.href}
+          className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
+            pathname === sub.href
+              ? 'bg-purple-100 text-purple-700'
+              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+          }`}
+        >
+          <sub.icon className="h-3 w-3" />
+          {sub.label}
+        </Link>
+      ))}
     </nav>
   )
 }

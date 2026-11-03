@@ -1,34 +1,19 @@
-import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
-import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
-import { TransferList } from './_components'
 
-export const metadata = {
-  title: 'Stock Transfers | NIG Central',
-  description: 'Transfer stock between branches with full ledger traceability',
-}
-
-export default async function TransfersPage() {
-  const session = await getSessionOrNull()
-
-  if (!session) {
-    redirect('/login')
+/**
+ * Stock transfers live under Stock Transaction now. This old address only
+ * forwards there, keeping its query (?transfer=, the prefill and Item 360
+ * deep links) so bookmarks and older links still open the right transfer.
+ */
+export default async function TransfersPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}): Promise<never> {
+  const query = new URLSearchParams({ tab: 'transfers' })
+  for (const [key, value] of Object.entries(await searchParams)) {
+    if (key === 'tab') continue
+    for (const v of [value].flat()) if (v != null) query.append(key, v)
   }
-
-  if (!can(session, INVENTORY_PERMISSIONS.TRANSFERS_READ)) {
-    redirect('/403')
-  }
-
-  return (
-    <div className="min-h-screen bg-zinc-50">
-      {/* TransferList reads useSearchParams() for Item 360's "Transfer
-          selected" deep link — required by Next.js so that read doesn't
-          force the rest of this route out of static rendering. */}
-      <Suspense fallback={null}>
-        <TransferList session={session} />
-      </Suspense>
-    </div>
-  )
+  redirect(`/inventory/stock-transaction?${query.toString()}`)
 }

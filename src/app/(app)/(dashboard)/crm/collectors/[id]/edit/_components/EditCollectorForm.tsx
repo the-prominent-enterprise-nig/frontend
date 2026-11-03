@@ -16,6 +16,9 @@ type FormState = {
   name: string
   branchId: string
   status: CollectorStatus
+  area: string
+  areaCode: string
+  supervisorName: string
   areaBarangayCodes: string[]
 }
 
@@ -24,6 +27,9 @@ const empty: FormState = {
   name: '',
   branchId: '',
   status: 'active',
+  area: '',
+  areaCode: '',
+  supervisorName: '',
   areaBarangayCodes: [],
 }
 
@@ -53,6 +59,9 @@ export default function EditCollectorForm({ id }: { id: string }) {
           name: c.name,
           branchId: c.branchId ?? '',
           status: c.status,
+          area: c.area ?? '',
+          areaCode: c.areaCode ?? '',
+          supervisorName: c.supervisorName ?? '',
           areaBarangayCodes: c.areas.map((a) => a.barangayCode),
         })
       } else {
@@ -77,6 +86,9 @@ export default function EditCollectorForm({ id }: { id: string }) {
       name: form.name,
       branchId: form.branchId || undefined,
       status: form.status,
+      area: form.area,
+      areaCode: form.areaCode,
+      supervisorName: form.supervisorName,
       areaBarangayCodes: form.areaBarangayCodes,
     }
 
@@ -118,7 +130,9 @@ export default function EditCollectorForm({ id }: { id: string }) {
       </Link>
 
       <h1 className="text-2xl font-semibold text-gray-900">Edit Collector</h1>
-      <p className="mt-1 text-sm text-gray-500">Update collector code, branch, or status.</p>
+      <p className="mt-1 text-sm text-gray-500">
+        Update collector code, area, supervisor, branch, or status.
+      </p>
 
       <form
         onSubmit={onSubmit}
@@ -136,6 +150,27 @@ export default function EditCollectorForm({ id }: { id: string }) {
             error={errors.name}
             value={form.name}
             onChange={(v) => setField('name', v)}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field
+            label="Area"
+            error={errors.area}
+            value={form.area}
+            onChange={(v) => setField('area', v)}
+          />
+          <Field
+            label="Area code"
+            error={errors.areaCode}
+            value={form.areaCode}
+            onChange={(v) => setField('areaCode', v)}
+          />
+          <Field
+            label="Supervisor"
+            error={errors.supervisorName}
+            value={form.supervisorName}
+            onChange={(v) => setField('supervisorName', v)}
           />
         </div>
 

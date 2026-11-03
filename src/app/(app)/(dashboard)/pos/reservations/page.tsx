@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
-import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { canAny } from '@/src/libs/guards/permission'
+import { RESERVATION_ACCESS } from '@/src/libs/guards/shared-ownership'
 import SkuReservationsList from './_components/SkuReservationsList'
 
 export const metadata = {
@@ -14,11 +14,12 @@ export const metadata = {
 export default async function SkuReservationsPage() {
   const session = await getSessionOrNull()
   if (!session) redirect('/login')
-  if (!can(session, INVENTORY_PERMISSIONS.SKU_RESERVATIONS_READ)) redirect('/403')
+  // A POS page: POS's permission opens it as well as Inventory's.
+  if (!canAny(session, RESERVATION_ACCESS.READ)) redirect('/403')
 
-  const canFulfil = can(session, INVENTORY_PERMISSIONS.SKU_RESERVATIONS_FULFIL)
-  const canRequestCancel = can(session, INVENTORY_PERMISSIONS.SKU_RESERVATIONS_CANCEL_REQUEST)
-  const canApprove = can(session, INVENTORY_PERMISSIONS.SKU_RESERVATIONS_CANCEL_APPROVE)
+  const canFulfil = canAny(session, RESERVATION_ACCESS.FULFIL)
+  const canRequestCancel = canAny(session, RESERVATION_ACCESS.CANCEL_REQUEST)
+  const canApprove = canAny(session, RESERVATION_ACCESS.CANCEL_APPROVE)
 
   return (
     <SkuReservationsList

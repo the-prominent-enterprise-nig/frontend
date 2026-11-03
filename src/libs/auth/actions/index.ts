@@ -1,4 +1,11 @@
-export { getSession, getSessionOrNull, isAuthenticated } from './get-session'
+export {
+  getSession,
+  getSessionIfAvailable,
+  getSessionOrNull,
+  getSessionState,
+  isAuthenticated,
+} from './get-session'
+export type { SessionState } from './get-session'
 export { login, logout, logoutAndRedirect } from './login'
 export { changePassword } from './change-password'
 export { requestPasswordReset } from './forgot-password'

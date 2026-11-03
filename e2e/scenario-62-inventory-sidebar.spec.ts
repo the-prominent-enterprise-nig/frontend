@@ -51,8 +51,12 @@ test.describe('Scenario 62 Part 1 — inventory sidebar', () => {
     await gotoReady(page, '/inventory/master-data')
 
     const tabs = page.getByRole('navigation', { name: 'Module tabs' })
-    for (const label of ['Warehouses', 'Suppliers', 'Price Lists', 'Settings']) {
+    for (const label of ['Warehouses', 'Price Lists', 'Settings']) {
       await expect(tabs.getByRole('link', { name: label, exact: true })).toBeVisible()
+    }
+    // Suppliers and Drivers moved to Accounting (Payables and Expenses hubs).
+    for (const label of ['Suppliers', 'Drivers']) {
+      await expect(tabs.getByRole('link', { name: label, exact: true })).toHaveCount(0)
     }
   })
 

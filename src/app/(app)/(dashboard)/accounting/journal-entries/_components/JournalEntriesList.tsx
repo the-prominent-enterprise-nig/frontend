@@ -13,6 +13,7 @@ import {
   reverseJournalEntry,
   type JournalEntry,
 } from '@/src/libs/data/AccountingData'
+import { entryJournalLabel } from '@/src/libs/format/journalType'
 import JournalEntryFormDialog from './JournalEntryFormDialog'
 
 function statusBadge(s: string) {
@@ -23,13 +24,6 @@ function statusBadge(s: string) {
 function formatMoney(v: number | undefined | null) {
   if (!v) return '—'
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(v)
-}
-
-// "CashReceiptJournal" -> "Cash Receipt" — every row on this page is already
-// a journal entry, so the repeated "Journal" suffix is pure noise.
-function formatJournalType(t: string | undefined | null) {
-  if (!t) return '—'
-  return t.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\s*Journal$/, '')
 }
 
 export default function JournalEntriesList({ session }: { session: SessionUser | null }) {
@@ -220,7 +214,7 @@ export default function JournalEntriesList({ session }: { session: SessionUser |
                           {entry.description || '—'}
                         </td>
                         <td className="px-3 py-2.5 text-gray-600 text-xs whitespace-nowrap">
-                          {formatJournalType(entry.journalType)}
+                          {entryJournalLabel(entry)}
                         </td>
                         <td className="px-3 py-2.5">
                           <span

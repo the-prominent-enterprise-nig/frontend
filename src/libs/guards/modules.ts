@@ -85,13 +85,5 @@ export const MODULES: AppModule[] = [
     icon: 'file-bar-chart',
     accessByPermission: true,
   },
-  // {
-  //   key: 'sales',
-  //   routeSegment: 'sales',
-  //   label: 'Sales & Orders',
-  //   href: '/sales',
-  //   requiredPermission: 'sales:*',
-  //   icon: 'shopping-cart',
-  // },
   // add more modules here — sidebar auto-updates
 ]

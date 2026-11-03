@@ -38,11 +38,6 @@ import {
   getSessionReconciliation,
   getCashDrawerEvents,
   createCashDrawerEvent,
-  getBranchPricing,
-  createBranchPricing,
-  updateBranchPricing,
-  deleteBranchPricing,
-  getBranchPricingByItem,
   getSalesSummary,
   getBranches,
   createLoyaltyAccount,
@@ -100,8 +95,6 @@ import type {
   UpdatePromoCodeInput,
   IssueGiftCardInput,
   CreateCashDrawerEventInput,
-  CreateBranchPricingInput,
-  UpdateBranchPricingInput,
   SubmitVoidRequestInput,
   ReviewVoidRequestInput,
   CreateFinancingTermInput,
@@ -335,15 +328,6 @@ export function useCreateLoyaltyAccount() {
   })
 }
 
-export function useBranchPricingByItem(itemId: string, branchId?: string) {
-  return useQuery({
-    queryKey: ['pos-branch-pricing-item', itemId, branchId],
-    queryFn: () => getBranchPricingByItem(itemId, branchId),
-    enabled: !!itemId,
-    staleTime: 5 * 60 * 1000,
-  })
-}
-
 // ─── Promo Codes ──────────────────────────────────────────────────────────────
 
 export function usePromoCodes() {
@@ -441,42 +425,6 @@ export function useCreateCashDrawerEvent() {
     mutationFn: (input: CreateCashDrawerEventInput) => createCashDrawerEvent(input),
     onSuccess: (_, input) =>
       qc.invalidateQueries({ queryKey: ['pos-cash-drawer', input.sessionId] }),
-  })
-}
-
-// ─── Branch Pricing ───────────────────────────────────────────────────────────
-
-export function useBranchPricing(branchId?: string, itemId?: string) {
-  return useQuery({
-    queryKey: ['pos-branch-pricing', branchId, itemId],
-    queryFn: () => getBranchPricing(branchId, itemId),
-    staleTime: 5 * 60 * 1000,
-    placeholderData: keepPreviousData,
-  })
-}
-
-export function useCreateBranchPricing() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (input: CreateBranchPricingInput) => createBranchPricing(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-branch-pricing'] }),
-  })
-}
-
-export function useUpdateBranchPricing() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ id, input }: { id: string; input: UpdateBranchPricingInput }) =>
-      updateBranchPricing(id, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-branch-pricing'] }),
-  })
-}
-
-export function useDeleteBranchPricing() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (id: string) => deleteBranchPricing(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['pos-branch-pricing'] }),
   })
 }
 

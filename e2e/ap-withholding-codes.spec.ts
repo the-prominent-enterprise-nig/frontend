@@ -50,7 +50,7 @@ test.describe('Withholding tax codes — suppliers, AP bills and receiving', () 
   test('the supplier form defaults to the 1% goods code and offers the other EWT codes with their rates', async ({
     page,
   }) => {
-    await gotoReady(page, '/inventory/suppliers')
+    await gotoReady(page, '/accounting/suppliers')
     await page.getByRole('button', { name: /new supplier/i }).click()
     await expect(page.getByRole('heading', { name: 'New supplier' })).toBeVisible({
       timeout: 10_000,

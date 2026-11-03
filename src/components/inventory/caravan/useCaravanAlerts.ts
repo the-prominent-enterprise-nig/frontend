@@ -8,11 +8,13 @@ import type { CaravanAlert } from '@/src/schema/inventory/warehouses'
  * the POS notice, so all three read one cached list per host branch. */
 export function useCaravanAlerts(
   hostBranchId?: string | null,
-  enabled = true
+  enabled = true,
+  // The Caravan tab also lists caravans that have ended and been emptied.
+  includeEnded = false
 ): { alerts: CaravanAlert[]; isLoading: boolean } {
   const query = useQuery({
-    queryKey: ['caravan-alerts', hostBranchId ?? null],
-    queryFn: () => getCaravanAlerts(hostBranchId ?? undefined),
+    queryKey: ['caravan-alerts', hostBranchId ?? null, includeEnded],
+    queryFn: () => getCaravanAlerts(hostBranchId ?? undefined, includeEnded),
     enabled,
     staleTime: 60 * 1000,
   })

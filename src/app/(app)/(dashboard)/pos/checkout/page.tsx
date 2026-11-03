@@ -6,6 +6,7 @@ import {
   Plus,
   Minus,
   X,
+  Trash2,
   Tag,
   ShoppingCart,
   AlertTriangle,
@@ -18,7 +19,6 @@ import {
   ShieldCheck,
   Loader2,
   ChevronDown,
-  ChevronUp,
   ChevronRight,
   KeyRound,
   WifiOff,
@@ -40,10 +40,13 @@ import {
 } from './_utils/calculations'
 import { BILLER_OPTION_NAMES, GCASH_OPTION_NAMES } from './_utils/qr-option-groups'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionStateWithRetry } from '@/src/libs/auth/session-client'
+import { SessionUnavailableError } from '@/src/libs/auth/session-unavailable-error'
 import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import { useQueryClient } from '@tanstack/react-query'
 import { useSessions } from '../_hooks/usePos'
+import { POS_CATALOG_KEY, posCatalogQueryOptions } from '../_hooks/posCatalogQuery'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import { getUnitsOfMeasure } from '../../inventory/items/_actions/get-lookup-data'
@@ -59,10 +62,11 @@ import {
   getLoyaltyByCustomer,
   earnPoints,
   redeemPoints,
-  getCustomerTransactions,
   getActiveLoyaltyProgram,
   getActivePosConfig,
   getSellingAgents,
+  getPosOverrideReasons,
+  type PosOverrideReason,
   validateManagerByPin,
   syncTransactions,
   updateSessionDisplay,
@@ -86,7 +90,7 @@ import {
   type PosPriceUseType,
 } from '../_actions/pos-actions'
 import { useNotificationsSocket } from '@/src/libs/hooks/useNotificationsSocket'
-import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import {
   DOWN_PAYMENT_FLOOR_RATE,
   DOWN_PAYMENT_FLOOR_LABEL,
@@ -96,26 +100,53 @@ import {
 import { Select } from '@/src/components/ui/Select'
 import { DEFAULT_VAT_RATE } from '../_actions/pos-constants'
 import { getCreditApplications } from '../credit-applications/_actions/get-applications'
+import { getDeliveryReceipt } from '../../inventory/delivery-receipts/_actions/get-delivery-receipt'
 import { getPromissoryNote } from '../credit-applications/_actions/get-promissory-note'
 import { signPromissoryNote } from '../credit-applications/_actions/sign-promissory-note'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import type { PromissoryNote } from '@/src/schema/credit/applications'
 import PriceUseSelector from './_components/PriceUseSelector'
+import PosExceptionPanel from '@/src/components/common/PosExceptionPanel'
+import {
+  creditApplicationStatusLabel,
+  creditOverrideLines,
+  isDecidedApplication,
+} from '@/src/libs/pos/credit-override'
+import type { CreditApplicationOverrideSnapshot } from '@/src/schema/pos'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
+import TypedPlanPanel from './_components/TypedPlanPanel'
+import { toCents, dateInputFromToday, coveringMonthly, typedPlanProblem } from './_utils/typed-plan'
+import { applicationFmiNote, fmiDateProblem, longDate } from './_utils/application-fmi'
+import { shareByAmount, splitDownPayment, type DpRow } from './_utils/down-payment-groups'
 import CopyAmountButton from './_components/CopyAmountButton'
 import DeliverySection from './_components/DeliverySection'
+import TenderPanel from './_components/TenderPanel'
+import PaymentAmountFields, { ReferenceField } from './_components/PaymentAmountFields'
 import { PillCombobox, PillSelect } from './_components/PillInputs'
 import {
   EMPTY_DELIVERY,
   deliveryFeeOptions,
   deliveryFeeTenderLabel,
   deliveryPayload,
+  DELIVERY_FEE_TENDER_LABELS,
   deliveryProblem,
   parseDeliveryFee,
+  qrTenderLabel,
   resolveDeliveryAddress,
   type CustomerAddress,
+  type DeliveryFeeTender,
   type DeliveryState,
 } from './_utils/delivery'
+import {
+  availableTenders,
+  mixedPaymentIssues,
+  nextTender,
+  rowForTender,
+  tenderLabel,
+  withChangeTakenFromCash,
+  type PaymentIssueField,
+  type PaymentRow,
+} from './_utils/mixed-payment'
 import { usePriceResolution, resolutionKey } from './_hooks/usePriceResolution'
 import { isPendingApproval, isRefundPendingApproval } from '@/src/schema/pos'
 import {
@@ -236,10 +267,13 @@ interface CartLine {
    * manual override — false means still pending / no match, and checkout
    * submission should be blocked on this line. */
   priceResolved?: boolean
-  /** Set once a manager PIN-approves a manual price on this line. A
-   * Price Use change must not silently clobber this. */
-  priceOverrideBy?: string | null
-  priceOverrideApproverName?: string
+  /** True once a price was typed over this line (Scenario 71: any cashier, no
+   * manager or PIN). A Price Use change must not silently clobber it. */
+  priceOverridden?: boolean
+  /** The price-list row this line was priced from before it was overridden —
+   * the server reads the list price off it. Null when there was no match, or
+   * the line was never overridden. */
+  overriddenFromPriceListItemId?: string | null
   /** Per-line payment mode — a cart can mix cash/installment lines.
    * Defaults to 'cash' when unset. Installment lines carry their own
    * financingTermId + down payment, independent of every other line. */
@@ -258,21 +292,28 @@ interface CartLine {
    * tell "stale auto-fill, safe to recompute" apart from "an entry that
    * must never be silently overwritten". */
   downPaymentAutoForPriceListItemId?: string | null
+  /** Scenario 71 — the cashier typed this in-house installment line's plan
+   * instead of taking a Financing Term or rate-card one. Then the fields below
+   * carry it (as typed, so a half-filled box stays as it is) and the down
+   * payment is downPaymentInput as usual; financingTermId is not sent. */
+  manualPlan?: boolean
+  manualTermInput?: string
+  manualMonthlyInput?: string
+  /** yyyy-mm-dd — the first installment's due date (FMI). */
+  firstDueDateInput?: string
 }
 
-interface PaymentRow {
-  method: PosPaymentMethod
-  amount: number
-  referenceNumber: string
-  // populated for custom / configured methods
-  configId?: string
-  refFieldLabel?: string
-  refRequired?: boolean
-  refRegex?: string
-  // Scenario 37 — bank for bank_transfer, gateway for qr. Card's terminal
-  // choice comes from the transaction-scoped cardTerminalOptionId state
-  // instead (set via Item Payment Mode), not stored per-row.
-  paymentMethodOptionId?: string
+// ─── Typed installment plans (Scenario 71) ────────────────────────────────────
+
+/** The line without any typed-plan state. */
+function withoutTypedPlan(l: CartLine): CartLine {
+  return {
+    ...l,
+    manualPlan: false,
+    manualTermInput: undefined,
+    manualMonthlyInput: undefined,
+    firstDueDateInput: undefined,
+  }
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -314,16 +355,6 @@ const REF_METHODS: PosPaymentMethod[] = [
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
 
-/** One line of "what was on this sale" for the past-purchases list.
- *
- * Quantities are only shown when >1 — "2x Kolin Aircon" is worth saying,
- * "1x" on every other row is noise. Beyond two items it degrades to a
- * "+N more" count rather than overflowing the row; the full detail lives on
- * the transaction itself.
- *
- * itemName is resolved server-side (PosTransactionLine has no name column);
- * a line whose item has since been deleted falls back to "Item" rather than
- * rendering an empty row. */
 // A caravan's register (stored on its host) reads as the caravan, so it
 // can't be mistaken for one of the host's own: "Caravan · Lemery · TN-01".
 function sessionTerminalLabel(s: {
@@ -340,21 +371,6 @@ function sessionTerminalLabel(s: {
 // Where a session's register physically is: its caravan, else its branch.
 function sessionPlaceId(s: { terminal?: PosSession['terminal'] }): string | undefined {
   return terminalPlaceId(s.terminal)
-}
-
-function summariseItems(
-  lines: { itemName?: string | null; quantity: number }[] | undefined
-): string {
-  if (!lines?.length) return 'No items'
-
-  const label = (l: { itemName?: string | null; quantity: number }): string => {
-    const name = l.itemName?.trim() || 'Item'
-    return Number(l.quantity) > 1 ? `${Number(l.quantity)}x ${name}` : name
-  }
-
-  const shown = lines.slice(0, 2).map(label).join(', ')
-  const rest = lines.length - 2
-  return rest > 0 ? `${shown} +${rest} more` : shown
 }
 
 /** Brand / Group / Model instead of the long free-text name, wherever all
@@ -379,6 +395,224 @@ function lineTotal(line: CartLine) {
 
 function customerDisplayName(c: PosCustomer) {
   return c.name || `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() || 'Customer'
+}
+
+/** The Promo Code box in the order summary is hidden at the developer's request
+ * (2026-10-14). Only the entry box is gone — promo validation, the discount
+ * maths and an already-applied promo's chip are untouched — so turning this back
+ * on restores it with nothing else to change. */
+const SHOW_PROMO_ENTRY = false
+
+/** "Override the credit application" is hidden at the developer's request
+ * (2026-10-15): waiving the credit application and typing the terms reaches the
+ * same sale. Only the checkbox and its picker are gone — the backend, the
+ * review flag and an already-recorded override on a past sale are untouched —
+ * so turning this back on restores it with nothing else to change. */
+const SHOW_CREDIT_OVERRIDE = false
+
+/** The plan's figures from its items' own: every installment line is previewed
+ * on its own, and the plan is their sum. Null while any line's is missing. */
+function sumPreviews(
+  previews: (InstallmentPreview | null | undefined)[]
+): InstallmentPreview | null {
+  if (previews.length === 0 || previews.some((p) => !p)) return null
+  const all = previews as InstallmentPreview[]
+  const round = (n: number) => Math.round(n * 100) / 100
+  const sum = (pick: (p: InstallmentPreview) => number) =>
+    round(all.reduce((total, p) => total + pick(p), 0))
+  const longest = all.reduce((a, b) => (b.lines.length > a.lines.length ? b : a))
+  return {
+    amountFinanced: sum((p) => p.amountFinanced),
+    totalPayable: sum((p) => p.totalPayable),
+    monthlyInstallment: sum((p) => p.monthlyInstallment),
+    lines: longest.lines.map((l, i) => ({
+      ...l,
+      amount: round(all.reduce((total, p) => total + (p.lines[i]?.amount ?? 0), 0)),
+    })),
+    ppd: all.some((p) => p.ppd != null) ? sum((p) => p.ppd ?? 0) : undefined,
+  }
+}
+
+/** The one down payment of an installment plan. Typing shares the figure across
+ * the plan's items at once (see _utils/down-payment-groups); the text is kept
+ * locally while the field has focus so a half-typed "12." is not reformatted
+ * under the cashier's fingers. A plan may take 0 (`allowZero`), in-house or TPF. */
+function PlanDownPaymentField({
+  total,
+  max,
+  allowZero,
+  badge,
+  hint,
+  title,
+  ariaLabel,
+  placeholder,
+  blankWhenZero,
+  onCommit,
+}: {
+  /** What the plan pays now, in all. */
+  total: number
+  /** What all of its items cost — the most a down payment can be. */
+  max: number
+  allowZero: boolean
+  badge: string
+  hint?: string
+  title?: string
+  ariaLabel?: string
+  placeholder?: string
+  /** Shows an empty box rather than 0.00 — for a figure that is optional. */
+  blankWhenZero?: boolean
+  onCommit: (total: number) => void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const typed = draft != null ? parseFloat(draft) : NaN
+  const required = 'A down payment is required — it can be small, but not 0.'
+
+  let error: string | undefined
+  if (draft != null) {
+    if (!Number.isFinite(typed)) {
+      if (!allowZero) error = required
+    } else if (typed < 0) {
+      error = 'A down payment can’t be negative.'
+    } else if (typed > max + 0.005) {
+      error = `Can’t be more than the ${fmt(max)} these items cost.`
+    } else if (!allowZero && typed <= 0) {
+      error = required
+    }
+  } else if (!allowZero && total <= 0) {
+    error = required
+  }
+
+  const acceptable = (n: number) => Number.isFinite(n) && n >= 0 && n <= max + 0.005
+  return (
+    <div data-testid="combined-down-payment">
+      <DownPaymentField
+        badge={badge}
+        title={title}
+        ariaLabel={ariaLabel}
+        placeholder={placeholder}
+        value={draft ?? (blankWhenZero && total <= 0 ? '' : total.toFixed(2))}
+        error={error}
+        onChange={(v) => {
+          setDraft(v)
+          const n = parseFloat(v)
+          if (acceptable(n) && (allowZero || n > 0)) onCommit(n)
+          else if (allowZero && v.trim() === '') onCommit(0)
+        }}
+        onBlur={(v) => {
+          setDraft(null)
+          const n = parseFloat(v)
+          // Whole pesos, rounded up — the same tidying a single figure always
+          // got — but never past what the items cost.
+          if (acceptable(n) && (allowZero || n > 0)) onCommit(Math.min(Math.ceil(n), max))
+          else if (allowZero && v.trim() === '') onCommit(0)
+        }}
+      />
+      {hint && <p className="mt-1 text-xs text-prominent-purple-500">{hint}</p>}
+    </div>
+  )
+}
+
+function DownPaymentField({
+  badge,
+  value,
+  error,
+  title = 'Down payment',
+  ariaLabel = 'Down payment',
+  placeholder = 'Down payment',
+  onChange,
+  onBlur,
+}: {
+  badge: string
+  value: string
+  /** Shown under the field, which turns red — so a missing down payment is
+   * caught where it is typed, not only when Checkout is pressed. */
+  error?: string
+  title?: string
+  ariaLabel?: string
+  placeholder?: string
+  onChange: (next: string) => void
+  onBlur: (current: string) => void
+}) {
+  return (
+    <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[13px] font-semibold text-prominent-purple-700">{title}</span>
+        <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
+          {badge}
+        </span>
+      </div>
+      <input
+        type="number"
+        min={0}
+        step={1}
+        inputMode="decimal"
+        aria-label={ariaLabel}
+        data-testid="down-payment-input"
+        placeholder={placeholder}
+        value={value}
+        aria-invalid={error ? true : undefined}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={(e) => onBlur(e.target.value)}
+        className={`mt-1.5 w-full rounded-lg border bg-white px-2 py-1.5 text-right text-[15px] font-bold text-prominent-purple-800 outline-none [appearance:textfield] focus:ring-2 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+          error
+            ? 'border-red-400 focus:border-red-500 focus:ring-red-100'
+            : 'border-purple-200 focus:border-prominent-purple-400 focus:ring-prominent-purple-100'
+        }`}
+      />
+      {error && (
+        <p role="alert" data-testid="down-payment-error" className="mt-1 text-xs text-red-600">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Scenario 71 — the statuses a credit application override may use: those already
+ * decided, and those still waiting for a decision. A declined or cancelled one never. */
+const OVERRIDABLE_APPLICATION_STATUSES = new Set([
+  'approved',
+  'partially_approved',
+  'draft',
+  'submitted',
+  'under_investigation',
+  'pending_approval',
+])
+
+/** One of the customer's credit applications as an override can use it: what it
+ * covers (its approved items once decided, every item it names before that). */
+type OverrideApplication = {
+  id: string
+  applicationNumber: string
+  status: string
+  requestedAmount: number
+  items: { itemId: string; itemName: string }[]
+  financingTermId?: string | null
+  downPayment?: number | null
+}
+
+/** Scenario 71 — what the receipt screen needs to say about an override: the reason and
+ * note the cashier gave, which exceptions applied, and each overridden line's list
+ * price (the receipt prices its lines itself, on the sale's own VAT basis). */
+type SaleException = {
+  reason: string | null
+  note: string | null
+  creditApplicationWaived: boolean
+  /** Scenario 71 — the credit application was overridden, and what differed. */
+  creditOverride: CreditApplicationOverrideSnapshot | null
+  typedTerms: boolean
+  lineLists: Record<string, number | null>
+}
+
+/** Which document a typed number belongs to, when its own prefix says so: "DR-1014",
+ * "DR 1014" and "DR1014" are a Delivery Receipt, "SI-2201" a Sales Invoice. It needs
+ * a digit after the prefix, so a word that merely starts with the letters ("DRAKE")
+ * is left alone. Null means nothing to go on — keep whatever is selected. */
+function detectDocumentType(value: string): 'sales_invoice' | 'delivery_receipt' | null {
+  const v = value.trim()
+  if (/^dr[\s\-_.#:]*\d/i.test(v)) return 'delivery_receipt'
+  if (/^si[\s\-_.#:]*\d/i.test(v)) return 'sales_invoice'
+  return null
 }
 
 const OFFLINE_QUEUE_KEY = 'pos_offline_queue'
@@ -406,9 +640,21 @@ const DECIMAL_CODES = new Set([
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+/** Scenario 72 Part 6 — the backend's Delivery Receipt sale guards, in
+ * words a cashier can act on. */
+const DR_SALE_ERRORS: Record<string, string> = {
+  delivery_receipt_customer_mismatch:
+    'This sale invoices a delivery receipt — it has to be for the delivery receipt’s own customer.',
+  delivery_receipt_not_ready_for_sale:
+    'That delivery receipt is no longer waiting for a sale — it may already have been invoiced or voided. Unlink it to continue.',
+  delivery_receipt_sale_installment_not_supported:
+    'A delivery receipt’s sale is cash or charge only for now — switch the lines off installment, or unlink the delivery receipt.',
+}
+
 export default function CheckoutPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
   const { branchId: switcherBranchId } = usePosBranchContext()
   const { data: sessionsData, isLoading: sessionsLoading } = useSessions({
     status: 'open',
@@ -457,7 +703,22 @@ export default function CheckoutPage() {
   // field was the only part that had gone. Optional, as it was before —
   // a walk-in sale need not have an agent behind it.
   const [sellingAgentId, setSellingAgentId] = useState('')
-  const [sellingAgents, setSellingAgents] = useState<{ id: string; name: string }[]>([])
+  // The picker only learns an agent's name from the pick itself, so the name
+  // travels with the id — see the Selling Agent block.
+  const [sellingAgentName, setSellingAgentName] = useState('')
+  // Scenario 78 Part 3 — the Selling Agent is required and defaults to OFFICE
+  // (the house agent a walk-in is credited to). /pos/agents always lists it
+  // first; every new sale starts back on it.
+  // resetSale() also runs from a long-lived poll (cancellation approval), so
+  // it reads OFFICE from refs — a closure captured before the agent list
+  // loaded must not reset the next sale to "no agent".
+  const officeAgentIdRef = useRef('')
+  const officeAgentNameRef = useRef('')
+  async function searchSellingAgents(query: string): Promise<SearchComboboxOption[]> {
+    const res = await getSellingAgents(query)
+    if (!res.success || !res.data) return []
+    return res.data.map((a) => ({ id: a.id, primary: a.name }))
+  }
   const [isBranchManager, setIsBranchManager] = useState(false)
   // Whether this login already holds the approval authority an installment
   // sale would otherwise need to ask someone else for (Business Owner or
@@ -466,12 +727,24 @@ export default function CheckoutPage() {
   // Scenario 17 Part 7 — whether this login can mark a Promissory Note as
   // signed (Cashier-level, cascades to Branch Manager/Business Owner).
   const [canSignPromissoryNote, setCanSignPromissoryNote] = useState(false)
+  // The session check can fail because the backend is busy, not because the
+  // cashier is signed out. Only a session the backend rejected goes to /login;
+  // one that could not be checked (after retries) goes to the route's error
+  // boundary, whose "Try again" remounts this page and asks again.
+  const [sessionUnavailable, setSessionUnavailable] = useState<SessionUnavailableError | null>(null)
   useEffect(() => {
-    getSessionOrNull().then((s) => {
-      if (!s) {
+    let cancelled = false
+    getSessionStateWithRetry(() => cancelled).then((state) => {
+      if (cancelled) return
+      if (state.status === 'unavailable') {
+        setSessionUnavailable(new SessionUnavailableError(state.reason))
+        return
+      }
+      if (state.status === 'unauthenticated') {
         router.replace('/login')
         return
       }
+      const s = state.session
       // Scenario 22 Part 5 — checkout had no route-level permission check at
       // all (only ModuleGuard's broad "holds SOME pos permission" check at
       // the layout level). A role without pos:transactions:create could
@@ -487,7 +760,11 @@ export default function CheckoutPage() {
       setCanOverride(can(s, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE))
       setCanSignPromissoryNote(can(s, CREDIT_PERMISSIONS.PROMISSORY_NOTE_SIGN))
     })
+    return () => {
+      cancelled = true
+    }
   }, [router])
+  if (sessionUnavailable) throw sessionUnavailable
 
   const activeBranchId = useMemo(() => {
     // Branch Managers: use their assigned branch (matches "My Branch" settings)
@@ -509,7 +786,15 @@ export default function CheckoutPage() {
   useEffect(() => {
     getSellingAgents().then((res) => {
       if (res.success && Array.isArray(res.data)) {
-        setSellingAgents(res.data.map((a) => ({ id: a.id, name: a.name })))
+        // Only OFFICE is needed up front — it is always listed first. Every
+        // other agent comes from the picker's own server-side search.
+        const office = res.data.find((a) => a.name.trim().toUpperCase() === 'OFFICE')
+        if (office) {
+          officeAgentIdRef.current = office.id
+          officeAgentNameRef.current = office.name
+          setSellingAgentId((current) => current || office.id)
+          setSellingAgentName((current) => current || office.name)
+        }
       }
     })
   }, [])
@@ -575,8 +860,6 @@ export default function CheckoutPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<PosCustomer | null>(null)
   const [loyaltyAccount, setLoyaltyAccount] = useState<LoyaltyAccount | null>(null)
   const [loyaltyProgram, setLoyaltyProgram] = useState<LoyaltyProgram | null>(null)
-  const [customerHistory, setCustomerHistory] = useState<PosTransaction[]>([])
-  const [historyOpen, setHistoryOpen] = useState(false)
   const [customerSearch, setCustomerSearch] = useState('')
   const [customerResults, setCustomerResults] = useState<PosCustomer[]>([])
   // Not-yet-linked employees matching the same search — shown alongside
@@ -602,13 +885,30 @@ export default function CheckoutPage() {
   const isTaxExempt = outputVatCode !== OUTPUT_VAT_STANDARD
   const { options: vatChoices } = useOutputVatCodes(POS_OUTPUT_VAT_CODES)
 
-  // Sales Invoice No. — required on every sale, typed in from the physical
-  // invoice booklet (maps to PosTransaction.salesInvoiceNumber).
+  // The sale's document number — required on every sale, typed in from the
+  // physical booklet. It is either a Sales Invoice No. or a Delivery Receipt
+  // No.: a DR is just the other kind of sales document, nothing else about the
+  // sale changes, only which number we ask for. Maps to
+  // PosTransaction.salesInvoiceNumber / .deliveryReceiptNumber.
   const [invoiceNumberInput, setInvoiceNumberInput] = useState('')
+  const [documentType, setDocumentType] = useState<'sales_invoice' | 'delivery_receipt'>(
+    'sales_invoice'
+  )
+  // Set when typing a number flipped the document type for the cashier, so the
+  // change is explained rather than silent. Cleared by the toggle and a new sale.
+  const [documentSwitchNote, setDocumentSwitchNote] = useState('')
+  const documentLabel =
+    documentType === 'delivery_receipt' ? 'Delivery Receipt No.' : 'Sales Invoice No.'
+  /** The typed number under the field the backend expects for this document. */
+  const documentNumberPayload = (trimmed: string) =>
+    documentType === 'delivery_receipt'
+      ? { deliveryReceiptNumber: trimmed }
+      : { salesInvoiceNumber: trimmed }
 
   // Scenario 66 — Deliver to / Delivery Address / delivery fee. The fee is
-  // collected on its own collection receipt and never enters the Total, the
-  // tender, the change or the loyalty points below.
+  // collected on its own collection receipt and never enters the invoice, the
+  // tender, the change or the loyalty points below. The checkout Totals show
+  // it added in, for the cashier only.
   const [delivery, setDelivery] = useState<DeliveryState>(EMPTY_DELIVERY)
   // The selected customer's own address, fetched in full when delivery is
   // turned on — customer search results carry no address.
@@ -628,12 +928,17 @@ export default function CheckoutPage() {
   // just applied to every line at once via the toggle's onClick below
   // instead of chosen per line). If any item needs a different mode, that's
   // a separate transaction.
-  const [paymentMode, setPaymentMode] = useState<'cash' | 'installment' | 'delivery_receipt'>(
-    'cash'
-  )
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'installment'>('cash')
 
   // Payment
   const [payments, setPayments] = useState<PaymentRow[]>([])
+  // Mixed payment — set when Confirm is pressed with the payments incomplete,
+  // so the list of what's missing (and the red fields) only appears then and
+  // then shrinks live as each gap is filled.
+  const [showPaymentIssues, setShowPaymentIssues] = useState(false)
+  // The Total the payments were last measured against, to say so when it moves.
+  const [totalChangedFrom, setTotalChangedFrom] = useState<number | null>(null)
+  const lastTenderTargetRef = useRef(0)
   // Scenario 37 — card details captured once via the Payment Mode toggle
   // (transaction-scoped, see hasCreditCardLine), then carried into whatever
   // Card payment row gets added below.
@@ -699,6 +1004,8 @@ export default function CheckoutPage() {
    * lines only — never TPF, never an Employee Appliance Loan.
    */
   function lineCardDownPayment(l: CartLine): number | null {
+    // A plan the cashier typed has no rate card behind it (Scenario 71).
+    if (l.manualPlan) return null
     const termMonths = financingTerms.find((t) => t.id === l.financingTermId)?.termMonths
     const onCard = isCardTerm(
       { downPayment: l.priceListDownPayment, cardTermMonths: l.priceListCardTermMonths },
@@ -723,17 +1030,10 @@ export default function CheckoutPage() {
     Record<string, boolean>
   >({})
   const installmentPreviewTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
-  // Down payment is a flat 10%-of-sale-amount floor, never a function of the
-  // chosen term — shown by default as a fixed stat so it doesn't read as an
-  // editable box that mysteriously never changes. Keyed by line.lineId (the
-  // same key the displayGroups card uses) so each item's reveal is independent.
-  const [downPaymentEditOpen, setDownPaymentEditOpen] = useState<Record<string, boolean>>({})
-
   // Scenario 37 — the tender row's method already comes from Item Payment
   // Mode by default (see preferredPaymentMethodKey) — showing an always-open
   // dropdown for the same choice reads as asking twice. Default to a plain
-  // label instead, same "reveal on demand" pattern as downPaymentEditOpen
-  // above. Keyed by row index.
+  // label instead, same "reveal on demand" idea. Keyed by row index.
   const [paymentMethodEditOpen, setPaymentMethodEditOpen] = useState<Record<number, boolean>>({})
 
   // Scenario 17 Part 6 — every installment sale requires an approved,
@@ -757,9 +1057,16 @@ export default function CheckoutPage() {
       // agreed — and possibly keying different ones.
       financingTermId?: string | null
       downPayment?: number | null
+      /** The FMI date on the application — the first installment's due date
+       *  for a rate-card plan sold on it (the server decides; see
+       *  applicationFmiNote). */
+      firstDueDate?: string | null
     }[]
   >([])
   const [creditApplicationId, setCreditApplicationId] = useState('')
+  // yyyy-mm-dd — the FMI date entered on the sale (empty = not entered). Its own
+  // field, apart from the typed-plan override: it only moves the first due date.
+  const [fmiDateInput, setFmiDateInput] = useState('')
   // Scenario 64 item 28 — an application arriving from "Continue to sale" on
   // its own detail page. It cannot simply be selected on arrival: the picker's
   // list is only fetched once there is an installment line in the cart, and
@@ -782,6 +1089,21 @@ export default function CheckoutPage() {
   /** The application whose lines have already been put in the cart. Survives
    *  re-renders, unlike the state above, which is what makes it the guard. */
   const arrivalBuiltRef = useRef<string | null>(null)
+  /** Scenario 72 Part 6 — the "sales invoice to follow" Delivery Receipt this
+   *  sale invoices. Its units are held for it, so they never appear in the
+   *  serial picker (in_stock only); they arrive already on the lines, and the
+   *  sale sends deliveryReceiptId so the backend lets it claim them. */
+  const [deliveryReceipt, setDeliveryReceipt] = useState<{
+    id: string
+    drNumber: string
+  } | null>(null)
+  const [arrivingDr, setArrivingDr] = useState<{
+    id: string
+    stage: 'fetching' | 'adding'
+    drNumber?: string
+    expectedLines?: number
+  } | null>(null)
+  const drBuiltRef = useRef<string | null>(null)
   /** The application an arrival wants selected in the picker, held until the
    *  picker's own list has actually loaded it.
    *
@@ -809,6 +1131,22 @@ export default function CheckoutPage() {
   // cashier-confirmed; mutually exclusive with the Employee Appliance Loan
   // above.
   const [xDealChecked, setXDealChecked] = useState(false)
+  // Scenario 71 — the cashier waives the credit application on an in-house
+  // installment sale. Needs a reason and a note (the exception section) and is
+  // flagged in the end-of-day review.
+  const [creditApplicationWaived, setCreditApplicationWaived] = useState(false)
+  // Scenario 71 — the cashier overrides the credit application: sells on one that
+  // does not cover the cart, or is not approved yet. Same reason and note, same
+  // end-of-day review; the application is linked as it is.
+  const [creditApplicationOverridden, setCreditApplicationOverridden] = useState(false)
+  const creditApplicationOverriddenRef = useRef(false)
+  useEffect(() => {
+    creditApplicationOverriddenRef.current = creditApplicationOverridden
+  }, [creditApplicationOverridden])
+  const pendingResumedOverrideRef = useRef(false)
+  const [overrideApplications, setOverrideApplications] = useState<OverrideApplication[]>([])
+  const [overrideApplicationsLoading, setOverrideApplicationsLoading] = useState(false)
+  const overrideApplicationsRequestRef = useRef(0)
   const [xDealReference, setXDealReference] = useState('')
   // Read by the credit-application loader, whose effect closure would
   // otherwise see the value from when it was scheduled.
@@ -819,6 +1157,7 @@ export default function CheckoutPage() {
   // A resumed parked X-Deal, held until its customer has been re-selected —
   // selecting a customer resets the X-Deal (see the customer-change effect).
   const pendingResumedXDealRef = useRef<{ reference: string } | null>(null)
+  const pendingResumedWaiverRef = useRef(false)
 
   // Park sale
   const [showParkModal, setShowParkModal] = useState(false)
@@ -850,6 +1189,13 @@ export default function CheckoutPage() {
   // Price Use (Price List integration) — each cart line picks its own
   const [priceUseTypes, setPriceUseTypes] = useState<PosPriceUseType[]>([])
   const [priceOverrideTargetLineId, setPriceOverrideTargetLineId] = useState<string | null>(null)
+  // Scenario 71 — one reason and one note for the whole sale, asked once when
+  // any line carries a price override. Nobody approves it at the till; both go
+  // to the end-of-day review.
+  const [overrideReasons, setOverrideReasons] = useState<PosOverrideReason[]>([])
+  const [exceptionReasonId, setExceptionReasonId] = useState('')
+  const exceptionSectionRef = useRef<HTMLDivElement>(null)
+  const [exceptionNote, setExceptionNote] = useState('')
   const priceResolutionLines = useMemo(
     () => cart.map((l) => ({ itemId: l.itemId, priceUseTypeId: l.priceUseTypeId })),
     [cart]
@@ -860,12 +1206,12 @@ export default function CheckoutPage() {
   )
 
   // Back-fills each cart line's unitPrice from the bulk resolution — skips
-  // any line that already has a manual priceOverrideBy (a PIN-approved
-  // value a Price Use change must not silently clobber).
+  // any line with a typed-over price (a value a Price Use change must not
+  // silently clobber).
   useEffect(() => {
     setCart((prev) =>
       prev.map((line) => {
-        if (line.priceOverrideBy) return line
+        if (line.priceOverridden) return line
         if (!line.priceUseTypeId) return line
         // A downPaymentInput this line auto-filled for its PREVIOUS
         // priceListItemId (curated or 10%-floor) is now stale the moment
@@ -947,6 +1293,10 @@ export default function CheckoutPage() {
     deliveryReceiptNumber?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
+    /** Scenario 71 — what the credit check would have said (over the limit, an
+     * overdue balance). An in-house installment sale posts at once, so this is
+     * the only place the cashier hears it. */
+    creditWarnings?: string[]
     // Per-line outcome — a cart can mix cash/charge/installment lines, so
     // there's no single invoiceType/installmentPreview for the whole sale
     // anymore. Empty for an offline-buffered sale (always pure cash).
@@ -967,6 +1317,8 @@ export default function CheckoutPage() {
     /** Scenario 67 */
     isXDeal?: boolean
     xDealReference?: string | null
+    /** Scenario 71 — the override behind this sale, shown on screen only. */
+    exception?: SaleException | null
   } | null>(null)
 
   // Pending manager approval (installment sale awaiting Release Form review)
@@ -1061,16 +1413,14 @@ export default function CheckoutPage() {
     setCatalogLoading(true)
     setCatalogError('')
 
+    // One cached copy per branch, shared with the Product Catalog page — the
+    // full catalog is ~5 MB, so coming back to Checkout shouldn't re-download it.
     Promise.all([
-      itemLookup(undefined, branchId),
+      queryClient.fetchQuery(posCatalogQueryOptions(branchId)),
       getUnitsOfMeasure().catch(() => ({ success: false, data: null })),
     ])
-      .then(([catalogRes, uomRes]) => {
-        if (!catalogRes.success) {
-          setCatalogError(catalogRes.error ?? 'Failed to load items')
-          return
-        }
-        const raw = (catalogRes.data ?? []) as LookupItem[]
+      .then(([catalogRows, uomRes]) => {
+        const raw = catalogRows as LookupItem[]
 
         const uomMap = Object.fromEntries((uomRes.data?.data ?? []).map((u) => [u.id, u]))
 
@@ -1090,9 +1440,11 @@ export default function CheckoutPage() {
         setCatalogItems(enriched)
         setCatalogStockKnown(!!branchId)
       })
-      .catch(() => setCatalogError('Failed to load items'))
+      .catch((err) =>
+        setCatalogError(err instanceof Error && err.message ? err.message : 'Failed to load items')
+      )
       .finally(() => setCatalogLoading(false))
-  }, [sessionId, openSessions, sessionsData])
+  }, [sessionId, openSessions, sessionsData, queryClient])
 
   // Fetch enabled payment methods whenever the active branch changes
   useEffect(() => {
@@ -1130,6 +1482,14 @@ export default function CheckoutPage() {
       if (res.success && Array.isArray(res.data)) {
         setPriceUseTypes(res.data)
       }
+    })
+  }, [])
+
+  // Scenario 71 — the business's own reasons for a price override, for the
+  // dropdown shown once any line is overridden.
+  useEffect(() => {
+    getPosOverrideReasons({ activeOnly: true }).then((res) => {
+      if (res.success && Array.isArray(res.data)) setOverrideReasons(res.data)
     })
   }, [])
 
@@ -1231,6 +1591,12 @@ export default function CheckoutPage() {
           pendingResumedXDealRef.current = { reference: handoff.xDealReference ?? '' }
           setPaymentMode('installment')
         }
+        // Scenario 71 — the reason and note given for a price override.
+        if (handoff.exceptionReasonId) setExceptionReasonId(handoff.exceptionReasonId)
+        if (handoff.exceptionNote) setExceptionNote(handoff.exceptionNote)
+        // Restored once the customer below is re-selected.
+        if (handoff.creditApplicationWaived) pendingResumedWaiverRef.current = true
+        if (handoff.creditApplicationOverridden) pendingResumedOverrideRef.current = true
       }
       // Scenario 64 item 28. Carried instead of lines, never alongside them —
       // the cart is derived below from the application's own approved items,
@@ -1248,8 +1614,18 @@ export default function CheckoutPage() {
           setArrivingCreditApplication({ id: handoff.creditApplicationId, stage: 'fetching' })
         }
       }
+      // Scenario 72 Part 6 — same shape as a credit application arrival: no
+      // lines travel, the cart is built below from the DR itself.
+      if (handoff.deliveryReceiptId) {
+        setArrivingDr({ id: handoff.deliveryReceiptId, stage: 'fetching' })
+      }
       // The booklet numbers, back as they were typed.
-      if (handoff.salesInvoiceNumber) setInvoiceNumberInput(handoff.salesInvoiceNumber)
+      if (handoff.deliveryReceiptNumber) {
+        setDocumentType('delivery_receipt')
+        setInvoiceNumberInput(handoff.deliveryReceiptNumber)
+      } else if (handoff.salesInvoiceNumber) {
+        setInvoiceNumberInput(handoff.salesInvoiceNumber)
+      }
       if (handoff.paymentReferences?.length) {
         const refs = handoff.paymentReferences
         // By row order, and only onto rows that came back with the cart — a
@@ -1494,6 +1870,11 @@ export default function CheckoutPage() {
   const inhouseInstallmentCartLines = installmentCartLines.filter(
     (l) => l.installmentProvider !== 'tpf'
   )
+  // The FMI date field starts the schedule of every in-house line that is not a
+  // typed plan (a typed plan has its own first due date), so it only has
+  // something to say while one is in the cart.
+  const fmiDateApplies = inhouseInstallmentCartLines.some((l) => !l.manualPlan)
+  const fmiDateError = fmiDateApplies ? fmiDateProblem(fmiDateInput) : null
 
   /**
    * The picker used to list every approved, unconsumed application for the
@@ -1562,10 +1943,24 @@ export default function CheckoutPage() {
   // Neither needs a credit application, and neither has the 10% down-payment
   // floor: an Employee Appliance Loan's down payment is optional (Chloe,
   // development) and so is an X-Deal's cash portion (Scenario 68).
-  const skipsCreditApplication = employeeApplianceLoanActive || xDealActive
+  // Scenario 71 — a credit application can be waived on an ordinary in-house
+  // installment sale; an X-Deal, an Employee Appliance Loan and a government
+  // institution already need none, so there is nothing to waive for them.
+  const canWaiveCreditApplication =
+    !!selectedCustomer &&
+    inhouseInstallmentCartLines.length > 0 &&
+    !employeeApplianceLoanActive &&
+    !xDealActive &&
+    !isGovernmentInstitutionalCustomer
+  const creditApplicationWaivedActive = creditApplicationWaived && canWaiveCreditApplication
+  // Scenario 71 — overriding needs the same conditions as waiving (there has to be an
+  // in-house installment line to attach an application to, and a customer who needs one).
+  const creditApplicationOverriddenActive =
+    creditApplicationOverridden && canWaiveCreditApplication && !creditApplicationWaived
+  const skipsCreditApplication =
+    employeeApplianceLoanActive || xDealActive || creditApplicationWaivedActive
   const skipsCreditApplicationLabel = xDealActive ? 'X-Deal' : 'Employee Appliance Loan'
   const downPaymentWaived = employeeApplianceLoanActive || xDealActive
-  const downPaymentWaivedLabel = xDealActive ? 'X-Deal' : 'Employee Appliance Loan'
   // Nothing is forced to ₱0 any more: an X-Deal's part paid now is its cash
   // portion (Scenario 68), typed by the cashier like an Employee Appliance
   // Loan's optional down payment.
@@ -1589,37 +1984,187 @@ export default function CheckoutPage() {
           .reduce((s, l) => s + lineDownPayment(l), 0) * 100
       ) / 100
     : 0
-  // Whether a cash portion is being taken here at all — an X-Deal only when
-  // part of it is paid now.
-  const xDealCollectsNothing = xDealActive && xDealDownPaymentTotal <= 0
 
-  // A line the rate card prices for its term carries exactly the card's down
-  // payment (lineCardDownPayment). Whatever left another figure in the field —
-  // one typed before a Price Use change, a restored or resumed cart — it is
-  // brought back in line here, so the field, the installment preview, the
-  // submit check and the sale itself all say the same amount. Not while the
-  // down payment is waived (Employee Appliance Loan) or optional (X-Deal):
-  // the cashier's figure stands.
-  useEffect(() => {
-    if (downPaymentFree) return
-    setCart((prev) => {
-      let changed = false
-      const next = prev.map((l) => {
-        if (l.invoiceType !== 'installment' || l.installmentProvider === 'tpf') return l
-        const fixed = lineCardDownPayment(l)
-        if (fixed == null || l.downPaymentInput === fixed.toFixed(2)) return l
-        changed = true
-        return {
-          ...l,
-          downPaymentInput: fixed.toFixed(2),
-          downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
+  // ─── One installment plan per cart ─────────────────────────────────────────
+  //
+  // An installment sale is ONE plan (2026-10-28): one provider (Inhouse or TPF),
+  // one term, one down payment and one ledger, whatever the number of items.
+  // The cart still carries those fields on every line — the server adds the
+  // lines up into the one schedule — so everything below treats every
+  // installment line alike: a control writes to all of them, and a line added
+  // later adopts the plan (see the effect further down).
+
+  /** What a line's down payment starts as: its price-list figure, else the 10%
+   * default. Only a starting point — the cashier may type any amount. */
+  const defaultLineDownPayment = (l: CartLine): number =>
+    l.priceListDownPayment != null
+      ? Math.round(Number(l.priceListDownPayment) * l.quantity * 100) / 100
+      : Math.ceil(
+          effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) *
+            l.quantity *
+            DOWN_PAYMENT_FLOOR_RATE
+        )
+
+  const planLineIds = installmentCartLines.map((l) => l.lineId)
+  const planProvider: InstallmentProvider =
+    installmentCartLines[0]?.installmentProvider ?? 'inhouse'
+  const planIsTpf = planProvider === 'tpf'
+  /** The plan's one term — the same on every in-house line. */
+  const planTermId = inhouseInstallmentCartLines.find((l) => !l.manualPlan)?.financingTermId ?? ''
+  /** The plan is one the cashier typed (Scenario 71) rather than a Financing Term's. */
+  const planTyped = !planIsTpf && inhouseInstallmentCartLines.some((l) => l.manualPlan)
+  const planRows: DpRow[] = displayGroups
+    .filter((g) => g[0].invoiceType === 'installment')
+    .map((g) => ({
+      lineIds: g.map((x) => x.lineId),
+      amount: g.reduce(
+        (sum, x) =>
+          sum + effectiveUnitPrice(x, activeTaxRate, inclusivePricing, isTaxExempt) * x.quantity,
+        0
+      ),
+      fixedPerLine: null,
+    }))
+  /** What all of the plan's items cost — the most its down payment can be. */
+  const planSaleAmount = Math.round(planRows.reduce((sum, r) => sum + r.amount, 0) * 100) / 100
+  /** The plan's one down payment: the lines' shares added up. */
+  const planDownPayment =
+    Math.round(installmentCartLines.reduce((s, l) => s + lineDownPayment(l), 0) * 100) / 100
+  const planDefaultDownPayment = installmentCartLines.reduce(
+    (s, l) => s + defaultLineDownPayment(l),
+    0
+  )
+  // Whether anything is paid at this register for the plan. A plan with no
+  // down payment (an in-house one may take none) has nothing to tender, which
+  // is how an X-Deal with nothing paid now already behaves.
+  const dpCollectsNothing = installmentCartLines.length > 0 && planDownPayment <= 0
+
+  // The price list works out each item's monthly from its own down payment. The
+  // plan takes its monthly from the price list only while every item is on it
+  // for this term AND the down payment is still the one the list was worked out
+  // from — change the down payment and the term's factor rate prices the plan
+  // instead (the server decides the same way; see createAndPostInstallmentPlan).
+  const planOnCard =
+    !planIsTpf &&
+    !planTyped &&
+    inhouseInstallmentCartLines.length > 0 &&
+    inhouseInstallmentCartLines.every((l) => lineCardDownPayment(l) != null)
+  const planCardDownPayment = planOnCard
+    ? Math.round(
+        inhouseInstallmentCartLines.reduce((s, l) => s + lineCardDownPayment(l)!, 0) * 100
+      ) / 100
+    : null
+  const planDownPaymentIsCards =
+    planCardDownPayment != null &&
+    Math.abs(planDownPayment - planCardDownPayment) <= DOWN_PAYMENT_FLOOR_TOLERANCE
+  const planUsesCardMonthly = employeeApplianceLoanActive
+    ? planDownPayment <= 0
+    : xDealActive || (planOnCard && planDownPaymentIsCards)
+  /** The price list would price this plan, but the down payment was changed. */
+  const planCardOverridden = planOnCard && !planDownPaymentIsCards && !downPaymentFree
+
+  // A credit application is the DEFAULT for the plan's term and down payment, not
+  // a rule: once the cashier has changed one of them at the till, the till's figure
+  // stands and no later application of the application's terms (it landing, an item
+  // added, a restored cart) puts it back. Picking an application from the list is
+  // the cashier asking for ITS terms, so that starts over. Tracked per field —
+  // changing the down payment says nothing about the term.
+  const posEditedRef = useRef({ term: false, dp: false })
+
+  /** Shares a typed down payment across the plan's items. A figure that cannot be
+   * shared (more than the items cost) changes nothing — the box says why. */
+  function setPlanDownPayment(total: number) {
+    const split = splitDownPayment(planRows, total, { allowZero: true })
+    if (!split.ok) return
+    // Leaving the box as it was (a click in and out) is not an edit.
+    if (Math.abs(total - planDownPayment) > 0.004) posEditedRef.current.dp = true
+    setCart((prev) =>
+      prev.map((l) =>
+        split.byLine.has(l.lineId)
+          ? {
+              ...l,
+              downPaymentInput: split.byLine.get(l.lineId)!.toFixed(2),
+              // An explicit entry — no later Price Use change may recompute it.
+              downPaymentAutoForPriceListItemId: undefined,
+            }
+          : l
+      )
+    )
+  }
+
+  /** The plan's own figures: its items' previews added up. */
+  const planPreview = sumPreviews(installmentCartLines.map((l) => installmentPreviews[l.lineId]))
+  const planPreviewLoading = installmentCartLines.some((l) => installmentPreviewLoading[l.lineId])
+  const planPreviewError =
+    installmentCartLines.map((l) => installmentPreviewErrors[l.lineId]).find(Boolean) ?? null
+  /** Where the down payment on show came from. */
+  const planDpBadge = (() => {
+    if (Math.abs(planDownPayment - planDefaultDownPayment) > DOWN_PAYMENT_FLOOR_TOLERANCE) {
+      return 'Changed'
+    }
+    const priced = installmentCartLines.filter((l) => l.priceListDownPayment != null).length
+    if (priced === installmentCartLines.length) return 'Rate card'
+    if (priced === 0) return `${DOWN_PAYMENT_FLOOR_LABEL} default`
+    return 'Rate card + default'
+  })()
+
+  /** The plan's one down payment box. An in-house plan may take 0; a TPF sale
+   * never. An X-Deal's is the cash portion and an Employee Appliance Loan's is
+   * optional — their own wording, the same single figure. */
+  function renderPlanDownPayment() {
+    if (xDealActive) {
+      // Scenario 68 — the part paid now, if any.
+      return (
+        <div data-testid="x-deal-down-payment">
+          <PlanDownPaymentField
+            total={planDownPayment}
+            max={planSaleAmount}
+            allowZero
+            blankWhenZero
+            title="Cash portion"
+            ariaLabel="X-Deal cash portion"
+            placeholder="0.00"
+            badge="X-Deal · optional"
+            hint={
+              planDownPayment > 0
+                ? `Paid now at this counter. The rest, ${fmt(
+                    Math.max(0, planSaleAmount - planDownPayment)
+                  )}, is cleared by the X-Deal credit memo when the sale is approved.`
+                : 'The X-Deal credit memo clears the whole sale when it is approved.'
+            }
+            onCommit={setPlanDownPayment}
+          />
+        </div>
+      )
+    }
+    if (employeeApplianceLoanActive) {
+      return (
+        <PlanDownPaymentField
+          total={planDownPayment}
+          max={planSaleAmount}
+          allowZero
+          blankWhenZero
+          placeholder="Down payment (optional)"
+          badge="Employee loan · optional"
+          hint={`Optional — leave blank for no down payment. No more than ${fmt(planSaleAmount)}.`}
+          onCommit={setPlanDownPayment}
+        />
+      )
+    }
+    return (
+      <PlanDownPaymentField
+        total={planDownPayment}
+        max={planSaleAmount}
+        allowZero
+        badge={planDpBadge}
+        hint={
+          installmentCartLines.length > 1
+            ? `One down payment for these ${installmentCartLines.length} items, shared out by price.`
+            : undefined
         }
-      })
-      return changed ? next : prev
-    })
-    // lineCardDownPayment reads only the line and financingTerms, both deps.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, financingTerms, downPaymentFree])
+        onCommit={setPlanDownPayment}
+      />
+    )
+  }
 
   const hasChargeOrInstallmentLine = chargeCartLines.length > 0 || installmentCartLines.length > 0
   // Cash and Debit-Credit Card both set invoiceType: 'cash' on every line —
@@ -1637,7 +2182,7 @@ export default function CheckoutPage() {
   const hasCreditCardLine =
     (cashCartLines.length > 0 && paymentMode !== 'installment' && cashSubMode === 'card') ||
     (installmentCartLines.length > 0 &&
-      !xDealCollectsNothing &&
+      !dpCollectsNothing &&
       installmentPaymentMethod === 'credit_card')
   // Same for Cash's own sub-choice (Cash on Hand/Bank Transfer/QR). Also
   // covers the down payment's cash tendering now that it shares this pool —
@@ -1645,9 +2190,7 @@ export default function CheckoutPage() {
   // of the two OR branches is ever true.
   const hasCashLine =
     (cashCartLines.length > 0 && paymentMode !== 'installment') ||
-    (installmentCartLines.length > 0 &&
-      !xDealCollectsNothing &&
-      installmentPaymentMethod === 'cash')
+    (installmentCartLines.length > 0 && !dpCollectsNothing && installmentPaymentMethod === 'cash')
 
   // What's actually collectible at POS right now: cash-mode lines' full
   // value (net of promo discount, prorated by the cash lines' share of the
@@ -1691,11 +2234,6 @@ export default function CheckoutPage() {
   // pool, so the toggle labels itself with the combined figure.
   const allDownPaymentsTotal =
     Math.round((installmentDownPaymentsTotal + tpfDownPaymentsTotal) * 100) / 100
-  // What the financier itself funds, once the customer's down payment is out.
-  const tpfFinancedTotal = Math.max(
-    0,
-    Math.round((tpfLinesTotal - tpfDownPaymentsTotal) * 100) / 100
-  )
   // A cart that's nothing BUT TPF lines is the one case the backend records
   // the financier's own settlement for by itself, at create time (see
   // transactions.service.ts's pure-TPF block) — so the register must collect
@@ -1716,20 +2254,92 @@ export default function CheckoutPage() {
   const regularTenderTarget = Math.round((cashLinesTotal + tpfCollectedAtRegister) * 100) / 100
   const tenderTarget = Math.round((regularTenderTarget + installmentDownPaymentsTotal) * 100) / 100
 
+  // CR Number (collection receipt) is optional on a plain sale. It stays
+  // required where a payment can't go through without one: card / bank /
+  // e-wallet / etc. (or whatever the method's own config says), and any sale
+  // collecting a down payment — the backend refuses a down payment without a
+  // reference because that reference IS its collection receipt.
+  const saleHasDownPayment = allDownPaymentsTotal > 0
+  const crIsRequired = (p: PaymentRow) =>
+    REF_METHODS.includes(p.method) || p.refRequired === true || saleHasDownPayment
+
   // Scenario 66 — the delivery fee as entered (0 while blank or not yet a
   // valid amount).
   const deliveryFeeAmount = delivery.enabled ? (parseDeliveryFee(delivery.fee) ?? 0) : 0
   // Scenario 70 — the fee is paid with its own tender (the Delivery section's
   // Paid with), on its own CR, never through the sale's payment box. So the
-  // payment box's Total, Amount received, change and "Underpaid" measure the
-  // sale alone (tenderTarget). The Totals (Order Summary and the block above
-  // Confirm) are the sale's too; the fee is only a note under them — it is a
-  // collection on its own CR, not part of the sale. This undoes Scenario 68's
-  // "fee rides on the sale's tender" and its "Total = items + fee".
+  // payment box's Amount received, change and "Underpaid" measure the sale
+  // alone (tenderTarget), and the invoice and journal entries carry the sale
+  // alone. The two Totals (Order Summary and the block above Confirm) are a
+  // cashier's view only: they list Amount + Delivery fee and add the fee in,
+  // so the cashier sees everything the customer hands over at a glance.
+  const totalWithDeliveryFee = Math.round((totalAmount + deliveryFeeAmount) * 100) / 100
+  const tenderTargetWithDeliveryFee = Math.round((tenderTarget + deliveryFeeAmount) * 100) / 100
 
   const totalPaid = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
   const balance = Math.max(0, Math.round((tenderTarget - totalPaid) * 100) / 100)
   const change = totalPaid > tenderTarget ? Math.round((totalPaid - tenderTarget) * 100) / 100 : 0
+
+  // ─── Mixed payment ──────────────────────────────────────────────────────────
+  // One sale can be tendered with several methods. Not on an X-Deal or a
+  // pure-TPF cart: their down payment is recorded inside the create request,
+  // under the one method Item Payment Mode describes.
+  const mixedPaymentAllowed =
+    saleMode === 'sale' && !isOffline && !xDealActive && !isPureTpfCart && tenderTarget > 0
+  const mixedPaymentActive = saleMode === 'sale' && payments.length > 1
+  // The first row follows Item Payment Mode: a Check there is not cash on hand.
+  const firstRowIsCheck = hasCashLine && cashSubMode === 'check'
+  const tenderChoices = availableTenders(enabledPaymentMethods)
+  const firstRowTender: DeliveryFeeTender = (() => {
+    const m = payments[0]?.method ?? preferredPaymentMethodKey() ?? 'cash'
+    if (m === 'card') return 'card'
+    if (m === 'bank_transfer') return 'bank_transfer'
+    if (m === 'qr') return cashSubMode === 'gcash' || cashSubMode === 'billers' ? cashSubMode : 'qr'
+    return firstRowIsCheck ? 'check' : 'cash_on_hand'
+  })()
+  // ─── CR Number / reference ────────────────────────────────────────────────
+  // A CR Number exists only where there is a down payment (installment / TPF):
+  // ONE for the whole transaction, held on the first payment row and stamped on
+  // every payment. A sale without one shows no CR at all; its QR/GCash/Billers,
+  // card and bank-transfer payments each ask for their own reference number.
+  const saleCr = (payments[0]?.referenceNumber ?? '').trim()
+  const rowShowsReference = (p: PaymentRow) =>
+    !saleHasDownPayment &&
+    (REF_METHODS.includes(p.method) || p.refRequired === true || !!p.refFieldLabel)
+  const effectiveReference = (p: PaymentRow) =>
+    saleHasDownPayment ? saleCr : rowShowsReference(p) ? p.referenceNumber.trim() : ''
+  const referenceLabelFor = (p: PaymentRow, i: number) =>
+    p.refFieldLabel ??
+    `${DELIVERY_FEE_TENDER_LABELS[p.tender ?? (i === 0 ? firstRowTender : 'cash_on_hand')]} reference`
+  const paymentIssues = mixedPaymentActive
+    ? mixedPaymentIssues({
+        payments,
+        tenderTarget,
+        balance,
+        transactionCr: saleHasDownPayment,
+        reference: (p, i) => ({
+          shown: rowShowsReference(p),
+          required: crIsRequired(p),
+          label: referenceLabelFor(p, i),
+        }),
+        firstRowIsCheck,
+        firstRowCheckNumber: checkNumber,
+        firstRowMissingTerm:
+          payments[0]?.method === 'card' &&
+          !payments[0].tender &&
+          cardTxnMode === 'installment' &&
+          !cardInstallmentTerm,
+        fmt,
+      })
+    : []
+  const shownPaymentIssues = showPaymentIssues ? paymentIssues : []
+  const crInvalid = shownPaymentIssues.some((i) => i.row === null && i.field === 'reference')
+  const invalidFieldsOfRow = (row: number): ReadonlySet<PaymentIssueField> =>
+    new Set(
+      shownPaymentIssues
+        .filter((i) => i.row === row && i.field !== 'balance')
+        .map((i) => i.field as PaymentIssueField)
+    )
 
   // Reserve mode has no tax/promo concept — SkuReservationsService values a
   // reservation as a flat item.sellingPrice × quantity, so the deposit cap
@@ -1756,6 +2366,34 @@ export default function CheckoutPage() {
   // Manager override check
   const discountPct = subtotal > 0 && promoDiscount > 0 ? (promoDiscount / subtotal) * 100 : 0
   const needsManagerOverride = discountThreshold > 0 && discountPct > discountThreshold
+  // Scenario 71 — any line with a typed-over price makes the sale carry a
+  // reason and a note.
+  const anyPriceOverridden = cart.some((l) => l.priceOverridden)
+  // Scenario 71 — typed terms need a reason and a note just as an override does.
+  const anyTypedPlan = cart.some((l) => l.manualPlan)
+  const anyException =
+    anyPriceOverridden ||
+    anyTypedPlan ||
+    creditApplicationWaivedActive ||
+    creditApplicationOverriddenActive
+  // Only a TPF installment sale still waits for approval (Scenario 71): an
+  // in-house one posts the moment it is confirmed, whoever rings it.
+  const installmentHeldForApproval = tpfInstallmentCartLines.length > 0 && !canOverride
+  const exceptionTitle =
+    [
+      anyPriceOverridden,
+      anyTypedPlan,
+      creditApplicationWaivedActive,
+      creditApplicationOverriddenActive,
+    ].filter(Boolean).length > 1
+      ? 'Exceptions on this Sale'
+      : creditApplicationOverriddenActive
+        ? 'Credit Application Override'
+        : creditApplicationWaivedActive
+          ? 'Credit Application Waived'
+          : anyTypedPlan
+            ? 'Typed Installment Terms'
+            : 'Price Override'
   // A zero-rated or VAT-exempt sale needs the same manager PIN approval a big
   // discount does — and shares its slot, so one approval covers both. A table
   // tab's sale already exists; nothing is classified at this point.
@@ -1810,13 +2448,16 @@ export default function CheckoutPage() {
       let changed = false
       const next = prev.map((p, i) => {
         if (paymentMethodEditOpen[i]) return p
+        // A row added with "Add another payment method" owns its method.
+        if (p.tender) return p
         if (p.method === preferredKey && p.configId === cfg?.id) return p
         changed = true
         return {
           ...p,
           method: preferredKey,
           configId: cfg?.id,
-          referenceNumber: '',
+          // A down-payment sale's one CR is not tied to the method.
+          referenceNumber: saleHasDownPayment ? p.referenceNumber : '',
           refFieldLabel: cfg?.referenceFieldLabel ?? undefined,
           refRequired: cfg?.referenceIsRequired,
           refRegex: cfg?.referenceFieldRegex ?? undefined,
@@ -1826,6 +2467,33 @@ export default function CheckoutPage() {
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasCreditCardLine, hasCashLine, cashSubMode, configuredMethods, paymentMethodEditOpen])
+
+  // Mixed payment — the extra rows go when the cart no longer allows them
+  // (an X-Deal or a pure-TPF cart takes its down payment under one method).
+  useEffect(() => {
+    if (mixedPaymentAllowed || !payments.some((p) => p.tender)) return
+    setPayments((prev) => prev.filter((p) => !p.tender))
+  }, [mixedPaymentAllowed, payments])
+
+  // Back on a single payment (or the list of gaps is all filled): nothing left
+  // to show.
+  useEffect(() => {
+    if (!mixedPaymentActive) setShowPaymentIssues(false)
+  }, [mixedPaymentActive])
+
+  // Several payments are already entered and the Total moves under them (a
+  // line added, a discount): the amounts are left alone, the cashier is told.
+  useEffect(() => {
+    const previous = lastTenderTargetRef.current
+    lastTenderTargetRef.current = tenderTarget
+    if (mixedPaymentActive && previous > 0 && Math.abs(previous - tenderTarget) > 0.009) {
+      setTotalChangedFrom(previous)
+    }
+    if (!mixedPaymentActive) setTotalChangedFrom(null)
+  }, [tenderTarget, mixedPaymentActive])
+  useEffect(() => {
+    if (balance <= 0.009) setTotalChangedFrom(null)
+  }, [balance])
 
   // ─── Installment financing (per-line) ──────────────────────────────────────
 
@@ -1861,9 +2529,10 @@ export default function CheckoutPage() {
     installmentCartLines
       .map(
         (l) =>
-          `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}:${l.priceListItemId ?? ''}`
+          `${l.lineId}:${l.financingTermId ?? ''}:${l.downPaymentInput ?? ''}:${l.unitPrice}:${l.quantity}:${l.priceListItemId ?? ''}:${l.manualPlan ? `${l.manualTermInput}/${l.manualMonthlyInput}/${l.firstDueDateInput}` : ''}`
       )
-      .join('|') + `|dpWaived:${downPaymentZeroed}|emp:${employeeApplianceLoanActive}`
+      .join('|') +
+    `|dpWaived:${downPaymentZeroed}|emp:${employeeApplianceLoanActive}|card:${planUsesCardMonthly}|fmi:${fmiDateInput}`
 
   // Approval happens in someone ELSE's session — only Business Owner holds
   // pos:application:approve — so "approve in another tab, come back to the
@@ -1936,6 +2605,15 @@ export default function CheckoutPage() {
     pendingResumedXDealRef.current = null
     setXDealChecked(!!resumedXDeal)
     setXDealReference(resumedXDeal?.reference ?? '')
+    // A waiver belongs to the customer it was given for (Scenario 71) — except
+    // when this is the customer a resumed parked sale was waiting for.
+    setCreditApplicationWaived(customerId ? pendingResumedWaiverRef.current : false)
+    pendingResumedWaiverRef.current = false
+    // Same for an override — it names one of THIS customer's applications.
+    setCreditApplicationOverridden(
+      SHOW_CREDIT_OVERRIDE && customerId ? pendingResumedOverrideRef.current : false
+    )
+    pendingResumedOverrideRef.current = false
     setEmployeeApplianceLoanChecked(isEmployeeCustomer && !resumedXDeal)
   }, [selectedCustomer?.id, isEmployeeCustomer])
 
@@ -1984,6 +2662,7 @@ export default function CheckoutPage() {
               })),
               financingTermId: a.financingTermId ?? null,
               downPayment: a.downPayment != null ? Number(a.downPayment) : null,
+              firstDueDate: a.firstDueDate ?? null,
             }
           })
           .filter((a) => a.items.length > 0)
@@ -1998,7 +2677,11 @@ export default function CheckoutPage() {
         // Two or more is a real choice — which application this sale should
         // consume changes what gets marked used — so that still asks.
         // Never for an X-Deal, which must not consume an application.
-        if (list.length === 1 && !xDealCheckedRef.current) {
+        if (
+          list.length === 1 &&
+          !xDealCheckedRef.current &&
+          !creditApplicationOverriddenRef.current
+        ) {
           setCreditApplicationId(list[0].id)
           applyCreditApplicationTerms(list[0].id, list)
         }
@@ -2009,6 +2692,146 @@ export default function CheckoutPage() {
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [installmentCartLines.length, selectedCustomer, creditAppsRefreshNonce])
+
+  // The customer's approved, unused credit applications, shown on the customer
+  // card the moment they are picked — whatever the cart holds. The picker
+  // further down only exists once the cart has an installment line, which
+  // left a cashier unable to see whether a customer had an application at all
+  // until they had built a cart around it. Same eligibility as the picker
+  // (approved or partially approved, not yet consumed by a sale); null means
+  // the lookup failed, which is not the same as "none on file".
+  const [customerApplications, setCustomerApplications] = useState<
+    { id: string; applicationNumber: string; requestedAmount: number; itemNames: string[] }[] | null
+  >([])
+  const customerApplicationsRequestRef = useRef(0)
+  const selectedCustomerId = selectedCustomer?.id ?? null
+  useEffect(() => {
+    const requestId = ++customerApplicationsRequestRef.current
+    if (!selectedCustomerId) {
+      setCustomerApplications([])
+      return
+    }
+    setCustomerApplications([])
+    getCreditApplications({
+      checkoutEligible: true,
+      applicantCustomerId: selectedCustomerId,
+      unconsumed: true,
+      limit: 50,
+    })
+      .then((res) => {
+        if (requestId !== customerApplicationsRequestRef.current) return
+        if (!res.success) {
+          setCustomerApplications(null)
+          return
+        }
+        setCustomerApplications(
+          (res.data?.data ?? [])
+            .map((a) => {
+              // A partially approved application's declined items are never
+              // usable, so neither the items nor the amount count them.
+              const approvedOnly = (a.items ?? []).filter((i) => i.status === 'approved')
+              return {
+                id: a.id,
+                applicationNumber: a.applicationNumber,
+                // Decimals arrive as strings — summing unconverted concatenates.
+                requestedAmount: approvedOnly.reduce(
+                  (sum, i) => sum + Number(i.requestedAmount),
+                  0
+                ),
+                itemNames: approvedOnly.map((i) => i.item?.name ?? '—'),
+              }
+            })
+            .filter((a) => a.itemNames.length > 0)
+        )
+      })
+      .catch(() => {
+        if (requestId === customerApplicationsRequestRef.current) setCustomerApplications(null)
+      })
+  }, [selectedCustomerId, creditAppsRefreshNonce])
+
+  // Scenario 71 — with the override ticked, every application of this customer that
+  // is not used, declined or cancelled is a candidate, whether or not it covers the
+  // cart or has been decided. Loaded only while the override is on.
+  useEffect(() => {
+    const requestId = ++overrideApplicationsRequestRef.current
+    if (!creditApplicationOverriddenActive || !selectedCustomerId) {
+      setOverrideApplications([])
+      setOverrideApplicationsLoading(false)
+      return
+    }
+    setOverrideApplicationsLoading(true)
+    getCreditApplications({
+      applicantCustomerId: selectedCustomerId,
+      unconsumed: true,
+      limit: 50,
+    })
+      .then((res) => {
+        if (requestId !== overrideApplicationsRequestRef.current) return
+        setOverrideApplications(
+          (res.data?.data ?? [])
+            .filter((a) => OVERRIDABLE_APPLICATION_STATUSES.has(String(a.status)))
+            .map((a) => {
+              // What it covers: the approved items once decided, every item it names
+              // before that (a draft has none approved yet).
+              const covered = (a.items ?? []).filter((i) =>
+                isDecidedApplication(String(a.status))
+                  ? i.status === 'approved'
+                  : i.status !== 'declined'
+              )
+              return {
+                id: a.id,
+                applicationNumber: a.applicationNumber,
+                status: String(a.status),
+                requestedAmount: covered.reduce((sum, i) => sum + Number(i.requestedAmount), 0),
+                items: covered.map((i) => ({ itemId: i.itemId, itemName: i.item?.name ?? '—' })),
+                financingTermId: a.financingTermId ?? null,
+                downPayment: a.downPayment != null ? Number(a.downPayment) : null,
+              }
+            })
+        )
+      })
+      .catch(() => {
+        if (requestId === overrideApplicationsRequestRef.current) setOverrideApplications([])
+      })
+      .finally(() => {
+        if (requestId === overrideApplicationsRequestRef.current) {
+          setOverrideApplicationsLoading(false)
+        }
+      })
+  }, [creditApplicationOverriddenActive, selectedCustomerId, creditAppsRefreshNonce])
+
+  const overrideApplicationOptions = overrideApplications.map((a) => ({
+    value: a.id,
+    label: `${a.applicationNumber} · ${creditApplicationStatusLabel(a.status)} · ${a.items
+      .map((i) => i.itemName)
+      .join(', ')}`,
+  }))
+
+  /** What the picked application differs from the cart by — what the sale will keep
+   * on record, and what the cashier is shown before confirming. Null until one is
+   * picked. */
+  function creditOverrideSnapshot(): CreditApplicationOverrideSnapshot | null {
+    if (!creditApplicationOverriddenActive) return null
+    const application = overrideApplications.find((a) => a.id === creditApplicationId)
+    if (!application) return null
+    const soldIds = new Set(inhouseInstallmentCartLines.map((l) => l.itemId))
+    const coveredIds = new Set(application.items.map((i) => i.itemId))
+    return {
+      applicationId: application.id,
+      applicationNumber: application.applicationNumber,
+      applicationStatus: application.status,
+      applicationItems: application.items.map((i) => i.itemName),
+      soldItems: [...new Set(inhouseInstallmentCartLines.map((l) => l.itemName))],
+      missing: application.items.filter((i) => !soldIds.has(i.itemId)).map((i) => i.itemName),
+      extra: [
+        ...new Set(
+          inhouseInstallmentCartLines
+            .filter((l) => !coveredIds.has(l.itemId))
+            .map((l) => l.itemName)
+        ),
+      ],
+    }
+  }
 
   // applyCreditApplicationTerms() bails on an empty cart (`lines.length === 0`),
   // and on the way BACK to this page the applications fetch above resolves
@@ -2029,10 +2852,17 @@ export default function CheckoutPage() {
   // out to raise the application on 5 months and came back restored "as the
   // cashier left it" — every line already had the 5-month down payment, so the
   // old down-payment-only guard skipped it and checkout kept 5 months though
-  // the application said 12. A typed down payment is still never lowered
-  // (applyCreditApplicationTerms only raises it), and an application with no
-  // term leaves the lines' own.
+  // the application said 12. What the cashier has changed at the till is not
+  // touched either way (posEditedRef — applyCreditApplicationTerms only fills in
+  // the rest), and an application with no term leaves the lines' own.
   const appliedTermsKeyRef = useRef<string | null>(null)
+  // A new sale (the cart emptied) is a fresh start for what the till has changed
+  // against an application's terms. Not a change of customer: a figure typed
+  // before the customer was picked is still the cashier's.
+  const cartIsEmpty = cart.length === 0
+  useEffect(() => {
+    posEditedRef.current = { term: false, dp: false }
+  }, [cartIsEmpty])
   useEffect(() => {
     if (!creditApplicationId || inhouseInstallmentCartLines.length === 0) return
     const key = `${creditApplicationId}:${inhouseInstallmentCartLines.length}`
@@ -2041,12 +2871,13 @@ export default function CheckoutPage() {
     const application = approvedCreditApplications.find((a) => a.id === creditApplicationId)
     if (!application) return
     appliedTermsKeyRef.current = key
-    const missingDownPayment = inhouseInstallmentCartLines.some(
-      (l) => !(parseFloat(l.downPaymentInput ?? '') > 0)
-    )
+    // A plan the cashier typed is theirs: the application's terms never
+    // overwrite it (Scenario 71).
+    const termedLines = inhouseInstallmentCartLines.filter((l) => !l.manualPlan)
+    const missingDownPayment = termedLines.some((l) => !(parseFloat(l.downPaymentInput ?? '') > 0))
     const termDiffers =
       !!application.financingTermId &&
-      inhouseInstallmentCartLines.some((l) => l.financingTermId !== application.financingTermId)
+      termedLines.some((l) => l.financingTermId !== application.financingTermId)
     if (!missingDownPayment && !termDiffers) return
     applyCreditApplicationTerms(creditApplicationId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2061,7 +2892,21 @@ export default function CheckoutPage() {
             100
         ) / 100
       const financingTermId = line.financingTermId
-      if (!financingTermId || lineAmount <= 0) {
+      // Scenario 71 — a typed plan previews from what was typed, once it is
+      // complete enough to mean something; the panel says what is missing.
+      const typedReady =
+        !!line.manualPlan &&
+        typedPlanProblem({
+          months: line.manualTermInput,
+          monthly: line.manualMonthlyInput,
+          firstDueDate: line.firstDueDateInput,
+          downPayment: lineDownPayment(line),
+          saleAmount: lineAmount,
+          // One item's share of a plan: the plan as a whole has to cover the
+          // sale (checked in the panel and at Confirm), not each share to the centavo.
+          skipCoverage: installmentCartLines.length > 1,
+        }) === null
+      if (line.manualPlan ? !typedReady : !financingTermId || lineAmount <= 0) {
         setInstallmentPreviews((prev) => ({ ...prev, [line.lineId]: null }))
         setInstallmentPreviewErrors((prev) => ({ ...prev, [line.lineId]: null }))
         continue
@@ -2072,25 +2917,38 @@ export default function CheckoutPage() {
       installmentPreviewTimers.current[line.lineId] = setTimeout(async () => {
         setInstallmentPreviewLoading((prev) => ({ ...prev, [line.lineId]: true }))
         const downPayment = lineDownPayment(line)
-        const res = await previewInstallment({
-          totalAmount: lineAmount,
-          downPayment,
-          financingTermId,
-          // Curated PriceListItemTerm (the real rate card) wins over the
-          // generic factorRate calculation when one exists for this SKU +
-          // term — matches the down-payment badge above, which already
-          // sources from this same line.priceListItemId. Previously omitted
-          // here, so the preview silently fell back to the generic formula
-          // even for a rate-card SKU (found 2026-09-22: DP badge showed the
-          // curated ₱3,590 but the monthly installment showed the generic
-          // ₱4,575.60 instead of the rate card's ₱5,130).
-          // Not for an Employee Appliance Loan that takes a down payment: the
-          // card's monthly was worked out from the card's own down payment.
-          priceListItemId:
-            employeeApplianceLoanActive && downPayment > 0
-              ? undefined
-              : (line.priceListItemId ?? undefined),
-        })
+        const res = line.manualPlan
+          ? await previewInstallment({
+              totalAmount: lineAmount,
+              downPayment,
+              manualTermMonths: Number(line.manualTermInput),
+              manualMonthlyInstallment: Number(line.manualMonthlyInput),
+              firstDueDate: line.firstDueDateInput,
+            })
+          : await previewInstallment({
+              totalAmount: lineAmount,
+              downPayment,
+              financingTermId: financingTermId!,
+              // Curated PriceListItemTerm (the real rate card) wins over the
+              // generic factorRate calculation when one exists for this SKU +
+              // term — matches the down-payment badge above, which already
+              // sources from this same line.priceListItemId. Previously omitted
+              // here, so the preview silently fell back to the generic formula
+              // even for a rate-card SKU (found 2026-09-22: DP badge showed the
+              // curated ₱3,590 but the monthly installment showed the generic
+              // ₱4,575.60 instead of the rate card's ₱5,130).
+              // Only while the plan is still on the price list's own down payment
+              // (planUsesCardMonthly): the card's monthly was worked out from it,
+              // so a changed down payment — or an Employee Appliance Loan that
+              // takes one — is priced from the term's factor rate instead.
+              priceListItemId: planUsesCardMonthly
+                ? (line.priceListItemId ?? undefined)
+                : undefined,
+              // The FMI date entered on the sale starts the schedule shown here,
+              // as it will the one posted.
+              firstDueDate:
+                fmiDateInput && !fmiDateProblem(fmiDateInput) ? fmiDateInput : undefined,
+            })
         setInstallmentPreviews((prev) => ({
           ...prev,
           [line.lineId]: res.success ? (res.data ?? null) : null,
@@ -2222,18 +3080,12 @@ export default function CheckoutPage() {
     setCustomerSearchOpen(false)
     setLoyaltyAccount(null)
     setLoyaltyProgram(null)
-    setCustomerHistory([])
-    setHistoryOpen(false)
-    const [loyaltyRes, histRes] = await Promise.all([
-      getLoyaltyByCustomer(customer.id),
-      getCustomerTransactions(customer.id),
-    ])
+    const loyaltyRes = await getLoyaltyByCustomer(customer.id)
     if (loyaltyRes.success && loyaltyRes.data) {
       setLoyaltyAccount(loyaltyRes.data)
       const programRes = await getActiveLoyaltyProgram()
       if (programRes.success && programRes.data) setLoyaltyProgram(programRes.data)
     }
-    if (histRes.success) setCustomerHistory((histRes.data ?? []).slice(0, 5))
   }
 
   // "New Customer" leaves checkout for POS's own create form
@@ -2273,6 +3125,10 @@ export default function CheckoutPage() {
           promoCodeId: promoResult?.promoCode?.id,
           isXDeal: xDealActive || undefined,
           xDealReference: xDealActive ? xDealReference.trim() : undefined,
+          exceptionReasonId: exceptionReasonId || undefined,
+          exceptionNote: exceptionNote.trim() || undefined,
+          creditApplicationWaived: creditApplicationWaived || undefined,
+          creditApplicationOverridden: creditApplicationOverridden || undefined,
         },
       })
       if (!res.success) {
@@ -2319,8 +3175,12 @@ export default function CheckoutPage() {
         // Both are read off physical booklets, so losing them on this detour
         // meant finding the same two booklets and copying the same numbers
         // again on the way back.
-        salesInvoiceNumber: invoiceNumberInput.trim() || undefined,
+        ...(documentType === 'delivery_receipt'
+          ? { deliveryReceiptNumber: invoiceNumberInput.trim() || undefined }
+          : { salesInvoiceNumber: invoiceNumberInput.trim() || undefined }),
         paymentReferences: payments.map((p) => p.referenceNumber ?? ''),
+        exceptionReasonId: exceptionReasonId || undefined,
+        exceptionNote: exceptionNote.trim() || undefined,
       })
     }
     localStorage.setItem(
@@ -2353,8 +3213,6 @@ export default function CheckoutPage() {
     setSelectedCustomer(null)
     setLoyaltyAccount(null)
     setLoyaltyProgram(null)
-    setCustomerHistory([])
-    setHistoryOpen(false)
     setCustomerSearch('')
   }
 
@@ -2533,7 +3391,7 @@ export default function CheckoutPage() {
       setLinePriceUseTypeId(lineIds, arrivingCreditApplication.priceUseTypeId)
     }
     setLineInvoiceType(lineIds, 'installment')
-    // The Cash/Installment/Delivery Receipt toggle is its own state, separate
+    // The Cash/Installment toggle is its own state, separate
     // from the lines' invoice type — without this the lines read installment
     // while the toggle still highlights Cash.
     setPaymentMode('installment')
@@ -2543,6 +3401,101 @@ export default function CheckoutPage() {
     setArrivingCreditApplication(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arrivingCreditApplication, cart.length])
+
+  // Scenario 72 Part 6 — builds the cart from an arriving Delivery Receipt:
+  // one line per held unit, plus one per non-serial item at the DR's
+  // quantity. Once-only per DR (the ref), released if the attempt is
+  // cancelled — the same deadlock the credit-application arrival guards
+  // against above.
+  useEffect(() => {
+    if (!arrivingDr || arrivingDr.stage !== 'fetching') return
+    if (!selectedCustomer || catalogItems.length === 0) return
+    if (drBuiltRef.current === arrivingDr.id) return
+    drBuiltRef.current = arrivingDr.id
+    let cancelled = false
+    let completed = false
+    void (async () => {
+      const res = await getDeliveryReceipt(arrivingDr.id)
+      if (cancelled) return
+      const dr = res.data
+      if (!dr || dr.status !== 'approved' || dr.purpose !== 'sales_invoice_to_follow') {
+        setError('That delivery receipt is not waiting for a sale — it may already be invoiced.')
+        drBuiltRef.current = null
+        setArrivingDr(null)
+        return
+      }
+      const toAdd: { item: LookupItem; qty: number; serial?: { id: string; label: string } }[] = []
+      for (const line of dr.lines) {
+        let item: LookupItem | undefined = catalogItems.find((c) => c.id === line.itemId)
+        if (!item) {
+          const lookup = await itemLookup(line.item.sku, stockBranchId ?? undefined)
+          if (cancelled) return
+          item = ((lookup.data ?? []) as LookupItem[]).find((c) => c.id === line.itemId)
+        }
+        if (!item) continue
+        toAdd.push({
+          item,
+          qty: line.serialNumber ? 1 : line.quantity,
+          serial: line.serialNumber
+            ? { id: line.serialNumber.id, label: line.serialNumber.serialNumber }
+            : undefined,
+        })
+      }
+      if (cancelled) return
+      if (toAdd.length < dr.lines.length) {
+        setError(
+          `${toAdd.length} of ${dr.lines.length} items on ${dr.drNumber} could be loaded for this branch.`
+        )
+      }
+      completed = true
+      toAdd.forEach(({ item, qty, serial }) => addToCart(item, qty, serial))
+      const serialLines = toAdd.filter(({ item }) => item.isSerialTracked).length
+      const plainItems = new Set(
+        toAdd.filter(({ item }) => !item.isSerialTracked).map(({ item }) => item.id)
+      )
+      setArrivingDr({
+        id: dr.id,
+        stage: 'adding',
+        drNumber: dr.drNumber,
+        expectedLines: serialLines + plainItems.size,
+      })
+    })().catch((e: unknown) => {
+      if (cancelled) return
+      drBuiltRef.current = null
+      setArrivingDr(null)
+      setError(
+        `Could not build the cart from this delivery receipt: ${e instanceof Error ? e.message : String(e)}`
+      )
+    })
+    return () => {
+      cancelled = true
+      if (!completed) drBuiltRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivingDr, selectedCustomer, catalogItems.length])
+
+  // The DR's held units went onto its lines as they were created (addToCart's
+  // presetSerial); this puts the cart on cash — a DR sale is cash / charge
+  // only for now (developer decision, 2026-10-15) — and links the DR.
+  useEffect(() => {
+    if (arrivingDr?.stage !== 'adding') return
+    if (cart.length < (arrivingDr.expectedLines ?? 0)) return
+    setLineInvoiceType(
+      cart.map((l) => l.lineId),
+      'cash'
+    )
+    setPaymentMode('cash')
+    // This sale invoices the DR, so its number is a Sales Invoice No. — a DR
+    // number restored from a handoff belongs to the old booklet flow.
+    if (documentType === 'delivery_receipt') {
+      setDocumentType('sales_invoice')
+      setInvoiceNumberInput('')
+      setDocumentSwitchNote('')
+    }
+    setDeliveryReceipt({ id: arrivingDr.id, drNumber: arrivingDr.drNumber ?? '' })
+    setArrivingDr(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivingDr, cart.length])
 
   // Reasserts the arrival's application once the picker's list has loaded it.
   // Runs at most once per arrival: the ref is cleared as soon as it takes, so
@@ -2555,7 +3508,10 @@ export default function CheckoutPage() {
     if (creditApplicationId !== wanted) setCreditApplicationId(wanted)
   }, [approvedCreditApplications, creditApplicationId])
 
-  function addToCart(item: LookupItem, qty = 1) {
+  /** `presetSerial` — Scenario 72 Part 6: a unit already chosen elsewhere
+   *  (a Delivery Receipt's held unit), put on the line as it is created
+   *  rather than patched on afterwards, and with no picker opened for it. */
+  function addToCart(item: LookupItem, qty = 1, presetSerial?: { id: string; label: string }) {
     // Reserve mode (Scenario 03, Part 3): a SkuReservation is one item +
     // quantity, no serial required — treat every item as plain SKU+qty and
     // cap the cart at a single line (a new pick replaces it, matching this
@@ -2597,6 +3553,8 @@ export default function CheckoutPage() {
             pricingMode: item.pricingMode ?? null,
             isSerialTracked: true,
             requiresSecondarySerial: item.requiresSecondarySerial ?? false,
+            serialNumberId: presetSerial?.id,
+            serialNumberLabel: presetSerial?.label,
             priceResolved: false,
             priceListItemId: null,
             priceUseTypeId: defaultPriceUseTypeId,
@@ -2632,6 +3590,8 @@ export default function CheckoutPage() {
         pricingMode: item.pricingMode ?? null,
         isSerialTracked: isReserveMode ? false : (item.isSerialTracked ?? false),
         requiresSecondarySerial: item.requiresSecondarySerial ?? false,
+        serialNumberId: presetSerial?.id,
+        serialNumberLabel: presetSerial?.label,
         // Reserve mode never submits as a real sale, so Price Use resolution
         // doesn't apply — treat it as already "resolved" so it never blocks.
         priceResolved: isReserveMode,
@@ -2640,7 +3600,7 @@ export default function CheckoutPage() {
       }
       return isReserveMode ? [newLine] : [...prev, newLine]
     })
-    if (item.isSerialTracked && !isReserveMode) {
+    if (item.isSerialTracked && !isReserveMode && !presetSerial) {
       setSerialPickerStage('primary')
       setSerialPickerTarget({
         lineId,
@@ -2697,12 +3657,34 @@ export default function CheckoutPage() {
   // Changing a line's own Price Use just updates the field — the back-fill
   // effect above reacts to the resulting resolution fetch and fills/clears
   // unitPrice/priceListItemId/priceResolved the same way it does on initial
-  // add, skipping this line entirely if it already carries a manual
-  // priceOverrideBy.
+  // add, skipping this line entirely if it already carries a typed-over
+  // price (priceOverridden).
   function setLinePriceUseTypeId(lineIds: string | string[], priceUseTypeId: string) {
     const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
     setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, priceUseTypeId } : l)))
   }
+
+  // A typed plan only exists on an in-house installment line of an ordinary
+  // sale (the server refuses it anywhere else), so it is dropped the moment the
+  // line goes to cash or TPF, or the sale becomes an X-Deal or an Employee
+  // Appliance Loan — rather than leaving the cashier to find out at Confirm.
+  useEffect(() => {
+    setCart((prev) => {
+      let changed = false
+      const next = prev.map((l) => {
+        if (!l.manualPlan) return l
+        const stillValid =
+          l.invoiceType === 'installment' &&
+          l.installmentProvider !== 'tpf' &&
+          !xDealActive &&
+          !employeeApplianceLoanActive
+        if (stillValid) return l
+        changed = true
+        return withoutTypedPlan(l)
+      })
+      return changed ? next : prev
+    })
+  }, [cart, xDealActive, employeeApplianceLoanActive])
 
   // Switching an installment line's provider clears whatever the OTHER
   // provider's fields held — inhouse's financingTermId doesn't apply to TPF,
@@ -2719,24 +3701,58 @@ export default function CheckoutPage() {
         // moment to hang the down-payment pre-fill off the way inhouse does
         // (see setLineFinancingTermId) — seed it here instead, so the panel
         // never opens on a blank field that reads as "nothing to collect".
-        // Same curated-over-floor priority as setLineFinancingTermId().
-        const lineAmount =
-          effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
-        const fallbackDownPayment =
-          l.priceListDownPayment != null
-            ? Number(l.priceListDownPayment).toFixed(2)
-            : Math.ceil(lineAmount * DOWN_PAYMENT_FLOOR_RATE).toFixed(2)
+        // Same price-list-over-10% priority as an inhouse line's.
         return {
           ...l,
           installmentProvider: provider,
           financingTermId: undefined,
-          downPaymentInput: l.downPaymentInput ?? fallbackDownPayment,
+          downPaymentInput: l.downPaymentInput ?? defaultLineDownPayment(l).toFixed(2),
           downPaymentAutoForPriceListItemId: l.downPaymentInput
             ? l.downPaymentAutoForPriceListItemId
             : (l.priceListItemId ?? null),
         }
       })
     )
+  }
+
+  /**
+   * Scenario 71 — waives the credit application. The rows then take what the
+   * price list quotes: any in-house row with no term yet gets its rate card's
+   * first quoted term, which fills the down payment and the monthly as picking
+   * a term always does. Everything stays editable ("Type the terms yourself"
+   * starts from what the row quotes).
+   */
+  function toggleCreditApplicationWaiver(on: boolean) {
+    setCreditApplicationWaived(on)
+    if (!on) return
+    setCreditApplicationOverridden(false)
+    setCreditApplicationId('')
+    const termFor = (l: CartLine) =>
+      [...(l.priceListCardTermMonths ?? [])]
+        .sort((a, b) => a - b)
+        .map((months) => financingTerms.find((t) => t.termMonths === months)?.id)
+        .find(Boolean)
+    const idsByTerm = new Map<string, string[]>()
+    for (const l of inhouseInstallmentCartLines) {
+      if (l.financingTermId || l.manualPlan) continue
+      const termId = termFor(l)
+      if (!termId) continue
+      idsByTerm.set(termId, [...(idsByTerm.get(termId) ?? []), l.lineId])
+    }
+    for (const [termId, lineIds] of idsByTerm) setLineFinancingTermId(lineIds, termId)
+  }
+
+  /**
+   * Scenario 71 — overrides the credit application: the cashier picks one of the
+   * customer's applications that does not cover the cart or is not approved yet,
+   * and the sale goes ahead on it with a reason and a note. Starts with nothing
+   * picked either way, so an application chosen for the ordinary route (or for
+   * the override) never carries across by accident.
+   */
+  function toggleCreditApplicationOverride(on: boolean) {
+    setCreditApplicationOverridden(on)
+    setCreditApplicationId('')
+    if (on) setCreditApplicationWaived(false)
   }
 
   /**
@@ -2748,7 +3764,23 @@ export default function CheckoutPage() {
    */
   function toggleXDeal(on: boolean) {
     setXDealChecked(on)
-    if (!on) return
+    if (!on) {
+      // The box the X-Deal left blank goes back to what a plan starts at.
+      setCart((prev) =>
+        prev.map((l) =>
+          l.invoiceType === 'installment' && !l.downPaymentInput
+            ? {
+                ...l,
+                downPaymentInput: defaultLineDownPayment(l).toFixed(2),
+                downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
+              }
+            : l
+        )
+      )
+      return
+    }
+    setCreditApplicationWaived(false)
+    setCreditApplicationOverridden(false)
     setEmployeeApplianceLoanChecked(false)
     setCreditApplicationId('')
     setPaymentMode('installment')
@@ -2791,7 +3823,8 @@ export default function CheckoutPage() {
   ) {
     const application = (from ?? approvedCreditApplications).find((a) => a.id === applicationId)
     if (!application) return
-    const lines = inhouseInstallmentCartLines
+    // Not a plan the cashier typed — those stay as typed (Scenario 71).
+    const lines = inhouseInstallmentCartLines.filter((l) => !l.manualPlan)
     if (lines.length === 0) return
 
     // Apportion on the SAME amount the submit check measures against —
@@ -2801,78 +3834,54 @@ export default function CheckoutPage() {
     // with "down payment must be at least the floor % of its sale amount".
     const lineAmount = (l: CartLine) =>
       effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
-    // Whole centavos, rounded UP, so a fractional 10% can't land a hair
-    // under the floor.
-    const lineFloor = (l: CartLine) =>
-      Math.ceil(lineAmount(l) * DOWN_PAYMENT_FLOOR_RATE * 100) / 100
     const approvedDp = application.downPayment ?? null
-    // A line the rate card prices for the application's term takes exactly
-    // its card down payment — fixed, see lineCardDownPayment(). The rest of
-    // the approved figure is shared out over the other lines as before.
-    const termFor = (l: CartLine) => ({
-      ...l,
-      financingTermId: application.financingTermId ?? l.financingTermId,
-    })
-    const cardDpByLine = new Map<string, number>()
-    for (const l of lines) {
-      const fixed = lineCardDownPayment(termFor(l))
-      if (fixed != null) cardDpByLine.set(l.lineId, fixed)
-    }
-    const shared = lines.filter((l) => !cardDpByLine.has(l.lineId))
-    const total = shared.reduce((sum, l) => sum + lineAmount(l), 0)
-    const sharedDp =
-      approvedDp != null
-        ? approvedDp - [...cardDpByLine.values()].reduce((sum, v) => sum + v, 0)
-        : null
+    // The approved down payment is the plan's one figure, shared out across the
+    // lines by price. (It is also the price list's own figure whenever the list
+    // quotes the term — the application is held to that when it is raised — so
+    // the plan keeps the price list's monthly.)
+    const total = lines.reduce((sum, l) => sum + lineAmount(l), 0)
 
     let allocated = 0
     const dpByLine = new Map<string, string>()
-    for (const [lineId, fixed] of cardDpByLine) dpByLine.set(lineId, fixed.toFixed(2))
-    if (sharedDp != null && total > 0) {
-      shared.forEach((l, idx) => {
-        const isLast = idx === shared.length - 1
+    if (approvedDp != null && total > 0) {
+      lines.forEach((l, idx) => {
+        const isLast = idx === lines.length - 1
         const rawShare = isLast
-          ? sharedDp - allocated
-          : Math.round(sharedDp * (lineAmount(l) / total) * 100) / 100
+          ? approvedDp - allocated
+          : Math.round(approvedDp * (lineAmount(l) / total) * 100) / 100
         allocated += rawShare
-        // The approved down payment is a MINIMUM for the application as a
-        // whole, not a per-line cap. A line whose share falls under its own
-        // floor is raised to it — collecting a little more up front always
-        // completes, collecting less cannot. This is also what absorbs the
-        // quantity gap: an application carries no quantity, so ringing two
-        // units doubles the line while the approved figure covered one.
-        const share = Math.max(rawShare, lineFloor(l))
+        // The approved down payment is shared out as approved. There is no
+        // 10% floor to raise a share to any more (2026-10-20: an application
+        // may be approved below it, and the till takes it as approved) — only
+        // "never 0", so a share that rounds away still collects a centavo.
+        const share = Math.max(rawShare, 0.01)
         dpByLine.set(l.lineId, share.toFixed(2))
       })
     }
 
+    // The application only fills in what the cashier has not changed (see
+    // posEditedRef) — their figure, higher or lower, is the one that stands.
+    const keepTerm = posEditedRef.current.term
+    const keepDownPayment = posEditedRef.current.dp
+    if (keepTerm && keepDownPayment) return
     setCart((prev) =>
       prev.map((l) => {
-        if (!dpByLine.has(l.lineId) && !application.financingTermId) return l
         if (!lines.some((x) => x.lineId === l.lineId)) return l
-        // Never reduce a figure the cashier has already entered — they may
-        // have agreed a larger down payment at the counter, and silently
-        // replacing it with the apportioned share both loses that and can
-        // drop the line under its floor.
-        const typed = parseFloat(l.downPaymentInput ?? '') || 0
-        const apportioned = parseFloat(dpByLine.get(l.lineId) ?? '') || 0
-        // A card line's figure is exact, typed or not.
-        const downPaymentInput = cardDpByLine.has(l.lineId)
-          ? cardDpByLine.get(l.lineId)!.toFixed(2)
-          : dpByLine.has(l.lineId)
-            ? Math.max(typed, apportioned).toFixed(2)
-            : l.downPaymentInput
-        return {
-          ...l,
-          financingTermId: application.financingTermId ?? l.financingTermId,
-          downPaymentInput,
-          // An approved application's figure is authoritative, same as a
-          // cashier's own typed entry — a later Price Use change must not
-          // treat it as a stale auto-fill and silently recompute it away.
-          downPaymentAutoForPriceListItemId: dpByLine.has(l.lineId)
-            ? undefined
-            : l.downPaymentAutoForPriceListItemId,
+        let next = l
+        if (!keepTerm && application.financingTermId) {
+          next = { ...next, financingTermId: application.financingTermId }
         }
+        if (!keepDownPayment && dpByLine.has(l.lineId)) {
+          next = {
+            ...next,
+            downPaymentInput: dpByLine.get(l.lineId)!,
+            // An approved application's figure is authoritative until the
+            // cashier says otherwise — a later Price Use change must not treat
+            // it as a stale auto-fill and silently recompute it away.
+            downPaymentAutoForPriceListItemId: undefined,
+          }
+        }
+        return next
       })
     )
   }
@@ -2882,65 +3891,300 @@ export default function CheckoutPage() {
     setCart((prev) =>
       prev.map((l) => {
         if (!ids.has(l.lineId)) return l
-        // Pre-fill the down payment as soon as a term is picked (never
-        // overwriting a value the cashier already typed) — otherwise the
-        // cart sits at a blank/0 down payment that reads as "nothing to
-        // collect" but can't actually be submitted that way. Scenario 15,
-        // Part 5 — a curated per-SKU down payment from the real NIG rate
-        // card wins over the generic 10%-floor fallback when one exists.
-        //
-        // A term the card quotes fixes the down payment outright, so it is
-        // set even over a typed figure (PR #199 review).
-        //
         // Scenario 68 — not on an X-Deal: its down payment is whatever part
         // the cashier says is paid now, blank meaning fully bartered.
         if (xDealActive) return { ...l, financingTermId }
-        const fixed = lineCardDownPayment({ ...l, financingTermId })
-        if (fixed != null) {
-          return {
-            ...l,
-            financingTermId,
-            downPaymentInput: fixed.toFixed(2),
-            downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
-          }
-        }
-        if (l.downPaymentInput) return { ...l, financingTermId }
-        const downPaymentInput =
-          l.priceListDownPayment != null
-            ? (Number(l.priceListDownPayment) * l.quantity).toFixed(2)
-            : // Whole pesos, rounded UP — never centavos, and never below the
-              // floor (ceil instead of round guarantees that even if the
-              // exact figure has a fractional remainder).
-              Math.ceil(
-                effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) *
-                  l.quantity *
-                  DOWN_PAYMENT_FLOOR_RATE
-              ).toFixed(2)
+        // A figure the cashier typed stays (2026-10-28: the down payment is a
+        // field, whatever the price list says). Anything the system put there
+        // is refreshed — pre-filled as soon as a term is picked, so the cart
+        // never sits at a blank/0 that reads as "nothing to collect" — from
+        // the price list's down payment, else the 10% default. Whole pesos,
+        // rounded UP for the 10%, so never centavos.
+        const typed = !!l.downPaymentInput && l.downPaymentAutoForPriceListItemId === undefined
+        if (typed) return { ...l, financingTermId }
         return {
           ...l,
           financingTermId,
-          downPaymentInput,
+          downPaymentInput: defaultLineDownPayment(l).toFixed(2),
           downPaymentAutoForPriceListItemId: l.priceListItemId ?? null,
         }
       })
     )
   }
 
-  function setLineDownPaymentInput(lineIds: string | string[], downPaymentInput: string) {
-    const ids = new Set(Array.isArray(lineIds) ? lineIds : [lineIds])
-    setCart((prev) =>
-      prev.map((l) =>
-        ids.has(l.lineId)
-          ? // An explicit cashier edit — no longer an auto-fill a later
-            // Price Use change is allowed to silently recompute.
-            { ...l, downPaymentInput, downPaymentAutoForPriceListItemId: undefined }
-          : l
-      )
+  // ─── Typed installment plan (Scenario 71) ──────────────────────────────────
+  //
+  // A row's figures are per unit, like its down payment: every unit of a row
+  // gets the same months, installment and first due date, and the server adds
+  // them up when units (or rows) share a plan.
+
+  /** The line's sale amount, measured the way the submit checks do. */
+  function saleAmountOf(l: CartLine): number {
+    return (
+      Math.round(
+        effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity * 100
+      ) / 100
     )
   }
 
-  function toggleDownPaymentEdit(lineId: string) {
-    setDownPaymentEditOpen((prev) => ({ ...prev, [lineId]: !prev[lineId] }))
+  /** Turns the typed plan on for a row, seeded from what the row shows now, so
+   * the cashier edits a plan instead of starting from a blank. */
+  function startTypedPlan(lineIds: string[]) {
+    const ids = new Set(lineIds)
+    setCart((prev) =>
+      prev.map((l) => {
+        if (!ids.has(l.lineId)) return l
+        const sale = saleAmountOf(l)
+        const months = financingTerms.find((t) => t.id === l.financingTermId)?.termMonths ?? 12
+        const enteredDownPayment = parseFloat(l.downPaymentInput ?? '')
+        const downPayment = Number.isFinite(enteredDownPayment)
+          ? enteredDownPayment
+          : Math.ceil(sale * DOWN_PAYMENT_FLOOR_RATE)
+        // What the row is quoting right now (a rate card's monthly included)
+        // when a term is picked; otherwise the figure that just covers the sale.
+        const shown = l.financingTermId ? installmentPreviews[l.lineId] : null
+        const monthly = shown
+          ? Number(shown.monthlyInstallment)
+          : coveringMonthly(sale, downPayment, months)
+        return {
+          ...l,
+          manualPlan: true,
+          manualTermInput: String(months),
+          manualMonthlyInput: monthly.toFixed(2),
+          firstDueDateInput: dateInputFromToday({ months: 1 }),
+          downPaymentInput: downPayment.toFixed(2),
+          downPaymentAutoForPriceListItemId: undefined,
+        }
+      })
+    )
+  }
+
+  function patchTypedPlan(
+    lineIds: string[],
+    patch: Partial<
+      Pick<
+        CartLine,
+        'manualTermInput' | 'manualMonthlyInput' | 'firstDueDateInput' | 'downPaymentInput'
+      >
+    >
+  ) {
+    const ids = new Set(lineIds)
+    setCart((prev) => prev.map((l) => (ids.has(l.lineId) ? { ...l, ...patch } : l)))
+  }
+
+  // The typed plan's down payment and monthly are the PLAN's, typed once; the
+  // lines carry shares of them. What was typed is kept as typed while the field
+  // has it, so a half-typed "12." is not reformatted under the cashier's fingers.
+  const [planTypedDraft, setPlanTypedDraft] = useState<{
+    downPaymentInput?: string
+    manualMonthlyInput?: string
+  }>({})
+  const planTypedMonthly =
+    Math.round(
+      inhouseInstallmentCartLines.reduce(
+        (s, l) => s + (parseFloat(l.manualMonthlyInput ?? '') || 0),
+        0
+      ) * 100
+    ) / 100
+  useEffect(() => {
+    // A draft that no longer says what the lines add up to (a one-tap plan, the
+    // rate card's values, an item added) gives way to the real figure.
+    setPlanTypedDraft((d) => {
+      const dp = parseFloat(d.downPaymentInput ?? '')
+      const monthly = parseFloat(d.manualMonthlyInput ?? '')
+      const next = {
+        downPaymentInput:
+          Number.isFinite(dp) && Math.abs(dp - planDownPayment) > 0.004
+            ? undefined
+            : d.downPaymentInput,
+        manualMonthlyInput:
+          Number.isFinite(monthly) && Math.abs(monthly - planTypedMonthly) > 0.004
+            ? undefined
+            : d.manualMonthlyInput,
+      }
+      return next.downPaymentInput === d.downPaymentInput &&
+        next.manualMonthlyInput === d.manualMonthlyInput
+        ? d
+        : next
+    })
+  }, [planDownPayment, planTypedMonthly])
+
+  /** The typed panel's edits, for a plan of several items: months and the first
+   * due date go on every line as they are; the down payment and the monthly are
+   * totals, shared out across the lines by price. */
+  function patchTypedPlanTotals(
+    _lineIds: string[],
+    patch: Partial<
+      Pick<
+        CartLine,
+        'manualTermInput' | 'manualMonthlyInput' | 'firstDueDateInput' | 'downPaymentInput'
+      >
+    >
+  ) {
+    const { downPaymentInput, manualMonthlyInput, ...shared } = patch
+    if (Object.keys(shared).length > 0) patchTypedPlan(planLineIds, shared)
+    if (downPaymentInput !== undefined) {
+      setPlanTypedDraft((d) => ({ ...d, downPaymentInput }))
+      const n = parseFloat(downPaymentInput)
+      if (Number.isFinite(n) && n >= 0 && n <= planSaleAmount) setPlanDownPayment(n)
+    }
+    if (manualMonthlyInput !== undefined) {
+      setPlanTypedDraft((d) => ({ ...d, manualMonthlyInput }))
+      const n = parseFloat(manualMonthlyInput)
+      if (Number.isFinite(n) && n > 0) {
+        const shares = shareByAmount(planRows, n)
+        setCart((prev) =>
+          prev.map((l) =>
+            shares.has(l.lineId)
+              ? { ...l, manualMonthlyInput: shares.get(l.lineId)!.toFixed(2) }
+              : l
+          )
+        )
+      }
+    }
+  }
+
+  // One plan per cart: every installment line carries the plan of the first one
+  // — its provider, and its term (or its typed months and first due date). A line
+  // added to the cart afterwards, or a restored or resumed cart still in the old
+  // item-by-item shape, comes into line here. And every line has a down payment
+  // from the start (its price-list figure, else the 10% default), so the plan's
+  // field shows what the sale will use before a term is even picked.
+  useEffect(() => {
+    const lines = cart.filter((l) => l.invoiceType === 'installment')
+    if (lines.length === 0) return
+    const holder = lines[0]
+    const holderProvider = holder.installmentProvider ?? 'inhouse'
+    const off = lines
+      .slice(1)
+      .filter(
+        (l) =>
+          (l.installmentProvider ?? 'inhouse') !== holderProvider ||
+          (holderProvider !== 'tpf' &&
+            (!!l.manualPlan !== !!holder.manualPlan ||
+              (holder.manualPlan
+                ? l.manualTermInput !== holder.manualTermInput ||
+                  l.firstDueDateInput !== holder.firstDueDateInput
+                : (l.financingTermId ?? '') !== (holder.financingTermId ?? ''))))
+      )
+    const unseeded = xDealActive ? [] : lines.filter((l) => l.downPaymentInput === undefined)
+    if (off.length === 0 && unseeded.length === 0) return
+    const offIds = new Set(off.map((l) => l.lineId))
+    const unseededIds = new Set(unseeded.map((l) => l.lineId))
+    setCart((prev) =>
+      prev.map((l) => {
+        let next = l
+        if (offIds.has(l.lineId)) {
+          if (holderProvider === 'tpf') {
+            next = {
+              ...withoutTypedPlan(l),
+              installmentProvider: 'tpf',
+              financingTermId: undefined,
+            }
+          } else if (holder.manualPlan) {
+            const months = Number(holder.manualTermInput) || 12
+            const sale = saleAmountOf(l)
+            const dp = parseFloat(l.downPaymentInput ?? '') || defaultLineDownPayment(l)
+            next = {
+              ...l,
+              installmentProvider: 'inhouse',
+              financingTermId: undefined,
+              manualPlan: true,
+              manualTermInput: holder.manualTermInput,
+              firstDueDateInput: holder.firstDueDateInput,
+              manualMonthlyInput: coveringMonthly(sale, dp, months).toFixed(2),
+            }
+          } else {
+            next = {
+              ...withoutTypedPlan(l),
+              installmentProvider: 'inhouse',
+              financingTermId: holder.financingTermId,
+            }
+          }
+        }
+        if (unseededIds.has(l.lineId) && next.downPaymentInput === undefined) {
+          next = {
+            ...next,
+            downPaymentInput: defaultLineDownPayment(next).toFixed(2),
+            downPaymentAutoForPriceListItemId: next.priceListItemId ?? null,
+          }
+        }
+        return next
+      })
+    )
+    // saleAmountOf / defaultLineDownPayment read only the line and the sale's
+    // tax settings, which are what re-run this through `cart`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, xDealActive])
+
+  // A line's down payment share is written once, when the plan's figure is typed
+  // or seeded; a later quantity, price override or Price Use change does not move
+  // it. When a share ends up above what its line now costs, share the plan's
+  // figure out again (capped at what the items cost) instead of refusing the
+  // sale at submit with "<item>'s down payment must be between 0 and its sale
+  // amount" — the server holds every line to the same cap.
+  useEffect(() => {
+    const overShared = installmentCartLines.some(
+      (l) => lineDownPayment(l) > saleAmountOf(l) + 0.005
+    )
+    if (!overShared) return
+    const split = splitDownPayment(planRows, Math.min(planDownPayment, planSaleAmount), {
+      allowZero: true,
+    })
+    if (!split.ok) return
+    setCart((prev) =>
+      prev.map((l) =>
+        split.byLine.has(l.lineId)
+          ? {
+              ...l,
+              downPaymentInput: split.byLine.get(l.lineId)!.toFixed(2),
+              downPaymentAutoForPriceListItemId: undefined,
+            }
+          : l
+      )
+    )
+    // planRows / planDownPayment / planSaleAmount all derive from `cart`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, activeTaxRate, inclusivePricing, isTaxExempt])
+
+  /** "50% down, the balance in 60 days" — the common case in one tap. */
+  function applySixtyDayPlan(lineIds: string[]) {
+    const ids = new Set(lineIds)
+    setCart((prev) =>
+      prev.map((l) => {
+        if (!ids.has(l.lineId)) return l
+        const sale = saleAmountOf(l)
+        const downPayment = Math.ceil(toCents(sale) / 2) / 100
+        return {
+          ...l,
+          manualPlan: true,
+          manualTermInput: '1',
+          manualMonthlyInput: coveringMonthly(sale, downPayment, 1).toFixed(2),
+          firstDueDateInput: dateInputFromToday({ days: 60 }),
+          downPaymentInput: downPayment.toFixed(2),
+          downPaymentAutoForPriceListItemId: undefined,
+        }
+      })
+    )
+  }
+
+  /** Back to the rate card / Financing Term plan the row had. */
+  function applyRateCardPlan(lineIds: string[]) {
+    const ids = new Set(lineIds)
+    const termId = cart.find((l) => ids.has(l.lineId))?.financingTermId
+    setCart((prev) =>
+      prev.map((l) =>
+        ids.has(l.lineId)
+          ? {
+              ...withoutTypedPlan(l),
+              downPaymentInput: undefined,
+              downPaymentAutoForPriceListItemId: undefined,
+            }
+          : l
+      )
+    )
+    // The term the row had comes back with its own down payment.
+    if (termId) setLineFinancingTermId(lineIds, termId)
   }
 
   function setQty(itemId: string, qty: number) {
@@ -3046,34 +4290,94 @@ export default function CheckoutPage() {
     setOverrideError('')
   }
 
-  // A price override reuses the same shared managerOverride/managerUserId
-  // slot the submission payload sends for discount overrides — the backend
-  // treats "PIN-approved on this sale" as one sale-level fact regardless of
-  // which line it applies to (same limitation the existing discount-override
-  // system already has for multi-line, multi-approver sales).
-  function handlePriceOverrideApprove(
-    lineId: string,
-    result: { managerId: string; managerName: string; newPrice: number }
-  ) {
-    setCart((prev) =>
-      prev.map((l) =>
-        l.lineId === lineId
+  // Scenario 71 — a price override needs no manager and no PIN: whoever is at
+  // the till types the price. It keeps the price-list row the line started from
+  // (the server reads the list price off it) and leaves the sale needing a
+  // reason and a note, asked for once in the order summary.
+  // The price-list price a line resolves to under its Price Use — what an
+  // override is measured against. Decimal columns arrive as strings, so it is
+  // made a number here, once.
+  function listPriceFor(line: CartLine): number | null {
+    if (!line.priceUseTypeId) return null
+    const resolved = resolvedPrices[resolutionKey(line.itemId, line.priceUseTypeId)]
+    return resolved ? Number(resolved.price) : null
+  }
+
+  // What a line would have cost at its price-list price, on the same VAT basis
+  // as the figure shown beside it (so the struck-through number and the
+  // charged number compare like for like). Null when no list price resolves.
+  function listLineTotal(line: CartLine, qty: number): number | null {
+    const list = listPriceFor(line)
+    if (list === null) return null
+    return (
+      effectiveUnitPrice(
+        { ...line, unitPrice: list },
+        activeTaxRate,
+        inclusivePricing,
+        isTaxExempt
+      ) * qty
+    )
+  }
+
+  // A row of several units of one serialized item shows a single price, so the
+  // override goes on every line in that row, not just the first.
+  function overrideTargets(prev: CartLine[], lineId: string): Set<string> {
+    const target = prev.find((l) => l.lineId === lineId)
+    if (!target) return new Set()
+    return new Set(
+      target.isSerialTracked
+        ? prev.filter((l) => l.itemId === target.itemId).map((l) => l.lineId)
+        : [lineId]
+    )
+  }
+
+  function applyPriceOverride(lineId: string, newPrice: number) {
+    setCart((prev) => {
+      const ids = overrideTargets(prev, lineId)
+      return prev.map((l) =>
+        ids.has(l.lineId)
           ? {
               ...l,
-              unitPrice: result.newPrice,
-              priceOverrideBy: result.managerId,
-              priceOverrideApproverName: result.managerName,
+              unitPrice: newPrice,
+              priceOverridden: true,
+              // A line already overridden keeps what it was first priced from.
+              overriddenFromPriceListItemId: l.priceOverridden
+                ? l.overriddenFromPriceListItemId
+                : (l.priceListItemId ?? null),
               priceResolved: true,
               priceListItemId: null,
               priceListDownPayment: null,
             }
           : l
       )
-    )
-    setManagerOverrideApproved(true)
-    setOverrideManagerId(result.managerId)
-    setOverrideManagerName(result.managerName)
+    })
     setPriceOverrideTargetLineId(null)
+  }
+
+  // Puts the line back on its price-list price. The back-fill effect does not
+  // re-run for a price that has not changed, so the resolved price is applied
+  // here directly; with no match it goes back to "No price — Override".
+  function clearPriceOverride(lineId: string) {
+    setCart((prev) => {
+      const ids = overrideTargets(prev, lineId)
+      return prev.map((l) => {
+        if (!ids.has(l.lineId)) return l
+        const resolved = l.priceUseTypeId
+          ? resolvedPrices[resolutionKey(l.itemId, l.priceUseTypeId)]
+          : undefined
+        const cleared = { ...l, priceOverridden: false, overriddenFromPriceListItemId: null }
+        return resolved
+          ? {
+              ...cleared,
+              unitPrice: resolved.price,
+              priceListItemId: resolved.priceListItemId,
+              priceListDownPayment: resolved.downPayment,
+              priceListCardTermMonths: resolved.cardTermMonths ?? null,
+              priceResolved: true,
+            }
+          : { ...cleared, unitPrice: 0, priceResolved: false, priceListItemId: null }
+      })
+    })
   }
 
   // ─── Payment actions ───────────────────────────────────────────────────────
@@ -3102,10 +4406,14 @@ export default function CheckoutPage() {
       | 'card'
       | 'bank_transfer'
       | 'qr'
-    const reference = payments
-      .filter((p) => p.amount > 0 && p.referenceNumber.trim())
-      .map((p) => p.referenceNumber.trim())
-      .join(', ')
+    const reference = Array.from(
+      new Set(
+        payments
+          .filter((p) => p.amount > 0)
+          .map(effectiveReference)
+          .filter(Boolean)
+      )
+    ).join(', ')
     return {
       xDealDownPaymentMethod: method,
       xDealDownPaymentReferenceNumber: reference || undefined,
@@ -3168,6 +4476,64 @@ export default function CheckoutPage() {
     setPayments((prev) => [...prev, { method: defaultMethod, amount: 0, referenceNumber: '' }])
   }
 
+  // Mixed payment — a new row opens on the next sensible method with what is
+  // still unpaid already in it (nothing, if nothing has been entered yet).
+  function addAnotherPayment() {
+    const tender = nextTender(tenderChoices, [
+      firstRowTender,
+      ...payments.flatMap((p) => (p.tender ? [p.tender] : [])),
+    ])
+    const newIndex = payments.length
+    setPayments((prev) => [
+      ...prev,
+      rowForTender(tender, configuredMethods, totalPaid > 0.009 ? balance : 0),
+    ])
+    // The new payment opens under the last one, down with the amounts: take
+    // the cashier to it, whichever of the two buttons they pressed.
+    window.setTimeout(() => {
+      document
+        .querySelector(`[data-testid="payment-unit-${newIndex}"]`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }, 60)
+  }
+
+  // Offered under the payment method (where the method is chosen) and again
+  // under the amount fields, while something is still unpaid.
+  const addAnotherPaymentButton = (testId: string) =>
+    mixedPaymentAllowed && payments.length > 0 && balance > 0.009 ? (
+      <button
+        type="button"
+        onClick={addAnotherPayment}
+        data-testid={testId}
+        className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-purple-300 py-3 text-sm text-gray-700 transition-colors hover:border-purple-500 hover:bg-purple-50 hover:text-purple-600 active:scale-[0.98]"
+      >
+        <Plus size={14} /> Add another payment method
+      </button>
+    ) : null
+
+  // Takes the cashier to the first gap Confirm found, and into its field.
+  function scrollToPaymentIssue(issue: { row: number | null; field: string }) {
+    const target =
+      issue.row === null
+        ? document.querySelector(
+            issue.field === 'reference'
+              ? '[data-testid="sale-cr-number"]'
+              : '[data-testid="payment-summary"]'
+          )
+        : (document.querySelector(`[data-testid="payment-${issue.field}-${issue.row}"]`) ??
+          document.querySelector(`[data-testid="payment-row-${issue.row}"]`))
+    if (!(target instanceof HTMLElement)) return
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    if (target instanceof HTMLInputElement) target.focus({ preventScroll: true })
+  }
+
+  // A new method starts its details over, keeping only the amount.
+  function changeRowTender(idx: number, tender: DeliveryFeeTender) {
+    setPayments((prev) =>
+      prev.map((p, i) => (i === idx ? rowForTender(tender, configuredMethods, p.amount) : p))
+    )
+  }
+
   function updatePayment(idx: number, patch: Partial<PaymentRow>) {
     setPayments((prev) => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)))
   }
@@ -3196,6 +4562,10 @@ export default function CheckoutPage() {
         promoCodeId: promoResult?.promoCode?.id,
         isXDeal: xDealActive || undefined,
         xDealReference: xDealActive ? xDealReference.trim() : undefined,
+        exceptionReasonId: exceptionReasonId || undefined,
+        exceptionNote: exceptionNote.trim() || undefined,
+        creditApplicationWaived: creditApplicationWaived || undefined,
+        creditApplicationOverridden: creditApplicationOverridden || undefined,
       },
     })
     setParking(false)
@@ -3207,8 +4577,6 @@ export default function CheckoutPage() {
     setSelectedCustomer(null)
     setLoyaltyAccount(null)
     setLoyaltyProgram(null)
-    setCustomerHistory([])
-    setHistoryOpen(false)
     setPromoResult(null)
     setPromoInput('')
     setPayments([])
@@ -3227,10 +4595,6 @@ export default function CheckoutPage() {
       : null
 
   async function handleConfirm() {
-    // Survives a park/resume or any remount, unlike the override state set
-    // when the PIN was approved — see the payload below.
-    const restoredPriceOverrideBy =
-      cart.find((l) => l.priceOverrideBy)?.priceOverrideBy ?? undefined
     if (!sessionId) {
       setError('Select an open session first.')
       return
@@ -3268,6 +4632,34 @@ export default function CheckoutPage() {
     if (needsManagerOverride && !managerOverrideApproved) {
       setError('This discount needs a manager override before checking out.')
       return
+    }
+    // Scenario 71 — a price override needs no approval, only a reason and a
+    // note. The offline queue drops sale-level fields, so it cannot carry them.
+    if (anyException) {
+      if (isOffline) {
+        setError(
+          'A price override, typed terms or a credit application waiver need a network connection — clear them, or wait until the POS is back online.'
+        )
+        return
+      }
+      const what = [
+        anyPriceOverridden && 'the price override',
+        anyTypedPlan && 'the typed terms',
+        creditApplicationWaivedActive && 'the credit application waiver',
+        creditApplicationOverriddenActive && 'the credit application override',
+      ]
+        .filter(Boolean)
+        .join(' and ')
+      if (!exceptionReasonId) {
+        setError(`Pick a reason for ${what}.`)
+        exceptionSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        return
+      }
+      if (!exceptionNote.trim()) {
+        setError(`Add a note for ${what}.`)
+        exceptionSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        return
+      }
     }
 
     if (needsVatApproval && !taxExemptionRef.trim()) {
@@ -3309,8 +4701,15 @@ export default function CheckoutPage() {
       return
     }
 
+    // Scenario 78 Part 3 — required. Only enforced once OFFICE has loaded:
+    // if it couldn't, the server credits the sale to OFFICE anyway.
+    if (saleMode === 'sale' && officeAgentIdRef.current && !sellingAgentId) {
+      setError('Pick the Selling Agent — OFFICE for a walk-in.')
+      return
+    }
+
     if (!invoiceNumberInput.trim()) {
-      setError('Enter the Sales Invoice No. for this sale.')
+      setError(`Enter the ${documentLabel} for this sale.`)
       return
     }
 
@@ -3325,7 +4724,7 @@ export default function CheckoutPage() {
       const problem = deliveryProblem(
         delivery,
         deliveryCustomerAddress,
-        payments.filter((p) => p.amount > 0).map((p) => p.referenceNumber)
+        payments.filter((p) => p.amount > 0).map(effectiveReference)
       )
       if (problem) {
         setError(problem)
@@ -3370,9 +4769,15 @@ export default function CheckoutPage() {
       }
     }
 
-    const lineMissingTerm = inhouseInstallmentCartLines.find((l) => !l.financingTermId)
+    const lineMissingTerm = inhouseInstallmentCartLines.find(
+      (l) => !l.manualPlan && !l.financingTermId
+    )
     if (lineMissingTerm) {
       setError(`Select a financing term for ${lineMissingTerm.itemName}.`)
+      return
+    }
+    if (fmiDateError) {
+      setError(fmiDateError)
       return
     }
     if (
@@ -3395,69 +4800,46 @@ export default function CheckoutPage() {
         setError("Enter the financier's reference number for the TPF-financed item(s).")
         return
       }
-      // Same 10% floor as inhouse — the financier funds only the balance,
-      // so a missing down payment isn't "financed in full", it's unbilled.
+      // A TPF sale may take 0 down, the same as an in-house plan (2026-10-29,
+      // client request) — the financier then funds the whole sale. There is no
+      // percentage floor (2026-10-15) either.
       for (const l of tpfInstallmentCartLines) {
         const lineAmount =
           effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
         const downPayment = lineDownPayment(l)
-        // Scenario 60 — an Employee Appliance Loan waives the down payment
-        // (and the ">0" / 10%-floor checks below) entirely.
-        if (!downPaymentWaived && downPayment <= 0) {
-          setError(`${l.itemName} needs a down payment — TPF sales still collect one at checkout.`)
-          return
-        }
         if (downPayment > lineAmount) {
           setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
           return
         }
-        // Waived for an Employee Appliance Loan or an X-Deal. A TPF line's monthly is the
-        // financier's, so only the floor applies — never the card's figure.
-        if (
-          !downPaymentWaived &&
-          downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE
-        ) {
-          setError(
-            `${l.itemName}'s down payment must be at least ${DOWN_PAYMENT_FLOOR_LABEL} of its sale amount.`
-          )
-          return
-        }
+      }
+    }
+    // Scenario 71 — a typed plan answers to its own rules, not a Financing Term's
+    // or the price list's, and is weighed as ONE plan: its down payment and
+    // monthly are the lines' shares added up.
+    if (planTyped) {
+      const holder = inhouseInstallmentCartLines[0]
+      const problem = typedPlanProblem({
+        months: holder.manualTermInput,
+        monthly: String(planTypedMonthly),
+        firstDueDate: holder.firstDueDateInput,
+        downPayment: planDownPayment,
+        saleAmount: planSaleAmount,
+      })
+      if (problem) {
+        setError(problem)
+        return
       }
     }
     for (const l of inhouseInstallmentCartLines) {
+      if (l.manualPlan) continue
       const lineAmount =
         effectiveUnitPrice(l, activeTaxRate, inclusivePricing, isTaxExempt) * l.quantity
       const downPayment = lineDownPayment(l)
+      // The down payment is the cashier's to set — any amount, even 0
+      // (2026-10-28). Where it is not the price list's own, the monthly is
+      // priced from the term's factor rate instead (see planUsesCardMonthly).
       if (downPayment < 0 || downPayment > lineAmount) {
-        setError(`${l.itemName}'s down payment must be between 0 and its sale amount.`)
-        return
-      }
-      // A line the rate card prices for its term must carry exactly the
-      // card's down payment — the same rule the server applies. Not when the
-      // down payment is waived (Employee Appliance Loan) or optional (X-Deal).
-      const fixed = downPaymentFree ? null : lineCardDownPayment(l)
-      if (fixed != null) {
-        if (Math.abs(downPayment - fixed) > DOWN_PAYMENT_FLOOR_TOLERANCE) {
-          setError(
-            `${l.itemName}'s down payment is fixed by the price list at ${fmt(fixed)} for this term.`
-          )
-          return
-        }
-        continue
-      }
-      // 0.005 (half a centavo) tolerance absorbs float noise from the
-      // tax-inclusive/exclusive price conversion above — without it, typing
-      // the exact rounded-to-centavo value shown by the "Min" hint below
-      // can land a hair under the true unrounded floor and be rejected.
-      // Waived entirely for an Employee Appliance Loan (development) or an
-      // X-Deal (Scenario 67 / 68).
-      if (
-        !downPaymentFree &&
-        downPayment < DOWN_PAYMENT_FLOOR_RATE * lineAmount - DOWN_PAYMENT_FLOOR_TOLERANCE
-      ) {
-        setError(
-          `${l.itemName}'s down payment must be at least ${DOWN_PAYMENT_FLOOR_LABEL} of its sale amount.`
-        )
+        setError(`The down payment must be between 0 and what the items cost.`)
         return
       }
     }
@@ -3465,7 +4847,7 @@ export default function CheckoutPage() {
     // Down payment — forced explicit choice before its amount can even be
     // tendered, same as before the down payment shared this pool.
     // An X-Deal with nothing paid now has nothing to choose a method for.
-    if (installmentCartLines.length > 0 && !installmentPaymentMethod && !xDealCollectsNothing) {
+    if (installmentCartLines.length > 0 && !installmentPaymentMethod && !dpCollectsNothing) {
       setError(
         xDealActive
           ? 'Choose how the cash portion will be paid — Cash or Credit/Debit Card.'
@@ -3479,6 +4861,14 @@ export default function CheckoutPage() {
         setError('Add at least one payment method.')
         return
       }
+      // Mixed payment — list everything that's missing at once, mark the
+      // fields, and take the cashier to the first one. Nothing is sent.
+      if (mixedPaymentActive && paymentIssues.length > 0) {
+        setError('')
+        setShowPaymentIssues(true)
+        scrollToPaymentIssue(paymentIssues[0])
+        return
+      }
       if (balance > 0.009) {
         setError(`Underpaid by ${fmt(balance)}.`)
         return
@@ -3487,15 +4877,27 @@ export default function CheckoutPage() {
         setError('Only cash payments are accepted while offline.')
         return
       }
-      // CR Number (collection receipt) is required on every payment row of
-      // a sale, whatever the method — cash on hand and check included.
-      // Reserve mode still only asks for a reference on REF_METHODS.
-      const missingRef = payments.find(
-        (p) =>
-          p.amount > 0 &&
-          !p.referenceNumber.trim() &&
-          (saleMode === 'sale' || REF_METHODS.includes(p.method))
-      )
+      // A sale has a CR Number only with a down payment: one for the whole
+      // transaction. Without one, QR/GCash/Billers, card and bank transfer each
+      // need their own reference number. Reserve mode only asks for a
+      // reference on REF_METHODS.
+      const missingRefIndex =
+        saleMode === 'sale'
+          ? saleHasDownPayment
+            ? saleCr
+              ? -1
+              : 0
+            : payments.findIndex(
+                (p) =>
+                  p.amount > 0 &&
+                  rowShowsReference(p) &&
+                  crIsRequired(p) &&
+                  !p.referenceNumber.trim()
+              )
+          : payments.findIndex(
+              (p) => p.amount > 0 && !p.referenceNumber.trim() && REF_METHODS.includes(p.method)
+            )
+      const missingRef = missingRefIndex >= 0 ? payments[missingRefIndex] : undefined
       if (
         hasCashLine &&
         cashSubMode === 'check' &&
@@ -3506,10 +4908,19 @@ export default function CheckoutPage() {
         return
       }
       if (missingRef) {
-        setError(`CR Number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
+        setError(
+          saleMode !== 'sale'
+            ? `CR Number is required for ${PAYMENT_LABELS[missingRef.method]}.`
+            : saleHasDownPayment
+              ? 'CR Number is required for the down payment.'
+              : `${referenceLabelFor(missingRef, missingRefIndex)} is required.`
+        )
         return
       }
-      const cardPaymentPending = payments.some((p) => p.method === 'card' && p.amount > 0)
+      // A mixed row's card carries its own Straight / Installment and Term.
+      const cardPaymentPending = payments.some(
+        (p) => !p.tender && p.method === 'card' && p.amount > 0
+      )
       if (cardPaymentPending && cardTxnMode === 'installment' && !cardInstallmentTerm) {
         setError('Select a Term for the card installment payment (Payment Mode).')
         return
@@ -3536,7 +4947,7 @@ export default function CheckoutPage() {
         taxAmount: taxTotal,
         subtotal: vatExclSubtotalForBackend,
         totalAmount,
-        salesInvoiceNumber: invoiceNumberInput.trim(),
+        ...documentNumberPayload(invoiceNumberInput.trim()),
         outputVatCode,
         taxExemptionRef: isTaxExempt ? taxExemptionRef : undefined,
         taxOverrideReason: departsFromDefault ? taxOverrideReason.trim() : undefined,
@@ -3588,10 +4999,24 @@ export default function CheckoutPage() {
           // Never sent for an X-Deal — the backend rejects one outright, so
           // a barter can never consume an application.
           creditApplicationId:
-            inhouseInstallmentCartLines.length > 0 && creditApplicationId && !xDealActive
+            inhouseInstallmentCartLines.length > 0 &&
+            creditApplicationId &&
+            !xDealActive &&
+            !creditApplicationWaivedActive
               ? creditApplicationId
               : undefined,
-          salesInvoiceNumber: invoiceNumberInput.trim(),
+          // The FMI date entered on the sale — its own field, not part of an
+          // override; only sent while a line that is not a typed plan can use it.
+          fmiDate: fmiDateApplies && fmiDateInput ? fmiDateInput : undefined,
+          // Scenario 72 Part 6 — lets this sale claim the units the DR holds.
+          deliveryReceiptId: deliveryReceipt?.id,
+          // Scenario 71 — no application, on the cashier's say-so (with a
+          // reason and a note below).
+          creditApplicationWaived: creditApplicationWaivedActive || undefined,
+          // Scenario 71 — an application that does not cover the cart or is not
+          // approved yet, sold on anyway (the id above is that application).
+          creditApplicationOverridden: creditApplicationOverriddenActive || undefined,
+          ...documentNumberPayload(invoiceNumberInput.trim()),
           // Scenario 66 — nothing at all when delivery is off.
           ...deliveryPayload(delivery, deliveryCustomerAddress),
           tpfProviderId: tpfInstallmentCartLines.length > 0 ? tpfProviderId : undefined,
@@ -3617,10 +5042,14 @@ export default function CheckoutPage() {
           // missingRef check above), joined in the rare split-tender case.
           tpfDownPaymentReferenceNumber:
             isPureTpfCart && tpfDownPaymentsTotal > 0
-              ? payments
-                  .filter((p) => p.amount > 0 && p.referenceNumber.trim())
-                  .map((p) => p.referenceNumber.trim())
-                  .join(', ') || undefined
+              ? Array.from(
+                  new Set(
+                    payments
+                      .filter((p) => p.amount > 0)
+                      .map(effectiveReference)
+                      .filter(Boolean)
+                  )
+                ).join(', ') || undefined
               : undefined,
           customerId: selectedCustomer?.id,
           promoCodeId: promoResult?.promoCode?.id,
@@ -3641,21 +5070,12 @@ export default function CheckoutPage() {
           // backend records it (before the X-Deal memo) when the sale is
           // created, at approval for a held one. Never through addPayment.
           ...xDealDownPaymentPayload(),
-          // The approving manager's id is read back off the cart when the
-          // component state that normally holds it is gone. A price override
-          // writes to both: priceOverrideBy on the line (which is part of
-          // cartData, so it survives a park) and managerOverrideApproved /
-          // overrideManagerId beside it (which are not, and reset on any
-          // remount). Without this fallback a resumed sale still sent
-          // priceOverride: true on the line with no sale-level pair, and the
-          // backend rejected it at Confirm — "A price override requires
-          // managerOverride: true and managerUserId" — after the cashier had
-          // already keyed in the payment. Nothing is taken on trust: the
-          // backend re-checks that this user really holds
-          // pos:transactions:price_override.
-          managerOverride: managerOverrideApproved || !!restoredPriceOverrideBy || undefined,
-          managerUserId:
-            (managerOverrideApproved ? overrideManagerId : restoredPriceOverrideBy) || undefined,
+          // Scenario 71 — a price override no longer rides on this: no manager
+          // approves it, so it sends a reason and a note instead.
+          exceptionReasonId: anyException ? exceptionReasonId : undefined,
+          exceptionNote: anyException ? exceptionNote.trim() : undefined,
+          managerOverride: managerOverrideApproved || undefined,
+          managerUserId: managerOverrideApproved ? overrideManagerId || undefined : undefined,
           allowNegativeStock: allowNegativeStock || undefined,
           // Scenario 57 — restored. Undefined rather than '' when unset, so
           // an agentless sale sends no agent at all instead of an empty
@@ -3674,15 +5094,28 @@ export default function CheckoutPage() {
             secondarySerialNumberId: l.secondarySerialNumberId,
             priceListItemId: l.priceListItemId ?? undefined,
             priceUseTypeId: l.priceUseTypeId ?? undefined,
-            priceOverride: l.priceOverrideBy ? true : undefined,
+            priceOverride: l.priceOverridden ? true : undefined,
+            overriddenFromPriceListItemId:
+              l.priceOverridden && l.overriddenFromPriceListItemId
+                ? l.overriddenFromPriceListItemId
+                : undefined,
             invoiceType: l.invoiceType ?? 'cash',
             installmentProvider:
               l.invoiceType === 'installment' ? l.installmentProvider : undefined,
             payNowMethod: (l.invoiceType ?? 'cash') === 'cash' ? l.payNowMethod : undefined,
             financingTermId:
-              l.invoiceType === 'installment' && l.installmentProvider !== 'tpf'
+              l.invoiceType === 'installment' && l.installmentProvider !== 'tpf' && !l.manualPlan
                 ? l.financingTermId
                 : undefined,
+            // Scenario 71 — a plan the cashier typed travels as typed.
+            ...(l.manualPlan
+              ? {
+                  manualPlan: true,
+                  manualTermMonths: Number(l.manualTermInput),
+                  manualMonthlyInstallment: Number(l.manualMonthlyInput),
+                  firstDueDate: l.firstDueDateInput,
+                }
+              : {}),
             // Both providers collect one — inhouse's funds its schedule,
             // TPF's is simply the slice the financier doesn't fund. Waived
             // to 0 for an Employee Appliance Loan (Scenario 60), overriding
@@ -3692,7 +5125,11 @@ export default function CheckoutPage() {
         })
 
         if (!txRes.success || !txRes.data) {
-          const rawMsg = txRes.error ?? txRes.message ?? 'Failed to create transaction.'
+          const rawMsg =
+            DR_SALE_ERRORS[(txRes.error ?? txRes.message ?? '').trim()] ??
+            txRes.error ??
+            txRes.message ??
+            'Failed to create transaction.'
           const idToName = Object.fromEntries(cart.map((l) => [l.itemId, l.itemName]))
           const errMsg = rawMsg.replace(
             /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
@@ -3777,7 +5214,9 @@ export default function CheckoutPage() {
             totalAmount,
             serialLines: displayLines,
             creditApplicationId:
-              inhouseInstallmentCartLines.length > 0 && !xDealActive
+              inhouseInstallmentCartLines.length > 0 &&
+              !xDealActive &&
+              !creditApplicationWaivedActive
                 ? creditApplicationId
                 : undefined,
             isXDeal: xDealActive,
@@ -3813,7 +5252,13 @@ export default function CheckoutPage() {
         // left over goes to the down payment below — same rows can straddle
         // both if the cashier tendered it all in one go. (A delivery fee is
         // never in this pool: it has its own receipt, recorded at create.)
-        const rows = payments.filter((p) => p.amount > 0)
+        const tendered = payments.filter((p) => p.amount > 0)
+        // Mixed payment — the change comes off the cash rows, so a GCash, card
+        // or transfer row is recorded for what actually went through it.
+        const rows =
+          mixedPaymentActive && change > 0.009
+            ? withChangeTakenFromCash(tendered, change, firstRowIsCheck)
+            : tendered
         const consumed: number[] = rows.map(() => 0)
         const payRowPortion = async (
           row: PaymentRow,
@@ -3823,17 +5268,21 @@ export default function CheckoutPage() {
           const payRes = await addPayment(txId, {
             paymentMethod: row.method,
             amount,
-            referenceNumber: row.referenceNumber || undefined,
-            checkNumber:
-              row.method === 'cash' && hasCashLine && cashSubMode === 'check'
+            referenceNumber: effectiveReference(row) || undefined,
+            checkNumber: row.tender
+              ? row.tender === 'check'
+                ? row.checkNumber?.trim() || undefined
+                : undefined
+              : row.method === 'cash' && hasCashLine && cashSubMode === 'check'
                 ? checkNumber.trim() || undefined
                 : undefined,
             paymentMethodConfigId: row.configId,
             // Scenario 37 — card's terminal/txn-mode/term, and bank_transfer/qr's
             // bank/gateway, all come from the Payment Method toggle's
             // transaction-scoped state now, not this row.
-            paymentMethodOptionId:
-              row.method === 'card'
+            paymentMethodOptionId: row.tender
+              ? row.paymentMethodOptionId
+              : row.method === 'card'
                 ? cardTerminalOptionId
                 : row.method === 'bank_transfer' || row.method === 'qr'
                   ? cashPaymentOptionId
@@ -3842,10 +5291,16 @@ export default function CheckoutPage() {
                         .find((m) => m.key === 'cash')
                         ?.options.find((o) => o.isEnabled && o.name === 'Check')?.id
                     : row.paymentMethodOptionId,
-            cardTxnMode: row.method === 'card' ? cardTxnMode : undefined,
-            cardInstallmentTerm: row.method === 'card' ? cardInstallmentTerm : undefined,
+            cardTxnMode:
+              row.method === 'card' ? (row.tender ? row.cardTxnMode : cardTxnMode) : undefined,
+            cardInstallmentTerm:
+              row.method === 'card' ? (row.tender ? row.cardTerm : cardInstallmentTerm) : undefined,
             bankTransferVerifiedAtRegister:
-              row.method === 'bank_transfer' ? bankTransferVerifiedAtRegister : undefined,
+              row.method === 'bank_transfer'
+                ? row.tender
+                  ? row.bankVerified
+                  : bankTransferVerifiedAtRegister
+                : undefined,
             installmentScheduleId,
           })
           if (!payRes.success) {
@@ -3963,6 +5418,10 @@ export default function CheckoutPage() {
         currency: 'PHP',
       })
 
+      // The sale moved stock, so the cached catalog is now behind. Marking it
+      // stale makes the next Checkout / Product Catalog visit re-read it.
+      void queryClient.invalidateQueries({ queryKey: [POS_CATALOG_KEY] })
+
       setSubmitting(false)
       setSuccess({
         transactionId: txId,
@@ -3973,6 +5432,19 @@ export default function CheckoutPage() {
         salesInvoiceNumber: txData?.salesInvoiceNumber ?? null,
         deliveryReceiptNumber: txData?.deliveryReceiptNumber ?? null,
         loyaltyEarned,
+        creditWarnings: Array.isArray(txData?.creditWarnings) ? txData.creditWarnings : [],
+        exception: anyException
+          ? {
+              reason: overrideReasons.find((r) => r.id === exceptionReasonId)?.name ?? null,
+              note: exceptionNote.trim() || null,
+              creditApplicationWaived: creditApplicationWaivedActive,
+              creditOverride: creditOverrideSnapshot(),
+              typedTerms: anyTypedPlan,
+              lineLists: Object.fromEntries(
+                cart.filter((l) => l.priceOverridden).map((l) => [l.lineId, listPriceFor(l)])
+              ),
+            }
+          : null,
         isXDeal: xDealActive,
         xDealReference: xDealActive ? xDealReference.trim() : null,
         invoices: txData?.invoices ?? [],
@@ -4028,16 +5500,16 @@ export default function CheckoutPage() {
 
   function resetSale() {
     setCart([])
+    setDeliveryReceipt(null)
     setSelectedCustomer(null)
     setLoyaltyAccount(null)
     setLoyaltyProgram(null)
-    setCustomerHistory([])
-    setHistoryOpen(false)
     setCustomerSearch('')
     setPromoInput('')
     setPromoResult(null)
     setPromoError('')
     setPayments([])
+    setShowPaymentIssues(false)
     setError('')
     setSuccess(null)
     setPendingApproval(null)
@@ -4045,7 +5517,16 @@ export default function CheckoutPage() {
     setOutputVatCode(OUTPUT_VAT_STANDARD)
     setTaxExemptionRef('')
     setTaxOverrideReason('')
+    setExceptionReasonId('')
+    setExceptionNote('')
+    setCreditApplicationWaived(false)
+    setFmiDateInput('')
     setInvoiceNumberInput('')
+    setDocumentType('sales_invoice')
+    setDocumentSwitchNote('')
+    // The last sale's agent must not carry over onto the next customer.
+    setSellingAgentId(officeAgentIdRef.current)
+    setSellingAgentName(officeAgentNameRef.current)
     setDelivery(EMPTY_DELIVERY)
     setDeliveryCustomerAddress(null)
     setSearchQuery('')
@@ -4222,7 +5703,18 @@ export default function CheckoutPage() {
         fmt={fmt}
         customerDisplayName={customerDisplayName}
         cart={cart}
-        payments={payments}
+        // A down-payment sale's one CR is shown once; otherwise each payment's
+        // own reference number (only where its method asked for one).
+        payments={payments.map((p) => ({
+          ...p,
+          referenceNumber: saleHasDownPayment ? '' : effectiveReference(p),
+        }))}
+        crNumber={saleHasDownPayment ? saleCr : ''}
+        qrOptionName={
+          configuredMethods
+            .find((m) => m.key === 'qr')
+            ?.options.find((o) => o.id === cashPaymentOptionId)?.name
+        }
         promoDiscount={promoDiscount}
         activeTaxRate={activeTaxRate}
         inclusivePricing={inclusivePricing}
@@ -4283,6 +5775,198 @@ export default function CheckoutPage() {
   const activeSession = openSessions.find((s) => s.id === sessionId)
 
   // ─── Main layout ───────────────────────────────────────────────────────────
+
+  // The first payment's method — Cash's pills and follow-ups, or the card
+  // acquirer — drawn once and placed in one of two spots: up in Payment Mode
+  // while there is a single payment (as it has always been), and inside
+  // Payment 1's own block once there are several, so every block reads the same.
+  const firstPaymentMethodPanels = (
+    <>
+      {hasCashLine && (
+        <div
+          data-testid="cash-sub-mode-toggle"
+          className="rounded-lg border border-purple-100 p-2.5"
+        >
+          <p className="mb-1.5 text-xs font-medium text-gray-800">Cash</p>
+          <div className="flex gap-1.5">
+            {(paymentMode === 'installment'
+              ? (['cash_on_hand', 'check', 'bank_transfer', 'gcash', 'billers', 'qr'] as const)
+              : ([
+                  'cash_on_hand',
+                  'check',
+                  'bank_transfer',
+                  'gcash',
+                  'billers',
+                  'qr',
+                  'card',
+                ] as const)
+            ).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => {
+                  setCashSubMode(mode)
+                  setCashPaymentOptionId(undefined)
+                  if (mode !== 'bank_transfer') setBankTransferVerifiedAtRegister(false)
+                }}
+                className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                  cashSubMode === mode
+                    ? 'bg-purple-200 text-purple-700'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                {mode === 'cash_on_hand'
+                  ? 'Cash on Hand'
+                  : mode === 'check'
+                    ? 'Check'
+                    : mode === 'bank_transfer'
+                      ? 'Bank Transfer'
+                      : mode === 'card'
+                        ? 'Debit/Credit Card'
+                        : mode === 'gcash'
+                          ? 'GCash'
+                          : mode === 'billers'
+                            ? 'Billers'
+                            : 'QR'}
+              </button>
+            ))}
+          </div>
+          {cashSubMode !== 'cash_on_hand' &&
+            cashSubMode !== 'check' &&
+            cashSubMode !== 'card' &&
+            (() => {
+              const config = configuredMethods.find(
+                (m) =>
+                  m.key ===
+                  (cashSubMode === 'gcash' || cashSubMode === 'billers' ? 'qr' : cashSubMode)
+              )
+              const options =
+                config?.options.filter((o) => {
+                  if (!o.isEnabled) return false
+                  const inGcash = GCASH_OPTION_NAMES.includes(o.name)
+                  const inBillers = BILLER_OPTION_NAMES.includes(o.name)
+                  if (cashSubMode === 'gcash') return inGcash
+                  if (cashSubMode === 'billers') return inBillers
+                  if (cashSubMode === 'qr') return !inGcash && !inBillers
+                  return true
+                }) ?? []
+              if (options.length === 0) return null
+              const label =
+                cashSubMode === 'bank_transfer'
+                  ? 'Bank'
+                  : cashSubMode === 'billers'
+                    ? 'Biller'
+                    : 'Gateway'
+              return (
+                <PillCombobox
+                  ariaLabel={label}
+                  wrapperClassName="mt-1.5"
+                  placeholder={`Select ${label.toLowerCase()}…`}
+                  options={options.map((o) => ({ value: o.id, label: o.name }))}
+                  value={cashPaymentOptionId}
+                  onChange={setCashPaymentOptionId}
+                />
+              )
+            })()}
+          {cashSubMode === 'check' && (
+            <input
+              aria-label="Check Number"
+              className="mt-1.5 w-full rounded-lg border-2 border-purple-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:font-semibold placeholder:text-gray-600 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+              placeholder="Check Number (required)"
+              value={checkNumber}
+              onChange={(e) => setCheckNumber(e.target.value)}
+            />
+          )}
+          {cashSubMode === 'bank_transfer' && (
+            <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
+              <input
+                type="checkbox"
+                checked={bankTransferVerifiedAtRegister}
+                onChange={(e) => setBankTransferVerifiedAtRegister(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-gray-300"
+              />
+              Verified at register — the credit already landed, post straight to Cash in Bank
+            </label>
+          )}
+        </div>
+      )}
+      {hasCreditCardLine && (
+        <div
+          data-testid="card-txn-mode-toggle"
+          className="rounded-lg border border-purple-100 p-2.5"
+        >
+          {/* "Card Acquirer", not "POS Terminal" (2026-09-24):
+                        these options — BDO/BPI/Metrobank/Maya — are the
+                        institutions that provide the terminal and settle the
+                        money, not the terminal itself. "Acquirer" rather
+                        than "bank" deliberately: Maya is a non-bank acquirer,
+                        so any bank-flavoured label is wrong for it. Not to be
+                        confused with the ISSUING bank (the customer's own
+                        card) or the network (Visa/Mastercard) — neither is
+                        what's picked here. bank_transfer keeps its own plain
+                        "Bank" label; both can be on screen at once. */}
+          <p className="mb-1.5 text-xs font-medium text-gray-800">Select Card Acquirer</p>
+          {(() => {
+            const cardConfig = configuredMethods.find((m) => m.key === 'card')
+            const terminalOptions = cardConfig?.options.filter((o) => o.isEnabled) ?? []
+            return (
+              <>
+                {terminalOptions.length > 0 && (
+                  <PillCombobox
+                    ariaLabel="Card Acquirer"
+                    wrapperClassName="mb-1.5"
+                    placeholder="Select card acquirer…"
+                    options={terminalOptions.map((o) => ({ value: o.id, label: o.name }))}
+                    value={cardTerminalOptionId}
+                    onChange={setCardTerminalOptionId}
+                  />
+                )}
+                <div className="flex gap-1.5">
+                  {(['straight', 'installment'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => {
+                        setCardTxnMode(mode)
+                        if (mode === 'straight') setCardInstallmentTerm(undefined)
+                      }}
+                      className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                        cardTxnMode === mode
+                          ? mode === 'installment'
+                            ? 'bg-prominent-purple-100 text-prominent-purple-700'
+                            : 'bg-purple-200 text-purple-700'
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                      }`}
+                    >
+                      {mode === 'straight' ? 'Straight' : 'Installment'}
+                    </button>
+                  ))}
+                </div>
+                {cardTxnMode === 'installment' && (
+                  <PillSelect
+                    aria-label="Term"
+                    filled={!!cardInstallmentTerm}
+                    wrapperClassName="mt-1.5"
+                    value={cardInstallmentTerm ?? ''}
+                    onChange={(e) =>
+                      setCardInstallmentTerm(e.target.value ? Number(e.target.value) : undefined)
+                    }
+                  >
+                    <option value="">Select Term (required)</option>
+                    {[3, 6, 9, 12, 18, 24].map((m) => (
+                      <option key={m} value={m}>
+                        {m} months
+                      </option>
+                    ))}
+                  </PillSelect>
+                )}
+              </>
+            )
+          })()}
+        </div>
+      )}
+    </>
+  )
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-zinc-50">
@@ -4388,22 +6072,27 @@ export default function CheckoutPage() {
         </div>
       )}
 
-      {/* Installment approval banner. Only installment sales (in-house or
-          TPF) wait for approval now — a cash sale of a serialized appliance
-          checks out directly, so a serial alone no longer shows this. */}
+      {/* Installment banner. Only a sale with a TPF installment line still
+          waits for approval (Scenario 71) — an in-house installment sale posts
+          the moment it is confirmed, and a cash sale of a serialized appliance
+          always did. */}
       {!cancellationReqId && installmentCartLines.length > 0 && (
         <div
-          className={`flex items-center gap-3 border-b px-5 py-3 ${canOverride ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}
+          className={`flex items-center gap-3 border-b px-5 py-3 ${installmentHeldForApproval ? 'border-amber-200 bg-amber-50' : 'border-green-200 bg-green-50'}`}
         >
-          {canOverride ? (
-            <CheckCircle2 size={14} className="shrink-0 text-green-500" />
-          ) : (
+          {installmentHeldForApproval ? (
             <ShieldCheck size={14} className="shrink-0 text-amber-500" />
+          ) : (
+            <CheckCircle2 size={14} className="shrink-0 text-green-500" />
           )}
-          <p className={`text-sm font-medium ${canOverride ? 'text-green-700' : 'text-amber-700'}`}>
-            {canOverride
-              ? 'This sale includes an installment item — since you can already approve sales, it will post immediately.'
-              : 'This sale includes an installment item — it will need Business Owner or Branch Manager approval before the invoice is created.'}
+          <p
+            className={`text-sm font-medium ${installmentHeldForApproval ? 'text-amber-700' : 'text-green-700'}`}
+          >
+            {installmentHeldForApproval
+              ? 'This sale includes a TPF installment item — it will need Business Owner or Branch Manager approval before the invoice is created.'
+              : canOverride && tpfInstallmentCartLines.length > 0
+                ? 'This sale includes an installment item — since you can already approve sales, it will post immediately.'
+                : 'This sale includes an installment item — it posts as soon as you confirm.'}
           </p>
         </div>
       )}
@@ -4571,6 +6260,124 @@ export default function CheckoutPage() {
         <div
           className={`flex-col overflow-y-auto border-purple-600 bg-purple-50/60 shadow-[-6px_0_16px_-6px_rgba(0,0,0,0.18)] md:flex-shrink-0 md:w-140 lg:w-165 xl:w-180 md:border-l-4 ${mobilePanel === 'checkout' ? 'flex flex-1' : 'hidden md:flex'}`}
         >
+          {/* Scenario 72 Part 6 — the Delivery Receipt this sale invoices,
+              first thing in the panel so the cashier sees it before ringing up. */}
+          {deliveryReceipt && (
+            <div className="flex items-start justify-between gap-3 border-b border-emerald-200 bg-emerald-50 px-5 py-3 text-sm text-emerald-900">
+              <p>
+                <span className="font-semibold">Invoicing {deliveryReceipt.drNumber}</span> — its
+                held units are on the lines. This sale marks the delivery receipt invoiced.
+              </p>
+              <button
+                type="button"
+                onClick={() => setDeliveryReceipt(null)}
+                className="shrink-0 text-xs font-medium text-emerald-700 underline hover:text-emerald-900"
+              >
+                Unlink
+              </button>
+            </div>
+          )}
+          {/* Leads the panel, above Customer. Required on every sale — the
+              number off the physical booklet: a Sales Invoice No., or a
+              Delivery Receipt No. when the sale is covered by a DR instead.
+              Same field, same rules; the toggle only changes which number we
+              ask for. Deliberately never abbreviated "SI" here: that
+              abbreviation already means Supplier Invoice on the AP Bills /
+              goods-receiving side. */}
+          {saleMode === 'sale' && (
+            <div className="border-b border-purple-200 p-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
+                {documentLabel} *
+              </p>
+              <div
+                role="radiogroup"
+                aria-label="Document type"
+                className="mb-2 flex gap-1.5 rounded-lg border border-purple-200 bg-white p-1"
+              >
+                {(['sales_invoice', 'delivery_receipt'] as const).map((type) => {
+                  const selected = documentType === type
+                  // Scenario 72 — a sale invoicing a linked DR is a Sales Invoice.
+                  const locked = Boolean(deliveryReceipt) && type === 'delivery_receipt'
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      data-testid={`document-type-${type}`}
+                      disabled={locked}
+                      onClick={() => {
+                        if (selected) return
+                        setDocumentType(type)
+                        setDocumentSwitchNote('')
+                        // The typed number belongs to the document it was read
+                        // off — never carried across to the other kind.
+                        setInvoiceNumberInput('')
+                      }}
+                      className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                        selected
+                          ? 'bg-prominent-purple-200 text-prominent-purple-800'
+                          : locked
+                            ? 'cursor-not-allowed bg-white text-gray-300'
+                            : 'bg-white text-gray-500 hover:bg-gray-100'
+                      }`}
+                    >
+                      {type === 'sales_invoice' ? 'Sales Invoice' : 'Delivery Receipt'}
+                    </button>
+                  )
+                })}
+              </div>
+              <input
+                type="text"
+                aria-label={documentLabel}
+                data-testid="document-number-input"
+                value={invoiceNumberInput}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setInvoiceNumberInput(next)
+                  // "DR-1014" typed under Sales Invoice is a Delivery Receipt in the
+                  // cashier's hand — it used to be saved as an invoice that happened
+                  // to be numbered DR, and read "Sales Invoice No." everywhere.
+                  const detected = detectDocumentType(next)
+                  // Never flips away from the Sales Invoice a linked DR needs.
+                  if (detected && detected !== documentType && !deliveryReceipt) {
+                    setDocumentType(detected)
+                    setDocumentSwitchNote(
+                      detected === 'delivery_receipt'
+                        ? 'Switched to Delivery Receipt — the number starts with DR.'
+                        : 'Switched to Sales Invoice — the number starts with SI.'
+                    )
+                  }
+                }}
+                placeholder={
+                  documentType === 'delivery_receipt'
+                    ? 'Enter delivery receipt number'
+                    : 'Enter sales invoice number'
+                }
+                maxLength={100}
+                // Same look as the CR Number field — the number is read off a
+                // paper booklet, so it is typed large and bold.
+                className="w-full rounded-lg border-2 border-purple-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:font-normal placeholder:text-gray-400 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+              />
+              {documentSwitchNote && (
+                <p
+                  className="mt-1.5 text-xs font-medium text-prominent-purple-700"
+                  data-testid="document-switch-note"
+                >
+                  {documentSwitchNote}
+                </p>
+              )}
+              {deliveryReceipt && (
+                <p
+                  className="mt-1.5 text-xs font-medium text-emerald-700"
+                  data-testid="document-type-locked-note"
+                >
+                  This sale invoices {deliveryReceipt.drNumber} — enter its Sales Invoice No.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Customer */}
           <div className="border-b border-purple-200 p-5">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
@@ -4608,15 +6415,6 @@ export default function CheckoutPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {customerHistory.length > 0 && (
-                      <button
-                        onClick={() => setHistoryOpen((v) => !v)}
-                        className="flex items-center gap-0.5 text-xs font-medium text-purple-400 hover:text-purple-700"
-                      >
-                        {historyOpen ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-                        {customerHistory.length} past
-                      </button>
-                    )}
                     <button
                       onClick={clearCustomer}
                       aria-label="Clear customer"
@@ -4627,36 +6425,52 @@ export default function CheckoutPage() {
                   </div>
                 </div>
 
-                {historyOpen && customerHistory.length > 0 && (
-                  <div className="mt-1 divide-y divide-gray-300 rounded-lg border border-purple-200 bg-gray-200">
-                    {customerHistory.map((tx) => (
-                      <div
-                        key={tx.id}
-                        className="flex items-center justify-between px-3 py-1.5 text-xs"
-                      >
-                        {/* What they bought, not the receipt id — a cashier
-                            recognises "Kolin 1.5HP Split Type" instantly and
-                            can never recognise POS-1788852307273-E863R. The
-                            number is kept on the title for lookups. */}
-                        <span
-                          className="min-w-0 flex-1 truncate pr-2 text-gray-700"
-                          title={tx.transactionNumber}
-                        >
-                          {summariseItems(tx.lines)}
-                        </span>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <span className="text-gray-700">
-                            {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </span>
-                          <span className="font-semibold text-gray-800">{fmt(tx.totalAmount)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {/* Approved credit applications on file — visible as soon as the
+                    customer is picked, not only once the cart has an installment
+                    line. Nothing for a customer who never needs one (employee,
+                    government) unless they happen to have one. */}
+                {!isOffline &&
+                  (customerApplications === null ||
+                    customerApplications.length > 0 ||
+                    (!isEmployeeCustomer && !isGovernmentInstitutionalCustomer)) && (
+                    <div className="mt-2" data-testid="customer-credit-applications">
+                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-prominent-purple-700">
+                        Approved credit applications
+                      </p>
+                      {customerApplications === null ? (
+                        <p className="text-xs text-gray-600">
+                          Couldn&apos;t check credit applications.
+                        </p>
+                      ) : customerApplications.length === 0 ? (
+                        <p className="text-xs text-gray-600">
+                          No approved credit application on file.
+                        </p>
+                      ) : (
+                        <ul className="divide-y divide-gray-300 rounded-lg border border-purple-200 bg-gray-200">
+                          {customerApplications.map((a) => (
+                            <li
+                              key={a.id}
+                              data-testid="customer-credit-application"
+                              className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs"
+                            >
+                              <span
+                                className="min-w-0 flex-1 truncate text-gray-700"
+                                title={a.itemNames.join(', ')}
+                              >
+                                <span className="font-semibold text-gray-900">
+                                  {a.applicationNumber}
+                                </span>{' '}
+                                · {a.itemNames.join(', ')}
+                              </span>
+                              <span className="shrink-0 font-semibold text-gray-800">
+                                {fmt(a.requestedAmount)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
               </div>
             ) : (
               <>
@@ -4806,11 +6620,7 @@ export default function CheckoutPage() {
                   />
                   <span>
                     <span className="font-medium text-prominent-purple-900">X-Deal</span>
-                    <span className="block text-gray-700">
-                      {isOffline
-                        ? 'Unavailable offline'
-                        : 'Inhouse installment, no credit application. Part of it may be paid now as the cash portion; an X-Deal credit memo clears the rest automatically when the sale is approved'}
-                    </span>
+                    {isOffline && <span className="block text-gray-700">Unavailable offline</span>}
                   </span>
                 </label>
                 {xDealChecked && (
@@ -4833,47 +6643,35 @@ export default function CheckoutPage() {
             )}
           </div>
 
-          {/* Scenario 57 — who sold it. Optional: a walk-in has no agent
-              behind it, and forcing a choice would put a false name on the
-              commission trail. SearchableSelect rather than the hand-rolled
-              combobox this block used before 1b82138 — the type-ahead is the
-              current idiom and already handles reopen/Enter properly. */}
+          {/* Scenario 57 — who sold it. Scenario 78 Part 3 — required, as the
+              client asked: a walk-in is credited to OFFICE (preselected, and
+              what every new sale starts on) rather than to no one, so every
+              sale names someone. Not clearable.
+              A server-side type-ahead, not a list loaded once: /pos/agents
+              caps at 100 agents by name, so a picker that only filtered what
+              it had loaded could never reach an agent past the first 100.
+              SearchCombobox only learns its label from `initialLabel` at
+              mount, so it is re-keyed on the agent — that is what shows
+              OFFICE once it loads and again when a new sale resets to it. */}
           {saleMode === 'sale' && (
             <div className="border-b border-purple-200 p-5">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
-                Selling Agent{' '}
+                Selling Agent *{' '}
                 <span className="font-normal normal-case tracking-normal text-gray-500">
-                  — optional
+                  — OFFICE for a walk-in
                 </span>
               </p>
-              <SearchableSelect
+              <SearchCombobox
+                key={sellingAgentId}
                 value={sellingAgentId}
                 onChange={setSellingAgentId}
-                options={sellingAgents.map((a) => ({ value: a.id, label: a.name }))}
-                placeholder="No agent"
-                clearable
-                portal
-              />
-            </div>
-          )}
-
-          {/* Required on every sale — the number off the physical sales
-              invoice booklet. Deliberately never abbreviated "SI" here:
-              that abbreviation already means Supplier Invoice on the AP
-              Bills / goods-receiving side. */}
-          {saleMode === 'sale' && (
-            <div className="border-b border-purple-200 p-5">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
-                Sales Invoice No. *
-              </p>
-              <input
-                type="text"
-                aria-label="Sales Invoice No."
-                value={invoiceNumberInput}
-                onChange={(e) => setInvoiceNumberInput(e.target.value)}
-                placeholder="Enter sales invoice number"
-                maxLength={100}
-                className="w-full rounded-lg border border-purple-200 bg-white px-3 py-2 text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                onSelect={(option) => setSellingAgentName(option.primary)}
+                initialLabel={sellingAgentName}
+                queryKey="pos-selling-agents"
+                search={searchSellingAgents}
+                placeholder="Select the selling agent"
+                typeToSearchMessage="Type an agent's name"
+                clearable={false}
               />
             </div>
           )}
@@ -4899,8 +6697,8 @@ export default function CheckoutPage() {
                   to the totals, instead of scrolled past at the bottom of
                   the catalog list. */}
               {cart.length > 0 && (
-                <div className="max-h-[28rem] overflow-y-auto rounded-xl border border-purple-200 bg-white">
-                  <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-100 bg-white/95 px-5 py-3 backdrop-blur-sm">
+                <div className="max-h-[28rem] overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+                  <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-100 bg-gray-50 px-4 py-2.5">
                     <div className="flex items-center gap-2">
                       <ShoppingCart size={16} className="text-purple-500" />
                       <span className="text-sm font-semibold text-gray-700">
@@ -4908,207 +6706,301 @@ export default function CheckoutPage() {
                       </span>
                     </div>
                   </div>
-                  <div className="scroll-fade-x overflow-x-auto">
+                  <div className="overflow-x-auto">
                     <table className="min-w-full text-base">
-                      <tbody className="divide-y divide-gray-50">
+                      <tbody className="divide-y divide-gray-100">
                         {displayGroups.map((group) => {
                           const line = group[0]
                           const groupQty = group.length
                           const lineTaxRate = resolveLineTaxRate(line, activeTaxRate)
                           const isGrouped = groupQty > 1
 
+                          // The item's small print, on one muted line: SKU, serial, tax.
+                          // A serial is plain text once assigned and turns amber only
+                          // when one is still needed, so the row's colour means
+                          // "attention", not decoration.
+                          const serialPart = !line.isSerialTracked ? null : isGrouped ? (
+                            group.some((l) => !l.serialNumberId) ? (
+                              <button
+                                onClick={() =>
+                                  setSerialPickerTarget(group.find((l) => !l.serialNumberId)!)
+                                }
+                                className="font-semibold text-amber-600 underline-offset-2 hover:underline"
+                              >
+                                ⚠ {group.filter((l) => !l.serialNumberId).length} of {groupQty}{' '}
+                                serial{groupQty !== 1 ? 's' : ''} needed
+                              </button>
+                            ) : (
+                              <span className="flex flex-wrap gap-x-1">
+                                <span>SN:</span>
+                                {group.map((l, i) => (
+                                  <button
+                                    key={l.lineId}
+                                    onClick={() => setSerialPickerTarget(l)}
+                                    className="font-medium text-gray-700 underline-offset-2 hover:text-green-700 hover:underline"
+                                  >
+                                    {l.serialNumberLabel}
+                                    {i < group.length - 1 ? ',' : ''}
+                                  </button>
+                                ))}
+                              </span>
+                            )
+                          ) : (
+                            <button
+                              onClick={() => setSerialPickerTarget(line)}
+                              className={`underline-offset-2 hover:underline ${line.serialNumberId ? 'font-medium text-gray-700 hover:text-green-700' : 'font-semibold text-amber-600'}`}
+                            >
+                              {line.serialNumberId
+                                ? `SN: ${line.serialNumberLabel}`
+                                : '⚠ Select serial'}
+                            </button>
+                          )
+                          const metaParts: React.JSX.Element[] = [
+                            line.sku ? <span key="sku">{line.sku}</span> : null,
+                            serialPart,
+                            lineTaxRate != null ? (
+                              <span key="tax">
+                                {line.taxRate == null
+                                  ? (activeTaxRate?.name ?? `VAT ${lineTaxRate}%`)
+                                  : `VAT ${lineTaxRate}%`}
+                              </span>
+                            ) : (
+                              <span key="tax">No tax</span>
+                            ),
+                          ].filter((part): part is React.JSX.Element => part !== null)
+
                           return (
                             <Fragment key={line.lineId}>
-                              <tr className="group hover:bg-gray-50">
-                                <td className="px-5 py-4">
-                                  <p className="text-base font-semibold text-prominent-purple-900">
-                                    {itemDisplayLabel({
-                                      name: line.itemName,
-                                      brandName: line.brandName,
-                                      categoryName: line.categoryName,
-                                      modelNumber: line.modelNumber,
-                                    })}
-                                    {isGrouped && (
-                                      <span className="ml-1.5 font-medium text-gray-500">
-                                        × {groupQty}
-                                      </span>
-                                    )}
-                                  </p>
-                                  {line.sku && (
-                                    <p className="mt-0.5 text-xs text-gray-500">{line.sku}</p>
-                                  )}
-                                  {line.isSerialTracked &&
-                                    (isGrouped ? (
-                                      group.some((l) => !l.serialNumberId) ? (
-                                        <button
-                                          onClick={() =>
-                                            setSerialPickerTarget(
-                                              group.find((l) => !l.serialNumberId)!
-                                            )
-                                          }
-                                          className="mt-1 text-xs font-semibold text-amber-600 underline-offset-2 hover:underline"
-                                        >
-                                          ⚠ {group.filter((l) => !l.serialNumberId).length} of{' '}
-                                          {groupQty} serial{groupQty !== 1 ? 's' : ''} needed
-                                        </button>
-                                      ) : (
-                                        <p className="mt-1 flex flex-wrap gap-x-1 text-xs">
-                                          <span className="text-gray-500">SN:</span>
-                                          {group.map((l, i) => (
-                                            <button
-                                              key={l.lineId}
-                                              onClick={() => setSerialPickerTarget(l)}
-                                              className="font-semibold text-green-700 underline-offset-2 hover:underline"
-                                            >
-                                              {l.serialNumberLabel}
-                                              {i < group.length - 1 ? ',' : ''}
-                                            </button>
-                                          ))}
-                                        </p>
-                                      )
-                                    ) : (
-                                      <button
-                                        onClick={() => setSerialPickerTarget(line)}
-                                        className={`mt-1 text-xs font-semibold underline-offset-2 hover:underline ${line.serialNumberId ? 'text-green-700' : 'text-amber-600'}`}
-                                      >
-                                        {line.serialNumberId
-                                          ? `SN: ${line.serialNumberLabel}`
-                                          : '⚠ Select serial'}
-                                      </button>
-                                    ))}
-                                  {lineTaxRate != null ? (
-                                    <span className="ml-1.5 rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700">
-                                      {line.taxRate == null
-                                        ? (activeTaxRate?.name ?? `VAT ${lineTaxRate}%`)
-                                        : `VAT ${lineTaxRate}%`}
-                                    </span>
-                                  ) : (
-                                    <span className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-semibold text-gray-500">
-                                      No Tax
-                                    </span>
-                                  )}
-                                  {saleMode !== 'reserve' && (
-                                    <div className="mt-2 max-w-64">
-                                      <PriceUseSelector
-                                        priceUseTypes={priceUseTypes}
-                                        value={line.priceUseTypeId ?? ''}
-                                        onChange={(id) =>
-                                          setLinePriceUseTypeId(
-                                            group.map((l) => l.lineId),
-                                            id
-                                          )
-                                        }
-                                        isLoading={isResolvingPrices}
-                                      />
-                                    </div>
-                                  )}
-                                </td>
-                                <td className="px-3 py-4">
-                                  <div className="flex items-center justify-center gap-2">
-                                    <button
-                                      onClick={() =>
-                                        line.isSerialTracked
-                                          ? removeLastUnitOfItem(line.itemId)
-                                          : line.allowDecimal
-                                            ? removeFromCart(line.itemId)
-                                            : setQty(line.itemId, line.quantity - 1)
-                                      }
-                                      disabled={!!cancellationReqId}
-                                      aria-label="Decrease quantity"
-                                      className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 text-gray-600 hover:border-purple-400 hover:bg-purple-50 hover:text-purple-700 disabled:opacity-40"
-                                    >
-                                      <Minus size={16} />
-                                    </button>
-                                    {line.allowDecimal ? (
-                                      <div className="flex flex-col items-center gap-0.5">
-                                        <input
-                                          type="number"
-                                          min="0.001"
-                                          step="0.1"
-                                          value={line.quantity}
-                                          onChange={(e) => {
-                                            const v = parseFloat(e.target.value)
-                                            if (!isNaN(v) && v > 0) setQty(line.itemId, v)
-                                          }}
-                                          className="w-20 rounded-lg border border-gray-300 px-2 py-2 text-center text-base font-semibold outline-none focus:border-purple-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                        />
-                                        {line.uomCode && (
-                                          <span className="text-[11px] text-gray-500 uppercase">
-                                            {line.uomCode}
+                              <tr className="group">
+                                <td className="px-4 py-3">
+                                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-5 gap-y-1.5">
+                                    <div className="col-start-1 row-start-1 min-w-0">
+                                      <p className="text-[15px] font-medium text-prominent-purple-900">
+                                        {itemDisplayLabel({
+                                          name: line.itemName,
+                                          brandName: line.brandName,
+                                          categoryName: line.categoryName,
+                                          modelNumber: line.modelNumber,
+                                        })}
+                                        {isGrouped && (
+                                          <span className="ml-1.5 font-medium text-gray-500">
+                                            × {groupQty}
                                           </span>
                                         )}
-                                      </div>
-                                    ) : (
-                                      <span className="min-w-8 text-center text-lg font-bold text-gray-900">
-                                        {line.isSerialTracked ? groupQty : line.quantity}
-                                      </span>
-                                    )}
-                                    <button
-                                      onClick={() =>
-                                        line.isSerialTracked
-                                          ? addUnitOfItem(line.itemId)
-                                          : line.allowDecimal
-                                            ? setMeasuredItem({
-                                                id: line.itemId,
-                                                name: line.itemName,
-                                                sku: line.sku,
-                                                price: line.unitPrice,
-                                                taxRate: line.taxRate,
-                                                uomCode: line.uomCode,
-                                                allowDecimal: true,
-                                              })
-                                            : setQty(line.itemId, line.quantity + 1)
-                                      }
-                                      aria-label="Increase quantity"
-                                      className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 text-gray-600 hover:border-purple-400 hover:bg-purple-50 hover:text-purple-700"
-                                    >
-                                      <Plus size={16} />
-                                    </button>
-                                  </div>
-                                </td>
-                                <td className="px-3 py-4 text-right text-lg font-bold text-gray-900">
-                                  {line.priceResolved ? (
-                                    <div className="flex flex-col items-end gap-0.5">
-                                      {fmt(
-                                        effectiveUnitPrice(
-                                          line,
-                                          activeTaxRate,
-                                          inclusivePricing,
-                                          isTaxExempt
-                                        ) * groupQty
+                                      </p>
+                                      <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
+                                        {metaParts.map((part, i) => (
+                                          <Fragment key={i}>
+                                            {i > 0 && (
+                                              <span aria-hidden className="text-gray-300">
+                                                ·
+                                              </span>
+                                            )}
+                                            {part}
+                                          </Fragment>
+                                        ))}
+                                      </p>
+                                    </div>
+                                    <div className="col-start-1 flex flex-col items-start gap-2">
+                                      {saleMode !== 'reserve' && (
+                                        <div className="min-w-0">
+                                          <PriceUseSelector
+                                            priceUseTypes={priceUseTypes}
+                                            value={line.priceUseTypeId ?? ''}
+                                            onChange={(id) =>
+                                              setLinePriceUseTypeId(
+                                                group.map((l) => l.lineId),
+                                                id
+                                              )
+                                            }
+                                            isLoading={isResolvingPrices}
+                                            bare
+                                          />
+                                        </div>
                                       )}
-                                      {line.priceOverrideBy && (
+                                      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                                        <div className="flex shrink-0 items-center justify-center gap-1.5">
+                                          <button
+                                            onClick={() =>
+                                              line.isSerialTracked
+                                                ? removeLastUnitOfItem(line.itemId)
+                                                : line.allowDecimal
+                                                  ? removeFromCart(line.itemId)
+                                                  : setQty(line.itemId, line.quantity - 1)
+                                            }
+                                            disabled={!!cancellationReqId}
+                                            aria-label="Decrease quantity"
+                                            className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-purple-100 hover:text-purple-700 disabled:opacity-40"
+                                          >
+                                            <Minus size={16} />
+                                          </button>
+                                          {line.allowDecimal ? (
+                                            <div className="flex flex-col items-center gap-0.5">
+                                              <input
+                                                type="number"
+                                                min="0.001"
+                                                step="0.1"
+                                                value={line.quantity}
+                                                onChange={(e) => {
+                                                  const v = parseFloat(e.target.value)
+                                                  if (!isNaN(v) && v > 0) setQty(line.itemId, v)
+                                                }}
+                                                className="w-20 rounded-lg border border-gray-300 px-2 py-2 text-center text-base font-semibold outline-none focus:border-purple-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                              />
+                                              {line.uomCode && (
+                                                <span className="text-[11px] text-gray-500 uppercase">
+                                                  {line.uomCode}
+                                                </span>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <span className="min-w-6 text-center text-base font-semibold text-gray-900">
+                                              {line.isSerialTracked ? groupQty : line.quantity}
+                                            </span>
+                                          )}
+                                          <button
+                                            onClick={() =>
+                                              line.isSerialTracked
+                                                ? addUnitOfItem(line.itemId)
+                                                : line.allowDecimal
+                                                  ? setMeasuredItem({
+                                                      id: line.itemId,
+                                                      name: line.itemName,
+                                                      sku: line.sku,
+                                                      price: line.unitPrice,
+                                                      taxRate: line.taxRate,
+                                                      uomCode: line.uomCode,
+                                                      allowDecimal: true,
+                                                    })
+                                                  : setQty(line.itemId, line.quantity + 1)
+                                            }
+                                            aria-label="Increase quantity"
+                                            className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-600 hover:bg-purple-100 hover:text-purple-700"
+                                          >
+                                            <Plus size={16} />
+                                          </button>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => removeFromCart(line.itemId)}
+                                          aria-label="Remove item"
+                                          title="Remove item"
+                                          className="ml-2 flex items-center gap-1 text-sm font-medium text-gray-500 hover:text-red-600"
+                                        >
+                                          <Trash2 size={14} />
+                                          Remove
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div className="col-start-2 row-span-3 row-start-1 flex flex-col items-end justify-start text-right text-lg font-bold text-gray-900">
+                                      {line.priceResolved ? (
+                                        <div className="flex flex-col items-end gap-1">
+                                          {line.priceOverridden &&
+                                            (() => {
+                                              const listTotal = listLineTotal(line, groupQty)
+                                              const charged =
+                                                effectiveUnitPrice(
+                                                  line,
+                                                  activeTaxRate,
+                                                  inclusivePricing,
+                                                  isTaxExempt
+                                                ) * groupQty
+                                              return listTotal !== null &&
+                                                Math.abs(listTotal - charged) >= 0.005 ? (
+                                                <span
+                                                  data-testid="override-list-price"
+                                                  className="text-sm font-medium text-gray-400 line-through"
+                                                >
+                                                  {fmt(listTotal)}
+                                                </span>
+                                              ) : null
+                                            })()}
+                                          {fmt(
+                                            effectiveUnitPrice(
+                                              line,
+                                              activeTaxRate,
+                                              inclusivePricing,
+                                              isTaxExempt
+                                            ) * groupQty
+                                          )}
+                                          {line.priceOverridden && (
+                                            <span
+                                              data-testid="override-badge"
+                                              className="whitespace-nowrap rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700"
+                                            >
+                                              Overridden · for review
+                                            </span>
+                                          )}
+                                          <div className="mt-1 flex flex-col items-end gap-0.5 text-sm font-medium">
+                                            {line.priceResolved && !line.priceOverridden && (
+                                              <button
+                                                type="button"
+                                                data-testid="override-price"
+                                                onClick={() =>
+                                                  setPriceOverrideTargetLineId(line.lineId)
+                                                }
+                                                disabled={isOffline}
+                                                className="text-purple-600 hover:text-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                                title={
+                                                  isOffline
+                                                    ? 'A price override needs a connection.'
+                                                    : 'Type a different price for this item'
+                                                }
+                                              >
+                                                Override price
+                                              </button>
+                                            )}
+                                            {line.priceOverridden && (
+                                              <>
+                                                <button
+                                                  type="button"
+                                                  data-testid="change-override"
+                                                  onClick={() =>
+                                                    setPriceOverrideTargetLineId(line.lineId)
+                                                  }
+                                                  disabled={isOffline}
+                                                  className="text-purple-600 hover:text-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                                  title={
+                                                    isOffline
+                                                      ? 'A price override needs a connection.'
+                                                      : 'Price typed over the list price — click to change it'
+                                                  }
+                                                >
+                                                  Change override
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  data-testid="clear-override"
+                                                  onClick={() => clearPriceOverride(line.lineId)}
+                                                  className="text-gray-500 hover:text-gray-800"
+                                                  title="Go back to the list price"
+                                                >
+                                                  Clear override
+                                                </button>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ) : !line.priceUseTypeId ? (
+                                        <span className="text-xs font-medium text-gray-500">
+                                          — Select Price Use
+                                        </span>
+                                      ) : (
                                         <button
                                           onClick={() => setPriceOverrideTargetLineId(line.lineId)}
-                                          className="text-[11px] font-semibold text-amber-600 underline decoration-dotted hover:text-amber-800"
-                                          title={`Overridden by ${line.priceOverrideApproverName ?? 'a manager'}`}
+                                          disabled={isOffline}
+                                          title={
+                                            isOffline
+                                              ? 'A price override needs a connection.'
+                                              : undefined
+                                          }
+                                          className="rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
                                         >
-                                          Overridden
+                                          No price — Override
                                         </button>
                                       )}
                                     </div>
-                                  ) : !line.priceUseTypeId ? (
-                                    <span className="text-xs font-medium text-gray-500">
-                                      — Select Price Use
-                                    </span>
-                                  ) : (
-                                    <button
-                                      onClick={() => setPriceOverrideTargetLineId(line.lineId)}
-                                      className="rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100"
-                                    >
-                                      No price — Override
-                                    </button>
-                                  )}
-                                </td>
-                                <td className="py-4 pr-4 pl-1 text-right">
-                                  <button
-                                    onClick={() => removeFromCart(line.itemId)}
-                                    aria-label="Remove item"
-                                    title="Remove item"
-                                    className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
-                                  >
-                                    <X size={18} />
-                                  </button>
+                                  </div>
                                 </td>
                               </tr>
                             </Fragment>
@@ -5155,23 +7047,44 @@ export default function CheckoutPage() {
                 </div>
               )}
             </div>
-            <div className="mt-3 flex items-baseline justify-between border-t border-purple-200 pt-3">
-              <span className="text-sm font-semibold text-gray-700">Total</span>
-              <span className="text-2xl font-bold text-gray-900" data-testid="order-summary-total">
-                {fmt(totalAmount)}
-              </span>
-            </div>
-            {/* Scenario 70 — the delivery fee is a note under the Total, never
-                part of it: it is collected on its own receipt and JE. */}
-            {deliveryFeeAmount > 0 && (
+            {/* Amount + Delivery fee = Total, for the cashier's eyes only: the
+                invoice and the journal entries still carry the sale alone. */}
+            <div className="mt-3 border-t border-purple-200 pt-3">
+              {deliveryFeeAmount > 0 && (
+                <>
+                  <div
+                    className="flex justify-between text-base text-gray-700"
+                    data-testid="order-summary-amount"
+                  >
+                    <span>Amount</span>
+                    <span className="font-medium">{fmt(totalAmount)}</span>
+                  </div>
+                  <div
+                    className="flex justify-between text-base text-gray-700"
+                    data-testid="order-summary-delivery-fee"
+                  >
+                    <span>Delivery fee</span>
+                    <span className="font-medium">{fmt(deliveryFeeAmount)}</span>
+                  </div>
+                </>
+              )}
               <div
-                className="mt-2 flex items-center justify-between gap-3 text-xs text-purple-700"
-                data-testid="order-summary-delivery-fee"
+                className={`flex items-baseline justify-between ${deliveryFeeAmount > 0 ? 'mt-1' : ''}`}
               >
-                <span>Delivery fee — collected on its own CR, not part of the sale</span>
-                <span className="shrink-0 text-sm font-semibold">{fmt(deliveryFeeAmount)}</span>
+                <span className="text-sm font-semibold text-gray-700">Total</span>
+                <span
+                  className="text-2xl font-bold text-gray-900"
+                  data-testid="order-summary-total"
+                >
+                  {fmt(totalWithDeliveryFee)}
+                </span>
               </div>
-            )}
+              {deliveryFeeAmount > 0 && (
+                <p className="mt-1 text-xs text-purple-700">
+                  The delivery fee is on its own CR — the invoice stays the sale amount.
+                </p>
+              )}
+            </div>
 
             {/* VAT treatment (Scenario 69 Part F). Not offered on a table tab's
                 sale: it already exists, so there is nothing left to classify. */}
@@ -5272,78 +7185,165 @@ export default function CheckoutPage() {
             )}
           </div>
 
-          {/* Promo code */}
-          <div className="border-b border-purple-200 p-5">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
-              Promo Code
-            </p>
-            {promoResult?.valid ? (
-              <div className="flex items-center justify-between rounded-lg bg-green-50 px-3 py-2">
-                <div className="flex items-center gap-2 text-sm text-green-700">
-                  <Tag size={12} />
-                  <span className="font-mono font-semibold">{promoResult.promoCode?.code}</span>
-                  <span className="text-green-500">−{fmt(promoResult.discountAmount ?? 0)}</span>
-                </div>
-                <button onClick={clearPromo} className="text-green-300 hover:text-green-600">
-                  <X size={13} />
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="flex gap-2">
-                  <input
-                    className="flex-1 rounded-lg border border-purple-200 px-3 py-2 font-mono text-sm uppercase tracking-wider outline-none placeholder:normal-case placeholder:tracking-normal focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                    placeholder="Enter promo code"
-                    value={promoInput}
-                    onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
-                    onKeyDown={(e) => e.key === 'Enter' && applyPromo()}
-                  />
-                  <button
-                    onClick={applyPromo}
-                    disabled={!promoInput.trim() || validatingPromo || cart.length === 0}
-                    className="rounded-lg bg-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-300 active:scale-[0.97] disabled:opacity-40"
-                  >
-                    {validatingPromo ? '…' : 'Apply'}
-                  </button>
-                </div>
-                {promoError && <p className="mt-1.5 text-xs text-red-500">{promoError}</p>}
-              </>
-            )}
-
-            {/* Manager override banner */}
-            {needsManagerOverride && (
-              <div className="mt-3">
-                {managerOverrideApproved ? (
-                  <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">
-                    <ShieldCheck size={13} />
-                    <span>
-                      Override approved by{' '}
-                      <span className="font-semibold">{overrideManagerName}</span>
+          {/* Scenario 71 — the reason and note behind a price override. No one
+              approves it here; management reviews it at the end of the day. */}
+          {anyException && (
+            <div
+              ref={exceptionSectionRef}
+              className="border-b border-purple-200 p-5"
+              data-testid="price-override-exception"
+            >
+              {/* Required, so it has to read as required: an amber card with a tag
+                  and starred fields while anything is missing, green once the
+                  reason and note are both in. */}
+              <div
+                className={`rounded-xl border-2 p-4 shadow-sm transition-colors ${
+                  exceptionReasonId && exceptionNote.trim()
+                    ? 'border-green-300 bg-green-50'
+                    : 'border-amber-400 bg-amber-50'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    {exceptionReasonId && exceptionNote.trim() ? (
+                      <CheckCircle2 size={18} className="shrink-0 text-green-600" />
+                    ) : (
+                      <AlertTriangle size={18} className="shrink-0 text-amber-600" />
+                    )}
+                    <p className="text-sm font-bold text-prominent-purple-900">{exceptionTitle}</p>
+                  </div>
+                  {exceptionReasonId && exceptionNote.trim() ? (
+                    <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-green-700">
+                      Done
                     </span>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                    <div className="flex items-center gap-2 text-xs text-amber-700">
-                      <AlertTriangle size={13} />
-                      <span>
-                        Discount {discountPct.toFixed(0)}% exceeds {discountThreshold}% threshold —
-                        manager override required
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setOverrideError('')
-                        setShowOverrideDialog(true)
-                      }}
-                      className="ml-2 shrink-0 flex items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-600"
-                    >
-                      <KeyRound size={11} /> Override
-                    </button>
-                  </div>
+                  ) : (
+                    <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-red-700">
+                      Required
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-gray-600">
+                  No approval needed. Management reviews it at the end of the day.
+                </p>
+
+                <label className="mb-1 mt-3 block text-xs font-semibold text-gray-800">
+                  Reason <span className="text-red-600">*</span>
+                </label>
+                <div className={exceptionReasonId ? '' : 'rounded-lg ring-2 ring-amber-400'}>
+                  <Select
+                    value={exceptionReasonId}
+                    onChange={setExceptionReasonId}
+                    options={overrideReasons.map((r) => ({ value: r.id, label: r.name }))}
+                    placeholder="Pick a reason…"
+                    compact
+                  />
+                </div>
+
+                <label className="mb-1 mt-3 block text-xs font-semibold text-gray-800">
+                  Note <span className="text-red-600">*</span>{' '}
+                  <span className="font-normal text-gray-500">(required)</span>
+                </label>
+                <input
+                  className={`w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 ${
+                    exceptionNote.trim()
+                      ? 'border-purple-200'
+                      : 'border-amber-400 ring-2 ring-amber-400'
+                  }`}
+                  placeholder="Short note"
+                  aria-label="Note for the price override or typed terms"
+                  maxLength={500}
+                  value={exceptionNote}
+                  onChange={(e) => setExceptionNote(e.target.value)}
+                />
+
+                {!(exceptionReasonId && exceptionNote.trim()) && (
+                  <p className="mt-2.5 text-xs font-semibold text-amber-800">
+                    Pick a reason and write a note to continue.
+                  </p>
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* Promo code — the entry box is hidden (developer, 2026-10-14); see
+              SHOW_PROMO_ENTRY. An already-applied promo (a resumed parked sale) still
+              shows its chip so it can be cleared, and the manager-override banner
+              below still appears when a discount needs it. */}
+          {(SHOW_PROMO_ENTRY || promoResult?.valid || needsManagerOverride) && (
+            <div className="border-b border-purple-200 p-5">
+              {(SHOW_PROMO_ENTRY || promoResult?.valid) && (
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-700">
+                  Promo Code
+                </p>
+              )}
+              {promoResult?.valid ? (
+                <div className="flex items-center justify-between rounded-lg bg-green-50 px-3 py-2">
+                  <div className="flex items-center gap-2 text-sm text-green-700">
+                    <Tag size={12} />
+                    <span className="font-mono font-semibold">{promoResult.promoCode?.code}</span>
+                    <span className="text-green-500">−{fmt(promoResult.discountAmount ?? 0)}</span>
+                  </div>
+                  <button onClick={clearPromo} className="text-green-300 hover:text-green-600">
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : SHOW_PROMO_ENTRY ? (
+                <>
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 rounded-lg border border-purple-200 px-3 py-2 font-mono text-sm uppercase tracking-wider outline-none placeholder:normal-case placeholder:tracking-normal focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+                      placeholder="Enter promo code"
+                      value={promoInput}
+                      onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                      onKeyDown={(e) => e.key === 'Enter' && applyPromo()}
+                    />
+                    <button
+                      onClick={applyPromo}
+                      disabled={!promoInput.trim() || validatingPromo || cart.length === 0}
+                      className="rounded-lg bg-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-300 active:scale-[0.97] disabled:opacity-40"
+                    >
+                      {validatingPromo ? '…' : 'Apply'}
+                    </button>
+                  </div>
+                  {promoError && <p className="mt-1.5 text-xs text-red-500">{promoError}</p>}
+                </>
+              ) : null}
+
+              {/* Manager override banner */}
+              {needsManagerOverride && (
+                <div className={SHOW_PROMO_ENTRY || promoResult?.valid ? 'mt-3' : ''}>
+                  {managerOverrideApproved ? (
+                    <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">
+                      <ShieldCheck size={13} />
+                      <span>
+                        Override approved by{' '}
+                        <span className="font-semibold">{overrideManagerName}</span>
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                      <div className="flex items-center gap-2 text-xs text-amber-700">
+                        <AlertTriangle size={13} />
+                        <span>
+                          Discount {discountPct.toFixed(0)}% exceeds {discountThreshold}% threshold
+                          — manager override required
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setOverrideError('')
+                          setShowOverrideDialog(true)
+                        }}
+                        className="ml-2 shrink-0 flex items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-600"
+                      >
+                        <KeyRound size={11} /> Override
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Sale Mode — each cart line below picks its own Cash / Charge /
               Installment mode; Reserve stays a separate whole-cart mode. */}
@@ -5416,12 +7416,15 @@ export default function CheckoutPage() {
                     )}
                     {selectedCustomer && skipsCreditApplication && (
                       <p className="mt-2.5 text-[13px] text-prominent-purple-500">
-                        {skipsCreditApplicationLabel} — no credit application required.
+                        {creditApplicationWaivedActive
+                          ? 'Credit application waived — flagged for management review.'
+                          : `${skipsCreditApplicationLabel} — no credit application required.`}
                       </p>
                     )}
                     {selectedCustomer &&
                       !isGovernmentInstitutionalCustomer &&
-                      !skipsCreditApplication && (
+                      !skipsCreditApplication &&
+                      !creditApplicationOverriddenActive && (
                         <div className="mt-2.5">
                           <label className="mb-1 block text-[13px] text-prominent-purple-700">
                             Approved Credit Application
@@ -5451,7 +7454,11 @@ export default function CheckoutPage() {
                               value={creditApplicationId}
                               onChange={(v) => {
                                 setCreditApplicationId(v)
-                                if (v) applyCreditApplicationTerms(v)
+                                if (v) {
+                                  // Asking for this application's terms starts over.
+                                  posEditedRef.current = { term: false, dp: false }
+                                  applyCreditApplicationTerms(v)
+                                }
                               }}
                               options={creditApplicationOptions}
                               placeholder={
@@ -5474,6 +7481,29 @@ export default function CheckoutPage() {
                               compact
                             />
                           )}
+                          {/* When the first installment will fall due, by the
+                            application. Only for a rate-card plan (a plan typed
+                            here has its own date), and not once an FMI date has
+                            been entered on the sale, which takes its place. */}
+                          {creditApplicationId &&
+                            fmiDateApplies &&
+                            !fmiDateInput &&
+                            (() => {
+                              const note = applicationFmiNote(
+                                approvedCreditApplications.find((a) => a.id === creditApplicationId)
+                                  ?.firstDueDate
+                              )
+                              return note ? (
+                                <p
+                                  data-testid="application-fmi-note"
+                                  className={`mt-1.5 text-xs ${
+                                    note.warn ? 'text-amber-700' : 'text-prominent-purple-600'
+                                  }`}
+                                >
+                                  {note.text}
+                                </p>
+                              ) : null
+                            })()}
                           {/* Three states, because they need different things
                             from the cashier:
 
@@ -5538,6 +7568,163 @@ export default function CheckoutPage() {
                           )}
                         </div>
                       )}
+
+                    {/* The FMI date: when the first installment falls due. Its own
+                        field — changing it used to mean typing the whole plan, an
+                        override with a reason. Optional; it wins over the date on
+                        the application, which wins over one month after the sale.
+                        A plan typed here keeps its own first due date. */}
+                    {fmiDateApplies && (
+                      <div className="mt-2.5" data-testid="fmi-date-field">
+                        <label
+                          htmlFor="fmi-date-input"
+                          className="mb-1 block text-[13px] text-prominent-purple-700"
+                        >
+                          FMI date
+                        </label>
+                        <input
+                          id="fmi-date-input"
+                          data-testid="fmi-date-input"
+                          type="date"
+                          min={dateInputFromToday({})}
+                          max={dateInputFromToday({ days: 366 })}
+                          value={fmiDateInput}
+                          onChange={(e) => setFmiDateInput(e.target.value)}
+                          className="w-full rounded-lg border border-prominent-purple-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                        />
+                        {fmiDateError ? (
+                          <p data-testid="fmi-date-note" className="mt-1.5 text-xs text-amber-700">
+                            {fmiDateError}
+                          </p>
+                        ) : (
+                          <p
+                            data-testid="fmi-date-note"
+                            className="mt-1.5 text-xs text-prominent-purple-600"
+                          >
+                            {fmiDateInput
+                              ? `First installment due ${longDate(fmiDateInput)}, then monthly on the same day.`
+                              : 'Optional. Leave empty to use the FMI date on the application, or one month after this sale.'}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Scenario 71 — the ways round the credit application sit right
+                        here, beside the "New credit application" button, so a cashier
+                        who finds the requirement does not have to scroll back up the
+                        page for them. */}
+                    {/* Scenario 71 — waive the credit application. Offered once there
+                is an in-house installment line to waive it for; an X-Deal,
+                an Employee Appliance Loan and a government institution already
+                need none. No approval here: it needs a reason and a note in
+                the order summary and management reviews it at the end of the
+                day. */}
+                    {saleMode === 'sale' && canWaiveCreditApplication && (
+                      <div
+                        data-testid="credit-waiver-panel"
+                        className="mt-2 rounded-lg border border-prominent-purple-200 bg-white p-2.5"
+                      >
+                        <label className="flex items-start gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            data-testid="credit-waiver-checkbox"
+                            checked={creditApplicationWaived}
+                            disabled={isOffline}
+                            onChange={(e) => toggleCreditApplicationWaiver(e.target.checked)}
+                            className="mt-0.5"
+                          />
+                          <span>
+                            <span className="font-medium text-prominent-purple-900">
+                              Waive the credit application
+                            </span>
+                            {isOffline && (
+                              <span className="block text-gray-700">Unavailable offline</span>
+                            )}
+                          </span>
+                        </label>
+                      </div>
+                    )}
+
+                    {/* Scenario 71 — override the credit application: sell on one that does not
+                cover this cart or is not approved yet. Like the waiver it needs no
+                approval here — a reason and a note in the order summary, and
+                management reviews it at the end of the day. */}
+                    {SHOW_CREDIT_OVERRIDE && saleMode === 'sale' && canWaiveCreditApplication && (
+                      <div
+                        data-testid="credit-override-panel"
+                        className="mt-2 rounded-lg border border-prominent-purple-200 bg-white p-2.5"
+                      >
+                        <label className="flex items-start gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            data-testid="credit-override-checkbox"
+                            checked={creditApplicationOverridden}
+                            disabled={isOffline}
+                            onChange={(e) => toggleCreditApplicationOverride(e.target.checked)}
+                            className="mt-0.5"
+                          />
+                          <span>
+                            <span className="font-medium text-prominent-purple-900">
+                              Override the credit application
+                            </span>
+                            {isOffline && (
+                              <span className="block text-gray-700">Unavailable offline</span>
+                            )}
+                          </span>
+                        </label>
+
+                        {creditApplicationOverriddenActive && (
+                          <div className="mt-2.5 space-y-2" data-testid="credit-override-body">
+                            <p className="rounded-lg bg-amber-100 px-3 py-2 text-[13px] text-amber-800">
+                              Credit application overridden. The sale posts against the application
+                              you pick, even if it doesn&apos;t cover this cart or isn&apos;t
+                              approved yet, and is flagged for review.
+                            </p>
+                            <Select
+                              value={creditApplicationId}
+                              onChange={(v) => {
+                                setCreditApplicationId(v)
+                                if (v) {
+                                  posEditedRef.current = { term: false, dp: false }
+                                  applyCreditApplicationTerms(v, overrideApplications)
+                                }
+                              }}
+                              options={overrideApplicationOptions}
+                              placeholder={
+                                overrideApplicationsLoading
+                                  ? 'Loading…'
+                                  : overrideApplications.length === 0
+                                    ? 'No application to override'
+                                    : 'Select the application to override…'
+                              }
+                              disabled={
+                                overrideApplicationsLoading || overrideApplications.length === 0
+                              }
+                              compact
+                            />
+                            {!overrideApplicationsLoading && overrideApplications.length === 0 && (
+                              <p className="text-[12px] text-amber-700">
+                                This customer has no application that can be overridden. Waive the
+                                credit application instead, or raise one from Credit Applications.
+                              </p>
+                            )}
+                            {(() => {
+                              const diff = creditOverrideSnapshot()
+                              return diff ? (
+                                <div
+                                  className="space-y-0.5 rounded-lg bg-prominent-purple-50 px-3 py-2 text-[12px] text-prominent-purple-800"
+                                  data-testid="credit-override-diff"
+                                >
+                                  {creditOverrideLines(diff).map((line) => (
+                                    <p key={line}>{line}</p>
+                                  ))}
+                                </div>
+                              ) : null
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -5548,12 +7735,12 @@ export default function CheckoutPage() {
                 <p className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">
                   Payment Mode
                 </p>
-                {/* Cash / Installment / Debit-Credit Card — one choice for
+                {/* Cash / Installment — one choice for
                     the whole cart, never per item. If any item needs a
                     different mode, it's a separate transaction. */}
                 <div className="relative">
                   <div className="flex gap-1.5 rounded-lg border border-purple-200 bg-white p-1">
-                    {(['cash', 'installment', 'delivery_receipt'] as const).map((mode) => (
+                    {(['cash', 'installment'] as const).map((mode) => (
                       <button
                         key={mode}
                         type="button"
@@ -5579,11 +7766,7 @@ export default function CheckoutPage() {
                             : 'bg-white text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white'
                         }`}
                       >
-                        {mode === 'cash'
-                          ? 'Cash'
-                          : mode === 'installment'
-                            ? 'Installment'
-                            : 'Delivery Receipt'}
+                        {mode === 'cash' ? 'Cash' : 'Installment'}
                       </button>
                     ))}
                   </div>
@@ -5591,53 +7774,11 @@ export default function CheckoutPage() {
                 {displayGroups.map((group) => {
                   const line = group[0]
                   const groupQty = group.length
-                  const groupLineIds = group.map((l) => l.lineId)
-                  const groupMode = line.invoiceType ?? 'cash'
-                  const groupProvider = line.installmentProvider ?? 'inhouse'
-                  const lineSaleAmount =
-                    effectiveUnitPrice(line, activeTaxRate, inclusivePricing, isTaxExempt) *
-                    line.quantity
-                  const minDownPayment = DOWN_PAYMENT_FLOOR_RATE * lineSaleAmount
-                  // Whole pesos, rounded up — matches the auto-fill in
-                  // setLineFinancingTermId() so the displayed floor is never
-                  // a centavo amount the field itself won't accept.
-                  const minDownPaymentWhole = Math.ceil(minDownPayment)
-                  // Scenario 60 — an Employee Appliance Loan waives the down
-                  // payment entirely, overriding whatever was typed/defaulted
-                  // before the checkbox was checked, both for display here
-                  // and for what actually gets submitted (see handleConfirm).
-                  //
-                  // Otherwise, same priority as setLineFinancingTermId()'s
-                  // auto-fill: a curated per-SKU down payment from the real
-                  // rate card wins over the generic 10%-floor fallback when
-                  // one exists — the DISPLAY-time version of that rule, for
-                  // before a term has been picked yet (downPaymentInput still
-                  // unset) so the shown figure doesn't disagree with what
-                  // picking a term is about to fill in.
-                  // Waived entirely for an Employee Appliance Loan (development).
-                  const curatedDownPaymentWhole =
-                    line.priceListDownPayment != null
-                      ? Math.round(Number(line.priceListDownPayment) * line.quantity)
-                      : null
-                  // Set when the card quotes this line's term: the down payment
-                  // is then the card's, and there is nothing to change.
-                  const fixedDownPayment =
-                    groupProvider === 'inhouse' && !downPaymentFree
-                      ? lineCardDownPayment(line)
-                      : null
-                  const downPaymentValue = downPaymentWaived
-                    ? lineDownPayment(line)
-                    : (fixedDownPayment ??
-                      (line.downPaymentInput
-                        ? parseFloat(line.downPaymentInput) || 0
-                        : (curatedDownPaymentWhole ?? minDownPaymentWhole)))
-                  const downPaymentEditingThisLine =
-                    !!downPaymentEditOpen[line.lineId] && fixedDownPayment == null
                   return (
                     <div key={line.lineId} className="rounded-lg border border-purple-100 p-2.5">
-                      {/* Name only, as a label for the config below — price
-                          lives in Order Summary now, not duplicated here. */}
-                      <p className="mb-1.5 truncate text-xs font-medium text-gray-800">
+                      {/* Name only, as a label for the plan below — price lives
+                          in Order Summary now, not duplicated here. */}
+                      <p className="truncate text-xs font-medium text-gray-800">
                         {itemDisplayLabel({
                           name: line.itemName,
                           brandName: line.brandName,
@@ -5646,325 +7787,140 @@ export default function CheckoutPage() {
                         })}
                         {groupQty > 1 && <span className="text-gray-400"> × {groupQty}</span>}
                       </p>
-                      {groupMode === 'installment' && (
-                        <div className="mt-2 space-y-3">
-                          <div className="flex gap-1.5">
-                            {(['inhouse', 'tpf'] as InstallmentProvider[]).map((provider) => (
-                              <button
-                                key={provider}
-                                onClick={() => setLineInstallmentProvider(groupLineIds, provider)}
-                                // Scenario 67 — an X-Deal is inhouse-only.
-                                disabled={xDealActive && provider === 'tpf'}
-                                className={`flex-1 rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
-                                  groupProvider === provider
-                                    ? 'bg-prominent-purple-200 text-prominent-purple-800'
-                                    : 'bg-gray-50 text-gray-400 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-50'
-                                }`}
-                              >
-                                {provider === 'inhouse' ? 'Inhouse Installment' : 'TPF Installment'}
-                              </button>
-                            ))}
-                          </div>
-                          {groupProvider === 'inhouse' && (
-                            <>
-                              <Select
-                                value={line.financingTermId ?? ''}
-                                onChange={(v) => setLineFinancingTermId(groupLineIds, v)}
-                                options={financingTerms.map((t) => ({
-                                  value: t.id,
-                                  label: `${t.termMonths} months`,
-                                }))}
-                                placeholder="Select a term…"
-                                compact
-                              />
-                              {downPaymentZeroed ? (
-                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
-                                      Down payment
-                                    </span>
-                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      Waived
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 pl-4">
-                                    <span className="text-[15px] font-bold text-prominent-purple-800">
-                                      {fmt(0)}
-                                    </span>
-                                    <span className="ml-2 text-xs text-prominent-purple-500">
-                                      {downPaymentWaivedLabel}
-                                    </span>
-                                  </div>
-                                </div>
-                              ) : xDealActive ? (
-                                // Scenario 68 — the part paid now, if any.
-                                <div
-                                  data-testid="x-deal-down-payment"
-                                  className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5"
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
-                                      Cash portion
-                                    </span>
-                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      X-Deal · optional
-                                    </span>
-                                  </div>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={0.01}
-                                    inputMode="decimal"
-                                    aria-label="X-Deal cash portion"
-                                    placeholder="0.00"
-                                    value={line.downPaymentInput ?? ''}
-                                    onChange={(e) =>
-                                      setLineDownPaymentInput(groupLineIds, e.target.value)
-                                    }
-                                    className="mt-1 w-full rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                                  />
-                                  <p className="mt-1 text-xs text-prominent-purple-500">
-                                    {(parseFloat(line.downPaymentInput ?? '') || 0) > 0
-                                      ? `Paid now at this counter. The rest, ${fmt(
-                                          Math.max(
-                                            0,
-                                            lineSaleAmount -
-                                              (parseFloat(line.downPaymentInput ?? '') || 0)
-                                          )
-                                        )}, is cleared by the X-Deal credit memo when the sale is approved.`
-                                      : 'The X-Deal credit memo clears the whole sale when it is approved.'}
-                                  </p>
-                                </div>
-                              ) : downPaymentEditingThisLine || employeeApplianceLoanActive ? (
-                                <>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={1}
-                                    placeholder={
-                                      employeeApplianceLoanActive
-                                        ? 'Down payment (optional)'
-                                        : 'Down payment'
-                                    }
-                                    autoFocus={!employeeApplianceLoanActive}
-                                    value={
-                                      employeeApplianceLoanActive &&
-                                      line.downPaymentAutoForPriceListItemId !== undefined
-                                        ? ''
-                                        : (line.downPaymentInput ?? '')
-                                    }
-                                    onChange={(e) =>
-                                      setLineDownPaymentInput(groupLineIds, e.target.value)
-                                    }
-                                    onBlur={(e) => {
-                                      // Normalize to a whole peso on blur (round up,
-                                      // never below the 10% floor) rather than
-                                      // fighting the cashier's typing keystroke by
-                                      // keystroke.
-                                      const parsed = parseFloat(e.target.value)
-                                      if (!Number.isFinite(parsed)) return
-                                      setLineDownPaymentInput(
-                                        groupLineIds,
-                                        Math.ceil(parsed).toFixed(2)
-                                      )
-                                    }}
-                                    className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                                  />
-                                  <p className="text-xs text-gray-500">
-                                    {employeeApplianceLoanActive
-                                      ? `Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`
-                                      : `Must be at least ${fmt(minDownPaymentWhole)} and no more than ${fmt(lineSaleAmount)}.`}
-                                  </p>
-                                  {!employeeApplianceLoanActive && (
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                      className="text-left text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                    >
-                                      Use the minimum instead
-                                    </button>
-                                  )}
-                                </>
-                              ) : (
-                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
-                                      Down payment
-                                    </span>
-                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      {curatedDownPaymentWhole !== null
-                                        ? 'Rate card'
-                                        : `${DOWN_PAYMENT_FLOOR_LABEL} min`}
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 flex items-center gap-2 pl-4">
-                                    <span className="text-[15px] font-bold text-prominent-purple-800">
-                                      {fmt(downPaymentValue)}
-                                    </span>
-                                    {fixedDownPayment == null && (
-                                      <button
-                                        type="button"
-                                        onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                        className="shrink-0 text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                      >
-                                        Change amount
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                              {!downPaymentFree && (
-                                <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
-                                  <span className="text-prominent-purple-400">●</span>
-                                  {fixedDownPayment != null
-                                    ? 'Set by the rate card for this term — its monthly installment is calculated from this down payment.'
-                                    : curatedDownPaymentWhole !== null
-                                      ? `From the rate card — the minimum accepted is ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount.`
-                                      : `Fixed at ${DOWN_PAYMENT_FLOOR_LABEL} of the sale amount — the same for every term.`}
-                                </p>
-                              )}
-                              {line.financingTermId && (
-                                <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[13px] text-prominent-purple-700">
-                                  {installmentPreviewLoading[line.lineId] ? (
-                                    <span className="flex items-center gap-1.5">
-                                      <Loader2 size={10} className="animate-spin" /> Calculating…
-                                    </span>
-                                  ) : installmentPreviews[line.lineId] ? (
-                                    <div className="flex items-center justify-between">
-                                      <span>
-                                        {fmt(installmentPreviews[line.lineId]!.monthlyInstallment)}
-                                        /mo
-                                      </span>
-                                      <span className="font-semibold">
-                                        {fmt(installmentPreviews[line.lineId]!.totalPayable)} total
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <span className="opacity-70">
-                                      {installmentPreviewErrors[line.lineId] ??
-                                        'Preview unavailable.'}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-                            </>
-                          )}
-                          {groupProvider === 'tpf' && (
-                            <>
-                              {downPaymentZeroed ? (
-                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
-                                      Down payment
-                                    </span>
-                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      Waived
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 pl-4">
-                                    <span className="text-[15px] font-bold text-prominent-purple-800">
-                                      {fmt(0)}
-                                    </span>
-                                    <span className="ml-2 text-xs text-prominent-purple-500">
-                                      {downPaymentWaivedLabel}
-                                    </span>
-                                  </div>
-                                </div>
-                              ) : downPaymentEditingThisLine || employeeApplianceLoanActive ? (
-                                <>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={1}
-                                    placeholder={
-                                      employeeApplianceLoanActive
-                                        ? 'Down payment (optional)'
-                                        : 'Down payment'
-                                    }
-                                    autoFocus={!employeeApplianceLoanActive}
-                                    value={
-                                      employeeApplianceLoanActive &&
-                                      line.downPaymentAutoForPriceListItemId !== undefined
-                                        ? ''
-                                        : (line.downPaymentInput ?? '')
-                                    }
-                                    onChange={(e) =>
-                                      setLineDownPaymentInput(groupLineIds, e.target.value)
-                                    }
-                                    onBlur={(e) => {
-                                      const parsed = parseFloat(e.target.value)
-                                      if (!Number.isFinite(parsed)) return
-                                      setLineDownPaymentInput(
-                                        groupLineIds,
-                                        Math.ceil(parsed).toFixed(2)
-                                      )
-                                    }}
-                                    className="w-full rounded-lg border border-purple-200 px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
-                                  />
-                                  <p className="text-xs text-gray-500">
-                                    {employeeApplianceLoanActive
-                                      ? `Optional — leave blank for no down payment. No more than ${fmt(lineSaleAmount)}.`
-                                      : `Must be at least ${fmt(minDownPaymentWhole)} and no more than ${fmt(lineSaleAmount)}.`}
-                                  </p>
-                                  {!employeeApplianceLoanActive && (
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                      className="text-left text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                    >
-                                      Use the minimum instead
-                                    </button>
-                                  )}
-                                </>
-                              ) : (
-                                <div className="rounded-lg border border-prominent-purple-100 bg-prominent-purple-50 px-2.5 py-1.5">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[13px] font-semibold text-prominent-purple-700">
-                                      Down payment
-                                    </span>
-                                    <span className="shrink-0 rounded-full bg-prominent-purple-200 px-2 py-0.5 text-[10px] font-bold text-prominent-purple-700">
-                                      {curatedDownPaymentWhole !== null
-                                        ? 'Rate card'
-                                        : `${DOWN_PAYMENT_FLOOR_LABEL} min`}
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 flex items-center gap-2 pl-4">
-                                    <span className="text-[15px] font-bold text-prominent-purple-800">
-                                      {fmt(downPaymentValue)}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleDownPaymentEdit(line.lineId)}
-                                      className="shrink-0 text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
-                                    >
-                                      Change amount
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                              <p className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs text-gray-500">
-                                Collected here; the financier funds the{' '}
-                                {fmt(Math.max(0, lineSaleAmount - downPaymentValue))} balance and
-                                owns the schedule. Their details are entered once, just below.
-                              </p>
-                            </>
-                          )}
-                        </div>
-                      )}
                     </div>
                   )
                 })}
+                {/* One plan for the whole cart: the provider, the term and the
+                    down payment are asked for once, whatever the number of items
+                    — one schedule, one ledger. */}
+                {installmentCartLines.length > 0 && (
+                  <div
+                    data-testid="installment-plan"
+                    className="space-y-3 rounded-lg border border-prominent-purple-200 bg-prominent-purple-50/40 p-2.5"
+                  >
+                    <div className="flex gap-1.5">
+                      {(['inhouse', 'tpf'] as InstallmentProvider[]).map((provider) => (
+                        <button
+                          key={provider}
+                          type="button"
+                          onClick={() => setLineInstallmentProvider(planLineIds, provider)}
+                          // Scenario 67 — an X-Deal is inhouse-only.
+                          disabled={xDealActive && provider === 'tpf'}
+                          className={`flex-1 rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
+                            planProvider === provider
+                              ? 'bg-prominent-purple-200 text-prominent-purple-800'
+                              : 'bg-gray-50 text-gray-400 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-50'
+                          }`}
+                        >
+                          {provider === 'inhouse' ? 'Inhouse Installment' : 'TPF Installment'}
+                        </button>
+                      ))}
+                    </div>
+                    {planProvider === 'inhouse' && planTyped && (
+                      <TypedPlanPanel
+                        line={{
+                          manualTermInput: inhouseInstallmentCartLines[0]?.manualTermInput,
+                          firstDueDateInput: inhouseInstallmentCartLines[0]?.firstDueDateInput,
+                          manualMonthlyInput:
+                            planTypedDraft.manualMonthlyInput ?? planTypedMonthly.toFixed(2),
+                          downPaymentInput:
+                            planTypedDraft.downPaymentInput ?? planDownPayment.toFixed(2),
+                        }}
+                        lineIds={planLineIds}
+                        saleAmount={planSaleAmount}
+                        downPayment={planDownPayment}
+                        preview={planPreview}
+                        previewLoading={planPreviewLoading}
+                        onPatch={patchTypedPlanTotals}
+                        onSixtyDay={applySixtyDayPlan}
+                        onRateCard={applyRateCardPlan}
+                      />
+                    )}
+                    {planProvider === 'inhouse' && !planTyped && (
+                      <>
+                        <Select
+                          value={planTermId}
+                          onChange={(v) => {
+                            posEditedRef.current.term = true
+                            setLineFinancingTermId(planLineIds, v)
+                          }}
+                          options={financingTerms.map((t) => ({
+                            value: t.id,
+                            label: `${t.termMonths} months`,
+                          }))}
+                          placeholder="Select a term…"
+                          compact
+                        />
+                        {renderPlanDownPayment()}
+                        {planOnCard && planUsesCardMonthly && !downPaymentFree && (
+                          <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
+                            <span className="text-prominent-purple-400">●</span>
+                            The monthly installment comes from the rate card for this term — it is
+                            worked out from the rate card&apos;s down payment (
+                            {fmt(planCardDownPayment ?? 0)}).
+                          </p>
+                        )}
+                        {planCardOverridden && (
+                          <p
+                            data-testid="dp-changed-note"
+                            className="flex items-start gap-1 text-xs text-amber-700"
+                          >
+                            <span>●</span>
+                            Down payment changed from the rate card&apos;s{' '}
+                            {fmt(planCardDownPayment ?? 0)}, so the monthly installment is
+                            recalculated from the term&apos;s rate.
+                          </p>
+                        )}
+                        {planTermId && (
+                          <div className="rounded-lg bg-prominent-purple-50 px-2.5 py-1.5 text-[13px] text-prominent-purple-700">
+                            {planPreviewLoading ? (
+                              <span className="flex items-center gap-1.5">
+                                <Loader2 size={10} className="animate-spin" /> Calculating…
+                              </span>
+                            ) : planPreview ? (
+                              <div className="flex items-center justify-between">
+                                <span>{fmt(planPreview.monthlyInstallment)}/mo</span>
+                                <span className="font-semibold">
+                                  {fmt(planPreview.totalPayable)} total
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="opacity-70">
+                                {planPreviewError ?? 'Preview unavailable.'}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {!xDealActive && !employeeApplianceLoanActive && (
+                          <div className="flex flex-wrap gap-x-4 gap-y-1">
+                            <button
+                              type="button"
+                              data-testid="type-terms"
+                              onClick={() => startTypedPlan(planLineIds)}
+                              className="text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                            >
+                              Type the terms yourself
+                            </button>
+                            <button
+                              type="button"
+                              data-testid="sixty-day-plan"
+                              onClick={() => applySixtyDayPlan(planLineIds)}
+                              className="text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700"
+                            >
+                              50% down · balance in 60 days
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {planProvider === 'tpf' && renderPlanDownPayment()}
+                  </div>
+                )}
                 {tpfInstallmentCartLines.length > 0 && (
                   <div className="rounded-xl border border-prominent-purple-100 bg-prominent-purple-50 px-4 py-3">
                     <p className="text-xs font-medium text-prominent-purple-700">
                       {tpfInstallmentCartLines.length} item
                       {tpfInstallmentCartLines.length !== 1 ? 's' : ''} on TPF installment
-                    </p>
-                    <p className="mt-1 text-[13px] text-prominent-purple-500">
-                      {fmt(tpfDownPaymentsTotal)} down payment collected from the customer now;{' '}
-                      {fmt(tpfFinancedTotal)} funded by the financier
-                      {isPureTpfCart ? ' (recorded automatically, not tendered here)' : ''}. No
-                      local schedule — the financier owns the amortization.
                     </p>
                     <div className="mt-2.5 space-y-2">
                       <div>
@@ -5999,12 +7955,12 @@ export default function CheckoutPage() {
                         placeholder="Financier's reference number *"
                         value={tpfReferenceNumber}
                         onChange={(e) => setTpfReferenceNumber(e.target.value)}
-                        className="w-full rounded-lg border border-prominent-purple-200 px-2 py-1.5 text-xs outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
+                        className="w-full rounded-lg border border-prominent-purple-200 bg-white px-3 py-2 text-sm font-semibold text-prominent-purple-900 outline-none placeholder:font-normal placeholder:text-gray-400 focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
                       />
                     </div>
                   </div>
                 )}
-                {installmentCartLines.length > 0 && !xDealCollectsNothing && (
+                {installmentCartLines.length > 0 && !dpCollectsNothing && (
                   <div
                     data-testid="dp-payment-mode-toggle"
                     className="rounded-lg border border-prominent-purple-200 bg-prominent-purple-50/40 p-2.5"
@@ -6038,201 +7994,6 @@ export default function CheckoutPage() {
                     )}
                   </div>
                 )}
-                {hasCashLine && (
-                  <div
-                    data-testid="cash-sub-mode-toggle"
-                    className="rounded-lg border border-purple-100 p-2.5"
-                  >
-                    <p className="mb-1.5 text-xs font-medium text-gray-800">Cash</p>
-                    <div className="flex gap-1.5">
-                      {(paymentMode === 'installment'
-                        ? ([
-                            'cash_on_hand',
-                            'check',
-                            'bank_transfer',
-                            'gcash',
-                            'billers',
-                            'qr',
-                          ] as const)
-                        : ([
-                            'cash_on_hand',
-                            'check',
-                            'bank_transfer',
-                            'gcash',
-                            'billers',
-                            'qr',
-                            'card',
-                          ] as const)
-                      ).map((mode) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          onClick={() => {
-                            setCashSubMode(mode)
-                            setCashPaymentOptionId(undefined)
-                            if (mode !== 'bank_transfer') setBankTransferVerifiedAtRegister(false)
-                          }}
-                          className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
-                            cashSubMode === mode
-                              ? 'bg-purple-200 text-purple-700'
-                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                          }`}
-                        >
-                          {mode === 'cash_on_hand'
-                            ? 'Cash on Hand'
-                            : mode === 'check'
-                              ? 'Check'
-                              : mode === 'bank_transfer'
-                                ? 'Bank Transfer'
-                                : mode === 'card'
-                                  ? 'Debit/Credit Card'
-                                  : mode === 'gcash'
-                                    ? 'GCash'
-                                    : mode === 'billers'
-                                      ? 'Billers'
-                                      : 'QR'}
-                        </button>
-                      ))}
-                    </div>
-                    {cashSubMode !== 'cash_on_hand' &&
-                      cashSubMode !== 'check' &&
-                      cashSubMode !== 'card' &&
-                      (() => {
-                        const config = configuredMethods.find(
-                          (m) =>
-                            m.key ===
-                            (cashSubMode === 'gcash' || cashSubMode === 'billers'
-                              ? 'qr'
-                              : cashSubMode)
-                        )
-                        const options =
-                          config?.options.filter((o) => {
-                            if (!o.isEnabled) return false
-                            const inGcash = GCASH_OPTION_NAMES.includes(o.name)
-                            const inBillers = BILLER_OPTION_NAMES.includes(o.name)
-                            if (cashSubMode === 'gcash') return inGcash
-                            if (cashSubMode === 'billers') return inBillers
-                            if (cashSubMode === 'qr') return !inGcash && !inBillers
-                            return true
-                          }) ?? []
-                        if (options.length === 0) return null
-                        const label =
-                          cashSubMode === 'bank_transfer'
-                            ? 'Bank'
-                            : cashSubMode === 'billers'
-                              ? 'Biller'
-                              : 'Gateway'
-                        return (
-                          <PillCombobox
-                            ariaLabel={label}
-                            wrapperClassName="mt-1.5"
-                            placeholder={`Select ${label.toLowerCase()}…`}
-                            options={options.map((o) => ({ value: o.id, label: o.name }))}
-                            value={cashPaymentOptionId}
-                            onChange={setCashPaymentOptionId}
-                          />
-                        )
-                      })()}
-                    {cashSubMode === 'check' && (
-                      <input
-                        aria-label="Check Number"
-                        className="mt-1.5 w-full rounded-lg border-2 border-purple-200 bg-white px-3 py-2.5 text-[13px] font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:font-semibold placeholder:text-gray-600 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
-                        placeholder="Check Number (required)"
-                        value={checkNumber}
-                        onChange={(e) => setCheckNumber(e.target.value)}
-                      />
-                    )}
-                    {cashSubMode === 'bank_transfer' && (
-                      <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
-                        <input
-                          type="checkbox"
-                          checked={bankTransferVerifiedAtRegister}
-                          onChange={(e) => setBankTransferVerifiedAtRegister(e.target.checked)}
-                          className="h-3.5 w-3.5 rounded border-gray-300"
-                        />
-                        Verified at register — the credit already landed, post straight to Cash in
-                        Bank
-                      </label>
-                    )}
-                  </div>
-                )}
-                {hasCreditCardLine && (
-                  <div
-                    data-testid="card-txn-mode-toggle"
-                    className="rounded-lg border border-purple-100 p-2.5"
-                  >
-                    {/* "Card Acquirer", not "POS Terminal" (2026-09-24):
-                        these options — BDO/BPI/Metrobank/Maya — are the
-                        institutions that provide the terminal and settle the
-                        money, not the terminal itself. "Acquirer" rather
-                        than "bank" deliberately: Maya is a non-bank acquirer,
-                        so any bank-flavoured label is wrong for it. Not to be
-                        confused with the ISSUING bank (the customer's own
-                        card) or the network (Visa/Mastercard) — neither is
-                        what's picked here. bank_transfer keeps its own plain
-                        "Bank" label; both can be on screen at once. */}
-                    <p className="mb-1.5 text-xs font-medium text-gray-800">Select Card Acquirer</p>
-                    {(() => {
-                      const cardConfig = configuredMethods.find((m) => m.key === 'card')
-                      const terminalOptions = cardConfig?.options.filter((o) => o.isEnabled) ?? []
-                      return (
-                        <>
-                          {terminalOptions.length > 0 && (
-                            <PillCombobox
-                              ariaLabel="Card Acquirer"
-                              wrapperClassName="mb-1.5"
-                              placeholder="Select card acquirer…"
-                              options={terminalOptions.map((o) => ({ value: o.id, label: o.name }))}
-                              value={cardTerminalOptionId}
-                              onChange={setCardTerminalOptionId}
-                            />
-                          )}
-                          <div className="flex gap-1.5">
-                            {(['straight', 'installment'] as const).map((mode) => (
-                              <button
-                                key={mode}
-                                type="button"
-                                onClick={() => {
-                                  setCardTxnMode(mode)
-                                  if (mode === 'straight') setCardInstallmentTerm(undefined)
-                                }}
-                                className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
-                                  cardTxnMode === mode
-                                    ? mode === 'installment'
-                                      ? 'bg-prominent-purple-100 text-prominent-purple-700'
-                                      : 'bg-purple-200 text-purple-700'
-                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                                }`}
-                              >
-                                {mode === 'straight' ? 'Straight' : 'Installment'}
-                              </button>
-                            ))}
-                          </div>
-                          {cardTxnMode === 'installment' && (
-                            <PillSelect
-                              aria-label="Term"
-                              filled={!!cardInstallmentTerm}
-                              wrapperClassName="mt-1.5"
-                              value={cardInstallmentTerm ?? ''}
-                              onChange={(e) =>
-                                setCardInstallmentTerm(
-                                  e.target.value ? Number(e.target.value) : undefined
-                                )
-                              }
-                            >
-                              <option value="">Select Term (required)</option>
-                              {[3, 6, 9, 12, 18, 24].map((m) => (
-                                <option key={m} value={m}>
-                                  {m} months
-                                </option>
-                              ))}
-                            </PillSelect>
-                          )}
-                        </>
-                      )
-                    })()}
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -6255,16 +8016,54 @@ export default function CheckoutPage() {
           )}
 
           {/* Scenario 70 — the Total comes first, then the payment fields under it
-              (Amount received, CR Number, Change), then Confirm. It is
-              the sale's own figure (what the register collects for the items);
-              the delivery fee under it is a note, not part of it — the fee is a
-              collection on its own CR, paid in the Delivery section above, and
-              never part of the sale. */}
+              (Amount received, CR Number, Change), then Confirm. With a
+              delivery fee it reads Amount + Delivery fee = Total, so the
+              cashier sees everything to collect at a glance. That is a view
+              only: Amount received (and its Copy) stays the sale's own figure,
+              because the fee is a collection on its own CR, paid in the
+              Delivery section above, and never part of the sale. */}
           {saleMode === 'sale' &&
             cart.length > 0 &&
             (tenderTarget > 0 || deliveryFeeAmount > 0) && (
               <div className="border-t border-purple-200 p-5" data-testid="checkout-totals">
-                {tenderTarget > 0 && (
+                {tenderTarget > 0 && deliveryFeeAmount > 0 && (
+                  <>
+                    <div
+                      className="flex items-center justify-between text-base text-gray-700"
+                      data-testid="checkout-sale-amount"
+                    >
+                      <span>
+                        {Math.abs(tenderTarget - totalAmount) < 0.01 ? 'Amount' : 'Amount due now'}
+                      </span>
+                      <span className="flex items-center gap-3">
+                        <CopyAmountButton amount={tenderTarget} testId="checkout-total-copy" />
+                        <span className="font-medium">{fmt(tenderTarget)}</span>
+                      </span>
+                    </div>
+                    <div
+                      className="flex justify-between text-base text-gray-700"
+                      data-testid="checkout-fee-total"
+                    >
+                      <span>Delivery fee</span>
+                      <span className="font-medium">{fmt(deliveryFeeAmount)}</span>
+                    </div>
+                    <div className="mt-1 flex items-baseline justify-between">
+                      <span className="text-sm font-semibold text-gray-700">
+                        {Math.abs(tenderTarget - totalAmount) < 0.01 ? 'Total' : 'Total due now'}
+                      </span>
+                      <span
+                        className="text-2xl font-bold text-gray-900"
+                        data-testid="checkout-grand-total"
+                      >
+                        {fmt(tenderTargetWithDeliveryFee)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-purple-700">
+                      The delivery fee is on its own CR — the invoice stays the sale amount.
+                    </p>
+                  </>
+                )}
+                {tenderTarget > 0 && deliveryFeeAmount <= 0 && (
                   <div className="flex items-baseline justify-between">
                     <span className="text-sm font-semibold text-gray-700">
                       {Math.abs(tenderTarget - totalAmount) < 0.01 ? 'Total' : 'Total due now'}
@@ -6280,11 +8079,11 @@ export default function CheckoutPage() {
                     </span>
                   </div>
                 )}
-                {deliveryFeeAmount > 0 && (
+                {/* Nothing to collect for the items, so there is no Amount to add
+                    the fee to: it stays a note, paid in the Delivery section. */}
+                {tenderTarget <= 0 && deliveryFeeAmount > 0 && (
                   <div
-                    className={`flex items-center justify-between gap-3 text-xs text-purple-700 ${
-                      tenderTarget > 0 ? 'mt-2' : ''
-                    }`}
+                    className="flex items-center justify-between gap-3 text-xs text-purple-700"
                     data-testid="checkout-fee-total"
                   >
                     <span>Delivery fee — collected on its own CR, not part of the sale</span>
@@ -6323,39 +8122,73 @@ export default function CheckoutPage() {
               >
                 <Plus size={14} /> Add deposit (optional)
               </button>
-            ) : payments.length === 0 ? null : (
+            ) : payments.length === 0 ? null : saleMode === 'sale' ? (
+              /* Every payment is one block — its method panel, then the Amount
+                 received (and its own reference where its method asks for one)
+                 right under it — whether there is one payment or several, so
+                 nothing moves when another is added. */
+              <div
+                className="space-y-5"
+                data-testid={mixedPaymentActive ? 'mixed-payments' : 'single-payment'}
+              >
+                {payments.map((p, i) => (
+                  <div
+                    key={i}
+                    data-testid={`payment-unit-${i}`}
+                    className={`space-y-2 ${i > 0 ? 'border-t border-dashed border-purple-200 pt-5' : ''}`}
+                  >
+                    {!p.tender && (
+                      <>
+                        {(mixedPaymentAllowed || mixedPaymentActive) && (
+                          <p className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+                            Payment 1
+                          </p>
+                        )}
+                        {firstPaymentMethodPanels}
+                      </>
+                    )}
+                    {p.tender && (
+                      <TenderPanel
+                        index={i}
+                        row={p}
+                        tenders={tenderChoices}
+                        configuredMethods={configuredMethods}
+                        invalid={invalidFieldsOfRow(i)}
+                        onChange={(patch) => updatePayment(i, patch)}
+                        onTenderChange={(tender) => changeRowTender(i, tender)}
+                        onRemove={() => removePaymentRow(i)}
+                      />
+                    )}
+                    <PaymentAmountFields
+                      index={i}
+                      row={p}
+                      numbered={mixedPaymentActive}
+                      reference={
+                        rowShowsReference(p)
+                          ? { label: referenceLabelFor(p, i), required: crIsRequired(p) }
+                          : null
+                      }
+                      invalid={invalidFieldsOfRow(i)}
+                      onChange={(patch) => updatePayment(i, patch)}
+                    />
+                  </div>
+                ))}
+                {/* A down payment: ONE CR Number for the whole transaction. */}
+                {saleHasDownPayment && (
+                  <ReferenceField
+                    label="CR Number"
+                    required
+                    value={payments[0]?.referenceNumber ?? ''}
+                    invalid={crInvalid}
+                    onChange={(v) => updatePayment(0, { referenceNumber: v })}
+                    testId="sale-cr-number"
+                    ariaLabel="CR Number"
+                  />
+                )}
+              </div>
+            ) : (
               <div className="space-y-2">
                 {payments.map((p, i) => {
-                  if (saleMode === 'sale') {
-                    // Method is fully decided by Item Payment Mode above (Cash's
-                    // own sub-choice, or Credit/Debit Card) — no separate method
-                    // picker or split-tender here, just how much was received.
-                    return (
-                      <div key={i} className="space-y-1">
-                        <label className="block text-[13px] text-gray-700">Amount received</label>
-                        {/* Scenario 70 — large and written from the left, with the
-                            peso sign in front, like the Delivery fee field. */}
-                        <div className="relative">
-                          <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-base font-semibold text-gray-500">
-                            ₱
-                          </span>
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            aria-label="Amount received"
-                            className="w-full rounded-lg border-2 border-purple-200 bg-white py-3 pl-9 pr-3 text-base font-semibold text-gray-800 shadow-sm outline-none transition-colors placeholder:text-sm placeholder:font-normal placeholder:text-gray-400 hover:border-purple-400 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
-                            placeholder="0.00"
-                            value={p.amount === 0 ? '' : p.amount}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value)
-                              updatePayment(i, { amount: isNaN(val) ? 0 : val })
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )
-                  }
                   return (
                     <div key={i} className="space-y-1">
                       <div className="flex items-center gap-2">
@@ -6452,37 +8285,18 @@ export default function CheckoutPage() {
                   )
                 })}
 
-                {/* Reference number / CR Number — a plain cash-mode sale
-                    needs neither, unless this sale also has an inhouse
-                    installment/down-payment component, or is a pure-TPF
-                    cart's own down payment (mirrors the down payment section
-                    below), in which case its cash-lines payment gets a CR
-                    Number too. card/bank/e-wallet/etc. (REF_METHODS) still
-                    always need their own reference, installment or not —
-                    same as reserve mode. */}
-                {payments.some(
-                  (p) => saleMode === 'sale' || REF_METHODS.includes(p.method) || p.refFieldLabel
-                ) && (
+                {/* Reserve mode's deposit: a reference on REF_METHODS or where the
+                    method's own config labels one. */}
+                {payments.some((p) => REF_METHODS.includes(p.method) || p.refFieldLabel) && (
                   <div className="mt-2 space-y-1.5">
                     {payments.map((p, i) => {
-                      const needsRef =
-                        saleMode === 'sale' || REF_METHODS.includes(p.method) || p.refFieldLabel
+                      const needsRef = REF_METHODS.includes(p.method) || p.refFieldLabel
                       const label =
                         p.refFieldLabel ??
-                        (saleMode === 'sale'
-                          ? 'CR Number'
-                          : PAYMENT_LABELS[p.method]
-                            ? `${PAYMENT_LABELS[p.method]} reference`
-                            : 'Reference')
-                      // An installment/down-payment sale requires a CR
-                      // Number on the cash-lines payment regardless of
-                      // method; otherwise sale mode falls back to the same
-                      // REF_METHODS-only requirement as reserve mode
-                      // (matches the same-scoped check at submit time).
-                      const isRequired =
-                        saleMode === 'sale'
-                          ? true
-                          : (p.refRequired ?? REF_METHODS.includes(p.method))
+                        (PAYMENT_LABELS[p.method]
+                          ? `${PAYMENT_LABELS[p.method]} reference`
+                          : 'Reference')
+                      const isRequired = p.refRequired ?? REF_METHODS.includes(p.method)
                       return needsRef ? (
                         <div key={i}>
                           <label className="mb-1 block text-xs font-medium text-gray-800">
@@ -6512,6 +8326,41 @@ export default function CheckoutPage() {
                       : `Redeeming ~${loyaltyPointsNeeded} pts · Balance: ${loyaltyAccount.currentPoints} pts`}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Mixed payment — one more method while something is still unpaid,
+                then the running figures once there are several. */}
+            <div className="mt-4 empty:hidden">
+              {addAnotherPaymentButton('add-another-payment')}
+            </div>
+            {mixedPaymentActive && (
+              <div
+                className="mt-4 space-y-1.5 border-t border-purple-200 pt-4 text-sm"
+                data-testid="payment-summary"
+              >
+                {totalChangedFrom !== null && (
+                  <p className="text-xs text-amber-700" data-testid="payment-total-changed">
+                    The total changed from {fmt(totalChangedFrom)} to {fmt(tenderTarget)} — check
+                    the amounts above.
+                  </p>
+                )}
+                <div className="flex justify-between text-gray-700">
+                  <span>Paid so far</span>
+                  <span className="font-mono font-medium" data-testid="payment-paid-so-far">
+                    {fmt(totalPaid)}
+                  </span>
+                </div>
+                <div
+                  className={`flex items-center justify-between rounded-lg px-3 py-2 font-bold ${
+                    balance > 0.009 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'
+                  }`}
+                >
+                  <span>Remaining</span>
+                  <span className="font-mono" data-testid="payment-remaining">
+                    {fmt(balance)}
+                  </span>
+                </div>
               </div>
             )}
 
@@ -6555,6 +8404,20 @@ export default function CheckoutPage() {
 
           {/* Confirm */}
           <div className="border-t border-purple-200 p-5">
+            {shownPaymentIssues.length > 0 && (
+              <div
+                role="alert"
+                data-testid="payment-issues"
+                className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600"
+              >
+                <p className="font-semibold">You&apos;re missing:</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                  {shownPaymentIssues.map((issue, i) => (
+                    <li key={i}>{issue.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {error && (
               <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
                 <p>{error}</p>
@@ -6566,8 +8429,9 @@ export default function CheckoutPage() {
                   (l.isSerialTracked && !l.serialNumberId) ||
                   (l.requiresSecondarySerial && !l.secondarySerialNumberId)
               )
+              // A plan the cashier typed has no Financing Term to be missing.
               const anyInstallmentMissingTerm = inhouseInstallmentCartLines.some(
-                (l) => !l.financingTermId
+                (l) => !l.manualPlan && !l.financingTermId
               )
               const installmentMissingCreditApplication =
                 inhouseInstallmentCartLines.length > 0 &&
@@ -6576,9 +8440,6 @@ export default function CheckoutPage() {
                 !skipsCreditApplication
               const tpfMissingReference =
                 tpfInstallmentCartLines.length > 0 && (!tpfProviderId || !tpfReferenceNumber.trim())
-              const tpfMissingDownPayment =
-                !downPaymentWaived &&
-                tpfInstallmentCartLines.some((l) => !(parseFloat(l.downPaymentInput ?? '0') > 0))
               const missingHrLoanNumber =
                 employeeApplianceLoanActive && !hrApplianceLoanApplicationNumber.trim()
               const missingXDealReference = xDealActive && !xDealReference.trim()
@@ -6611,37 +8472,35 @@ export default function CheckoutPage() {
                               : saleMode === 'sale' &&
                                   installmentCartLines.length > 0 &&
                                   !installmentPaymentMethod &&
-                                  !xDealCollectsNothing
+                                  !dpCollectsNothing
                                 ? xDealActive
                                   ? 'Choose how the cash portion is paid'
                                   : 'Choose a down payment method'
                                 : saleMode === 'sale' && tpfMissingReference
                                   ? 'Select a TPF provider and enter a reference number'
-                                  : saleMode === 'sale' && tpfMissingDownPayment
-                                    ? 'Enter the down payment for the TPF-financed item(s)'
-                                    : saleMode === 'sale' && missingHrLoanNumber
-                                      ? 'Enter the HR appliance loan application number'
-                                      : saleMode === 'sale' && missingXDealReference
-                                        ? 'Enter the X-Deal reference'
-                                        : saleMode === 'sale' &&
-                                            !hasChargeOrInstallmentLine &&
-                                            !selectedCustomer
-                                          ? 'Select a customer'
-                                          : saleMode === 'sale' && balance > 0.009
-                                            ? `Underpaid by ${fmt(balance)}`
-                                            : saleMode === 'sale' && loyaltyOverBalance
-                                              ? 'Insufficient loyalty points'
-                                              : needsManagerOverride && !managerOverrideApproved
-                                                ? 'Manager override required'
-                                                : cart.some((l) => l.isSerialTracked)
-                                                  ? 'Checkout'
-                                                  : saleMode === 'reserve'
-                                                    ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                                    : allCharge
-                                                      ? 'Issue Charge Invoice'
-                                                      : allInstallment
-                                                        ? 'Create Installment Plan'
-                                                        : 'Confirm Sale'
+                                  : saleMode === 'sale' && missingHrLoanNumber
+                                    ? 'Enter the HR appliance loan application number'
+                                    : saleMode === 'sale' && missingXDealReference
+                                      ? 'Enter the X-Deal reference'
+                                      : saleMode === 'sale' &&
+                                          !hasChargeOrInstallmentLine &&
+                                          !selectedCustomer
+                                        ? 'Select a customer'
+                                        : saleMode === 'sale' && balance > 0.009
+                                          ? `Underpaid by ${fmt(balance)}`
+                                          : saleMode === 'sale' && loyaltyOverBalance
+                                            ? 'Insufficient loyalty points'
+                                            : needsManagerOverride && !managerOverrideApproved
+                                              ? 'Manager override required'
+                                              : cart.some((l) => l.isSerialTracked)
+                                                ? 'Checkout'
+                                                : saleMode === 'reserve'
+                                                  ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                                  : allCharge
+                                                    ? 'Issue Charge Invoice'
+                                                    : allInstallment
+                                                      ? 'Create Installment Plan'
+                                                      : 'Confirm Sale'
 
               const colorClass =
                 saleMode === 'reserve'
@@ -6831,9 +8690,10 @@ export default function CheckoutPage() {
           return (
             <PriceOverrideDialog
               itemName={targetLine.itemName}
-              currentPrice={targetLine.priceResolved ? targetLine.unitPrice : null}
+              currentPrice={targetLine.priceResolved ? Number(targetLine.unitPrice) : null}
+              listPrice={listPriceFor(targetLine)}
               onClose={() => setPriceOverrideTargetLineId(null)}
-              onApprove={(result) => handlePriceOverrideApprove(targetLine.lineId, result)}
+              onApply={(price) => applyPriceOverride(targetLine.lineId, price)}
             />
           )
         })()}
@@ -7393,6 +9253,8 @@ function SuccessScreen({
   customerDisplayName,
   cart,
   payments,
+  crNumber,
+  qrOptionName,
   promoDiscount,
   activeTaxRate,
   inclusivePricing,
@@ -7408,6 +9270,7 @@ function SuccessScreen({
     deliveryReceiptNumber?: string | null
     loyaltyEarned: boolean
     offlineBuffered?: boolean
+    creditWarnings?: string[]
     lineOutcomes: {
       lineId: string
       itemName: string
@@ -7424,6 +9287,7 @@ function SuccessScreen({
     /** Scenario 67 */
     isXDeal?: boolean
     xDealReference?: string | null
+    exception?: SaleException | null
   }
   totalAmount: number
   selectedCustomer: PosCustomer | null
@@ -7432,6 +9296,11 @@ function SuccessScreen({
   customerDisplayName: (c: PosCustomer) => string
   cart: CartLine[]
   payments: PaymentRow[]
+  /** A down-payment sale's one CR Number ('' when the sale has none). */
+  crNumber: string
+  /** The GCash / Biller / gateway the cashier picked for a QR payment, so the
+   * receipt names it rather than printing a bare "QR". */
+  qrOptionName?: string
   promoDiscount: number
   activeTaxRate: { rate: number; name: string } | null
   inclusivePricing: boolean
@@ -7555,6 +9424,22 @@ function SuccessScreen({
                   </p>
                 </div>
               )}
+              {success.creditWarnings && success.creditWarnings.length > 0 && (
+                <div
+                  data-testid="success-credit-warnings"
+                  className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs text-amber-800"
+                >
+                  <p className="font-semibold">
+                    Heads-up — the credit check had something to say, and nobody saw it before this
+                    posted. It goes to management in the end-of-day review:
+                  </p>
+                  <ul className="mt-1 list-disc pl-4">
+                    {success.creditWarnings.map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {success.offlineBuffered ? (
                 <p className="mt-1 text-sm text-amber-600">Will sync automatically when online.</p>
               ) : hasChargeOrInstallment ? (
@@ -7571,53 +9456,71 @@ function SuccessScreen({
 
           {installmentOutcomes.length > 0 && (
             <div className="space-y-2 px-6 pb-4">
-              {installmentOutcomes.map((o) => (
-                <div
-                  key={o.lineId}
-                  className="rounded-xl bg-prominent-purple-50 px-4 py-3 text-xs text-prominent-purple-700"
-                >
-                  <p className="mb-1 font-semibold">
-                    {o.itemName}
-                    <span className="ml-1.5 font-normal opacity-70">
-                      · {o.installmentProvider === 'tpf' ? 'TPF' : 'Inhouse'}
-                    </span>
-                  </p>
-                  {o.installmentProvider === 'tpf' ? (
-                    <>
-                      <div className="flex justify-between">
-                        <span>Down Payment</span>
-                        <span className="font-mono font-semibold">{fmt(o.downPayment ?? 0)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Financed by Third Party</span>
-                        <span className="font-mono font-semibold">
-                          {fmt(o.financedBalance ?? 0)}
-                        </span>
-                      </div>
-                      <span className="opacity-70">
-                        No local schedule — the financier owns the amortization.
+              {/* One card per way of financing — an installment sale is ONE plan
+                  (one ledger, one collection), so its items are listed on it and
+                  its figures are the plan's, not item by item. */}
+              {(['inhouse', 'tpf'] as const).map((provider) => {
+                const outcomes = installmentOutcomes.filter(
+                  (o) => (o.installmentProvider === 'tpf' ? 'tpf' : 'inhouse') === provider
+                )
+                if (outcomes.length === 0) return null
+                const plan =
+                  provider === 'inhouse'
+                    ? sumPreviews(outcomes.map((o) => o.installmentPreview))
+                    : null
+                return (
+                  <div
+                    key={provider}
+                    data-testid="installment-outcome"
+                    className="rounded-xl bg-prominent-purple-50 px-4 py-3 text-xs text-prominent-purple-700"
+                  >
+                    <p className="mb-1 font-semibold">
+                      {outcomes.length === 1 ? outcomes[0].itemName : `${outcomes.length} items`}
+                      <span className="ml-1.5 font-normal opacity-70">
+                        · {provider === 'tpf' ? 'TPF' : 'Inhouse'}
                       </span>
-                    </>
-                  ) : o.installmentPreview ? (
-                    <>
-                      <div className="flex justify-between">
-                        <span>Monthly Installment</span>
-                        <span className="font-mono font-semibold">
-                          {fmt(o.installmentPreview.monthlyInstallment)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Total Payable</span>
-                        <span className="font-mono font-semibold">
-                          {fmt(o.installmentPreview.totalPayable)}
-                        </span>
-                      </div>
-                    </>
-                  ) : (
-                    <span className="opacity-70">Preview unavailable.</span>
-                  )}
-                </div>
-              ))}
+                    </p>
+                    {outcomes.length > 1 && (
+                      <ul className="mb-1 list-disc pl-4 opacity-80">
+                        {outcomes.map((o) => (
+                          <li key={o.lineId}>{o.itemName}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {provider === 'tpf' ? (
+                      <>
+                        <div className="flex justify-between">
+                          <span>Down Payment</span>
+                          <span className="font-mono font-semibold">
+                            {fmt(outcomes.reduce((sum, o) => sum + (o.downPayment ?? 0), 0))}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Financed by Third Party</span>
+                          <span className="font-mono font-semibold">
+                            {fmt(outcomes.reduce((sum, o) => sum + (o.financedBalance ?? 0), 0))}
+                          </span>
+                        </div>
+                      </>
+                    ) : plan ? (
+                      <>
+                        <div className="flex justify-between">
+                          <span>Monthly Installment</span>
+                          <span className="font-mono font-semibold">
+                            {fmt(plan.monthlyInstallment)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Total Payable</span>
+                          <span className="font-mono font-semibold">{fmt(plan.totalPayable)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <span className="opacity-70">Preview unavailable.</span>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
 
@@ -7641,31 +9544,30 @@ function SuccessScreen({
               <span>Date</span>
               <span>{receiptDate}</span>
             </div>
-            {/* Sales Invoice No. leads — it's the document the customer and
-                BIR actually go by. Transaction No. sits last, dimmed: it's
-                an internal system reference, only useful for lookups. */}
-            {success.salesInvoiceNumber && (
+            {/* The sale's document number — the Sales Invoice No., or the
+                Delivery Receipt No. when the sale was covered by a DR; it's
+                what the customer and BIR actually go by. A DR sale stores its
+                number as the invoice number too, so this is one row either
+                way. The internal POS Transaction No. only shows when there is
+                no SI/DR to show (a refund). */}
+            {(success.deliveryReceiptNumber || success.salesInvoiceNumber) && (
               <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
-                <span className="shrink-0">Sales Invoice No.</span>
+                <span className="shrink-0">
+                  {success.deliveryReceiptNumber ? 'Delivery Receipt No.' : 'Sales Invoice No.'}
+                </span>
                 <span className="break-all text-right font-mono font-medium text-gray-700">
-                  {success.salesInvoiceNumber}
+                  {success.deliveryReceiptNumber || success.salesInvoiceNumber}
                 </span>
               </div>
             )}
-            {success.deliveryReceiptNumber && (
-              <div className="flex items-start justify-between gap-2 text-[11px] text-gray-500">
-                <span className="shrink-0">Delivery Receipt No.</span>
+            {!(success.deliveryReceiptNumber || success.salesInvoiceNumber) && (
+              <div className="flex items-start justify-between gap-2 text-[11px] text-gray-400">
+                <span className="shrink-0">Transaction No.</span>
                 <span className="break-all text-right font-mono text-[10px]">
-                  {success.deliveryReceiptNumber}
+                  {success.transactionNumber}
                 </span>
               </div>
             )}
-            <div className="flex items-start justify-between gap-2 text-[11px] text-gray-400">
-              <span className="shrink-0">Transaction No.</span>
-              <span className="break-all text-right font-mono text-[10px]">
-                {success.transactionNumber}
-              </span>
-            </div>
             {/* Installment terms bill one invoice per due date, all created
                 at sale time — only the first (the plan's reference number)
                 belongs on the receipt, not every future month's. */}
@@ -7722,6 +9624,60 @@ function SuccessScreen({
             })}
           </div>
 
+          {/* Scenario 71 — the override behind this sale, with its reason and note.
+              Internal: on screen for the cashier and manager, kept off the
+              customer's printed copy. */}
+          {success.exception && (
+            <div
+              className="border-t border-dashed border-gray-200 px-6 py-3 print:hidden"
+              data-testid="success-exception"
+            >
+              <PosExceptionPanel
+                exception={{
+                  reason: success.exception.reason,
+                  note: success.exception.note,
+                  creditApplicationWaived: success.exception.creditApplicationWaived,
+                  creditOverride: success.exception.creditOverride,
+                  typedTerms: success.exception.typedTerms,
+                  overriddenBy: null,
+                  lines: cart
+                    .filter((l) => l.lineId in success.exception!.lineLists)
+                    .map((l) => {
+                      const charged = effectiveUnitPrice(
+                        l,
+                        activeTaxRate,
+                        inclusivePricing,
+                        isTaxExempt
+                      )
+                      const listRaw = success.exception!.lineLists[l.lineId]
+                      const list =
+                        listRaw === null
+                          ? null
+                          : effectiveUnitPrice(
+                              { ...l, unitPrice: listRaw },
+                              activeTaxRate,
+                              inclusivePricing,
+                              isTaxExempt
+                            )
+                      return {
+                        itemName: l.itemName,
+                        quantity: l.quantity,
+                        listUnitPrice: list,
+                        unitPrice: charged,
+                        difference:
+                          list === null
+                            ? null
+                            : Math.round((list - charged) * l.quantity * 100) / 100,
+                      }
+                    }),
+                }}
+              />
+              <p className="mt-1.5 text-[10px] text-gray-400">
+                Not printed on the customer&apos;s copy.
+              </p>
+            </div>
+          )}
+
           {/* Payments */}
           <div className="space-y-1.5 border-t border-dashed border-gray-200 px-6 py-3">
             {payments
@@ -7729,16 +9685,28 @@ function SuccessScreen({
               .map((p, i) => (
                 <div key={i} className="text-[11px] text-gray-500">
                   <div className="flex justify-between">
-                    <span>{PAYMENT_LABELS[p.method] ?? p.method}</span>
+                    <span>
+                      {p.tender
+                        ? tenderLabel(p.tender, p.optionName)
+                        : p.method === 'qr'
+                          ? qrTenderLabel(qrOptionName)
+                          : (PAYMENT_LABELS[p.method] ?? p.method)}
+                    </span>
                     <span>{fmt(p.amount)}</span>
                   </div>
                   {p.referenceNumber && (
                     <div className="text-right text-[10px] text-gray-400">
-                      CR# {p.referenceNumber}
+                      Ref# {p.referenceNumber}
                     </div>
                   )}
                 </div>
               ))}
+            {crNumber && (
+              <div className="flex justify-between text-[11px] text-gray-500">
+                <span>CR#</span>
+                <span>{crNumber}</span>
+              </div>
+            )}
             {promoDiscount > 0 && (
               <div className="flex justify-between text-[11px] text-green-600">
                 <span>Discount</span>

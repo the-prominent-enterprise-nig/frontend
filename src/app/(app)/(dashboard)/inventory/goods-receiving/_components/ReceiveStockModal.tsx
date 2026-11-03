@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery } from '@tanstack/react-query'
 import { PackagePlus, Plus, X } from 'lucide-react'
 import {
   ReceiveStockFormSchema,
@@ -20,6 +21,9 @@ import { showToast } from '@/src/components/ui/toast'
 import type { RepossessedSerialMeta } from '@/src/components/inventory/RepossessedSerialSearchCombobox'
 import type { InstallmentAccountMeta } from '@/src/components/inventory/InstallmentAccountSearchCombobox'
 import { uploadRrAttachment } from '../_actions/upload-rr-attachment'
+import { getServiceCenters } from '../_actions/service-center-units'
+import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
+import type { ServiceCenterUnit } from '@/src/schema/inventory/goods-receiving/service-center-units'
 import {
   getInstallmentAccount,
   type InstallmentAccountUnitItem,
@@ -35,12 +39,14 @@ import {
 } from '../../purchase-orders/_components/receive-po/receiveIssues'
 import { PoLinkPicker, outstandingOf } from './create-rr/PoLinkPicker'
 import { ReturnedUnitsPanel, type ReturnBlock } from './create-rr/ReturnedUnitsPanel'
+import { ServiceCenterUnitsPanel } from './create-rr/ServiceCenterUnitsPanel'
 import { RrAttachmentsPanel } from './create-rr/RrAttachmentsPanel'
 import { RrDeliveryPanel, type WarehouseOption } from './create-rr/RrDeliveryPanel'
 import { RrLineRow } from './create-rr/RrLineRow'
 import { requiredAttachmentKinds, type RrAttachmentKind } from './create-rr/rrAttachments'
 import { collectRrBlockers, rrLineIssues, toIssueLines } from './create-rr/rrChecks'
-import { costFromPricing, rrTotals, type RrLine } from './create-rr/rrTotals'
+import { costFromPricing, invoiceKeyOf, rrTotals, type RrLine } from './create-rr/rrTotals'
+import type { RepairIntakeSale } from '../_actions/get-repair-intake-sales'
 import { PANEL, RR_LINE_GRID } from './create-rr/rrTokens'
 
 type Props = {
@@ -143,6 +149,13 @@ function describeIssue(path: PropertyKey[], message: string): string {
   return `${lineAt != null ? `Line ${lineAt + 1} · ` : ''}${label}: ${message}`
 }
 
+/** Blank entries out, and an empty result collapsed to undefined — the wire
+ * format treats "not set" and "set to []" differently for mutual exclusion. */
+function filledOrUndefined(values: string[] | undefined): string[] | undefined {
+  const filled = values?.filter((v) => v.trim().length > 0)
+  return filled && filled.length > 0 ? filled : undefined
+}
+
 /**
  * Create Receiving Report — the standalone half of receiving, for a delivery
  * that arrives without being received against a purchase order from the
@@ -202,8 +215,12 @@ export default function ReceiveStockModal({
   const [otherLineTrackSerial, setOtherLineTrackSerial] = useState<Record<string, boolean>>({})
   // Repossession and Repair/Return share one panel: a list of invoices the
   // units are coming back from. What's checked under each is the receipt's
-  // lines (linked by installmentAccountId), so this holds display state only.
+  // lines (linked through invoiceKeyOf), so this holds display state only.
   const [returnBlocks, setReturnBlocks] = useState<ReturnBlock[]>(() => [newReturnBlock()])
+  // Scenario 73 — From Service Center: the units ticked (each one a line) and
+  // their actual repair cost, by serialNumberId.
+  const [scPicked, setScPicked] = useState<ServiceCenterUnit[]>([])
+  const [scCosts, setScCosts] = useState<Record<string, number | undefined>>({})
   // UDS/RFS scans picked so far, uploaded when the receipt is posted.
   const [stagedFiles, setStagedFiles] = useState<Record<RrAttachmentKind, File[]>>({
     UDS: [],
@@ -213,6 +230,11 @@ export default function ReceiveStockModal({
   const uploadedIds = useRef(new Map<File, string>())
   const [linkedPo, setLinkedPo] = useState<PurchaseOrderSummary | null>(null)
   const [poPickerOpen, setPoPickerOpen] = useState(false)
+  // Gap 5 fix — set once the backend reports this receipt's warehouse
+  // differs from the linked PO's own (the split-tranche case, which is
+  // legitimate but worth a second look). Cleared on any warehouse change so
+  // a stale confirmation can't silently wave through an unrelated mismatch.
+  const [warehouseMismatchWarning, setWarehouseMismatchWarning] = useState<string | null>(null)
   const [supplierName, setSupplierName] = useState<string | undefined>(undefined)
   // Scenario 55 (Stock-side Manual RR parity) — mirrors ManualRrForm.tsx's
   // own sourceMode: which of Source's two inputs is live. Decides what
@@ -235,6 +257,8 @@ export default function ReceiveStockModal({
     setLineModes({})
     setOtherLineTrackSerial({})
     setReturnBlocks([newReturnBlock()])
+    setScPicked([])
+    setScCosts({})
     setStagedFiles({ UDS: [], RFS: [] })
     uploadedIds.current.clear()
     setLinkedPo(null)
@@ -257,6 +281,35 @@ export default function ReceiveStockModal({
   // customer's invoice, no Source / Location / Reference #.
   const isRepo = watched.reason === 'repossession'
   const isUnitReturn = isRepo || watched.reason === 'repair_return'
+  // Scenario 73 — a Repair/Return coming back from a service center rather
+  // than handed in by a customer: no invoice, no Repair Type, no UDS/RFS.
+  const fromServiceCenter =
+    watched.reason === 'repair_return' && watched.origin === 'service_center'
+  const serviceCentersQuery = useQuery({
+    queryKey: ['service-centers-holding-units'],
+    queryFn: () => getServiceCenters(),
+    enabled: isOpen && fromServiceCenter,
+  })
+  const serviceCenters = serviceCentersQuery.data?.data ?? []
+  // Every supplier can be the service center: one whose units went out on a
+  // paper DR, or before the system, holds none on record and is only
+  // reachable through the search-by-serial fallback once picked. Those with
+  // units out lead, with their count.
+  const suppliersQuery = useQuery({
+    queryKey: ['rr-service-center-suppliers'],
+    queryFn: () => getSuppliers({ limit: 500 }),
+    enabled: isOpen && fromServiceCenter,
+  })
+  const serviceCenterOptions = [
+    ...serviceCenters.map((sc) => ({ value: sc.id, label: `${sc.name} · ${sc.ticketCount} out` })),
+    ...(suppliersQuery.data?.data?.data ?? [])
+      .filter((s) => !serviceCenters.some((sc) => sc.id === s.id))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((s) => ({ value: s.id, label: s.name })),
+  ]
+  const serviceCenterName = (id?: string): string | undefined =>
+    serviceCenters.find((sc) => sc.id === id)?.name ??
+    suppliersQuery.data?.data?.data.find((s) => s.id === id)?.name
   const returnBlocksRef = useRef(returnBlocks)
   returnBlocksRef.current = returnBlocks
 
@@ -365,11 +418,33 @@ export default function ReceiveStockModal({
     })
   }
 
-  const requiredKinds = requiredAttachmentKinds(watched.reason, watched.repairType)
+  const requiredKinds = fromServiceCenter
+    ? []
+    : requiredAttachmentKinds(watched.reason, watched.repairType)
   if (isUnitReturn) {
     const linesBlocker = blockers.find((b) => b.key === 'lines')
     if (linesBlocker) linesBlocker.text = 'Check at least one unit that is coming back.'
-    if (watched.reason === 'repair_return' && !watched.repairType) {
+    if (fromServiceCenter && !watched.serviceCenterId) {
+      blockers.push({
+        key: 'service-center',
+        kind: 'error',
+        text: 'Pick the service center the units came back from.',
+      } satisfies Blocker)
+    }
+    // Scenario 73 Part 5 — Home Service names its service center at intake.
+    if (
+      watched.reason === 'repair_return' &&
+      !fromServiceCenter &&
+      watched.repairType === 'home_service' &&
+      !watched.serviceCenterId
+    ) {
+      blockers.push({
+        key: 'home-service-center',
+        kind: 'error',
+        text: 'Pick the service center handling this Home Service.',
+      } satisfies Blocker)
+    }
+    if (watched.reason === 'repair_return' && !fromServiceCenter && !watched.repairType) {
       blockers.push({
         key: 'repair-type',
         kind: 'error',
@@ -404,6 +479,10 @@ export default function ReceiveStockModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pricingKey])
 
+  useEffect(() => {
+    setWarehouseMismatchWarning(null)
+  }, [watched.warehouseId])
+
   // Scenario 55 — PO Number/Supplier Invoice No. disappear once a reason is
   // picked (a reasoned receipt isn't fulfilling a PO or reconciling against a
   // supplier invoice), so a stale value entered before switching Reason on
@@ -421,22 +500,38 @@ export default function ReceiveStockModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watched.reason])
 
-  // Repossession drops Location from the form entirely (developer-confirmed
-  // 2026-09-28) — the destination still has to be a real warehouseId
-  // server-side (receiveStock() requires one unconditionally), so it's set
-  // here instead: the receiver's own branch warehouse, same one
-  // stock.service.ts already forces a branch-scoped reasoned receipt into
-  // regardless of what's submitted. Never overwrites an already-set value —
-  // a PO link, or a Location picked before switching Reason on, both stay.
+  // A unit handed back by a customer lands in the receiver's own branch —
+  // stock.service.ts refuses a branch-scoped reasoned receipt anywhere else —
+  // so it's filled in (and the field locked) for them. Someone with no branch
+  // of their own (head office) picks it: there's no silent default any more,
+  // which used to be the first standalone warehouse, i.e. Negros (WH-07).
+  // A service-center return is left alone: it lands wherever the custodian
+  // receives it.
+  const ownBranchWarehouseId = actorBranchId
+    ? warehouses.find((w) => w.branchId === actorBranchId)?.id
+    : undefined
   useEffect(() => {
-    if (!isUnitReturn || watched.warehouseId) return
-    const ownBranch = actorBranchId
-      ? warehouses.find((w) => w.branchId === actorBranchId)
-      : undefined
-    const target = ownBranch ?? warehouses.find((w) => !w.branchId)
-    if (target) setValue('warehouseId', target.id, { shouldValidate: false })
+    if (!isUnitReturn || fromServiceCenter) return
+    if (ownBranchWarehouseId) {
+      if (watched.warehouseId !== ownBranchWarehouseId)
+        setValue('warehouseId', ownBranchWarehouseId, { shouldValidate: false })
+      return
+    }
+    // Head office on a repair intake picks among branches, so a standalone
+    // warehouse carried over from another reason isn't kept.
+    if (watched.reason !== 'repair_return') return
+    const current = warehouses.find((w) => w.id === watched.warehouseId)
+    if (current && !current.branchId && !current.branch)
+      setValue('warehouseId', '', { shouldValidate: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isUnitReturn, watched.warehouseId, actorBranchId, warehouses])
+  }, [
+    isUnitReturn,
+    fromServiceCenter,
+    watched.reason,
+    watched.warehouseId,
+    ownBranchWarehouseId,
+    warehouses,
+  ])
 
   const outstandingNotPulled = useMemo(() => {
     if (!linkedPo) return []
@@ -458,15 +553,35 @@ export default function ReceiveStockModal({
     setReturnBlocks([newReturnBlock()])
     setStagedFiles({ UDS: [], RFS: [] })
     if (isUnitReturn) {
-      replace(lines.filter((l) => !!l.installmentAccountId))
+      replace(lines.filter((l) => !!invoiceKeyOf(l)))
       return
     }
-    const keep = lines.filter((l) => !l.installmentAccountId && !l.existingSerialNumberIds?.length)
+    const keep = lines.filter((l) => !invoiceKeyOf(l) && !l.existingSerialNumberIds?.length)
     replace(
       keep.length > 0 ? keep : [{ quantityReceived: 1, taxCode: 'VAT', withholdingClass: 'goods' }]
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUnitReturn])
+
+  // Repossession searches installment accounts and Repair/Return searches
+  // sales, so an invoice picked under one means nothing under the other —
+  // switching straight between the two starts the panel over. Moving into or
+  // out of a unit return at all is the effect above's job.
+  const prevReason = useRef(watched.reason)
+  useEffect(() => {
+    const prev = prevReason.current
+    prevReason.current = watched.reason
+    const unitReturnReasons = ['repossession', 'repair_return']
+    if (prev === watched.reason) return
+    if (
+      !unitReturnReasons.includes(prev ?? '') ||
+      !unitReturnReasons.includes(watched.reason ?? '')
+    )
+      return
+    setReturnBlocks([newReturnBlock()])
+    replace(lines.filter((l) => !invoiceKeyOf(l)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watched.reason])
 
   // Repossession → Repair/Return (or back) while units are checked: a repo cost
   // only applies to a repossession.
@@ -474,7 +589,7 @@ export default function ReceiveStockModal({
     if (!isUnitReturn) return
     const units = returnBlocksRef.current.flatMap((b) => b.units ?? [])
     lines.forEach((line, index) => {
-      if (!line.installmentAccountId) return
+      if (!invoiceKeyOf(line)) return
       const unit = units.find((u) => u.serialNumberId === line.existingSerialNumberIds?.[0])
       const next = !isRepo ? undefined : unit && unit.repoCost > 0 ? unit.repoCost : line.unitCost
       if (next === line.unitCost) return
@@ -482,6 +597,28 @@ export default function ReceiveStockModal({
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watched.reason])
+
+  // Scenario 73 — switching Origin, or the service center, drops whatever was
+  // checked: a customer's invoice units and a service center's units are
+  // different lists, and one service center's units never belong to another.
+  const scKey = fromServiceCenter ? `sc:${watched.serviceCenterId ?? ''}` : 'customer'
+  const lastScKey = useRef(scKey)
+  const wasFromServiceCenter = useRef(fromServiceCenter)
+  useEffect(() => {
+    if (scKey === lastScKey.current) return
+    lastScKey.current = scKey
+    // A Home Service center need not hold any units, so it never carries
+    // over into From Service Center's picker, nor back.
+    if (wasFromServiceCenter.current !== fromServiceCenter) {
+      wasFromServiceCenter.current = fromServiceCenter
+      setValue('serviceCenterId', undefined, { shouldValidate: false })
+    }
+    setScPicked([])
+    setScCosts({})
+    setReturnBlocks([newReturnBlock()])
+    if (isUnitReturn) replace([])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scKey])
 
   if (!isOpen) return null
 
@@ -497,10 +634,19 @@ export default function ReceiveStockModal({
     const line = lines[index]
     setValue(`lines.${index}.quantityReceived`, qty, { shouldValidate: showErrors })
     if (!line || !contextFor(index).isSerialTracked) return
+    // A number input reports NaN the instant it's blanked mid-edit (e.g.
+    // backspacing "2" before typing "5") — resizing serials down to 0 on
+    // that transient keystroke would wipe what was already typed before the
+    // new digit even lands. Only resize once there's a real target qty.
+    if (!Number.isFinite(raw)) return
     const serials = (line.serialNumbers ?? []).slice(0, qty)
     while (serials.length < qty) serials.push('')
     setValue(`lines.${index}.serialNumbers`, serials, { shouldValidate: showErrors })
-    // Scenario 55 Part 4 — same resize, for a repossession line's picked ids.
+    // Scenario 55 Part 4 — same resize, but only for a repossession/repair-return
+    // line's picked ids. An ordinary serial-tracked line (e.g. pulled via Browse
+    // PO) has no existingSerialNumberIds concept at all — padding it anyway left
+    // blank entries that failed the schema's min(1) refine at submit.
+    if (!isUnitReturn) return
     const existingSerials = (line.existingSerialNumberIds ?? []).slice(0, qty)
     while (existingSerials.length < qty) existingSerials.push('')
     setValue(`lines.${index}.existingSerialNumberIds`, existingSerials, {
@@ -546,7 +692,9 @@ export default function ReceiveStockModal({
       quantityReceived: 1,
       itemId: unit.itemId,
       existingSerialNumberIds: [unit.serialNumberId],
-      installmentAccountId: accountId,
+      // A repossession's invoice is the installment account; a
+      // repair/return's is the sale itself.
+      ...(isRepo ? { installmentAccountId: accountId } : { salesTransactionId: accountId }),
       unitCost: costForUnit(unit),
     })
   }
@@ -568,7 +716,7 @@ export default function ReceiveStockModal({
     }
     // A different invoice replaces the old one — its checked units go with it.
     if (block.accountId && block.accountId !== id) {
-      replace(lines.filter((l) => l.installmentAccountId !== block.accountId))
+      replace(lines.filter((l) => invoiceKeyOf(l) !== block.accountId))
     }
     patchBlock(key, {
       accountId: id,
@@ -606,6 +754,37 @@ export default function ReceiveStockModal({
     })()
   }
 
+  /** Repair/return: the picked sale already carries its customer and units,
+   * so Returned by, Customer ID and the unit list fill in at once. A sale
+   * with one unit out is pre-checked, same as an installment invoice. */
+  function pickSale(key: string, sale: RepairIntakeSale): void {
+    if (returnBlocks.some((b) => b.key !== key && b.accountId === sale.id)) {
+      showToast({ title: 'That invoice is already on this receipt', status: 'error' })
+      return
+    }
+    const block = returnBlocks.find((b) => b.key === key)
+    if (block?.accountId && block.accountId !== sale.id) {
+      replace(lines.filter((l) => invoiceKeyOf(l) !== block.accountId))
+    }
+    const available = sale.unitItems.filter((u) => u.serialNumberId && u.serialStatus === 'sold')
+    patchBlock(key, {
+      accountId: sale.id,
+      invoiceLabel: sale.siNumber,
+      units: available,
+      exhausted: available.length === 0,
+      loading: false,
+      fallbackSerialLabel: '',
+      ...(sale.customer
+        ? {
+            customerId: sale.customer.id,
+            customerLabel: sale.customer.name,
+            customerCode: sale.customer.customerCode,
+          }
+        : {}),
+    })
+    if (available.length === 1) addUnitLine(sale.id, available[0])
+  }
+
   function pickCustomer(key: string, id: string, label?: string): void {
     patchBlock(key, { customerId: id, customerLabel: label ?? '', customerCode: undefined })
   }
@@ -621,7 +800,7 @@ export default function ReceiveStockModal({
       lines.filter(
         (l) =>
           !(
-            l.installmentAccountId === block.accountId &&
+            invoiceKeyOf(l) === block.accountId &&
             l.existingSerialNumberIds?.[0] === unit.serialNumberId
           )
       )
@@ -630,7 +809,7 @@ export default function ReceiveStockModal({
 
   function removeBlock(key: string): void {
     const block = returnBlocks.find((b) => b.key === key)
-    if (block?.accountId) replace(lines.filter((l) => l.installmentAccountId !== block.accountId))
+    if (block?.accountId) replace(lines.filter((l) => invoiceKeyOf(l) !== block.accountId))
     setReturnBlocks((prev) => prev.filter((b) => b.key !== key))
   }
 
@@ -639,7 +818,7 @@ export default function ReceiveStockModal({
   function manualLineIndex(accountId: string, serialNumberId?: string): number {
     return lines.findIndex(
       (l) =>
-        l.installmentAccountId === accountId &&
+        invoiceKeyOf(l) === accountId &&
         (!serialNumberId || l.existingSerialNumberIds?.[0] === serialNumberId)
     )
   }
@@ -697,6 +876,39 @@ export default function ReceiveStockModal({
     // Dropping the hold drops its reason with it — a stale explanation on an
     // un-held line would post as a plain line note saying the opposite.
     if (!next) setValue(`lines.${index}.notes`, '', { shouldValidate: false })
+  }
+
+  /** Scenario 73 — ticking a unit back from a service center makes it a line.
+   * Its actual cost starts at the ticket's estimate (only on the ticket's
+   * first unit, since the leg sums its units' costs). */
+  function toggleServiceCenterUnit(unit: ServiceCenterUnit, checked: boolean): void {
+    const next = checked
+      ? [...scPicked.filter((p) => p.serialNumberId !== unit.serialNumberId), unit]
+      : scPicked.filter((p) => p.serialNumberId !== unit.serialNumberId)
+    setScPicked(next)
+    if (checked) {
+      rememberItem(unit.item.id, {
+        name: unit.item.name,
+        sku: unit.item.sku,
+        isSerialTracked: true,
+        modelNumber: unit.item.modelNumber,
+        brand: unit.item.brand ? { name: unit.item.brand } : null,
+      })
+      const ticketPriced = scPicked.some((p) => p.uds && p.uds.id === unit.uds?.id)
+      const estimate = unit.uds?.repairEstimatedCost
+      if (!ticketPriced && estimate != null) {
+        setScCosts((prev) => ({ ...prev, [unit.serialNumberId]: estimate }))
+      }
+    } else {
+      setScCosts((prev) => ({ ...prev, [unit.serialNumberId]: undefined }))
+    }
+    replace(
+      next.map((p) => ({
+        quantityReceived: 1,
+        itemId: p.item.id,
+        existingSerialNumberIds: [p.serialNumberId],
+      }))
+    )
   }
 
   function rememberItem(itemId: string, meta: ItemMeta): void {
@@ -770,6 +982,21 @@ export default function ReceiveStockModal({
     })
     if (meta?.costPrice != null) {
       setValue(`lines.${index}.unitCost`, meta.costPrice, { shouldValidate: false })
+    }
+    // Silently reconnect this line to the linked PO's own line for this item
+    // when there is an outstanding one — picking the item here instead of
+    // "Pull outstanding lines" otherwise left the line with no PO link at
+    // all, which also meant it never counted toward the PO's received
+    // quantity and never triggered the receiving-warehouse mismatch check.
+    if (linkedPo && !lines[index]?.purchaseOrderLineId) {
+      const poLine = linkedPo.lines.find(
+        (pl) =>
+          pl.itemId === option.id &&
+          Math.max(Number(pl.quantity) - Number(pl.receivedQuantity ?? 0), 0) > 0
+      )
+      if (poLine) {
+        setValue(`lines.${index}.purchaseOrderLineId`, poLine.id, { shouldValidate: false })
+      }
     }
     if (isSerialTracked) {
       const qty = Number(lines[index]?.quantityReceived) || 1
@@ -930,14 +1157,30 @@ export default function ReceiveStockModal({
   async function post(data: ReceiveStockFormValues): Promise<void> {
     const reason = data.reason || undefined
     const unitReturn = reason === 'repossession' || reason === 'repair_return'
-    const attachments = unitReturn
-      ? await uploadAttachments(requiredAttachmentKinds(reason, data.repairType))
-      : []
+    const scReturn = reason === 'repair_return' && data.origin === 'service_center'
+    const homeService =
+      reason === 'repair_return' && !scReturn && data.repairType === 'home_service'
+    const attachments =
+      unitReturn && !scReturn
+        ? await uploadAttachments(requiredAttachmentKinds(reason, data.repairType))
+        : []
     if (!attachments) return
+    const repairCosts = scReturn
+      ? scPicked
+          .map((p) => ({ serialNumberId: p.serialNumberId, actualCost: scCosts[p.serialNumberId] }))
+          .filter((c): c is { serialNumberId: string; actualCost: number } =>
+            Number.isFinite(c.actualCost)
+          )
+      : []
     const result = await onSubmit({
       ...data,
       reason,
-      repairType: reason === 'repair_return' ? data.repairType : undefined,
+      repairType: reason === 'repair_return' && !scReturn ? data.repairType : undefined,
+      // Scenario 73 — Origin is only ever sent as From Service Center; a
+      // customer return keeps today's payload exactly.
+      origin: scReturn ? 'service_center' : undefined,
+      serviceCenterId: scReturn || homeService ? data.serviceCenterId : undefined,
+      repairCosts: repairCosts.length > 0 ? repairCosts : undefined,
       attachments: attachments.length > 0 ? attachments : undefined,
       // Scenario 55 (Stock-side Manual RR parity) — mirrors
       // ManualRrForm.tsx's own handleSubmit: sourceMode decides which of the
@@ -960,21 +1203,32 @@ export default function ReceiveStockModal({
         // Mutually exclusive on the wire (receiveStock() rejects a line that
         // sets both) — only one of these two is ever real per line, gated on
         // the same reason check.
-        serialNumbers:
-          !unitReturn && line.serialNumbers && line.serialNumbers.length > 0
-            ? line.serialNumbers
-            : undefined,
-        existingSerialNumberIds:
-          unitReturn && line.existingSerialNumberIds && line.existingSerialNumberIds.length > 0
-            ? line.existingSerialNumberIds
-            : undefined,
+        serialNumbers: !unitReturn ? filledOrUndefined(line.serialNumbers) : undefined,
+        existingSerialNumberIds: unitReturn
+          ? filledOrUndefined(line.existingSerialNumberIds)
+          : undefined,
         // The invoice a returned unit came back from — dropped on any other
         // reason so a stale pick from switching reasons mid-form can't ride
         // along.
         installmentAccountId: unitReturn ? line.installmentAccountId || undefined : undefined,
+        // The sale a repair/return unit was sold on — repair/return only.
+        salesTransactionId:
+          reason === 'repair_return' ? line.salesTransactionId || undefined : undefined,
       })),
+      confirmWarehouseMismatch: warehouseMismatchWarning !== null,
     })
-    if (result.success) onClose()
+    if (result.success) {
+      onClose()
+      return
+    }
+    if (result.errorCode === 'receiving_warehouse_mismatch') {
+      // Not an error yet — splitting one PO's receipt across both real
+      // warehouses is normal. Show what it clashes with and let the
+      // receiver confirm before posting.
+      setWarehouseMismatchWarning(
+        result.message || 'This purchase order was raised for a different warehouse.'
+      )
+    }
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -991,19 +1245,19 @@ export default function ReceiveStockModal({
     >
       <div className="flex shrink-0 flex-wrap items-start justify-between gap-5 border-b border-[#e4e4e9] bg-white px-4 py-3.5 lg:px-5">
         <div className="flex min-w-0 flex-col gap-1">
-          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
             Inventory › Receiving › New
           </div>
           <h2 className="text-[21px] font-semibold tracking-[-.02em]">{title}</h2>
-          <p className="text-[12.5px] text-[#5b5b6b]">{subtitle}</p>
+          <p className="text-[12.5px] text-[#4b4b5a]">{subtitle}</p>
         </div>
 
         <div className="flex items-start gap-4">
           <div className="flex flex-col items-end gap-0.5">
-            <span className="text-[11px] text-[#5b5b6b]">Receiving</span>
+            <span className="text-[11px] text-[#4b4b5a]">Receiving</span>
             <span
               className={`${MONO} text-[18px] font-semibold tracking-[-.02em] ${
-                totals.units > 0 ? 'text-[#17171c]' : 'text-[#a3a3b2]'
+                totals.units > 0 ? 'text-[#17171c]' : 'text-[#8e8e9d]'
               }`}
             >
               {totals.units} {totals.units === 1 ? 'unit' : 'units'} · {totals.lines}{' '}
@@ -1015,7 +1269,7 @@ export default function ReceiveStockModal({
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#6f6f7f] hover:bg-[#f1f1f4] hover:text-[#17171c]"
             >
               <X className="h-4.5 w-4.5" />
             </button>
@@ -1041,9 +1295,26 @@ export default function ReceiveStockModal({
           }}
           onBrowsePo={() => setPoPickerOpen(true)}
           onUnlinkPo={unlinkPo}
+          origin={watched.origin}
+          ownBranchWarehouseId={ownBranchWarehouseId}
+          serviceCenterOptions={serviceCenterOptions}
+          serviceCentersLoading={serviceCentersQuery.isLoading || suppliersQuery.isLoading}
         />
 
-        {isUnitReturn ? (
+        {fromServiceCenter ? (
+          <ServiceCenterUnitsPanel
+            serviceCenterId={watched.serviceCenterId ?? ''}
+            serviceCenterName={serviceCenterName(watched.serviceCenterId)}
+            picked={scPicked}
+            costs={scCosts}
+            canViewCost={canViewCost}
+            showErrors={showErrors}
+            onToggle={toggleServiceCenterUnit}
+            onCost={(serialNumberId, value) =>
+              setScCosts((prev) => ({ ...prev, [serialNumberId]: value }))
+            }
+          />
+        ) : isUnitReturn ? (
           <>
             <ReturnedUnitsPanel
               mode={isRepo ? 'repossession' : 'repair_return'}
@@ -1053,6 +1324,7 @@ export default function ReceiveStockModal({
               showErrors={showErrors}
               itemNameFor={(itemId) => (itemId ? metaFor(itemId)?.name : undefined)}
               onPickInvoice={pickInvoice}
+              onPickSale={pickSale}
               onPickCustomer={pickCustomer}
               onToggleUnit={toggleUnit}
               onFallbackItem={fallbackItem}
@@ -1078,11 +1350,11 @@ export default function ReceiveStockModal({
                   <span className="text-[13.5px] font-semibold">
                     Items received <span className="text-[#b42318]">*</span>
                   </span>
-                  <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+                  <span className={`${MONO} text-[11px] text-[#6f6f7f]`}>
                     {fields.length} {fields.length === 1 ? 'line' : 'lines'} · {totals.units} units
                   </span>
                 </div>
-                <span className="text-[11.5px] text-[#8b8b9b]">
+                <span className="text-[11.5px] text-[#6f6f7f]">
                   Pick a catalog item, or mark it &ldquo;Non-catalog items&rdquo; for anything not
                   in the catalog.
                 </span>
@@ -1114,12 +1386,12 @@ export default function ReceiveStockModal({
               ManualRrForm.tsx's own Defaults bar exactly: applied to every
               new line going forward, not retroactively. */}
             <div className="flex flex-wrap items-center gap-2 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2">
-              <span className="text-[11px] text-[#8b8b9b]">Input tax type</span>
+              <span className="text-[11px] text-[#6f6f7f]">Input tax type</span>
               <select
                 value={defaultTaxCode}
                 onChange={(e) => setDefaultTaxCode(e.target.value)}
                 aria-label="Default tax code"
-                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#4b4b5a] outline-none focus:border-[#5b21b6]"
               >
                 {MANUAL_RR_TAX_CODES.map((code) => (
                   <option key={code.value} value={code.value}>
@@ -1127,12 +1399,12 @@ export default function ReceiveStockModal({
                   </option>
                 ))}
               </select>
-              <span className="ml-2 text-[11px] text-[#8b8b9b]">Withholding tax</span>
+              <span className="ml-2 text-[11px] text-[#6f6f7f]">Withholding tax</span>
               <select
                 value={defaultWithholdingClass}
                 onChange={(e) => setDefaultWithholdingClass(e.target.value)}
                 aria-label="Default withholding"
-                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#4b4b5a] outline-none focus:border-[#5b21b6]"
               >
                 {withholdingClassOptions(ewt.rateFor).map((cls) => (
                   <option key={cls.value} value={cls.value}>
@@ -1146,7 +1418,7 @@ export default function ReceiveStockModal({
               <div className="flex flex-col items-center gap-2 px-5.5 py-10 text-center">
                 <PackagePlus className="h-7 w-7 text-[#d3d3db]" />
                 <span className="text-[13.5px] font-semibold">No items added yet.</span>
-                <span className="max-w-[430px] text-[12px] leading-[1.55] text-[#5b5b6b]">
+                <span className="max-w-[430px] text-[12px] leading-[1.55] text-[#4b4b5a]">
                   {linkedPo
                     ? `Add a line, or pull the lines ${linkedPo.code} is still waiting on.`
                     : 'Add a line, then pick a catalog item or name what arrived.'}
@@ -1162,7 +1434,7 @@ export default function ReceiveStockModal({
             ) : (
               <>
                 <div
-                  className={`${MONO} ${RR_LINE_GRID} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] lg:grid`}
+                  className={`${MONO} ${RR_LINE_GRID} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#6f6f7f] lg:grid`}
                 >
                   <span>Item / SKU</span>
                   <span className="text-right">Qty</span>
@@ -1225,7 +1497,7 @@ export default function ReceiveStockModal({
                 })}
 
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[#e4e4e9] bg-[#fbfbfc] px-4.5 py-3">
-                  <span className="text-[11.5px] text-[#8b8b9b]">
+                  <span className="text-[11.5px] text-[#6f6f7f]">
                     Held lines land in quarantine, not as sellable stock. Freebies are received at
                     zero cost.
                   </span>
@@ -1242,7 +1514,7 @@ export default function ReceiveStockModal({
         )}
         <div className={`${PANEL} flex flex-col gap-2 px-4.5 py-3.5`}>
           <label className="text-[12px] font-medium text-[#3d3d4a]">
-            Notes <span className="font-normal text-[#8b8b9b]">optional</span>
+            Notes <span className="font-normal text-[#6f6f7f]">optional</span>
           </label>
           <Controller
             name="notes"
@@ -1263,6 +1535,12 @@ export default function ReceiveStockModal({
         </div>
       </div>
 
+      {warehouseMismatchWarning && (
+        <div className="border-t border-[#f3d7a3] bg-[#fdf6e9] px-4 py-2.5 text-[12.5px] text-[#8a4b06] lg:px-5">
+          {warehouseMismatchWarning} Press <span className="font-semibold">Receive anyway</span> to
+          continue.
+        </div>
+      )}
       <ReceiveActionBar
         blockerCount={blockers.length}
         showBlockers={showErrors}
@@ -1271,7 +1549,7 @@ export default function ReceiveStockModal({
         isSubmitting={isSubmitting}
         onCancel={onClose}
         onPrimary={postNow}
-        primaryLabel={submitLabel}
+        primaryLabel={warehouseMismatchWarning ? 'Receive anyway' : submitLabel}
         submittingLabel={submittingLabel}
       />
 

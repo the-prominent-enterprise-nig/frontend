@@ -7,6 +7,9 @@ import { Plus, Search, HandCoins } from 'lucide-react'
 import { collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../_actions/get-branches'
 import type { Collector } from '@/src/schema/crm/types'
+import TablePagination from '@/src/components/common/TablePagination'
+
+const PAGE_SIZE = 20
 
 const STATUS_COLORS: Record<string, string> = {
   active: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -32,6 +35,8 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [branchFilter, setBranchFilter] = useState('')
+  const [page, setPage] = useState(1)
+  const [meta, setMeta] = useState({ total: 0, lastPage: 1 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -50,18 +55,28 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
         search: search || undefined,
         status: statusFilter || undefined,
         branchId: branchFilter || undefined,
-        limit: 50,
+        page,
+        limit: PAGE_SIZE,
       })
       if (controller.signal.aborted) return
-      if (res.success && res.data) setCollectors(res.data.data)
-      else setError(res.error ?? 'Failed to load collectors')
+      if (res.success && res.data) {
+        setCollectors(res.data.data)
+        setMeta({ total: res.data.meta.total, lastPage: res.data.meta.lastPage })
+      } else setError(res.error ?? 'Failed to load collectors')
       setLoading(false)
     }, 250)
     return () => {
       controller.abort()
       clearTimeout(t)
     }
-  }, [search, statusFilter, branchFilter])
+  }, [search, statusFilter, branchFilter, page])
+
+  // A new search or filter starts back on page 1 — the page it was on may
+  // not exist in the narrower result.
+  const onFilter = (set: (v: string) => void) => (v: string) => {
+    set(v)
+    setPage(1)
+  }
 
   const branchName = (id?: string | null) => branches.find((b) => b.id === id)?.name
 
@@ -90,14 +105,14 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search collector code or name…"
+            onChange={(e) => onFilter(setSearch)(e.target.value)}
+            placeholder="Search collector code, name, or area…"
             className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm placeholder:text-gray-400 focus:border-prominent-orange-400 focus:outline-none"
           />
         </div>
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => onFilter(setStatusFilter)(e.target.value)}
           className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
         >
           <option value="">All statuses</option>
@@ -106,7 +121,7 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
         </select>
         <select
           value={branchFilter}
-          onChange={(e) => setBranchFilter(e.target.value)}
+          onChange={(e) => onFilter(setBranchFilter)(e.target.value)}
           className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
         >
           <option value="">All branches</option>
@@ -153,7 +168,9 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
                       <StatusBadge status={c.status} />
                     </div>
                     <div className="mt-0.5 truncate text-[12px] text-gray-500">
-                      {c.stubNumber} · {branchName(c.branchId) ?? 'Unassigned branch'}
+                      {c.stubNumber}
+                      {c.areaCode ? ` · ${c.areaCode}` : ''} ·{' '}
+                      {branchName(c.branchId) ?? 'Unassigned branch'}
                     </div>
                   </div>
                 </Link>
@@ -169,6 +186,9 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
                   <tr>
                     <th className="px-4 py-3">Collector code</th>
                     <th className="px-4 py-3">Name</th>
+                    <th className="px-4 py-3">Area code</th>
+                    <th className="px-4 py-3">Area</th>
+                    <th className="px-4 py-3">Supervisor</th>
                     <th className="px-4 py-3">Branch</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Created</th>
@@ -184,6 +204,15 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
                       <td className="px-4 py-3 font-medium text-gray-900">{c.stubNumber}</td>
                       <td className="px-4 py-3">{c.name}</td>
                       <td className="px-4 py-3 text-[13px] text-gray-600">
+                        {c.areaCode || <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-[13px] text-gray-600">
+                        {c.area || <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-[13px] text-gray-600">
+                        {c.supervisorName || <span className="text-gray-400">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-[13px] text-gray-600">
                         {branchName(c.branchId) ?? <span className="text-gray-400">—</span>}
                       </td>
                       <td className="px-4 py-3">
@@ -198,6 +227,16 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
               </table>
             </div>
           </div>
+
+          <TablePagination
+            page={page}
+            pageCount={meta.lastPage}
+            onPageChange={setPage}
+            pageStart={(page - 1) * PAGE_SIZE}
+            pageSize={collectors.length}
+            totalItems={meta.total}
+            noun="collector"
+          />
         </>
       )}
     </div>

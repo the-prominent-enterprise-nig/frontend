@@ -4,8 +4,15 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import MoneyInput from '@/src/components/ui/MoneyInput'
 import { Select } from '@/src/components/ui/Select'
 import { ArrowLeft } from 'lucide-react'
+import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
+import { CLEARED_OPTIONS, type ClearedType } from '../../_components/clearedOptions'
+import { showToast } from '@/src/components/ui/toast'
+import FundTransferAttachmentsPanel, {
+  uploadStagedFundTransferAttachments,
+} from '../../_components/FundTransferAttachmentsPanel'
 import {
   BankAccounts,
   BankTransfers,
@@ -13,21 +20,17 @@ import {
   fmtMoney,
 } from '@/src/libs/data/AccountingV2Data'
 
-const CLEARED_OPTIONS = [
-  { value: 'SAME_DATE', label: 'On the same date' },
-  { value: 'LATER_DATE', label: 'On a later date' },
-]
-
 const today = () => new Date().toISOString().slice(0, 10)
 const emptyForm = () => ({
   date: today(),
-  clearedType: 'SAME_DATE' as 'SAME_DATE' | 'LATER_DATE',
+  clearedType: 'SAME_DATE' as ClearedType,
   clearingDate: '',
   sourceBankAccountId: '',
   destinationBankAccountId: '',
   amount: '',
   reference: '',
   description: '',
+  branchId: '',
 })
 
 // Scenario 40 Gap 5 (Option B) — a real inter-account transfer, e.g.
@@ -39,12 +42,22 @@ const emptyForm = () => ({
 // success lands on the new transfer's own page with a "Transfer recorded"
 // banner and its printable voucher — a page, not a pop-up (client UI/UX
 // direction: no modals).
-export default function FundTransferForm() {
+export default function FundTransferForm({
+  ownBranch,
+}: {
+  /** Set for a branch-assigned user: the form records for this branch and the
+   * field is locked to it. Null for the Owner, who picks (or leaves it blank). */
+  ownBranch: { id: string; name: string } | null
+}) {
   const router = useRouter()
   const [accounts, setAccounts] = useState<BankAccount[]>([])
-  const [form, setForm] = useState(emptyForm)
+  const [branches, setBranches] = useState<BranchLite[]>([])
+  const [form, setForm] = useState(() => ({ ...emptyForm(), branchId: ownBranch?.id ?? '' }))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Scenario 72 Part 5 — supporting documents, held here until the transfer
+  // exists (an attachment needs its id) and uploaded right after it is saved.
+  const [stagedAttachments, setStagedAttachments] = useState<File[]>([])
 
   const loadAccounts = () =>
     BankAccounts.list().then((res) => {
@@ -53,6 +66,12 @@ export default function FundTransferForm() {
   useEffect(() => {
     loadAccounts()
   }, [])
+  useEffect(() => {
+    if (ownBranch) return
+    BranchesApi.list().then((r) =>
+      setBranches((r.data?.data ?? []).filter((b) => ('isActive' in b ? b.isActive : true)))
+    )
+  }, [ownBranch])
 
   const accountOptions = accounts.map((a) => ({
     value: a.id,
@@ -92,12 +111,26 @@ export default function FundTransferForm() {
       clearingDate: form.clearedType === 'LATER_DATE' ? form.clearingDate : form.date,
       reference: form.reference || undefined,
       description: form.description || undefined,
+      branchId: form.branchId || undefined,
     })
-    setSaving(false)
     if (!res.success || !res.data) {
+      setSaving(false)
       setError(res.message || res.error || 'Transfer failed — check Account Mapping settings')
       return
     }
+    // The transfer is posted either way; a scan that would not upload is
+    // reported, not a reason to hide the transfer.
+    if (stagedAttachments.length > 0) {
+      const failed = await uploadStagedFundTransferAttachments(res.data.id, stagedAttachments)
+      if (failed > 0) {
+        showToast({
+          title: `${failed} attachment${failed === 1 ? '' : 's'} failed to upload`,
+          description: 'The transfer was recorded. Attach the file again from the transfer itself.',
+          status: 'error',
+        })
+      }
+    }
+    setSaving(false)
     router.push(`/accounting/fund-transfers/${res.data.id}?created=1`)
   }
 
@@ -140,7 +173,7 @@ export default function FundTransferForm() {
               onChange={(value) =>
                 setForm({
                   ...form,
-                  clearedType: value as 'SAME_DATE' | 'LATER_DATE',
+                  clearedType: value as ClearedType,
                   clearingDate: value === 'LATER_DATE' ? form.clearingDate || form.date : '',
                 })
               }
@@ -194,13 +227,10 @@ export default function FundTransferForm() {
 
         <div className="max-w-xs">
           <Field label="Amount *">
-            <input
+            <MoneyInput
               required
-              type="number"
-              step="0.01"
-              min="0.01"
               value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })}
+              onChange={(amount) => setForm({ ...form, amount })}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </Field>
@@ -221,6 +251,35 @@ export default function FundTransferForm() {
           />
         </Field>
 
+        <div className="max-w-md">
+          <Field label="Branch / Location">
+            {ownBranch ? (
+              <input
+                readOnly
+                value={ownBranch.name}
+                aria-label="Branch / Location"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-600"
+              />
+            ) : (
+              <SearchableSelect
+                portal
+                clearable
+                value={form.branchId}
+                onChange={(id) => setForm({ ...form, branchId: id })}
+                options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                placeholder="— Head office (no branch) —"
+              />
+            )}
+          </Field>
+        </div>
+
+        <div className="pt-3 border-t">
+          <FundTransferAttachmentsPanel
+            staged={stagedAttachments}
+            onStagedChange={setStagedAttachments}
+          />
+        </div>
+
         {error && (
           <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
             {error}
@@ -238,7 +297,7 @@ export default function FundTransferForm() {
             disabled={saving}
             className="px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg disabled:opacity-50"
           >
-            {saving ? 'Transferring...' : 'Transfer'}
+            {saving ? 'Transferring' : 'Transfer'}
           </button>
         </div>
       </form>

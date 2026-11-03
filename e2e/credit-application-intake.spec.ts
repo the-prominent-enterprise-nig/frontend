@@ -26,7 +26,7 @@ import { gotoReady, loginAs, clickStable, fillPhoneStable, openCustomSelect } fr
 const DEV_PASSWORD = 'dev-prominent-enterprise-2026'
 const CASHIER_EMAIL = 'technova.b1.cashier@test.com'
 // On the WIP price list with no down payment of its own, so the form's
-// 10% minimum applies and is pre-filled.
+// down payment starts at 10%, pre-filled.
 const ITEM_QUERY = 'STF3238'
 
 const fieldBox = (scope: Page | Locator, label: RegExp) =>
@@ -127,9 +127,6 @@ test.describe('Credit Applications — Cashier intake', () => {
       .locator('input')
       .fill('0')
     await pick(page, fieldBox(page, /^Down payment collection/).getByRole('combobox'), 'Branch')
-    await fieldBox(page, /^POS draft/)
-      .locator('input')
-      .fill(`QT-E2E-${Date.now()}`)
     await pick(page, fieldBox(page, /^Applicant is unit user/).getByRole('combobox'), 'Yes')
     await page.getByRole('checkbox', { name: /Paper form fully complete and signed/ }).check()
 

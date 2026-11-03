@@ -1,52 +1,44 @@
 'use client'
 
 import { useState } from 'react'
-import { X, KeyRound, ShieldCheck } from 'lucide-react'
-import { validatePriceOverrideByPin } from '../../_actions/pos-actions'
+import { X, Check, Tag } from 'lucide-react'
 
 type Props = {
   itemName: string
-  /** Current resolved price, if any — shown as context, not editable directly. */
+  /** The price the line is on now — the resolved one, or the one already typed
+   * over it. Shown as context and used to prefill the field. */
   currentPrice: number | null
+  /** The price-list price the line started from, when it had one — so a
+   * cashier changing an override still sees what list price it is measured
+   * against. */
+  listPrice: number | null
   onClose: () => void
-  onApprove: (result: { managerId: string; managerName: string; newPrice: number }) => void
+  onApply: (newPrice: number) => void
 }
 
-/** PIN-gated manual price override — fills a gap when an item has no
- * matching price-list entry under the selected Price Use, or lets a manager
- * adjust an already-resolved price. Identifies the manager by PIN alone (no
- * User ID to look up or paste) — the backend matches the PIN against every
- * user who actually holds pos:transactions:price_override, same
- * McDonald's-style in-person pattern the discount override already uses. */
-export default function PriceOverrideDialog({ itemName, currentPrice, onClose, onApprove }: Props) {
-  const [pin, setPin] = useState('')
+/** Manual price on one cart line — fills a gap when an item has no matching
+ * price-list entry under the selected Price Use, or replaces a resolved price.
+ * No manager and no PIN: any cashier can apply it. What it needs is a reason
+ * and a note, asked once for the whole sale in the order summary; management
+ * looks at every override in the end-of-day review (Scenario 71). */
+export default function PriceOverrideDialog({
+  itemName,
+  currentPrice,
+  listPrice,
+  onClose,
+  onApply,
+}: Props) {
   const [newPrice, setNewPrice] = useState(currentPrice !== null ? String(currentPrice) : '')
   const [error, setError] = useState('')
-  const [pending, setPending] = useState(false)
 
-  async function handleSubmit() {
+  function handleSubmit() {
     setError('')
-    if (!pin.trim()) {
-      setError("Enter the manager's PIN.")
-      return
-    }
     const priceValue = Number(newPrice)
     if (!newPrice.trim() || Number.isNaN(priceValue) || priceValue < 0) {
       setError('Enter a valid price.')
       return
     }
-    setPending(true)
-    const res = await validatePriceOverrideByPin(pin.trim())
-    setPending(false)
-    if (!res.success || !res.data) {
-      setError(res.error ?? 'Override failed')
-      return
-    }
-    onApprove({
-      managerId: res.data.managerId,
-      managerName: res.data.managerName ?? 'Manager',
-      newPrice: priceValue,
-    })
+    onApply(priceValue)
   }
 
   return (
@@ -56,6 +48,7 @@ export default function PriceOverrideDialog({ itemName, currentPrice, onClose, o
         <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
           <button
             onClick={onClose}
+            aria-label="Close"
             className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
           >
             <X size={18} />
@@ -63,10 +56,10 @@ export default function PriceOverrideDialog({ itemName, currentPrice, onClose, o
 
           <div className="mb-4 flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100">
-              <KeyRound size={18} className="text-amber-600" />
+              <Tag size={18} className="text-amber-600" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-gray-900">Price Override</h2>
+              <h2 className="text-lg font-bold text-prominent-purple-900">Price Override</h2>
               <p className="text-xs text-gray-500">{itemName}</p>
             </div>
           </div>
@@ -83,28 +76,34 @@ export default function PriceOverrideDialog({ itemName, currentPrice, onClose, o
                 step="0.01"
                 className="input font-mono text-sm"
                 placeholder="0.00"
+                aria-label="New unit price"
                 value={newPrice}
                 onChange={(e) => setNewPrice(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
               />
-              {currentPrice !== null && (
-                <p className="mt-1 text-[10px] text-gray-400">
-                  Currently resolved at ₱{currentPrice.toFixed(2)}
+              {listPrice !== null && (
+                <p className="mt-1 text-[11px] text-gray-500">
+                  List price ₱
+                  {listPrice.toLocaleString('en-PH', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                </p>
+              )}
+              {currentPrice !== null && currentPrice !== listPrice && (
+                <p className="mt-0.5 text-[11px] text-gray-500">
+                  Currently ₱
+                  {currentPrice.toLocaleString('en-PH', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
                 </p>
               )}
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-gray-600">Manager PIN</label>
-              <input
-                type="password"
-                inputMode="numeric"
-                maxLength={6}
-                className="input font-mono tracking-widest"
-                placeholder="••••"
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-              />
-            </div>
+            <p className="text-xs text-gray-500">
+              No approval is needed. Pick a reason and add a note in the order summary — management
+              reviews every override at the end of the day.
+            </p>
           </div>
 
           {error && (
@@ -120,11 +119,10 @@ export default function PriceOverrideDialog({ itemName, currentPrice, onClose, o
             </button>
             <button
               onClick={handleSubmit}
-              disabled={pending || !pin.trim()}
-              className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+              className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600"
             >
-              <ShieldCheck size={14} />
-              {pending ? 'Verifying…' : 'Approve Override'}
+              <Check size={14} />
+              Apply Override
             </button>
           </div>
         </div>

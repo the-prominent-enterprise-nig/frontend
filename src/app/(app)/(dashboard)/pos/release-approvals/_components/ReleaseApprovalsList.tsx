@@ -31,6 +31,7 @@ import { PosDateTime } from '../../_components/PosDate'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 interface Props {
   isManager: boolean
@@ -100,7 +101,9 @@ function shortId(id?: string | null): string {
  * backend), or a short request-id-derived code before that (no transaction
  * exists yet for a pending/rejected request). */
 function referenceLabel(req: PosReleaseFormRequest): string {
-  return req.createdTransaction?.transactionNumber ?? `#${req.id.slice(0, 8).toUpperCase()}`
+  return req.createdTransaction
+    ? saleDocNo(req.createdTransaction)
+    : `#${req.id.slice(0, 8).toUpperCase()}`
 }
 
 function cashierLabel(req: PosReleaseFormRequest): string {

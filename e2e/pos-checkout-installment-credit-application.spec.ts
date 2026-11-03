@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, clickStable, fillStable, openCustomSelect } from './utils'
+import { gotoReady, clickStable, fillStable, openCustomSelect, pickCartPriceUse } from './utils'
 
 // Scenario 17, Part 6 — POS installment checkout now requires the customer's
 // approved, unused CreditApplication. This spec sticks to UI-surface checks
@@ -48,7 +48,7 @@ async function addInstallmentLine(page: Page): Promise<void> {
       .click()
     await expect(heading).toHaveCount(0, { timeout: 10_000 })
   }
-  await page.getByLabel('Price Use').first().selectOption({ label: 'WIP' })
+  await pickCartPriceUse(page, 'WIP')
 
   await clickStable(
     page.getByRole('button', { name: 'Installment', exact: true }),
@@ -131,10 +131,15 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
     const branches = ((await branchesRes.json()).data ?? []) as { id: string; name: string }[]
     const branchId = branches.find((b) => b.name === 'Bago')!.id
 
+    // The search is fuzzy (STF3218AS can rank ahead of STF3238), so the item is
+    // picked by its name — the first hit could be a different fan and the
+    // application then would not match the cart.
     const itemsRes = await page.request.get('/api/inventory/items', {
-      params: { search: ITEM_QUERY, limit: '1' },
+      params: { search: ITEM_QUERY, limit: '20' },
     })
-    const items = ((await itemsRes.json()).data ?? []) as { id: string }[]
+    const found = ((await itemsRes.json()).data ?? []) as { id: string; name: string }[]
+    const items = found.filter((i) => i.name.includes(ITEM_QUERY))
+    expect(items.length, `no item named ${ITEM_QUERY}`).toBeGreaterThan(0)
 
     // Scenario 64 item 21 — an application is priced from the Price Use's
     // price list and nothing else, so it has to name one.

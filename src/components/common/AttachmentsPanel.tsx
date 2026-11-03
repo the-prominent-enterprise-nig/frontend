@@ -22,6 +22,9 @@ interface Props {
   title?: string
   description?: string
   readOnly?: boolean
+  /** Whether attached files can be removed; off keeps add-only — proof on a
+   * posted record that may grow but not shrink. Defaults to on. */
+  canRemove?: boolean
   staged?: File[]
   onStagedChange?: (files: File[]) => void
   /** After a file is attached or removed — lets the parent refresh counts. */
@@ -39,6 +42,7 @@ export default function AttachmentsPanel({
   title = 'Attachments',
   description,
   readOnly,
+  canRemove = true,
   staged = [],
   onStagedChange,
   onChanged,
@@ -185,7 +189,7 @@ export default function AttachmentsPanel({
                   <span className="shrink-0 text-zinc-400">(pending save)</span>
                 </span>
               )}
-              {!readOnly && (
+              {!readOnly && canRemove && (
                 <button
                   type="button"
                   onClick={row.onRemove}

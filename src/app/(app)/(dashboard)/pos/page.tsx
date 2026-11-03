@@ -16,7 +16,7 @@ import { useMe } from '@/src/hooks/useMe'
 import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { Skeleton } from '@/src/components/ui/Skeleton'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { type SessionUser } from '@/src/libs/guards/permission'
 import { TransactionDetail } from './_components/TransactionDetail'
 import type { PosTransaction } from '@/src/schema/pos'
@@ -61,7 +61,7 @@ export default function PosOverviewPage() {
   // 'use client' page.tsx with no server-side session prop available.
   const [session, setSession] = useState<SessionUser | null>(null)
   useEffect(() => {
-    getSessionOrNull().then((s) => setSession(s))
+    getSessionIfAvailable().then((s) => setSession(s))
   }, [])
   const [selectedTransaction, setSelectedTransaction] = useState<PosTransaction | null>(null)
 
@@ -357,7 +357,7 @@ export default function PosOverviewPage() {
                 <thead className="border-b border-gray-200 bg-gray-50">
                   <tr>
                     <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
-                      Transaction #
+                      SI / DR #
                     </th>
                     <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                       Type
@@ -377,8 +377,11 @@ export default function PosOverviewPage() {
                       className="cursor-pointer transition-colors hover:bg-gray-50"
                       onClick={() => setSelectedTransaction(tx)}
                     >
+                      {/* The SI / DR number is what staff have in hand; older
+                          sales and refunds carry neither, so those fall back
+                          to the internal transaction number. */}
                       <td className="px-5 py-3 font-mono text-sm font-medium text-gray-800">
-                        {tx.transactionNumber}
+                        {tx.salesInvoiceNumber ?? tx.deliveryReceiptNumber ?? tx.transactionNumber}
                       </td>
                       <td className="px-5 py-3">
                         <span className="capitalize text-gray-600">{tx.transactionType}</span>

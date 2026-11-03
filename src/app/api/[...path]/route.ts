@@ -52,16 +52,57 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
     )
   }
 
+  // Surfaces the endpoints that dominate Fast Origin Transfer in the Vercel
+  // function logs, so oversized list payloads get found instead of guessed at.
+  const upstreamBytes = Number(res.headers.get('content-length'))
+  if (upstreamBytes > LARGE_RESPONSE_WARN_BYTES) {
+    console.warn(
+      `[api proxy] large response: ${req.method} /${path.join('/')} ${(upstreamBytes / 1024 / 1024).toFixed(1)} MB`
+    )
+  }
+
   // Pass through binary (e.g. PDFs) as a stream; everything else as-is
   const respHeaders = new Headers()
   res.headers.forEach((value, key) => {
-    // Don't forward hop-by-hop or encoding headers — they confuse Next
+    // Don't forward hop-by-hop or encoding headers — they confuse Next. Node's
+    // fetch has already decoded the upstream body, so a forwarded
+    // `content-encoding` would describe bytes we are no longer sending.
     if (['transfer-encoding', 'content-encoding', 'content-length'].includes(key.toLowerCase()))
       return
     respHeaders.set(key, value)
   })
 
+  // Because the body above is decoded, everything leaving this function used
+  // to be uncompressed — and every byte of it is billed as Fast Origin Transfer
+  // (function → CDN). Re-compress text responses so list payloads cost a
+  // fraction of that.
+  if (res.body && shouldCompress(req, res)) {
+    respHeaders.set('content-encoding', 'gzip')
+    respHeaders.append('vary', 'Accept-Encoding')
+    return new NextResponse(res.body.pipeThrough(new CompressionStream('gzip')), {
+      status: res.status,
+      headers: respHeaders,
+    })
+  }
+
   return new NextResponse(res.body, { status: res.status, headers: respHeaders })
+}
+
+// JSON / text / CSV only — PDFs, images and the like are already compact or
+// are consumed as-is, and tiny responses aren't worth the CPU.
+const COMPRESSIBLE_TYPE = /^(application\/(json|[\w.+-]+\+json|csv|xml)|text\/)/i
+const MIN_COMPRESS_BYTES = 1024
+const LARGE_RESPONSE_WARN_BYTES = 1024 * 1024
+
+function shouldCompress(req: NextRequest, res: Response): boolean {
+  if (req.method === 'HEAD' || res.status === 204 || res.status === 304) return false
+  if (!/\bgzip\b/i.test(req.headers.get('accept-encoding') ?? '')) return false
+  if (!COMPRESSIBLE_TYPE.test(res.headers.get('content-type') ?? '')) return false
+  // Upstream content-length describes the *compressed* upstream body when the
+  // backend gzips, so it is only a lower bound — good enough to skip the tiny ones.
+  const upstreamLength = Number(res.headers.get('content-length'))
+  if (upstreamLength > 0 && upstreamLength < MIN_COMPRESS_BYTES) return false
+  return true
 }
 
 export const GET = forward

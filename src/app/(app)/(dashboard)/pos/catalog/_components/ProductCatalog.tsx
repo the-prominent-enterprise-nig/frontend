@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, RefreshCw, Search, Tag, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Search, Tag, X } from 'lucide-react'
 import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { Skeleton } from '@/src/components/ui/Skeleton'
@@ -43,7 +43,7 @@ export function ProductCatalog({
   branchId: string | null
   branchName: string | null
 }) {
-  const { data: items, isLoading, isFetching, error, refetch } = usePosCatalog(branchId)
+  const { data: items, isLoading, error } = usePosCatalog(branchId)
   const [search, setSearch] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [tierItem, setTierItem] = useState<PosCatalogItem | null>(null)
@@ -66,24 +66,13 @@ export function ProductCatalog({
 
   return (
     <div className="min-h-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Product Catalog</h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Browse brands, models, prices and stock. Stock and prices are for{' '}
-              {branchName ?? 'your branch'}.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-50"
-          >
-            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Product Catalog</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Browse brands, models, prices and stock. Stock and prices are for{' '}
+            {branchName ?? 'your branch'}.
+          </p>
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

@@ -26,6 +26,7 @@ import type {
 import { PosDateTime } from '../../_components/PosDate'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { Skeleton } from '@/src/components/ui/Skeleton'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 interface Props {
   isManager: boolean
@@ -97,7 +98,7 @@ function customerLabel(req: PosReturnRefundRequest): string {
 /** Void requests are transaction-based (no cart snapshot); refund/cancellation
  * are cart-snapshot based. Reference reads whichever the row type has. */
 function referenceLabel(req: PosReturnRefundRequest): string {
-  if (req.transaction) return req.transaction.transactionNumber
+  if (req.transaction) return saleDocNo(req.transaction)
   const line = primaryLine(req)
   return line?.itemName ?? '—'
 }
@@ -409,7 +410,7 @@ export default function ReturnRefundApprovalsList({ isManager }: Props) {
                   <div className="flex justify-between">
                     <span className="text-gray-500">Transaction</span>
                     <span className="text-gray-900 font-mono text-xs">
-                      {detailTarget.transaction.transactionNumber}
+                      {saleDocNo(detailTarget.transaction)}
                     </span>
                   </div>
                 )}

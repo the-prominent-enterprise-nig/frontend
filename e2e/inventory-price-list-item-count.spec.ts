@@ -24,7 +24,7 @@ test.describe('Inventory — Price Lists — item count', () => {
     expect(listRes.ok()).toBeTruthy()
     const listId = (await listRes.json()).id as string
 
-    await gotoReady(page, '/inventory/price-lists')
+    await gotoReady(page, '/pos/catalog/price-lists')
     const row = page.getByRole('row').filter({ hasText: listName })
     await expect(row).toContainText('0 items priced')
 

@@ -1,22 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
-import { Plus, Loader2, Send, Search, X } from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
+import { Plus, Loader2, Search, X } from 'lucide-react'
 import { usePurchaseRequests } from '../_hooks/usePurchaseRequests'
-import { usePurchaseOrders } from '../../purchase-orders/_hooks/usePurchaseOrders'
+import {
+  usePurchaseRequestActions,
+  type PurchaseRequestActions,
+} from '../_hooks/usePurchaseRequestActions'
 import { CreatePoModal } from '../../purchase-orders/_components/CreatePoModal'
-import { ConvertPrToPoModal } from './ConvertPrToPoModal'
-import { ViewPurchaseRequestModal } from './ViewPurchaseRequestModal'
-import { getPurchaseRequest } from '../_actions/get-purchase-request'
-import { ConfirmActionModal } from '@/src/components/inventory/ConfirmActionModal'
+import { procurementHref } from '../../purchase-orders/_lib/procurementHref'
 import Tooltip from '@/src/components/ui/Tooltip'
-import { hasPermission } from '@/src/hooks/usePermission'
-import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-requests'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
+import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // Same #5b21b6 palette as procurementTokens/PurchaseOrderList —
@@ -126,11 +124,62 @@ export function PrimaryBtn({
   )
 }
 
-const fmtPHP = (n: number): string =>
+/** A request's next steps — draft: Edit / Submit / Cancel; submitted:
+ * Convert to PO / Cancel. Shared with the Purchase Orders list's open
+ * requests section. */
+export function PrRowActions({
+  pr,
+  actions,
+}: {
+  pr: PurchaseRequestSummary
+  actions: PurchaseRequestActions
+}): React.ReactElement | null {
+  const { can, busy } = actions
+  const cancelBtn = can.cancel && (
+    <OutlineBtn
+      label="Cancel"
+      tone="red"
+      onClick={() => actions.cancel(pr)}
+      disabled={busy.cancelling}
+    />
+  )
+  if (pr.status === 'draft') {
+    return (
+      <>
+        {can.edit && <OutlineBtn label="Edit" onClick={() => actions.edit(pr)} />}
+        {can.create && (
+          <PrimaryBtn
+            label="Submit"
+            onClick={() => actions.submit(pr)}
+            disabled={busy.submitting}
+          />
+        )}
+        {cancelBtn}
+      </>
+    )
+  }
+  if (pr.status === 'submitted') {
+    return (
+      <>
+        {can.convert && (
+          <PrimaryBtn
+            label="Convert to PO"
+            onClick={() => actions.convert(pr)}
+            disabled={busy.converting}
+          />
+        )}
+        {cancelBtn}
+      </>
+    )
+  }
+  return null
+}
+
+export const fmtPHP = (n: number): string =>
   n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
 
 /** en-PH numeric date — same short form the PO list's fmtDate uses. */
-function fmtDate(iso: string): string {
+export function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-PH', {
     month: 'short',
     day: 'numeric',
@@ -141,7 +190,7 @@ function fmtDate(iso: string): string {
 // Same freebie-excluding qty*unitPrice sum CreatePoModal/PurchaseOrderFormFields
 // use for the create-form subtotal — a PR now carries firm per-line pricing,
 // same as a PO would.
-function prTotal(pr: PurchaseRequestSummary): number {
+export function prTotal(pr: PurchaseRequestSummary): number {
   return pr.lines.reduce((sum, line) => {
     if (line.isFreebie) return sum
     const qty = Number(line.quantity) || 0
@@ -151,11 +200,6 @@ function prTotal(pr: PurchaseRequestSummary): number {
 }
 
 export function PurchaseRequestList({ session }: { session: SessionUser }) {
-  const canCreate = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_CREATE)
-  const canEdit = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_UPDATE)
-  const canCancel = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_CANCEL)
-  const canConvert = hasPermission(session, PROCUREMENT_PERMISSIONS.PO_CREATE)
-
   const {
     items,
     pagination,
@@ -168,52 +212,15 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
     setPage,
     createPR,
     isCreating,
-    updatePR,
-    isUpdating,
-    submitPR,
-    isSubmitting,
-    cancelPR,
-    isCancelling,
   } = usePurchaseRequests()
-
-  const { convertFromPr, isConverting } = usePurchaseOrders()
+  // A submit that auto-converted stays here, on the Converted tab.
+  const actions = usePurchaseRequestActions(session, undefined, () => setStatusFilter('converted'))
+  const canCreate = actions.can.create
 
   const [searchFocus, setSearchFocus] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingPr, setEditingPr] = useState<PurchaseRequestSummary | null>(null)
-  const [submittingPr, setSubmittingPr] = useState<PurchaseRequestSummary | null>(null)
-  const [convertingPr, setConvertingPr] = useState<PurchaseRequestSummary | null>(null)
-  const [viewingPr, setViewingPr] = useState<PurchaseRequestSummary | null>(null)
-
-  // Deep link from the PO list's Source column (?pr=<id>). Fetched on its own
-  // rather than looked up in `items`: the PR behind a PO is converted, which
-  // the default tab hides and which may sit pages into the Converted one.
   const router = useRouter()
   const pathname = usePathname()
-  const searchParams = useSearchParams()
-  const linkedPrId = searchParams.get('pr')
-  const linkedPrQuery = useQuery({
-    queryKey: ['purchase-request', linkedPrId],
-    queryFn: () => getPurchaseRequest(linkedPrId as string),
-    enabled: !!linkedPrId,
-  })
-
-  // Derived rather than copied into state by an effect: the linked request IS
-  // the open one until the reader closes it, and mirroring it into `viewingPr`
-  // would just be two sources of truth for the same modal.
-  const viewedPr = viewingPr ?? (linkedPrId ? (linkedPrQuery.data ?? null) : null)
-  const closeViewedPr = (): void => {
-    setViewingPr(null)
-    // Drop the param on close, so it doesn't reopen on the next render or
-    // fight the reader after a refresh. Rebuilt from the current URL rather
-    // than hard-coded: this list renders both inside the procurement hub
-    // (where ?tab=requests has to survive) and on its own route.
-    if (!linkedPrId) return
-    const rest = new URLSearchParams(searchParams.toString())
-    rest.delete('pr')
-    const query = rest.toString()
-    router.replace(query ? `${pathname}?${query}` : pathname)
-  }
 
   const isNoResults = !isLoading && items.length === 0
   const filtersActive = statusFilter !== undefined || search !== ''
@@ -228,9 +235,9 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
         {/* ── Header ───────────────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
-            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Stock Requests</h1>
-            <p className="text-[13px] text-[#5b5b6b]">
-              Manage and track stock requests across your organisation
+            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Purchase Requests</h1>
+            <p className="text-[13px] text-[#4b4b5a]">
+              Manage and track purchase requests across your organisation
             </p>
           </div>
           {canCreate && (
@@ -240,7 +247,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
               className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-4 py-[9px] text-[13px] font-medium text-white hover:bg-[#4a189b]"
             >
               <Plus className="h-4 w-4" />
-              New Stock Request
+              New Purchase Request
             </button>
           )}
         </div>
@@ -255,7 +262,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
               searchFocus ? CONTROL_CHROME.focused : CONTROL_CHROME.idle
             }`}
           >
-            <Search className="h-3.25 w-3.25 shrink-0 text-[#8b8b9b]" />
+            <Search className="h-3.25 w-3.25 shrink-0 text-[#6f6f7f]" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -270,7 +277,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                   type="button"
                   onClick={() => setSearch('')}
                   aria-label="Clear search"
-                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
+                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[#6f6f7f] hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -285,6 +292,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                 <button
                   key={tab.label}
                   type="button"
+                  aria-pressed={on}
                   onClick={() => setStatusFilter(tab.value)}
                   className={`rounded-[20px] border px-3 py-[6px] text-[12.5px] transition-colors ${
                     on
@@ -314,16 +322,16 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
         <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
           {isLoading ? (
             <div className="flex items-center justify-center py-16">
-              <Loader2 className="h-6 w-6 animate-spin text-[#a3a3b2]" />
+              <Loader2 className="h-6 w-6 animate-spin text-[#8e8e9d]" />
             </div>
           ) : isNoResults ? (
             filtersActive ? (
               <div className="flex flex-col items-center gap-2 px-6 py-11 text-center">
                 <div className="h-[30px] w-[30px] rounded-lg border border-[#e4e4e9] bg-[#fbfbfc]" />
                 <div className="mt-1 text-[14px] font-semibold">
-                  No stock requests match your filters
+                  No purchase requests match your filters
                 </div>
-                <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+                <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#4b4b5a]">
                   {search
                     ? `Nothing matches “${search}”. Check the PR number, or search by supplier or item instead.`
                     : 'No requests match the status filter you have applied. Clear it to see more.'}
@@ -339,9 +347,9 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
             ) : (
               <div className="flex flex-col items-center gap-2 px-6 py-13 text-center">
                 <div className="h-[34px] w-[34px] rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb]" />
-                <div className="mt-1 text-[15px] font-semibold">No stock requests yet</div>
-                <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
-                  Stock requests appear here once someone raises one. Submitted requests convert
+                <div className="mt-1 text-[15px] font-semibold">No purchase requests yet</div>
+                <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#4b4b5a]">
+                  Purchase requests appear here once someone raises one. Submitted requests convert
                   into a purchase order automatically.
                 </div>
                 {canCreate && (
@@ -350,7 +358,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                     onClick={() => setShowCreateModal(true)}
                     className="mt-3.5 rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-medium text-white hover:bg-[#4a189b]"
                   >
-                    + New Stock Request
+                    + New Purchase Request
                   </button>
                 )}
               </div>
@@ -359,9 +367,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr
-                    className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
-                  >
+                  <tr className={`${STOCK_TABLE_HEAD} border-b border-[#eeeef1] bg-[#fbfbfc]`}>
                     <th className="px-4 py-[9px] text-left">Code</th>
                     <th className="px-4 py-[9px] text-left">Supplier</th>
                     <th className="px-4 py-[9px] text-left">Status</th>
@@ -376,7 +382,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                   {items.map((pr) => (
                     <tr
                       key={pr.id}
-                      onClick={() => setViewingPr(pr)}
+                      onClick={() => actions.view(pr)}
                       className="cursor-pointer transition-colors hover:bg-[#fcfcfd]"
                     >
                       <td className="px-4 py-[11px]">
@@ -384,19 +390,19 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                           {pr.code}
                         </span>
                         {pr.reason && (
-                          <p className="mt-0.5 line-clamp-1 text-[11px] text-[#8b8b9b]">
+                          <p className="mt-0.5 line-clamp-1 text-[11px] text-[#6f6f7f]">
                             {pr.reason}
                           </p>
                         )}
                       </td>
                       <td className="px-4 py-[11px] text-[12.5px] text-[#3d3d4a]">
-                        {pr.supplier?.name ?? <span className="text-[#a3a3b2]">—</span>}
+                        {pr.supplier?.name ?? <span className="text-[#8e8e9d]">—</span>}
                       </td>
                       <td className="px-4 py-[11px]">
                         <StatusBadge status={pr.status} />
                       </td>
                       <td className="px-4 py-[11px] text-[12.5px] text-[#3d3d4a]">
-                        {pr.branch?.name ?? <span className="text-[#a3a3b2]">—</span>}
+                        {pr.branch?.name ?? <span className="text-[#8e8e9d]">—</span>}
                       </td>
                       <td className={`${MONO} px-4 py-[11px] text-[12.5px] text-[#3d3d4a]`}>
                         {pr.lines.length}
@@ -406,52 +412,12 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                       >
                         {fmtPHP(prTotal(pr))}
                       </td>
-                      <td className="px-4 py-[11px] text-[11.5px] text-[#8b8b9b]">
+                      <td className="px-4 py-[11px] text-[11.5px] text-[#6f6f7f]">
                         {fmtDate(pr.createdAt)}
                       </td>
                       <td className="px-4 py-[11px]" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-2">
-                          {pr.status === 'draft' && (
-                            <>
-                              {canEdit && (
-                                <OutlineBtn label="Edit" onClick={() => setEditingPr(pr)} />
-                              )}
-                              {canCreate && (
-                                <PrimaryBtn
-                                  label="Submit"
-                                  onClick={() => setSubmittingPr(pr)}
-                                  disabled={isSubmitting}
-                                />
-                              )}
-                              {canCancel && (
-                                <OutlineBtn
-                                  label="Cancel"
-                                  tone="red"
-                                  onClick={() => cancelPR(pr.id)}
-                                  disabled={isCancelling}
-                                />
-                              )}
-                            </>
-                          )}
-                          {pr.status === 'submitted' && (
-                            <>
-                              {canConvert && (
-                                <PrimaryBtn
-                                  label="Convert to PO"
-                                  onClick={() => setConvertingPr(pr)}
-                                  disabled={isConverting}
-                                />
-                              )}
-                              {canCancel && (
-                                <OutlineBtn
-                                  label="Cancel"
-                                  tone="red"
-                                  onClick={() => cancelPR(pr.id)}
-                                  disabled={isCancelling}
-                                />
-                              )}
-                            </>
-                          )}
+                          <PrRowActions pr={pr} actions={actions} />
                           {/* A real link straight to the PO's own detail
                               view (?po=<id>, which PurchaseOrderList opens
                               automatically) — safe to click on its own even
@@ -465,7 +431,9 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                               type="button"
                               onClick={() =>
                                 router.push(
-                                  `/inventory/purchase-orders?tab=orders&po=${pr.convertedToPo?.id}`
+                                  procurementHref(pathname, 'orders', {
+                                    po: pr.convertedToPo?.id ?? '',
+                                  })
                                 )
                               }
                               title={`Open ${pr.convertedToPo.code}`}
@@ -482,14 +450,16 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
               </table>
 
               {/* ── Pagination ─────────────────────────────────────────────── */}
-              {pagination.totalPages > 1 && (
+              {/* The count always shows; the buttons only once there is a
+                  second page to go to. */}
+              {pagination.total > 0 && (
                 <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
-                  <span className="text-[11.5px] text-[#8b8b9b]">
+                  <span className="text-[11.5px] text-[#6f6f7f]">
                     Showing {(page - 1) * pagination.limit + 1}–
                     {Math.min(page * pagination.limit, pagination.total)} of {pagination.total}{' '}
-                    requests
+                    {pagination.total === 1 ? 'request' : 'requests'}
                   </span>
-                  <div className="flex gap-1">
+                  <div className={`flex gap-1 ${pagination.totalPages > 1 ? '' : 'hidden'}`}>
                     <button
                       type="button"
                       onClick={() => setPage(page - 1)}
@@ -526,75 +496,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
         currentUserBranchId={session.branchId}
       />
 
-      <CreatePoModal
-        open={!!editingPr}
-        onClose={() => setEditingPr(null)}
-        pr={editingPr}
-        onUpdate={async (id, data) => {
-          await updatePR(id, data)
-          setEditingPr(null)
-        }}
-        isSaving={isUpdating}
-        currentUserBranchId={session.branchId}
-      />
-
-      <ConfirmActionModal
-        open={submittingPr !== null}
-        onClose={() => setSubmittingPr(null)}
-        title="Submit Stock Request"
-        icon={<Send className="h-5 w-5" />}
-        iconColorClass="text-[#5b21b6]"
-        summary={<p className="text-sm font-medium text-zinc-900">{submittingPr?.code}</p>}
-        message="This sends the stock request into the approval queue — you won't be able to edit it as a draft afterward."
-        confirmLabel="Submit"
-        confirmingLabel="Submitting…"
-        confirmButtonClass="bg-[#5b21b6] hover:bg-[#4a189b]"
-        onConfirm={async () => {
-          if (submittingPr) await submitPR(submittingPr.id)
-        }}
-        isConfirming={isSubmitting}
-      />
-
-      <ConvertPrToPoModal
-        open={!!convertingPr}
-        onClose={() => setConvertingPr(null)}
-        pr={convertingPr}
-        onConvert={async (prId, data) => {
-          await convertFromPr(prId, data)
-          setConvertingPr(null)
-        }}
-        isConverting={isConverting}
-      />
-
-      <ViewPurchaseRequestModal
-        open={!!viewedPr}
-        onClose={closeViewedPr}
-        pr={viewedPr}
-        canEdit={canEdit}
-        canSubmit={canCreate}
-        canCancel={canCancel}
-        canConvert={canConvert}
-        onEdit={(pr) => {
-          closeViewedPr()
-          setEditingPr(pr)
-        }}
-        onSubmit={(pr) => {
-          closeViewedPr()
-          setSubmittingPr(pr)
-        }}
-        onCancel={(pr) => {
-          closeViewedPr()
-          cancelPR(pr.id)
-        }}
-        onConvert={(pr) => {
-          closeViewedPr()
-          setConvertingPr(pr)
-        }}
-        onViewPo={(poId) => {
-          closeViewedPr()
-          router.push(`/inventory/purchase-orders?tab=orders&po=${poId}`)
-        }}
-      />
+      {actions.modals}
     </div>
   )
 }

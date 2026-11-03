@@ -2,7 +2,7 @@
 
 import { api, type ApiResponse } from '@/src/libs/api/client'
 import { GenerateBarcodeFormSchema } from '@/src/schema/inventory/barcodes'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
@@ -10,7 +10,7 @@ export async function generateBarcode(
   itemId: string,
   input: unknown
 ): Promise<ApiResponse<unknown>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   if (!can(session, INVENTORY_PERMISSIONS.BARCODES_MANAGE)) {
     return {

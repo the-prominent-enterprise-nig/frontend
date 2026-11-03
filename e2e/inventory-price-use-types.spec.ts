@@ -19,7 +19,7 @@ const NAME_PREFIX = 'E2E Price Use Type — '
 // row too — an unscoped page-wide row query can match both, so callers that
 // look up a category's row must search within this scope, not the whole page.
 async function openPriceUseTypesDrawer(page: import('@playwright/test').Page) {
-  await gotoReady(page, '/inventory/price-lists')
+  await gotoReady(page, '/pos/catalog/price-lists')
   // The drawer anchors its content to the right edge of the screen, which
   // lands on top of the React Query Devtools toggle button's oversized
   // hover-glow hit region (dev-mode only, bottom-right corner) — hide it so
@@ -150,7 +150,7 @@ test.describe('Inventory — Price Use Types', () => {
     const listName = `E2E PL Inline Type Test ${Date.now()}`
     const typeName = `${NAME_PREFIX}${Date.now()}`
 
-    await gotoReady(page, '/inventory/price-lists')
+    await gotoReady(page, '/pos/catalog/price-lists')
     await clickStable(
       page.getByRole('button', { name: 'New Price List' }),
       page.getByRole('heading', { name: 'New Price List' })
@@ -277,7 +277,7 @@ test.describe('Inventory — Price Use Types — RBAC', () => {
     page,
   }) => {
     await loginAs(page, ACCOUNTANT_EMAIL, PASSWORD)
-    await gotoReady(page, '/inventory/price-lists')
+    await gotoReady(page, '/pos/catalog/price-lists')
     await expect(page).toHaveURL(/\/403$/, { timeout: 10_000 })
   })
 })

@@ -5,7 +5,7 @@ import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { CashInTransitList } from './_components/CashInTransitList'
 
-export const metadata = { title: 'Undeposited Funds | NIG Central' }
+export const metadata = { title: 'Collected Funds History | NIG Central' }
 
 export default async function CashInTransitPage() {
   const session = await getSessionOrNull()
@@ -18,27 +18,25 @@ export default async function CashInTransitPage() {
     redirect('/403')
   }
 
-  // Scenario 53 — "POS cannot deposit, only accountant". The deposit is an
-  // Accounting capability, so this reads the accounting permission rather than
-  // the POS one. Scenario 61 Part 5 (2026-10-02): only accounting deposits —
-  // the Accountant and Business Owner; the Branch Manager and Cashier see the
-  // balances and each deposit's status but cannot record or clear one.
+  // 2026-10-23 (client decision) — the Cashier records the branch's
+  // deposits and the Accountant has view access. Recording one posts it, so
+  // canVerify only matters for a draft left from before that change.
   const canManage = can(session, ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_MANAGE)
-  // Scenario 61 Part 5 — only accounting deposits: recording a draft (manage)
-  // and clearing it (verify) are both accounting's.
   const canVerify = can(session, ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_VERIFY)
+  const canCorrect = can(session, ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_CORRECT)
 
-  // A branch-assigned caller (Branch Manager) is restricted to their own
-  // branch server-side too (BankAccountsService.clearCashInTransit() and
+  // A branch-assigned caller (the Cashier, a Branch Manager) is restricted to
+  // their own branch server-side too (PosDepositsService and
   // SessionsService.getCashInTransitReport() both force this regardless of
   // what's submitted).
   const restrictedBranchId = session.branchId ?? null
 
   return (
     <CashInTransitList
-      title="Undeposited Funds"
+      title="Collected Funds History"
       canManage={canManage}
       canVerify={canVerify}
+      canCorrect={canCorrect}
       restrictedBranchId={restrictedBranchId}
       isUnrestricted={restrictedBranchId === null}
     />

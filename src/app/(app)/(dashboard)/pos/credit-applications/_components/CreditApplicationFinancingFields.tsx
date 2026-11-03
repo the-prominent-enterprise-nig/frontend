@@ -24,7 +24,11 @@ import {
 import { DEFAULT_VAT_RATE } from '../../_actions/pos-constants'
 import { Select } from '@/src/components/ui/Select'
 import type { FinancingTerm, InstallmentPreview } from '@/src/schema/pos'
-import { DOWN_PAYMENT_FLOOR_RATE, isCardTerm } from '@/src/libs/constants/financing'
+import {
+  DOWN_PAYMENT_FLOOR_LABEL,
+  DOWN_PAYMENT_FLOOR_RATE,
+  isCardTerm,
+} from '@/src/libs/constants/financing'
 
 function formatPeso(n: number): string {
   return `₱${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -223,55 +227,51 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     resolvedItemsList.every((r) => isCardTerm(r, selectedTermMonths))
       ? Math.round(curatedDownPaymentSum * 100) / 100
       : null
-  // The live preview's single previewInstallment() call only takes one
-  // priceListItemId, so curation there is scoped to the common single-item
-  // application — a multi-item bundle keeps the generic preview on screen,
-  // same as before. (The final numbers actually saved on submit ARE
-  // curated for a fully-curated multi-item bundle too — that's done
-  // server-side in resolveFinancing(), which sums each item's own curated
-  // term instead of needing one shared priceListItemId.)
+  // A single item is previewed from its own rate-card row. A bundle sends
+  // every item's row and the server sums their monthly installments and PPD
+  // rebates (FinancingTermsService.preview), the same all-or-nothing rule
+  // resolveFinancing() applies when the application is saved: one item off
+  // the card and the whole bundle falls back to the generic figure, with no
+  // rebate quoted. So the figures shown here match the ones that get stored.
   const soloPriceListItemId =
     resolvedItemsList.length === 1
       ? (resolvedItemsList[0]?.priceListItemId ?? undefined)
       : undefined
+  const bundlePriceListItemIds =
+    resolvedItemsList.length > 1 && resolvedItemsList.every((r) => !!r?.priceListItemId)
+      ? resolvedItemsList.map((r) => r!.priceListItemId as string)
+      : undefined
+  // A string for the effect's dependencies, like itemIdsKey above.
+  const bundlePriceListItemKey = bundlePriceListItemIds?.join(',') ?? ''
 
-  // Checkout measures its own 10% against the TAX-EFFECTIVE line amount,
-  // while these prices come straight off the price list. Under exclusive
-  // pricing that makes the sale's floor ~12% higher than the application's,
-  // so an application approved at exactly its own floor was rejected at the
-  // till ("down payment must be at least the floor % of its sale amount") on an
-  // application the server had already accepted. Work the floor out on the
-  // same basis the sale will use, so what is approved is sellable.
+  // The figure a down payment STARTS at (10%). It is only a starting point —
+  // there is no minimum (client, 2026-10-20: "can be below the required but
+  // never 0"), any amount above 0 is accepted, as at checkout.
   //
-  // The stricter basis is used even though a tax-exempt customer would be
-  // charged the lower one: erring high means the collector takes a little
-  // more up front, which never blocks a sale, while erring low blocks it
-  // outright.
+  // Worked out on the same basis checkout starts from, its TAX-EFFECTIVE line
+  // amount rather than the ex-tax price list figure, so the same sale opens at
+  // the same number on both screens.
   const floorBasis = inclusivePricing
     ? estimatedTotal
     : estimatedTotal * (1 + DEFAULT_VAT_RATE.rate / 100)
   const downPaymentFloor = floorBasis * DOWN_PAYMENT_FLOOR_RATE
 
-  // The floor is checked in the schema, which can only see form state — so
-  // both figures have to live there too, not just in this component.
+  // The down payment is checked in the schema, which can only see form state
+  // — so the figures it checks against have to live there too.
   useEffect(() => {
     setValue('resolvedItemTotal' as Path<T>, estimatedTotal as never, { shouldDirty: false })
-    setValue('downPaymentFloor' as Path<T>, downPaymentFloor as never, { shouldDirty: false })
     setValue('downPaymentFixed' as Path<T>, (fixedDownPayment ?? undefined) as never, {
       shouldDirty: false,
     })
-  }, [estimatedTotal, downPaymentFloor, fixedDownPayment, setValue])
+  }, [estimatedTotal, fixedDownPayment, setValue])
 
   // Seed Down Payment with the curated rate-card down payment when the
   // whole bundle resolved to one (real NIG rate card figure, e.g. ₱3,590 —
-  // not necessarily 10%), falling back to the 10% floor as a real value
-  // rather than a greyed-out hint (review feedback, 2026-09-19) when no
-  // curated figure applies. The hint vanished the moment anything was
-  // typed, so nothing on screen held the collector to the minimum and the
-  // first genuine check was a generic banner after submit. Re-seeds when
-  // the term or the seed value changes, but never overwrites a figure
-  // already entered — the collector is free to take more up front, and the
-  // schema refuses less.
+  // not necessarily 10%), falling back to 10% as a real value rather than a
+  // greyed-out hint (review feedback, 2026-09-19) when no curated figure
+  // applies. Re-seeds when the term or the seed value changes, but never
+  // overwrites a figure already entered — the collector is free to take more
+  // or less up front, as long as it is above 0.
   //
   // A down payment the card fixes for this term is written whatever the
   // field holds — there is nothing to choose — and the field is read-only.
@@ -346,6 +346,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
         downPayment,
         financingTermId,
         priceListItemId: soloPriceListItemId,
+        priceListItemIds: bundlePriceListItemIds,
       }).then((res) => {
         if (cancelled) return
         setPreviewLoading(false)
@@ -361,7 +362,16 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
       cancelled = true
       clearTimeout(timer)
     }
-  }, [estimatedTotal, financingTermId, downPaymentInput, soloPriceListItemId])
+    // bundlePriceListItemKey stands in for the array, whose identity changes
+    // on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    estimatedTotal,
+    financingTermId,
+    downPaymentInput,
+    soloPriceListItemId,
+    bundlePriceListItemKey,
+  ])
 
   const selectedTerm = financingTerms.find((t) => t.id === financingTermId)
   // Labels the total with whichever Price Use it was actually priced under,
@@ -381,10 +391,12 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
   //   First due date the first line of the installment schedule the preview
   //                  already computes and shows below.
   //   PPD rebate     the curated rate card's own PriceListItemTerm.ppd, which
-  //                  the preview endpoint already returns. Absent on the
-  //                  generic factor-rate path, where no rate card exists to
-  //                  quote one — left blank there rather than filled with 0,
-  //                  which would claim a rebate of nothing.
+  //                  the preview endpoint already returns — for several items,
+  //                  the SUM of each item's. Absent on the generic factor-rate
+  //                  path, where no rate card exists to quote one (or when any
+  //                  one item of a bundle is off the card) — left blank there
+  //                  rather than filled with 0, which would claim a rebate of
+  //                  nothing. The box is optional either way.
   //
   // A filled-in figure follows the item and term it came from, but only
   // while it is still the system's: a transcriber who typed a figure off the
@@ -527,18 +539,19 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
                 type="text"
                 inputMode="decimal"
                 readOnly={fixedDownPayment != null}
-                placeholder={
-                  fixedDownPayment == null && downPaymentFloor > 0
-                    ? `Min. ${formatPeso(downPaymentFloor)}`
-                    : '0.00'
-                }
+                placeholder={fixedDownPayment == null ? 'Any amount above 0' : '0.00'}
                 className={`${fieldClass} ${fixedDownPayment != null ? 'bg-zinc-50 text-zinc-700' : ''}`}
               />
             )}
           />
-          {fixedDownPayment != null && (
+          {fixedDownPayment != null ? (
             <p className="mt-1 text-xs text-zinc-500">
               Set by the price list for this term — the monthly installment is calculated from it.
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-zinc-500">
+              Starts at {DOWN_PAYMENT_FLOOR_LABEL} — set it lower if the applicant agrees, but not
+              to 0.
             </p>
           )}
           {downPaymentError && <p className="mt-1 text-xs text-red-600">{downPaymentError}</p>}

@@ -27,6 +27,7 @@ export function SupplierDebitMemoDetail({
         <Fact label="DR No." value={memo.deliveryReceiptNumber ?? '—'} />
         <Fact label="Journal entry" value={memo.journalEntryId ? 'Posted' : 'Not posted'} />
         <Fact label="Reason" value={memo.reason ?? '—'} />
+        <Fact label="Applied to" value={appliedTo(memo)} />
       </dl>
 
       <table className="w-full text-xs">
@@ -70,6 +71,17 @@ export function SupplierDebitMemoDetail({
       {children && <div className="mt-3">{children}</div>}
     </>
   )
+}
+
+/** Scenario 72 Part 8 — a memo names no invoice until an AP voucher applies
+ * it; until then it sits in Due from Suppliers. */
+function appliedTo(memo: SupplierDebitMemo): string {
+  const voucher = memo.appliedDeduction?.disbursement.voucherNumber
+  if (memo.apBill) {
+    const bill = memo.apBill.billNumber ?? 'SI not yet numbered'
+    return voucher ? `${bill} (voucher ${voucher})` : bill
+  }
+  return memo.status === 'FINAL' ? 'Not yet applied — Due from Suppliers' : '—'
 }
 
 function Fact({ label, value }: { label: string; value: string }) {

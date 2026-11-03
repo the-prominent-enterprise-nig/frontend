@@ -5,11 +5,10 @@ import { gotoReady } from './utils'
 // requests.spec.ts: a fully-specified Purchase Request (supplier + priced
 // lines already set) auto-converts into a real PO the moment it's submitted
 // (PurchaseRequestService.submit()) — there's no separate PR-level approval
-// step anymore (the PO has its own, further down the pipeline). The PR then
-// drops out of the default (non-'converted') Purchase Requests list by
-// design (see that service's findAll()) — this proves the submitter is
-// followed to the Purchase Orders tab, where the new PO actually landed,
-// instead of being left looking at a list the record just vanished from.
+// step anymore (the PO has its own, further down the pipeline). The submitter
+// stays on Purchase Requests, moved to its Converted tab, where the request
+// shows the PO it became and that PO's status (Pending, until approved) —
+// rather than being sent to an Orders list they may not be the one acting on.
 
 async function pickFirstOption(page: Page, inputPlaceholder: string): Promise<void> {
   const input = page.getByPlaceholder(inputPlaceholder)
@@ -23,9 +22,7 @@ async function pickFirstOption(page: Page, inputPlaceholder: string): Promise<vo
 }
 
 test.describe('Inventory — submitting a fully-specified Purchase Request', () => {
-  test('auto-converts to a PO and follows the submitter to the Purchase Orders tab', async ({
-    page,
-  }) => {
+  test('auto-converts to a PO and moves the submitter to the Converted tab', async ({ page }) => {
     await gotoReady(page, '/inventory/purchase-orders?tab=requests')
     const tabNav = page.getByLabel('Module tabs')
     await expect(tabNav.getByRole('link', { name: 'Purchase Requests' })).toBeVisible({
@@ -64,16 +61,23 @@ test.describe('Inventory — submitting a fully-specified Purchase Request', () 
       timeout: 10_000,
     })
 
-    // The fix under test: this PR has a supplier and fully priced lines
-    // already, so submit() auto-converts it in the same request — the URL
-    // follows the record to where it now lives, no separate approval click.
-    await expect(page).toHaveURL(/[?&]tab=orders/, { timeout: 15_000 })
-    await expect(tabNav.getByRole('link', { name: 'Purchase Orders' })).toBeVisible()
-
-    const poRow = page.locator('tbody tr').first()
-    await expect(poRow).toContainText('₱1,200.00', { timeout: 15_000 })
+    // The behaviour under test: this PR has a supplier and fully priced lines
+    // already, so submit() auto-converts it in the same request — and the
+    // submitter stays on Requests, on its Converted tab.
+    await expect(page.getByRole('button', { name: 'Converted', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+      { timeout: 15_000 }
+    )
+    await expect(page).toHaveURL(/[?&]tab=requests/)
+    const convertedRow = page.locator('tbody tr', { hasText: prCode as string })
+    await expect(convertedRow).toContainText(/converted/i, { timeout: 15_000 })
+    await expect(convertedRow).toContainText(/PO-/)
 
     // Cleanup — cancel the new PO (no hard delete via the UI).
+    await gotoReady(page, '/inventory/purchase-orders?tab=orders')
+    const poRow = page.locator('tbody tr').first()
+    await expect(poRow).toContainText('₱1,200.00', { timeout: 15_000 })
     await poRow.locator('button:has(svg.lucide-ban)').click()
     await expect(page.getByRole('heading', { name: 'Cancel Purchase Order' })).toBeVisible({
       timeout: 10_000,

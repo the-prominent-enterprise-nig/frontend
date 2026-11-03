@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, ChevronDown, Download, Loader2 } from 'lucide-react'
 import {
   ARInvoices,
@@ -18,6 +19,8 @@ import CollectionReceiptSheet, {
   CollectionReceiptDocumentSheet,
   type CollectionReceiptDocument,
 } from '../../_components/CollectionReceiptSheet'
+import RetentionPanel from './RetentionPanel'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 // Mirrors ARInvoicesList's own INVOICE_STATUS_BADGE — kept local rather
 // than imported from there so this page doesn't pull in that file's much
@@ -46,10 +49,11 @@ function dueStatus(d: ARInvoiceDue, isNext: boolean): { label: string; className
   dueDay.setHours(0, 0, 0, 0)
   if (dueDay.getTime() < startOfToday.getTime())
     return { label: 'Overdue', className: 'bg-red-50 text-red-700' }
-  // "Due" is the one being collected NEXT, not merely one whose date has
+  // "To pay" is the one being collected NEXT, not merely one whose date has
   // arrived — collections settle oldest-first, so exactly one open due is
   // ever the live one. Everything behind it is simply Upcoming.
-  if (isNext) return { label: 'Due', className: 'bg-prominent-purple-50 text-prominent-purple-700' }
+  if (isNext)
+    return { label: 'To pay', className: 'bg-prominent-purple-50 text-prominent-purple-700' }
   return { label: 'Upcoming', className: 'bg-gray-100 text-gray-600' }
 }
 
@@ -77,6 +81,7 @@ const MEMO_TYPE_LABELS: Record<string, string> = {
   billing_adjustment: 'Billing Adjustment',
   goodwill: 'Goodwill',
   x_deal: 'X-Deal',
+  early_settlement: 'Early Settlement',
 }
 
 /** One credit or debit memo against this invoice. Direction is what the
@@ -120,7 +125,18 @@ function MemoRow({ memo, direction }: { memo: ARInvoiceMemo; direction: 'credit'
   )
 }
 
-export default function ARInvoiceDetail({ id }: { id: string }) {
+export default function ARInvoiceDetail({
+  id,
+  canReleaseRetention = false,
+  canAdjustRetention = false,
+}: {
+  id: string
+  /** May take the retained amount in (a collection). */
+  canReleaseRetention?: boolean
+  /** May offset, write off or provide for it (needs approval). */
+  canAdjustRetention?: boolean
+}) {
+  const router = useRouter()
   const [doc, setDoc] = useState<ARInvoiceDocument | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -242,10 +258,10 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
           <span>
             Source sale{' '}
             <Link
-              href={`/pos/transactions?search=${encodeURIComponent(invoice.posTransaction.transactionNumber)}`}
+              href={`/pos/transactions?search=${encodeURIComponent(saleDocNo(invoice.posTransaction))}`}
               className="text-purple-600 hover:underline"
             >
-              {invoice.posTransaction.transactionNumber}
+              {saleDocNo(invoice.posTransaction)}
             </Link>
           </span>
         )}
@@ -310,6 +326,19 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
           </div>
         </dl>
       </section>
+
+      {(invoice.retentionAmount ?? 0) > 0 && (
+        <RetentionPanel
+          invoiceId={id}
+          status={invoice.status}
+          retentionPercent={invoice.retentionPercent ?? null}
+          retentionAmount={invoice.retentionAmount ?? 0}
+          retentionReleaseDate={invoice.retentionReleaseDate ?? null}
+          retentionMilestone={invoice.retentionMilestone ?? null}
+          canRelease={canReleaseRetention}
+          canAdjust={canAdjustRetention}
+        />
+      )}
 
       {/* The invoice document. It used to render titled "Collection Receipt"
           — the same paper as the receipt that settles it — which meant this
@@ -535,8 +564,31 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
               <tbody className="divide-y divide-gray-100">
                 {detail.dues.map((d) => {
                   const status = dueStatus(d, d.lineNumber === nextDueLineNumber)
+                  // The due being collected next opens on the Collections
+                  // screen (same deep link as the POS transaction detail) so
+                  // it can be paid from here. The whole row is the target; the
+                  // badge stays a real link for keyboard and middle-click.
+                  const collectHref =
+                    status.label === 'To pay' && invoice.customerId
+                      ? `/pos/collections?${new URLSearchParams({
+                          customerId: invoice.customerId,
+                          customerName: invoice.customer?.name ?? '',
+                          ...(detail.scheduleId ? { scheduleId: detail.scheduleId } : {}),
+                        }).toString()}`
+                      : null
                   return (
-                    <tr key={d.lineNumber}>
+                    <tr
+                      key={d.lineNumber}
+                      onClick={
+                        collectHref
+                          ? (e) => {
+                              if ((e.target as HTMLElement).closest('a')) return
+                              router.push(collectHref)
+                            }
+                          : undefined
+                      }
+                      className={collectHref ? 'cursor-pointer hover:bg-gray-50' : undefined}
+                    >
                       <td className="py-2 pr-4 tabular-nums text-gray-500">#{d.lineNumber}</td>
                       <td className="py-2 pr-4 text-gray-900">{fmtDate(d.dueDate)}</td>
                       <td className="py-2 pr-4 text-right tabular-nums text-gray-900">
@@ -546,11 +598,20 @@ export default function ARInvoiceDetail({ id }: { id: string }) {
                         {Number(d.paidAmount) > 0 ? fmtMoney(Number(d.paidAmount)) : '—'}
                       </td>
                       <td className="py-2">
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${status.className}`}
-                        >
-                          {status.label}
-                        </span>
+                        {collectHref ? (
+                          <Link
+                            href={collectHref}
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium hover:underline ${status.className}`}
+                          >
+                            {status.label}
+                          </Link>
+                        ) : (
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${status.className}`}
+                          >
+                            {status.label}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   )

@@ -91,7 +91,7 @@ test.describe('Supplier — VAT status', () => {
   test('a new supplier is VAT-registered, and the status says what its purchases start as', async ({
     page,
   }) => {
-    await gotoReady(page, '/inventory/suppliers')
+    await gotoReady(page, '/accounting/suppliers')
     await page.getByRole('button', { name: /new supplier/i }).click()
     await expect(page.getByRole('heading', { name: 'New supplier' })).toBeVisible({
       timeout: 10_000,
@@ -126,7 +126,7 @@ test.describe('Supplier — VAT status', () => {
 
   test('an existing supplier shows its VAT status on its profile', async ({ page }) => {
     const supplier = await makeSupplier(page, 'PEZA')
-    await gotoReady(page, `/inventory/suppliers?supplierId=${supplier.id}`)
+    await gotoReady(page, `/accounting/suppliers?supplierId=${supplier.id}`)
     // The detail opens from the list: search for it and open it.
     await page
       .getByPlaceholder(/search/i)

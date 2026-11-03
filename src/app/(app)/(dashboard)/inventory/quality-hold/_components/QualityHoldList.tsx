@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, RefreshCw, X, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { Plus, X, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { useQualityHoldManager } from '../_hooks/useQualityHoldManager'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -39,7 +39,6 @@ export default function QualityHoldList({ session }: { session: SessionUser }) {
     isPlacingHold,
     releaseHold,
     isReleasingHold,
-    refetch,
   } = useQualityHoldManager()
 
   const [isPlaceOpen, setIsPlaceOpen] = useState(false)
@@ -57,15 +56,6 @@ export default function QualityHoldList({ session }: { session: SessionUser }) {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
             {canCreate && (
               <button
                 type="button"

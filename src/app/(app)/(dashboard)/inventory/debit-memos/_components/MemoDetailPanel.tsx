@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react'
 import { fmtMoney, type SupplierDebitMemo } from '@/src/libs/data/AccountingV2Data'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import { appliedLabel } from '../_lib/debit-memo-format'
 import { MONO } from '@/src/libs/design/plex'
 
 // Inventory's own reading of a memo, under its row: where the goods left from,
@@ -21,7 +22,7 @@ import { MONO } from '@/src/libs/design/plex'
 function Fact({ label, value, missing }: { label: string; value: string; missing?: boolean }) {
   return (
     <div className="min-w-0">
-      <p className={`${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`}>
+      <p className={`${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4b4b5a]`}>
         {label}
       </p>
       <p
@@ -50,9 +51,9 @@ export function MemoDetailPanel({
         <Fact label="Returned from" value={locationLabel(memo.warehouse)} />
         <Fact label="Delivery receipt" value={dr || 'Not recorded'} missing={!dr} />
         <Fact
-          label="Supplier invoice"
-          value={memo.apBill?.billNumber ?? 'Not yet numbered'}
-          missing={!memo.apBill?.billNumber}
+          label="Applied to invoice"
+          value={appliedLabel(memo).text}
+          missing={appliedLabel(memo).pending}
         />
         <Fact
           label="Journal entry"
@@ -63,7 +64,7 @@ export function MemoDetailPanel({
 
       <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
         <div
-          className={`grid grid-cols-[minmax(0,1fr)_64px_120px] gap-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-2.5 ${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`}
+          className={`grid grid-cols-[minmax(0,1fr)_64px_120px] gap-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-2.5 ${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4b4b5a]`}
         >
           <span>Item / reason</span>
           <span className="text-right">Qty</span>
@@ -89,7 +90,7 @@ export function MemoDetailPanel({
                   {title}
                 </p>
                 {sub && (
-                  <p className="mt-0.5 truncate text-[10.5px] text-[#5b5b6b]" title={sub}>
+                  <p className="mt-0.5 truncate text-[10.5px] text-[#4b4b5a]" title={sub}>
                     {sub}
                   </p>
                 )}
@@ -113,7 +114,7 @@ export function MemoDetailPanel({
       {memo.reason?.trim() && (
         <div className="rounded-xl border border-[#e4e4e9] bg-white px-4 py-3">
           <p
-            className={`${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`}
+            className={`${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4b4b5a]`}
           >
             Reason
           </p>

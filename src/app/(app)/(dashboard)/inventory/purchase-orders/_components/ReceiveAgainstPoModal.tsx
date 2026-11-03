@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useQuery } from '@tanstack/react-query'
 import { PackageCheck, X } from 'lucide-react'
 import { showToast } from '@/src/components/ui/toast'
 import Tooltip from '@/src/components/ui/Tooltip'
@@ -11,7 +10,6 @@ import { useEwtCodes } from '@/src/hooks/useEwtCodes'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { type PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import { receiveStock } from '../../goods-receiving/_actions/receive-stock'
-import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { MONO, PLEX } from './procurementTokens'
 import { DeliveryDetailsPanel, DR_FIELD_ID } from './receive-po/DeliveryDetailsPanel'
 import { ReceiptTotalsPanel } from './receive-po/ReceiptTotalsPanel'
@@ -20,15 +18,19 @@ import { ReceiveChecksCard } from './receive-po/ReceiveChecksCard'
 import { ReceiveLineRow } from './receive-po/ReceiveLineRow'
 import { itemTitle } from './receive-po/itemTitle'
 import {
+  blankSerials,
   capQuantity,
   collectBlockers,
   collectWarnings,
+  filledSerials,
   isDuplicateSerial,
+  isFilled,
   lineIssues,
   remainingOf,
   type Blocker,
   type IssueFix,
   type IssueLine,
+  NO_LOCATION_RECEIVE_MESSAGE,
 } from './receive-po/receiveIssues'
 import {
   ReceivePoFormSchema,
@@ -65,17 +67,6 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
   // The withholding preview follows the tax code master's rate for the
   // supplier's EWT code, the same one the server posts at.
   const { rateFor } = useEwtCodes()
-  // Scenario 27 — goods are always received into one of the real warehouses
-  // now, never a branch's own local stock, so this is unconditionally the
-  // standalone-only list.
-  const warehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-lookup', 'standalone'],
-    queryFn: () => getWarehouses({ limit: 200, status: 'active', standaloneOnly: true }),
-    enabled: !!po,
-    staleTime: 5 * 60 * 1000,
-  })
-  const warehouses = warehousesQuery.data?.data?.data ?? []
-
   const [submitted, setSubmitted] = useState(false)
   const [drawers, setDrawers] = useState<Record<number, LineDrawer>>({})
   const [editingPricing, setEditingPricing] = useState<Record<number, boolean>>({})
@@ -129,7 +120,10 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
         return {
           purchaseOrderLineId: l.id,
           itemId: l.itemId,
-          quantityReceived: remaining,
+          // A serial-tracked line's quantity is whatever serials get typed —
+          // the receiver scans a pallet before they can count it — so it
+          // starts at none, not at the remainder.
+          quantityReceived: l.item?.isSerialTracked ? 0 : remaining,
           unitCost: Number(l.unitPrice) > 0 ? Number(l.unitPrice) : undefined,
           srp: l.srp != null ? Number(l.srp) : undefined,
           discounts: (l.discounts as unknown[]) ?? undefined,
@@ -185,6 +179,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
     quantityReceived: l.quantityReceived,
     isSerialTracked: l.isSerialTracked,
     serialNumbers: l.serialNumbers,
+    serialsCountQuantity: l.isSerialTracked,
     qualityHold: l.qualityHold,
     notes: l.notes,
   }))
@@ -204,12 +199,17 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
     rateFor
   )
 
-  const blockers = collectBlockers(
-    issueLines,
-    poLines,
-    watched.deliveryReceiptNumber ?? '',
-    labelFor
-  )
+  const blockers: Blocker[] = [
+    // Scenario 71 — a PO with no location is a drop-ship: its destination is
+    // only the delivery instructions, and how such a receipt is booked
+    // (no stock, and debiting what instead of Inventory) is still with the
+    // accountant. Until then it can't be received at all rather than being
+    // booked into a location the goods never reached.
+    ...(po && !po.warehouseId
+      ? [{ key: 'no-location', kind: 'error' as const, text: NO_LOCATION_RECEIVE_MESSAGE }]
+      : []),
+    ...collectBlockers(issueLines, poLines, watched.deliveryReceiptNumber ?? '', labelFor),
+  ]
 
   const warnings = collectWarnings(issueLines, poLines, labelFor)
 
@@ -223,6 +223,8 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
    * hidden index's value when the array shrinks, so a lowered qty otherwise
    * left stale slots that silently failed the length refine. */
   const setQuantity = (index: number, raw: number) => {
+    // Serial-tracked quantity is counted from the serials, never typed.
+    if (lines[index]?.isSerialTracked) return
     const remaining = remainingOf(poLines[index])
     const { qty, capped } = capQuantity(raw, remaining)
     const current = lines[index]
@@ -250,9 +252,11 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
     if (lines[index]?.selected) {
       setValue(`lines.${index}.selected`, false, { shouldValidate: false })
       setValue(`lines.${index}.quantityReceived`, 0, { shouldValidate: false })
-      setValue(`lines.${index}.serialNumbers`, lines[index]?.isSerialTracked ? [] : undefined, {
-        shouldValidate: false,
-      })
+      setValue(
+        `lines.${index}.serialNumbers`,
+        lines[index]?.isSerialTracked ? blankSerials(remaining) : undefined,
+        { shouldValidate: false }
+      )
       return
     }
     setValue(`lines.${index}.selected`, true, { shouldValidate: false })
@@ -264,17 +268,45 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
     while (next.length <= unitIndex) next.push('')
     next[unitIndex] = value
     setValue(`lines.${index}.serialNumbers`, next, { shouldValidate: showErrors })
+    // The quantity IS the serials typed. Selection follows it the same way a
+    // typed quantity drives it elsewhere on this screen: scanning into a line
+    // includes it, emptying it leaves it out.
+    const filled = filledSerials(next)
+    setValue(`lines.${index}.quantityReceived`, filled, { shouldValidate: showErrors })
+    setValue(`lines.${index}.selected`, filled > 0, { shouldValidate: false })
+  }
+
+  /** Empties a serial-tracked line's boxes — and with them its quantity. */
+  const clearSerials = (index: number) => {
+    setValue(`lines.${index}.serialNumbers`, blankSerials(remainingOf(poLines[index])), {
+      shouldValidate: false,
+    })
+    setValue(`lines.${index}.quantityReceived`, 0, { shouldValidate: false })
+    setValue(`lines.${index}.selected`, false, { shouldValidate: false })
   }
 
   const openDrawer = (index: number, drawer: LineDrawer) =>
     setDrawers((prev) => ({ ...prev, [index]: drawer }))
 
   const receiveAllRemaining = () => {
+    // Serial-tracked lines are skipped: there is no way to invent the serials
+    // that would make their quantity real.
+    let skippedSerialLines = 0
     poLines.forEach((poLine, i) => {
       const remaining = remainingOf(poLine)
-      if (remaining > 0) setQuantity(i, remaining)
+      if (remaining <= 0) return
+      if (lines[i]?.isSerialTracked) {
+        skippedSerialLines += 1
+        return
+      }
+      setQuantity(i, remaining)
     })
-    showToast({ title: 'All remaining quantities filled', status: 'success' })
+    showToast({
+      title: 'All remaining quantities filled',
+      description:
+        skippedSerialLines > 0 ? 'Serial-tracked lines receive the serials you enter.' : undefined,
+      status: 'success',
+    })
   }
 
   const clearAllQuantities = () => {
@@ -282,7 +314,9 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
       setValue(`lines.${i}.quantityReceived`, 0, { shouldValidate: false })
       setValue(`lines.${i}.selected`, false, { shouldValidate: false })
       if (lines[i]?.isSerialTracked) {
-        setValue(`lines.${i}.serialNumbers`, [], { shouldValidate: false })
+        setValue(`lines.${i}.serialNumbers`, blankSerials(remainingOf(poLines[i])), {
+          shouldValidate: false,
+        })
       }
     })
   }
@@ -301,7 +335,10 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
 
   const applyLineFix = (index: number, fix?: IssueFix) => {
     if (fix === 'serials') openDrawer(index, 'serials')
-    if (fix === 'qty') setQuantity(index, remainingOf(poLines[index]))
+    if (fix === 'qty') {
+      if (lines[index]?.isSerialTracked) openDrawer(index, 'serials')
+      else setQuantity(index, remainingOf(poLines[index]))
+    }
   }
 
   // ─── Submit ───────────────────────────────────────────────────────────────
@@ -364,7 +401,11 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
           batchNumber: l.batchNumber || undefined,
           qualityHold: l.qualityHold,
           notes: l.notes || undefined,
-          ...(l.serialNumbers && l.serialNumbers.length > 0 && { serialNumbers: l.serialNumbers }),
+          // Only the boxes actually filled: on a serial-tracked line a blank is
+          // a unit not received yet, and the server wants one serial per unit
+          // of the quantity it is given.
+          ...(l.serialNumbers &&
+            l.serialNumbers.length > 0 && { serialNumbers: l.serialNumbers.filter(isFilled) }),
         })),
     })
 
@@ -409,7 +450,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
       <div className="flex shrink-0 flex-col gap-3 border-b border-[#e4e4e9] bg-white px-4 py-3.5 lg:px-5">
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
-            <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+            <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
               Purchase Orders › {po.code} › Receive
             </div>
             <h2 className="text-[21px] font-semibold tracking-[-.02em]">
@@ -424,7 +465,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
                 </span>
                 <span className="text-[12.5px] font-medium">{po.supplier.name}</span>
                 {po.supplier.taxId && (
-                  <span className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>
+                  <span className={`${MONO} text-[10.5px] text-[#6f6f7f]`}>
                     TIN {po.supplier.taxId}
                   </span>
                 )}
@@ -451,7 +492,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#6f6f7f] hover:bg-[#f1f1f4] hover:text-[#17171c]"
             >
               <X className="h-4.5 w-4.5" />
             </button>
@@ -471,7 +512,6 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
               control={control}
               errors={errors}
               po={po}
-              warehouses={warehouses}
               showErrors={showErrors}
               deliveryReceiptNumber={watched.deliveryReceiptNumber ?? ''}
               recap={[
@@ -498,7 +538,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-3.5">
               <div className="flex items-center gap-2.5">
                 <span className="text-[13.5px] font-semibold">Line items</span>
-                <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+                <span className={`${MONO} text-[11px] text-[#6f6f7f]`}>
                   {totals.lines} of {openLineCount} open lines · {totals.units} units
                 </span>
               </div>
@@ -513,7 +553,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
                 <button
                   type="button"
                   onClick={clearAllQuantities}
-                  className="rounded-[7px] border border-[#d3d3db] bg-white px-2.5 py-1.5 text-[12.5px] text-[#5b5b6b] hover:border-[#a3a3b2] hover:text-[#17171c]"
+                  className="rounded-[7px] border border-[#d3d3db] bg-white px-2.5 py-1.5 text-[12.5px] text-[#4b4b5a] hover:border-[#a3a3b2] hover:text-[#17171c]"
                 >
                   Clear quantities
                 </button>
@@ -523,7 +563,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
             {poLines.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 text-center">
                 <PackageCheck className="mb-2 h-8 w-8 text-[#d3d3db]" />
-                <p className="text-[13px] text-[#a3a3b2]">No line items on this PO</p>
+                <p className="text-[13px] text-[#8e8e9d]">No line items on this PO</p>
               </div>
             ) : (
               <>
@@ -558,13 +598,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
                         setEditingPricing((prev) => ({ ...prev, [index]: !prev[index] }))
                       }
                       onSerialChange={(unit, value) => setSerial(index, unit, value)}
-                      onClearSerials={() =>
-                        setValue(
-                          `lines.${index}.serialNumbers`,
-                          Array.from({ length: line.quantityReceived }, () => ''),
-                          { shouldValidate: showErrors }
-                        )
-                      }
+                      onClearSerials={() => clearSerials(index)}
                       onFixIssue={(fix) => applyLineFix(index, fix)}
                     />
                   )
@@ -573,9 +607,9 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
             )}
 
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[#e4e4e9] bg-[#fbfbfc] px-4.5 py-3">
-              <span className="text-[11.5px] text-[#8b8b9b]">
+              <span className="text-[11.5px] text-[#6f6f7f]">
                 Quantities are capped at the PO remainder. Short deliveries stay open for the next
-                receipt.
+                receipt. Serial-tracked lines receive only the serials entered.
               </span>
               <span className={`${MONO} text-[11.5px] text-[#3d3d4a]`}>
                 {totals.units} units{canViewCost && ` · ${fmtPeso(totals.invoice)} invoiced`}
@@ -608,7 +642,7 @@ function nowLocalInputValue() {
 function LineTableHead() {
   return (
     <div
-      className={`${MONO} ${LINE_GRID} hidden items-end border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] lg:grid`}
+      className={`${MONO} ${LINE_GRID} hidden items-end border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#6f6f7f] lg:grid`}
     >
       <span />
       <span>Item / SKU</span>

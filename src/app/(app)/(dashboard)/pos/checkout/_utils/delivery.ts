@@ -189,6 +189,14 @@ export function deliveryFeeReceiptTenderLabel(receipt: DeliveryFeeReceiptTender)
   )
 }
 
+/** A QR payment's tender as a receipt prints it — "GCash — GCash Send Money",
+ * "Billers — Ecpay", "QR — Maya" — so a GCash or biller payment isn't just
+ * "QR". A bare "QR" when no provider was picked. */
+export function qrTenderLabel(optionName?: string | null): string {
+  const tender = optionName ? qrOptionGroup(optionName) : 'qr'
+  return deliveryFeeTenderLabel({ ...EMPTY_DELIVERY, tender }, optionName)
+}
+
 /** How the fee was paid, for the success screen: "Check #0012",
  * "Bank Transfer — BDO (verified at register)", "Debit/Credit Card — BPI ·
  * Installment, 6 months". */

@@ -38,12 +38,14 @@ import type {
   HandoverSessionInput,
   SessionReconciliation,
   SessionTenderSummary,
+  SessionCollection,
 } from '@/src/schema/pos'
 import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { useMe } from '@/src/hooks/useMe'
 import { can } from '@/src/libs/guards/permission'
 import SessionSummaryCard, { type CashRow } from './_components/SessionSummaryCard'
+import { methodLabel, tenderLabel } from './_components/tender-label'
 import { terminalPlaceId, terminalPlaceName } from '@/src/libs/format/locationLabel'
 
 function formatCurrency(n: number) {
@@ -55,19 +57,6 @@ function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(
     Number.isFinite(parsed) ? parsed : 0
   )
-}
-
-/**
- * Whether this shift was rung up at a caravan — a temporary Branch row
- * (`Branch.isTemporary`) parked at a host.
- *
- * Read off the TERMINAL, not the branch: for a caravan terminal `branchId`
- * holds the HOST branch and the caravan itself sits on `caravanBranchId`, so
- * `terminal.branch.isTemporary` is false on exactly the sessions this is
- * meant to catch (see PosTerminalsService's branch resolution).
- */
-function isCaravanSession(session: PosSession): boolean {
-  return Boolean(session.terminal?.caravanBranchId ?? session.terminal?.caravanBranch)
 }
 
 type ModalState =
@@ -95,10 +84,12 @@ export default function SessionsPage() {
 
   if (status !== 'authorized' || !session) return null
 
-  // A caravan's register is stored on its host, so the host's list includes
-  // it — shown only under the caravan itself, not under the host.
+  // A caravan's register is stored on its host. The host runs its caravans,
+  // so its list shows their sessions beside its own (each row is named by
+  // place, "Caravan · …"); picking the caravan shows its sessions alone.
   const sessions: PosSession[] = (data?.data ?? []).filter(
-    (s) => !branchId || terminalPlaceId(s.terminal) === branchId
+    (s) =>
+      !branchId || terminalPlaceId(s.terminal) === branchId || s.terminal?.branchId === branchId
   )
 
   async function handleOpen(form: OpenSessionInput) {
@@ -120,11 +111,8 @@ export default function SessionsPage() {
    * longer pops up is not lost: the posted variance and its GL entry stay one
    * button to the left on the session's own row.
    *
-   * A CARAVAN (temporary branch) closes the old way, on the reconciliation
-   * modal. A caravan has no Daily Collection Report of its own — its takings
-   * roll into the host branch's form (`terminal.branch` IS the host; the
-   * caravan is `terminal.caravanBranch`), so sending the cashier there would
-   * drop them on somebody else's sheet instead of their own closing figures.
+   * A caravan's register lands on the caravan's own sheet, which it files
+   * apart from its host's (2026-10-13).
    */
   async function handleClose(id: string, form: CloseSessionInput) {
     setError('')
@@ -134,9 +122,11 @@ export default function SessionsPage() {
       return
     }
     const closed = modal.type === 'close' ? modal.session : null
-    if (closed && !isCaravanSession(closed)) {
+    if (closed) {
       setModal({ type: 'none' })
-      goToCollectionReport(closed, 'collection')
+      // The report files the session on its last sale's day, which is not
+      // always the day the drawer opened (an overnight shift).
+      goToCollectionReport(closed, 'collection', res.data?.lastSaleAt)
       return
     }
 
@@ -162,13 +152,19 @@ export default function SessionsPage() {
    * counted and signed (where closing hands over), 'sales' for the browsing
    * entry point the row's own button has always used.
    */
-  function goToCollectionReport(target: PosSession, view: 'collection' | 'sales') {
-    const date = isoDateOf(target.openedAt)
-    const branch = target.terminal?.branch
+  function goToCollectionReport(
+    target: PosSession,
+    view: 'collection' | 'sales',
+    lastSaleAt?: string | null
+  ) {
+    const date = isoDateOf(lastSaleAt ?? target.openedAt)
+    // A caravan's register files the caravan's own sheet, so it is read off
+    // the terminal's place, not `terminal.branch` (the host).
+    const placeId = terminalPlaceId(target.terminal)
     const query = new URLSearchParams({ date, view })
-    if (branch) {
-      query.set('branchId', branch.id)
-      query.set('branchName', branch.name)
+    if (placeId) {
+      query.set('branchId', placeId)
+      query.set('branchName', terminalPlaceName(target.terminal) ?? '')
     }
     router.push(`/pos/daily-collection?${query.toString()}`)
   }
@@ -201,7 +197,7 @@ export default function SessionsPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-[21px] font-semibold tracking-[-.02em]">Sessions</h1>
-            <p className="mt-0.5 text-[13px] text-[#5b5b6b]">
+            <p className="mt-0.5 text-[13px] text-[#4b4b5a]">
               Every till shift, and how each one reconciled.
             </p>
           </div>
@@ -251,14 +247,14 @@ export default function SessionsPage() {
               ))}
             </div>
           ) : sessions.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-16 text-[#a3a3b2]">
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-[#8e8e9d]">
               <Monitor size={36} />
               <p className="text-[13px]">No sessions found.</p>
             </div>
           ) : (
             <>
               <div
-                className={`hidden gap-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-2.5 text-[10px] uppercase tracking-[.08em] text-[#5b5b6b] lg:grid ${ROW_GRID}`}
+                className={`hidden gap-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-2.5 text-[10px] uppercase tracking-[.08em] text-[#4b4b5a] lg:grid ${ROW_GRID}`}
               >
                 <span />
                 <span>Shift</span>
@@ -283,11 +279,7 @@ export default function SessionsPage() {
                     setError('')
                     setModal({ type: 'close', session: s })
                   }}
-                  // A caravan has no Daily Collection of its own — its cash is
-                  // counted on the host's — so its closed shift offers no report.
-                  onViewCollectionReport={
-                    s.terminal?.caravanBranchId ? undefined : () => handleViewCollectionReport(s)
-                  }
+                  onViewCollectionReport={() => handleViewCollectionReport(s)}
                 />
               ))}
             </>
@@ -619,29 +611,6 @@ function OpenSessionModal({
 // count had nowhere to put the ₱3 or the ₱0.50. Mirrors the denomination
 // block on the client's own Daily Collection Report form, which lists
 // 1000/500/200/100/50/20 and then a single lump COINS line.
-/** Human label for a PosPaymentMethod key, e.g. bank_transfer -> Bank Transfer. */
-function methodLabel(method: string): string {
-  if (method === 'qr') return 'QR / Online'
-  if (method === 'tpf') return 'TPF'
-  return method
-    .split('_')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ')
-}
-
-/**
- * Label for a tender key, which the backend emits either as a bare method
- * ('qr') or as method + the provider the cashier picked at checkout
- * ('qr::Maya', 'card::BDO'). A shift is settled per provider, so the provider
- * is the part that matters here — 'QR / Online — Maya' is checkable against a
- * Maya settlement report, a lumped 'QR / Online' is not. Bare keys still
- * render as before, which keeps sessions closed before this shipped readable.
- */
-function tenderLabel(key: string): string {
-  const [method, ...rest] = key.split('::')
-  const provider = rest.join('::').trim()
-  return provider ? `${methodLabel(method)} — ${provider}` : methodLabel(method)
-}
 
 /** The desktop row template, shared by the list header and every row so the
  *  two can never drift apart. Below lg each row becomes a card instead.
@@ -658,7 +627,7 @@ const ROW_GRID =
 
 const STATUS_CHIP: Record<string, { label: string; chip: string; dot: string }> = {
   open: { label: 'Open', chip: 'bg-[#e7f5ef] text-[#0b6644]', dot: 'bg-[#0f7b52]' },
-  closed: { label: 'Closed', chip: 'bg-[#f1f1f4] text-[#5b5b6b]', dot: 'bg-[#a3a3b2]' },
+  closed: { label: 'Closed', chip: 'bg-[#f1f1f4] text-[#4b4b5a]', dot: 'bg-[#a3a3b2]' },
   handed_over: { label: 'Handed over', chip: 'bg-[#fdf3e3] text-[#8a4b06]', dot: 'bg-[#c8861a]' },
 }
 
@@ -740,7 +709,7 @@ function SessionRow({
       aria-expanded={expanded}
       aria-label={expanded ? 'Hide session detail' : 'Show session detail'}
       className={`flex h-6 w-6 items-center justify-center rounded-md ${
-        expanded ? 'bg-[#f1ebfb] text-[#3f1490]' : 'text-[#8b8b9b] hover:bg-[#f4f4f6]'
+        expanded ? 'bg-[#f1ebfb] text-[#3f1490]' : 'text-[#6f6f7f] hover:bg-[#f4f4f6]'
       }`}
     >
       <ChevronDown size={14} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
@@ -794,7 +763,7 @@ function SessionRow({
           <span className="truncate text-[12.5px] font-medium">
             {terminal} · opened {shiftTime(session.openedAt)}
           </span>
-          <span className="truncate text-[10.5px] text-[#5b5b6b]">{subline}</span>
+          <span className="truncate text-[10.5px] text-[#4b4b5a]">{subline}</span>
         </div>
         <span className="min-w-0 truncate text-[12.5px] text-[#3d3d4a]">{cashier}</span>
         <span className="text-right text-[12.5px] tabular-nums">
@@ -824,11 +793,11 @@ function SessionRow({
               <span className="truncate text-[12.5px] font-medium">
                 {terminal} · opened {shiftTime(session.openedAt)}
               </span>
-              <span className="truncate text-[11px] text-[#5b5b6b]">
+              <span className="truncate text-[11px] text-[#4b4b5a]">
                 {cashier} · {session._count?.transactions ?? 0} txns ·{' '}
                 {formatCurrency(session.openingCash)} float
               </span>
-              <span className="truncate text-[11px] text-[#5b5b6b]">{subline}</span>
+              <span className="truncate text-[11px] text-[#4b4b5a]">{subline}</span>
             </button>
           </div>
           {chip}
@@ -849,7 +818,7 @@ function SessionRow({
 function DetailPane({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5 rounded-[10px] border border-[#e4e4e9] bg-white px-3.5 py-3">
-      <span className="text-[9.5px] uppercase tracking-[.08em] text-[#5b5b6b]">{title}</span>
+      <span className="text-[9.5px] uppercase tracking-[.08em] text-[#4b4b5a]">{title}</span>
       {children}
     </div>
   )
@@ -969,7 +938,7 @@ function SessionDetail({ session }: { session: PosSession }) {
     strong: true,
     tone:
       variance === null
-        ? 'text-[#5b5b6b]'
+        ? 'text-[#4b4b5a]'
         : isOff
           ? variance > 0
             ? 'text-[#1f4b99]'
@@ -998,13 +967,13 @@ function SessionDetail({ session }: { session: PosSession }) {
                   <span className={`text-[12px] ${row.strong ? 'font-semibold' : ''}`}>
                     {row.label}
                   </span>
-                  <span className="text-[10px] text-[#5b5b6b]">{row.note}</span>
+                  <span className="text-[10px] text-[#4b4b5a]">{row.note}</span>
                 </div>
                 <span
                   className={`shrink-0 tabular-nums ${
                     row.key === 'variance' ? 'text-[14px]' : 'text-[12.5px]'
                   } ${row.strong ? 'font-semibold' : 'font-medium'} ${
-                    row.tone ?? (row.muted ? 'text-[#5b5b6b]' : '')
+                    row.tone ?? (row.muted ? 'text-[#4b4b5a]' : '')
                   }`}
                 >
                   {row.value}
@@ -1030,7 +999,7 @@ function SessionDetail({ session }: { session: PosSession }) {
               </div>
             ))
           ) : (
-            <p className="text-[12px] text-[#5b5b6b]">
+            <p className="text-[12px] text-[#4b4b5a]">
               {isClosed ? 'No payments taken this session.' : 'Recorded at close.'}
             </p>
           )}
@@ -1052,7 +1021,7 @@ function SessionDetail({ session }: { session: PosSession }) {
                   <span className="text-[12px] tabular-nums text-[#3d3d4a]">
                     {denomination === 'coins' ? 'Coins' : `₱${denomination}`}
                   </span>
-                  <span className="text-right text-[11px] tabular-nums text-[#5b5b6b]">
+                  <span className="text-right text-[11px] tabular-nums text-[#4b4b5a]">
                     {denomination === 'coins' ? '' : `× ${value}`}
                   </span>
                   <span className="text-right text-[12px] tabular-nums">
@@ -1175,6 +1144,9 @@ function CloseSessionModal({
   const [reasonNote, setReasonNote] = useState('')
   const [reasonTouched, setReasonTouched] = useState(false)
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
+  // The cashier confirms the drawer really holds nothing — a count of ₱0 is
+  // a count, and must not leave the session impossible to close.
+  const [drawerEmpty, setDrawerEmpty] = useState(false)
 
   // Manager approval, revealed only once the backend rejects a variance —
   // same search+PIN shape as HandoverModal below.
@@ -1236,12 +1208,16 @@ function CloseSessionModal({
   const noteTotal = DENOMINATIONS.reduce((sum, d) => sum + d * (counts[d] ?? 0), 0)
   const total = noteTotal + coinsAmount
   const pieceCount = DENOMINATIONS.reduce((sum, d) => sum + (counts[d] ?? 0), 0)
-  const hasCount = pieceCount > 0 || coinsAmount > 0
 
   // Display only — the backend recomputes both sides on close and is the
   // authority on the posted variance. Expected comes from its own helper, so
   // the two agree by construction rather than by luck.
   const expected = Number(reconciliation?.expectedClosingCash ?? 0)
+  // No float and no cash taken — a non-cash-only (or empty) shift has
+  // nothing to count, so it reconciles at ₱0 as it stands.
+  const nothingExpected = !!reconciliation && Math.abs(expected) < 0.005
+  const hasCount = pieceCount > 0 || coinsAmount > 0 || drawerEmpty || nothingExpected
+  const countedNothing = hasCount && total === 0
   const variance = total - expected
   const isOff = hasCount && Math.abs(variance) >= 0.01
   const reasonMissing = isOff && !reason
@@ -1315,8 +1291,12 @@ function CloseSessionModal({
     onSubmit({
       declaredClosingCash: total,
       notes: composedNotes || undefined,
+      // An empty drawer is still a count: {} records "counted nothing", where
+      // leaving it out would read as "never counted".
       denominationBreakdown:
-        Object.keys(denominationBreakdown).length > 0 ? denominationBreakdown : undefined,
+        Object.keys(denominationBreakdown).length > 0 || countedNothing
+          ? denominationBreakdown
+          : undefined,
       // Sent on the FIRST submit, not after a rejection — a privileged closer
       // never sees the manager-approval block at all, because the backend
       // never has cause to reject them for a missing override.
@@ -1356,8 +1336,8 @@ function CloseSessionModal({
     },
     {
       key: 'collections',
-      label: 'Counter collections',
-      note: 'installment dues paid in cash at the counter',
+      label: 'MI collections',
+      note: 'monthly installments (MI) paid in cash at the counter',
       amount: Number(reconciliation?.totalCollectionsCash ?? 0),
     },
     {
@@ -1402,7 +1382,17 @@ function CloseSessionModal({
   // settled per provider, so 'QR / Online — Maya' is checkable against a Maya
   // settlement report where a lumped 'QR / Online' is not. Collapsed by
   // default — this panel is context, not the task.
-  const nonCashGroups = Object.entries(tenderSummary?.nonCash ?? {})
+  // TPF rides along as its own group (TPF — Tonik, TPF — Skyro): the
+  // financier pays it later, so it is not in the drawer either.
+  const tpfTenders = Object.fromEntries(
+    Object.entries(tenderSummary?.tpf ?? {}).map(([provider, amount]) => [
+      `tpf::${provider}`,
+      amount,
+    ])
+  )
+  const nonCashTotal =
+    Number(tenderSummary?.totalNonCash ?? 0) + Number(tenderSummary?.totalTpf ?? 0)
+  const nonCashGroups = Object.entries({ ...(tenderSummary?.nonCash ?? {}), ...tpfTenders })
     .filter(([, amount]) => Number(amount) !== 0)
     .reduce<{ method: string; label: string; total: number; providers: [string, number][] }[]>(
       (groups, [key, amount]) => {
@@ -1425,7 +1415,7 @@ function CloseSessionModal({
     .sort((a, b) => a.label.localeCompare(b.label))
 
   const tone = !hasCount
-    ? { text: 'text-[#5b5b6b]', bg: 'bg-white', border: 'border-[#e4e4e9]' }
+    ? { text: 'text-[#4b4b5a]', bg: 'bg-white', border: 'border-[#e4e4e9]' }
     : !isOff
       ? { text: 'text-[#0b6644]', bg: 'bg-[#f4fbf7]', border: 'border-[#dcefe5]' }
       : variance > 0
@@ -1434,19 +1424,23 @@ function CloseSessionModal({
 
   const verdictTitle = !hasCount
     ? 'Do the cash count to reconcile'
-    : !isOff
-      ? 'Drawer balances'
-      : variance > 0
-        ? `Over by ₱${peso(variance)}`
-        : `Short by ₱${peso(-variance)}`
+    : countedNothing && nothingExpected
+      ? 'No cash to count'
+      : !isOff
+        ? 'Drawer balances'
+        : variance > 0
+          ? `Over by ₱${peso(variance)}`
+          : `Short by ₱${peso(-variance)}`
 
   const verdictBody = !hasCount
     ? `The drawer should hold ₱${peso(expected)} — the float plus what the shift took in, less what was paid out.`
-    : !isOff
-      ? `Counted cash matches the ₱${peso(expected)} expected.`
-      : variance > 0
-        ? 'There is more cash than the shift accounts for. Check for a sale rung on the wrong tender, or float added mid-shift without a drawer event.'
-        : `Cash is missing against the ₱${peso(expected)} expected. Recount first, then check for a payout that was never recorded.`
+    : countedNothing && nothingExpected
+      ? 'No float and no cash taken this shift, so the drawer should be empty. Close the session as it is.'
+      : !isOff
+        ? `Counted cash matches the ₱${peso(expected)} expected.`
+        : variance > 0
+          ? 'There is more cash than the shift accounts for. Check for a sale rung on the wrong tender, or float added mid-shift without a drawer event.'
+          : `Cash is missing against the ₱${peso(expected)} expected. Recount first, then check for a payout that was never recorded.`
 
   const blocked = isLoading || !hasCount || reasonMissing || (needsOverride && !verified)
 
@@ -1468,7 +1462,7 @@ function CloseSessionModal({
             ← Back to sessions
           </button>
           <h2 className="text-[20px] font-semibold tracking-[-.02em]">Close session</h2>
-          <p className="text-[12.5px] text-[#5b5b6b]">
+          <p className="text-[12.5px] text-[#4b4b5a]">
             {[
               terminalPlaceName(session.terminal),
               session.terminal?.name ?? session.terminalId,
@@ -1497,7 +1491,7 @@ function CloseSessionModal({
       {/* Body — two columns so the expected figure and the running count stay
           on screen together. Stacks below lg, where they cannot. */}
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto grid w-full max-w-[1500px] items-start gap-3.5 px-4 py-4 lg:grid-cols-[minmax(0,.82fr)_minmax(0,1.18fr)] lg:px-5">
+        <div className="mx-auto grid w-full max-w-[1500px] items-start gap-3.5 px-4 py-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,.9fr)] lg:px-5">
           {/* ── Left: what should be in the drawer ─────────────────────── */}
           <div className="flex min-w-0 flex-col gap-3">
             <SessionSummaryCard
@@ -1506,6 +1500,7 @@ function CloseSessionModal({
               netSales={Number(reconciliation?.netSales ?? 0)}
               totalRefunds={Number(reconciliation?.totalRefunds ?? 0)}
               invoiceNumbers={reconciliation?.invoiceNumbers ?? []}
+              transactions={reconciliation?.transactions ?? []}
               cashRows={cashRows}
             />
 
@@ -1514,11 +1509,11 @@ function CloseSessionModal({
                 up hunting for ₱28,690 of GCash in a cash till. */}
             <div className="flex flex-col gap-2 rounded-[11px] border border-[#e4e4e9] bg-white px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <span className="text-[9.5px] uppercase leading-[1.5] tracking-[.08em] text-[#5b5b6b]">
+                <span className="text-[9.5px] uppercase leading-[1.5] tracking-[.08em] text-[#4b4b5a]">
                   Also taken this shift
                 </span>
                 <span className="text-[12.5px] tabular-nums text-[#3d3d4a]">
-                  {figuresLoading ? '—' : `₱${peso(Number(tenderSummary?.totalNonCash ?? 0))}`}
+                  {figuresLoading ? '—' : `₱${peso(nonCashTotal)}`}
                 </span>
               </div>
               {figuresLoading ? (
@@ -1541,7 +1536,7 @@ function CloseSessionModal({
                             }`}
                           />
                           <span className="min-w-0 text-[12.5px] leading-[1.4]">{group.label}</span>
-                          <span className="whitespace-nowrap text-[11px] text-[#5b5b6b]">
+                          <span className="whitespace-nowrap text-[11px] text-[#4b4b5a]">
                             {group.providers.length > 1
                               ? `${group.providers.length} providers`
                               : ''}
@@ -1557,7 +1552,7 @@ function CloseSessionModal({
                                 key={provider}
                                 className="grid grid-cols-[minmax(0,1fr)_96px] items-baseline gap-2.5 py-1 pl-5"
                               >
-                                <span className="min-w-0 text-[11.5px] leading-[1.4] text-[#5b5b6b]">
+                                <span className="min-w-0 text-[11.5px] leading-[1.4] text-[#4b4b5a]">
                                   {provider}
                                 </span>
                                 <span className="text-right text-[11.5px] tabular-nums text-[#3d3d4a]">
@@ -1572,15 +1567,21 @@ function CloseSessionModal({
                   })}
                 </div>
               ) : (
-                <p className="text-[11.5px] text-[#5b5b6b]">
+                <p className="text-[11.5px] text-[#4b4b5a]">
                   No non-cash payments taken this shift.
                 </p>
               )}
             </div>
 
+            <SessionCollectionsPanel
+              loading={figuresLoading}
+              collections={tenderSummary?.collections ?? []}
+              total={Number(tenderSummary?.totalCollections ?? 0)}
+            />
+
             <div className="flex flex-col gap-1.5">
               <label htmlFor="shift-notes" className="text-[12px] font-medium text-[#3d3d4a]">
-                Shift notes <span className="font-normal text-[#5b5b6b]">optional</span>
+                Shift notes <span className="font-normal text-[#4b4b5a]">optional</span>
               </label>
               <textarea
                 id="shift-notes"
@@ -1599,16 +1600,28 @@ function CloseSessionModal({
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4 py-3">
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className="text-[13.5px] font-semibold">Cash count</span>
-                  <span className="text-[11px] text-[#5b5b6b]">
+                  <span className="text-[11px] text-[#4b4b5a]">
                     Pieces per denomination. Tab moves down the list.
                   </span>
                 </div>
-                {hasCount && (
+                {pieceCount === 0 && coinsAmount === 0 && !nothingExpected && (
+                  <label className="flex cursor-pointer items-center gap-1.5 text-[11.5px] text-[#3d3d4a]">
+                    <input
+                      type="checkbox"
+                      checked={drawerEmpty}
+                      onChange={(e) => setDrawerEmpty(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-[#d3d3db] text-[#5b21b6] focus:ring-[#5b21b6]"
+                    />
+                    No cash in drawer
+                  </label>
+                )}
+                {(pieceCount > 0 || coinsAmount > 0) && (
                   <button
                     type="button"
                     onClick={() => {
                       setCounts(Object.fromEntries(DENOMINATIONS.map((d) => [d, 0])))
                       setCoins('')
+                      setDrawerEmpty(false)
                       setReason('')
                       setReasonNote('')
                       setReasonTouched(false)
@@ -1628,7 +1641,7 @@ function CloseSessionModal({
                 {DENOMINATIONS.map((d, i) => (
                   <div
                     key={d}
-                    className={`grid grid-cols-[62px_minmax(0,1fr)_96px] items-center gap-2.5 px-4 py-2.5 ${
+                    className={`grid grid-cols-[56px_minmax(0,1fr)_84px] items-center gap-2.5 px-4 py-2.5 ${
                       i > 1 ? 'border-t border-[#f4f4f6]' : ''
                     } ${i % 2 === 0 ? 'border-r border-[#f4f4f6]' : ''}`}
                   >
@@ -1647,7 +1660,7 @@ function CloseSessionModal({
                     />
                     <span
                       className={`text-right text-[12.5px] tabular-nums ${
-                        counts[d] ? '' : 'text-[#5b5b6b]'
+                        counts[d] ? '' : 'text-[#4b4b5a]'
                       }`}
                     >
                       {peso(d * (counts[d] ?? 0))}
@@ -1657,7 +1670,7 @@ function CloseSessionModal({
                 {/* Coins takes the tenth cell, squaring off the 2x5 grid. A
                     peso amount rather than a count — matches the single lump
                     COINS line on the client's Daily Collection Report form. */}
-                <div className="grid grid-cols-[62px_minmax(0,1fr)_96px] items-center gap-2.5 border-t border-[#f4f4f6] px-4 py-2.5">
+                <div className="grid grid-cols-[56px_minmax(0,1fr)_84px] items-center gap-2.5 border-t border-[#f4f4f6] px-4 py-2.5">
                   <span className="text-[12px] font-medium text-[#3d3d4a]">Coins</span>
                   <input
                     type="number"
@@ -1672,7 +1685,7 @@ function CloseSessionModal({
                   />
                   <span
                     className={`text-right text-[12.5px] tabular-nums ${
-                      coinsAmount ? '' : 'text-[#5b5b6b]'
+                      coinsAmount ? '' : 'text-[#4b4b5a]'
                     }`}
                   >
                     {peso(coinsAmount)}
@@ -1683,7 +1696,7 @@ function CloseSessionModal({
               <div className="flex items-start justify-between gap-4 border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-3">
                 <div className="flex min-w-0 flex-col">
                   <span className="text-[12.5px] font-semibold">Counted</span>
-                  <span className="text-[10.5px] text-[#5b5b6b]">
+                  <span className="text-[10.5px] text-[#4b4b5a]">
                     {pieceCount} {pieceCount === 1 ? 'note' : 'notes'}
                     {coinsAmount ? ` + ₱${peso(coinsAmount)} in coins` : ''}
                   </span>
@@ -1706,7 +1719,7 @@ function CloseSessionModal({
                   <span className="text-[12px] leading-[1.5] text-[#3d3d4a]">{verdictBody}</span>
                 </div>
                 <div className="flex shrink-0 flex-col items-end">
-                  <span className="text-[9.5px] uppercase tracking-[.08em] text-[#5b5b6b]">
+                  <span className="text-[9.5px] uppercase tracking-[.08em] text-[#4b4b5a]">
                     {!hasCount
                       ? 'Over / short'
                       : variance > 0
@@ -1788,7 +1801,7 @@ function CloseSessionModal({
                         setSearch('')
                         setPin('')
                       }}
-                      className="ml-auto text-[11.5px] text-[#5b5b6b] hover:text-[#17171c]"
+                      className="ml-auto text-[11.5px] text-[#4b4b5a] hover:text-[#17171c]"
                     >
                       Change
                     </button>
@@ -1804,7 +1817,7 @@ function CloseSessionModal({
                           setPin('')
                           setVerifyError('')
                         }}
-                        className="text-[11.5px] text-[#5b5b6b] hover:text-[#17171c]"
+                        className="text-[11.5px] text-[#4b4b5a] hover:text-[#17171c]"
                       >
                         Change
                       </button>
@@ -1846,7 +1859,7 @@ function CloseSessionModal({
                       onChange={(e) => setSearch(e.target.value)}
                       className={inputChrome}
                     />
-                    {searching && <p className="text-[11.5px] text-[#5b5b6b]">Searching…</p>}
+                    {searching && <p className="text-[11.5px] text-[#4b4b5a]">Searching…</p>}
                     {usersError && <p className="text-[11.5px] text-[#b42318]">{usersError}</p>}
                     {filtered.length > 0 && (
                       <div className="overflow-hidden rounded-lg border border-[#e4e4e9] bg-white">
@@ -1857,7 +1870,7 @@ function CloseSessionModal({
                             onClick={() => setSelectedUser({ id: u.id, name: u.name })}
                             className="block w-full px-3 py-2 text-left text-[13px] hover:bg-[#f6f6f8]"
                           >
-                            {u.name} <span className="text-[11.5px] text-[#5b5b6b]">{u.email}</span>
+                            {u.name} <span className="text-[11.5px] text-[#4b4b5a]">{u.email}</span>
                           </button>
                         ))}
                       </div>
@@ -1875,14 +1888,16 @@ function CloseSessionModal({
           that has scrolled out of view. */}
       <div className="flex flex-wrap items-center justify-between gap-3.5 border-t border-[#e4e4e9] bg-white px-5 py-3 shadow-[0_-8px_24px_-18px_rgba(20,20,30,.35)]">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className={`text-[11.5px] ${reasonMissing ? 'text-[#b42318]' : 'text-[#5b5b6b]'}`}>
+          <span className={`text-[11.5px] ${reasonMissing ? 'text-[#b42318]' : 'text-[#4b4b5a]'}`}>
             {!hasCount
               ? `Expected ₱${peso(expected)}`
-              : reasonMissing
-                ? 'Pick a reason for the difference'
-                : isOff
-                  ? 'Closes with a flagged variance'
-                  : 'Counted cash matches'}
+              : countedNothing && nothingExpected
+                ? 'No cash to count'
+                : reasonMissing
+                  ? 'Pick a reason for the difference'
+                  : isOff
+                    ? 'Closes with a flagged variance'
+                    : 'Counted cash matches'}
           </span>
           <span className="text-[13px] font-semibold">
             {!hasCount ? 'Nothing counted yet' : `₱${peso(total)} counted of ₱${peso(expected)}`}
@@ -1907,6 +1922,67 @@ function CloseSessionModal({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Every collection taken over the counter on this shift, on whatever tender —
+ * MIs (FMI on the first due) and delivery fees. Down payments are not here:
+ * they are tenders on the sale, already under "Also taken this shift". The
+ * cash ones are in the drawer build-up already; the rest appear nowhere else
+ * on this screen. One line per CR so the cashier can tick them off against
+ * the receipts they wrote.
+ */
+function SessionCollectionsPanel({
+  loading,
+  collections,
+  total,
+}: {
+  loading: boolean
+  collections: SessionCollection[]
+  total: number
+}): React.ReactElement {
+  return (
+    <div className="flex flex-col gap-2 rounded-[11px] border border-[#e4e4e9] bg-white px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-[9.5px] uppercase leading-[1.5] tracking-[.08em] text-[#4b4b5a]">
+          Collections this shift
+        </span>
+        <span className="text-[12.5px] tabular-nums text-[#3d3d4a]">
+          {loading ? '—' : `₱${peso(total)}`}
+        </span>
+      </div>
+      {loading ? (
+        <Skeleton className="h-4 w-40" />
+      ) : collections.length === 0 ? (
+        <p className="text-[11.5px] text-[#4b4b5a]">No collections this shift.</p>
+      ) : (
+        <div className="flex flex-col">
+          {collections.map((c, i) => (
+            <div
+              key={c.id}
+              className={`grid grid-cols-[minmax(0,1fr)_auto_96px] items-baseline gap-2.5 py-1.5 ${
+                i ? 'border-t border-[#f4f4f6]' : ''
+              }`}
+            >
+              <span className="min-w-0 truncate text-[12.5px] leading-[1.4]">
+                <span className="mr-1.5 rounded bg-[#f1ebfb] px-1.5 py-0.5 text-[10.5px] font-medium text-[#5b21b6]">
+                  {c.kind}
+                </span>
+                <span className="tabular-nums">{c.number ?? 'No CR #'}</span>
+              </span>
+              <span className="whitespace-nowrap text-[11px] text-[#4b4b5a]">
+                {tenderLabel(c.tenderKey)}
+                {c.isCash ? ' · in drawer' : ''}
+              </span>
+              <span className="text-right text-[12.5px] font-medium tabular-nums">
+                {peso(c.amount)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -2187,7 +2263,7 @@ function ReconciliationModal({
         {Number(data.totalCollectionsCash ?? 0) > 0 && (
           <div className="rounded-xl border border-gray-200 px-4 py-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Counter collections (cash)</span>
+              <span className="text-sm text-gray-600">MI collections (cash)</span>
               <span className="text-sm font-medium text-gray-900">
                 {formatCurrency(Number(data.totalCollectionsCash))}
               </span>

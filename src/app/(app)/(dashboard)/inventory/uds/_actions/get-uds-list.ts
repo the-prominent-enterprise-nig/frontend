@@ -9,6 +9,8 @@ export async function getUdsList(params?: {
   status?: string
   reason?: string
   warehouseId?: string
+  /** Scenario 73 — tickets handled by one service center. */
+  repairProviderId?: string
 }): Promise<ApiResponse<UdsListResponse>> {
   const result = await api.get<UdsListResponse>('/inventory/uds', params, {
     tags: ['inventory-uds'],

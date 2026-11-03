@@ -59,7 +59,7 @@ export function StockHub({ session }: { session: SessionUser }) {
       ) : tab === 'negative' ? (
         <NegativeStockPageView session={session} />
       ) : (
-        <StockBalanceList session={session} onLocationsChange={setSharedLocations} />
+        <StockBalanceList onLocationsChange={setSharedLocations} />
       )}
     </div>
   )

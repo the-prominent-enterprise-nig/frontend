@@ -7,11 +7,13 @@ import {
   createPaymentMethodOption,
   updatePaymentMethodOption,
   deletePaymentMethodOption,
+  type GLAccount,
 } from '../../../pos/_actions/pos-actions'
 import type { PaymentMethodConfig } from '@/src/schema/pos'
 
 type Props = {
   initialMethods: PaymentMethodConfig[]
+  glAccounts?: GLAccount[]
 }
 
 // Scenario 37 — only these four methods carry a named sub-choice today.
@@ -20,13 +22,21 @@ type Props = {
 // show up the same way.
 const OPTION_METHOD_KEYS = ['cash', 'card', 'bank_transfer', 'qr']
 
-export default function PaymentMethodOptionsSection({ initialMethods }: Props) {
+// Only a QR gateway can be given an account of its own: the client's chart keeps
+// a clearing account per e-wallet (GCash, Maya, ECPay), where a card terminal or
+// a bank all settle through the one cash account.
+const OPTION_ACCOUNT_METHOD_KEYS = ['qr']
+
+export default function PaymentMethodOptionsSection({ initialMethods, glAccounts = [] }: Props) {
   const [methods, setMethods] = useState(initialMethods)
   const [newOptionName, setNewOptionName] = useState<Record<string, string>>({})
   const [isPending, startTransition] = useTransition()
   const [pendingId, setPendingId] = useState<string | null>(null)
 
   const relevantMethods = methods.filter((m) => OPTION_METHOD_KEYS.includes(m.key ?? ''))
+  const sortedAccounts = [...glAccounts].sort((a, b) =>
+    (a.number ?? a.code ?? '').localeCompare(b.number ?? b.code ?? '', undefined, { numeric: true })
+  )
 
   function patchConfig(configId: string, updater: (m: PaymentMethodConfig) => PaymentMethodConfig) {
     setMethods((prev) => prev.map((m) => (m.id === configId ? updater(m) : m)))
@@ -62,6 +72,30 @@ export default function PaymentMethodOptionsSection({ initialMethods }: Props) {
         }))
       } else {
         showToast({ title: 'Failed to update option', description: result.error, status: 'error' })
+      }
+      setPendingId(null)
+    })
+  }
+
+  function handleAccount(configId: string, optionId: string, glAccountId: string) {
+    setPendingId(optionId)
+    startTransition(async () => {
+      const result = await updatePaymentMethodOption(configId, optionId, {
+        glAccountId: glAccountId || null,
+      })
+      if (result.success && result.data) {
+        const updated = result.data
+        patchConfig(configId, (m) => ({
+          ...m,
+          options: m.options.map((o) => (o.id === optionId ? updated : o)),
+        }))
+        showToast({ title: 'Clearing account saved', status: 'success' })
+      } else {
+        showToast({
+          title: 'Failed to save the account',
+          description: result.error,
+          status: 'error',
+        })
       }
       setPendingId(null)
     })
@@ -132,6 +166,25 @@ export default function PaymentMethodOptionsSection({ initialMethods }: Props) {
                   {o.name}
                 </span>
                 <div className="flex items-center gap-3">
+                  {OPTION_ACCOUNT_METHOD_KEYS.includes(m.key ?? '') && (
+                    <label className="flex items-center gap-2 text-xs text-zinc-500">
+                      Clearing account
+                      <select
+                        aria-label={`Clearing account for ${o.name}`}
+                        value={o.glAccountId ?? ''}
+                        disabled={isPending && pendingId === o.id}
+                        onChange={(e) => handleAccount(m.id, o.id, e.target.value)}
+                        className="max-w-[260px] rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-sm text-zinc-900 disabled:opacity-50"
+                      >
+                        <option value="">Same as {m.name}</option>
+                        {sortedAccounts.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.number ?? a.code} · {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   <button
                     type="button"
                     role="switch"

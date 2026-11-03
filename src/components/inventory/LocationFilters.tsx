@@ -4,8 +4,8 @@ import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import type { LocationFilter, Region } from '@/src/libs/inventory/useLocationFilter'
 
 const REGION_OPTIONS = [
-  { value: 'panay', label: 'Panay' },
-  { value: 'negros', label: 'Negros' },
+  { value: 'panay', label: 'Panay Warehouse' },
+  { value: 'negros', label: 'Negros Warehouse' },
 ]
 
 type Chrome = { idle: string; focused: string }
@@ -23,7 +23,7 @@ export function LocationFilters({
     <>
       {/* Operations — the client's name for region. */}
       <SearchableSelect
-        className="w-[168px]"
+        className="w-[216px]"
         value={filter.region ?? ''}
         onChange={(v) => filter.setRegion((v || undefined) as Region | undefined)}
         placeholder="All Operations"

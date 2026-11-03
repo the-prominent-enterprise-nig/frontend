@@ -13,7 +13,7 @@ import type {
   ServiceDraftListResponse,
   StockCheckResponse,
 } from '@/src/schema/pos/service-drafts'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 
@@ -48,7 +48,7 @@ export async function getServiceDraft(id: string): Promise<ApiResponse<ServiceDr
 }
 
 export async function createServiceDraft(input: unknown): Promise<ApiResponse<{ id: string }>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }
@@ -95,7 +95,7 @@ export async function updateServiceDraft(
   id: string,
   input: unknown
 ): Promise<ApiResponse<{ id: string }>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }
@@ -147,7 +147,7 @@ export async function getServiceDraftStockCheck(
 export async function confirmServiceDraftSourcing(
   id: string
 ): Promise<ApiResponse<{ id: string }>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }
@@ -185,7 +185,7 @@ export async function startServiceDraftInstall(
   id: string,
   input: unknown
 ): Promise<ApiResponse<{ id: string }>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }
@@ -235,7 +235,7 @@ export async function recordServiceDraftActuals(
   id: string,
   input: unknown
 ): Promise<ApiResponse<{ id: string }>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }
@@ -279,7 +279,7 @@ export async function recordServiceDraftActuals(
 }
 
 export async function completeServiceDraft(id: string): Promise<ApiResponse<{ id: string }>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }
@@ -314,7 +314,7 @@ export async function completeServiceDraft(id: string): Promise<ApiResponse<{ id
 }
 
 export async function cancelServiceDraft(id: string): Promise<ApiResponse<{ id: string }>> {
-  const session = await getSessionOrNull()
+  const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }

@@ -35,7 +35,7 @@ async function createPriceListAndOpenPage(
     await request.post(`/api/inventory/price-lists/${listId}/approve`, { data: {} })
   }
 
-  await gotoReady(page, `/inventory/price-lists/${listId}`)
+  await gotoReady(page, `/pos/catalog/price-lists/${listId}`)
   await expect(page.getByRole('heading', { name: listName })).toBeVisible({ timeout: 10_000 })
 
   return { listId, listName, typeId }

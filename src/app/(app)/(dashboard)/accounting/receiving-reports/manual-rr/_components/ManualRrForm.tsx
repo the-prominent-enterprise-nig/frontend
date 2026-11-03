@@ -79,10 +79,10 @@ function Field({
       <span className="flex items-center gap-1 text-[12px] font-medium text-[#3d3d4a]">
         {label}
         {required && <span className="text-[#b42318]"> *</span>}
-        {hint && <span className="ml-1 font-normal text-[#8b8b9b]">{hint}</span>}
+        {hint && <span className="ml-1 font-normal text-[#6f6f7f]">{hint}</span>}
         {tooltip && (
           <Tooltip label={tooltip}>
-            <Info className="h-3 w-3 text-[#a3a3b2]" />
+            <Info className="h-3 w-3 text-[#8e8e9d]" />
           </Tooltip>
         )}
       </span>
@@ -108,7 +108,7 @@ const toggleBtnClass = (active: boolean) =>
   `shrink-0 rounded-md border px-2 py-1 text-[11.5px] font-medium transition-colors ${
     active
       ? 'border-[#ddd0f7] bg-[#f1ebfb] text-[#3f1490]'
-      : 'border-[#d3d3db] text-[#5b5b6b] hover:border-[#a3a3b2]'
+      : 'border-[#d3d3db] text-[#4b4b5a] hover:border-[#a3a3b2]'
   }`
 
 const defaultValues: CreateManualReceivingReportFormValues = {
@@ -290,7 +290,7 @@ export default function ManualRrForm() {
         id ? `/accounting/receiving-reports/manual-rr/${id}` : '/accounting/receiving-reports'
       )
     } else {
-      showToast({ title: 'Failed', description: result.message, status: 'error' })
+      showToast({ title: "Couldn't save draft", description: result.message, status: 'error' })
     }
   }
 
@@ -301,11 +301,11 @@ export default function ManualRrForm() {
     >
       <div className="flex shrink-0 flex-wrap items-start justify-between gap-5 border-b border-[#e4e4e9] bg-white px-4 py-3.5 lg:px-5">
         <div className="flex min-w-0 flex-col gap-1">
-          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
             Accounting › Receiving Reports › New
           </div>
           <h2 className="text-[21px] font-semibold tracking-[-.02em]">Create Receiving Report</h2>
-          <p className="text-[12.5px] text-[#5b5b6b]">
+          <p className="text-[12.5px] text-[#4b4b5a]">
             Saves as a draft — you post it yourself when ready, no second approver needed.
           </p>
         </div>
@@ -453,11 +453,11 @@ export default function ManualRrForm() {
                 <span className="text-[13.5px] font-semibold">
                   Items received <span className="text-[#b42318]">*</span>
                 </span>
-                <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+                <span className={`${MONO} text-[11px] text-[#6f6f7f]`}>
                   {fields.length} {fields.length === 1 ? 'line' : 'lines'} · {totalUnits} units
                 </span>
               </div>
-              <span className="text-[11.5px] text-[#8b8b9b]">
+              <span className="text-[11.5px] text-[#6f6f7f]">
                 Pick a catalog item, or mark it &ldquo;Non-catalog items&rdquo; for anything not in
                 the catalog.
               </span>
@@ -473,12 +473,12 @@ export default function ManualRrForm() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2">
-            <span className="text-[11px] text-[#8b8b9b]">Defaults</span>
+            <span className="text-[11px] text-[#6f6f7f]">Defaults</span>
             <select
               value={defaultTaxCode}
               onChange={(e) => setDefaultTaxCode(e.target.value)}
               aria-label="Default tax code"
-              className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+              className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#4b4b5a] outline-none focus:border-[#5b21b6]"
             >
               {MANUAL_RR_TAX_CODES.map((code) => (
                 <option key={code.value} value={code.value}>
@@ -490,7 +490,7 @@ export default function ManualRrForm() {
               value={defaultWithholdingClass}
               onChange={(e) => setDefaultWithholdingClass(e.target.value)}
               aria-label="Default withholding"
-              className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+              className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#4b4b5a] outline-none focus:border-[#5b21b6]"
             >
               {withholdingClassOptions(ewt.rateFor).map((cls) => (
                 <option key={cls.value} value={cls.value}>
@@ -515,7 +515,7 @@ export default function ManualRrForm() {
           ) : (
             <>
               <div
-                className={`${MONO} hidden grid-cols-[minmax(0,1fr)_64px_100px_120px_112px_96px_60px_60px] gap-x-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] xl:grid`}
+                className={`${MONO} hidden grid-cols-[minmax(0,1fr)_64px_100px_120px_112px_96px_60px_60px] gap-x-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#6f6f7f] xl:grid`}
               >
                 <span className="whitespace-nowrap">Item / SKU</span>
                 <span className="whitespace-nowrap text-right">Qty</span>
@@ -580,7 +580,7 @@ export default function ManualRrForm() {
 
         <div className={`${PANEL} flex flex-col gap-2 px-4.5 py-3.5`}>
           <label className="text-[12px] font-medium text-[#3d3d4a]">
-            Notes <span className="font-normal text-[#8b8b9b]">optional</span>
+            Notes <span className="font-normal text-[#6f6f7f]">optional</span>
           </label>
           <Controller
             name="notes"
@@ -599,13 +599,13 @@ export default function ManualRrForm() {
       </div>
 
       <div className="sticky bottom-0 z-40 flex flex-wrap items-center justify-between gap-3.5 border-t border-[#e4e4e9] bg-white px-4 py-3 shadow-[0_-8px_24px_-16px_rgba(20,20,30,.3)] lg:px-5">
-        <span className="text-[13px] font-semibold text-[#5b5b6b]">
+        <span className="text-[13px] font-semibold text-[#4b4b5a]">
           Saves as a draft — post it yourself when ready
         </span>
         <div className="flex items-center gap-2">
           <Link
             href="/accounting/receiving-reports"
-            className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#5b5b6b] hover:bg-[#f1f1f4]"
+            className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#4b4b5a] hover:bg-[#f1f1f4]"
           >
             Cancel
           </Link>

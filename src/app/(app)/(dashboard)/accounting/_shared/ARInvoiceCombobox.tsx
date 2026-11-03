@@ -5,6 +5,9 @@ import { ARInvoices, fmtMoney, type ARInvoice } from '@/src/libs/data/Accounting
 
 const outstandingOf = (i: ARInvoice): number => i.totalAmount - i.amountPaid
 
+/** Most invoices the dropdown ever loads; the search box narrows from there. */
+const PICKER_LIMIT = 100
+
 type Props = {
   value: string
   /** Hands back the whole invoice: the dialogs need its totals for their
@@ -31,7 +34,13 @@ export default function ARInvoiceCombobox({
   error,
 }: Props) {
   async function search(query: string): Promise<SearchComboboxOption[]> {
-    const res = await ARInvoices.list({ ...(query && { search: query }) })
+    // A page, not the whole register: with an empty box this used to download
+    // every invoice (~25 MB at 12.7k) just to fill a dropdown. The newest
+    // matches come first, and typing narrows them server-side.
+    const res = await ARInvoices.list({
+      ...(query && { search: query }),
+      limit: PICKER_LIMIT,
+    })
     return (
       (res.data?.items ?? [])
         // A draft invoice has not been issued to the customer, so there is

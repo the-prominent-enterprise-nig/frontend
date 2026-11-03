@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { caravanLabel } from '@/src/libs/format/locationLabel'
+import { caravanLabelWithPlace } from '@/src/libs/format/locationLabel'
 
 export const WarehouseStatusSchema = z.enum(['active', 'inactive'])
 export const LocationTypeSchema = z.enum(['shelf', 'bin', 'zone', 'dock'])
@@ -50,6 +50,8 @@ export const WarehouseBranchSchema = z.object({
   eventName: z.string().nullable().optional(),
   startDate: z.string().nullable().optional(),
   endDate: z.string().nullable().optional(),
+  // Set once the host branch closes the caravan by hand — ended from then on.
+  closedAt: z.string().nullable().optional(),
   hostBranch: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
   // A caravan's location — where it is physically set up. Null when none was given.
   addressLine1: z.string().nullable().optional(),
@@ -62,10 +64,13 @@ export function isCaravanBranch(branch: WarehouseBranch | null | undefined): boo
   return !!branch?.isTemporary
 }
 
-/** Ended once its end date is before today — mirrors the backend rule that
- * stops new stock going in (stock can still be transferred out). */
+/** Ended once its host closed it, or its end date is before today — mirrors
+ * the backend rule that stops new stock going in (stock can still be
+ * transferred out). */
 export function isCaravanEnded(branch: WarehouseBranch | null | undefined): boolean {
-  if (!branch?.isTemporary || !branch.endDate) return false
+  if (!branch?.isTemporary) return false
+  if (branch.closedAt) return true
+  if (!branch.endDate) return false
   return branch.endDate.slice(0, 10) < new Date().toISOString().slice(0, 10)
 }
 
@@ -87,14 +92,27 @@ export function caravanDaysLeft(endDate: string | null | undefined): number | nu
   return Math.round((Date.parse(endDate.slice(0, 10)) - today) / 86_400_000)
 }
 
-/** "Ends today", "3 days left", "Ended 2 days ago". */
-export function caravanCountdown(endDate: string | null | undefined): string {
+/** "Ends today", "3 days left", "Ended 2 days ago", "Closed today". */
+export function caravanCountdown(
+  endDate: string | null | undefined,
+  closedAt?: string | null
+): string {
+  if (closedAt) return closedText(closedAt)
   const days = caravanDaysLeft(endDate)
   if (days === null) return 'No end date'
   if (days === 0) return 'Ends today'
   if (days > 0) return `${days} ${days === 1 ? 'day' : 'days'} left`
   const ago = -days
   return `Ended ${ago === 1 ? 'yesterday' : `${ago} days ago`}`
+}
+
+// closedAt is a full timestamp, so compare local calendar days — a close at
+// 7 AM in Manila is still "today", though it is yesterday in UTC.
+function closedText(closedAt: string): string {
+  const localDay = (d: Date): number => Date.parse(d.toLocaleDateString('en-CA'))
+  const ago = Math.round((localDay(new Date()) - localDay(new Date(closedAt))) / 86_400_000)
+  if (ago <= 0) return 'Closed today'
+  return `Closed ${ago === 1 ? 'yesterday' : `${ago} days ago`}`
 }
 
 /**
@@ -104,7 +122,7 @@ export function caravanCountdown(endDate: string | null | undefined): string {
  */
 export function warehouseLabel(wh: LabelledWarehouse, fallback = '—'): string {
   const branch = wh?.branch
-  if (branch?.isTemporary) return caravanLabel(branch)
+  if (branch?.isTemporary) return caravanLabelWithPlace(branch)
   return branch?.name ?? wh?.name ?? fallback
 }
 

@@ -1,8 +1,17 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type HTMLAttributes } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type HTMLAttributes,
+  type ReactNode,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, Check, X } from 'lucide-react'
+import { watchForScan } from '@/src/libs/scanner/watchForScan'
 
 /** Matches the in-flow dropdown's max-h-56; the portalled one shrinks below
  * this when the chosen side has less room. */
@@ -15,6 +24,12 @@ export type SearchableSelectOption = {
   /** Options sharing a group sit under one small heading. Pass them already
    * ordered by group — a heading is drawn wherever the group changes. */
   group?: string
+  /** Listed one step in, under the option above it — a sub-account under
+   * its parent. */
+  indent?: boolean
+  /** Secondary text beside the label. Display only — never type-filtered,
+   * so adding it can't change what any picker matches. */
+  description?: React.ReactNode
 }
 
 /** Same label ignoring case; and for numbers, the same number ("09" = "9"). */
@@ -58,12 +73,27 @@ type BaseProps = {
    * saved as no birthday at all. Single-select only; off by default so the
    * existing usages are untouched. */
   commitOnBlur?: boolean
+  /** For lists of scannable codes (serial numbers). A barcode scanner types
+   * the code and often nothing after it — no Enter — so the code just sits in
+   * the box with a one-row list under it waiting for a click. With this on,
+   * text that arrives at scanner speed and goes quiet is picked for you when
+   * it equals one option's label exactly (ignoring case), and Enter prefers
+   * that exact option over whichever one the filter lists first. Never
+   * removes: a code already picked is left alone rather than toggled off.
+   * Off by default so the existing usages are untouched. */
+  pickOnScan?: boolean
   /** 'start' keeps options whose label BEGINS with the typed text, so "2"
    * offers 2 and 20–29 instead of also 12 and 22, and "19" in a list of years
    * offers 1900–1999 rather than leading with 2019. Defaults to 'anywhere'. */
   matchFrom?: 'anywhere' | 'start'
   /** Passed to the input: 'numeric' brings up the number pad on a tablet. */
   inputMode?: HTMLAttributes<HTMLInputElement>['inputMode']
+  /** Names the input for assistive tech (and for tests that find a field by
+   * its label). Without it the input is only described by its placeholder. */
+  ariaLabel?: string
+  /** A small mark shown inside the box before the text, e.g. a tag for a
+   * price category. */
+  icon?: ReactNode
 }
 
 /** Why a single-select changed: picked from the list (a click, or Enter), or
@@ -106,8 +136,11 @@ export default function SearchableSelect(props: Props) {
     clearable = false,
     portal = false,
     commitOnBlur = false,
+    pickOnScan = false,
     matchFrom = 'anywhere',
     inputMode,
+    ariaLabel,
+    icon,
     chrome = {
       idle: 'border-gray-200',
       focused: 'border-prominent-purple-500 ring-1 ring-prominent-purple-500',
@@ -248,6 +281,30 @@ export default function SearchableSelect(props: Props) {
     return filtered.length === 1 ? filtered[0] : undefined
   }
 
+  /** The option whose label is exactly what was typed. Strict equality, unlike
+   * typedMatch's number-aware one: "0012" and "12" are different serials. */
+  function scannedMatch(): SearchableSelectOption | undefined {
+    if (querySeeded) return undefined
+    const q = query.trim().toLowerCase()
+    if (!q) return undefined
+    return options.find((o) => o.label.trim().toLowerCase() === q)
+  }
+
+  /** A scan has just ended (see pickOnScan): pick what it names. */
+  function commitScan() {
+    if (!pickOnScan) return
+    const match = scannedMatch()
+    if (!match || isSelected(match.value)) return
+    toggle(match.value)
+  }
+  // Runs on a timer after the last keystroke, so it reaches the latest
+  // render's query and options through a ref — the scan's final character is
+  // not in state yet at the moment the key goes down.
+  const commitScanRef = useRef(commitScan)
+  useEffect(() => {
+    commitScanRef.current = commitScan
+  })
+
   /** Leaving the field — Tab, or a click outside it. Closes the list, and
    * with commitOnBlur keeps what was typed when it names one option. */
   function closeOnLeave() {
@@ -281,11 +338,13 @@ export default function SearchableSelect(props: Props) {
           open ? chrome.focused : chrome.idle
         } ${disabled ? 'bg-gray-50' : ''}`}
       >
+        {icon && <span className="shrink-0 pl-2.5 text-gray-400">{icon}</span>}
         <input
           ref={inputRef}
           value={displayValue}
           disabled={disabled}
           inputMode={inputMode}
+          aria-label={ariaLabel}
           placeholder={loading ? loadingLabel : placeholder}
           onFocus={(e) => {
             // Reopening after a value is already picked used to blank the
@@ -315,6 +374,7 @@ export default function SearchableSelect(props: Props) {
             }
           }}
           onKeyDown={(e) => {
+            if (pickOnScan) watchForScan(e, () => commitScanRef.current())
             if (e.key === 'Escape') {
               setOpen(false)
               setQuery('')
@@ -337,7 +397,9 @@ export default function SearchableSelect(props: Props) {
               }
               // With commitOnBlur, an exact label wins over whichever option
               // happens to be listed first.
-              const pick = (commitOnBlur ? typedMatch() : undefined) ?? filtered[0]
+              const pick =
+                (commitOnBlur ? typedMatch() : pickOnScan ? scannedMatch() : undefined) ??
+                filtered[0]
               if (pick) toggle(pick.value)
               return
             }
@@ -437,13 +499,22 @@ export default function SearchableSelect(props: Props) {
                 aria-checked={multiple ? isSelected(opt.value) : undefined}
                 onMouseDown={(e) => multiple && e.preventDefault()}
                 onClick={() => toggle(opt.value)}
-                className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-gray-50 ${
+                className={`flex w-full items-center justify-between gap-2 ${opt.indent ? 'pl-7 pr-3' : 'px-3'} py-2 text-left text-sm transition-colors hover:bg-gray-50 ${
                   isSelected(opt.value)
                     ? 'bg-prominent-purple-50 text-prominent-purple-700'
                     : 'text-gray-800'
                 }`}
               >
-                {opt.label}
+                {opt.description ? (
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span>{opt.label}</span>
+                    <span className="whitespace-nowrap text-[11.5px] text-gray-500">
+                      {opt.description}
+                    </span>
+                  </span>
+                ) : (
+                  opt.label
+                )}
                 {isSelected(opt.value) && <Check className="h-3.5 w-3.5 shrink-0" />}
               </button>
             </div>

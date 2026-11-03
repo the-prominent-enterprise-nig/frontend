@@ -110,7 +110,7 @@ test('transaction detail shows the charge invoice with its own number and live s
   await expect(page.getByText('Invoices', { exact: true })).toBeVisible({ timeout: 10_000 })
   await expect(page.getByText('Charge invoice')).toBeVisible()
   await expect(page.getByText(/^CHG-/)).toBeVisible()
-  await expect(page.getByText('Due', { exact: true })).toBeVisible()
+  await expect(page.getByText('To pay', { exact: true })).toBeVisible()
 })
 
 test('searching by the charge invoice number finds the same transaction (Scenario 23 Gap 3)', async ({

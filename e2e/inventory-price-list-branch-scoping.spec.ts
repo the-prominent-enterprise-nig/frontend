@@ -18,7 +18,7 @@ test.describe('Inventory — Price List Branch Scoping', () => {
 
   test('creates a branch-scoped price list, then edits its branches', async ({ page, request }) => {
     const name = `${NAME_PREFIX}${Date.now()}`
-    await gotoReady(page, '/inventory/price-lists')
+    await gotoReady(page, '/pos/catalog/price-lists')
 
     await clickStable(
       page.getByRole('button', { name: 'New Price List' }),

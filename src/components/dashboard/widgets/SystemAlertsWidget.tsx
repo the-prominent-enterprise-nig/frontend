@@ -5,9 +5,10 @@ import { AlertTriangle, AlertOctagon, CheckCircle } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { getReorderAlerts } from '@/src/app/(app)/(dashboard)/inventory/reorder/_actions/get-reorder-alerts'
 import { getReorderAlertsByWarehouse } from '@/src/app/(app)/(dashboard)/inventory/reorder/_actions/get-reorder-alerts-by-warehouse'
-import { ARInvoices } from '@/src/libs/data/AccountingV2Data'
+import { useQueryClient } from '@tanstack/react-query'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { resolveBranchWarehouseIds } from '../resolveBranchWarehouses'
+import { fetchArStats } from './arStats'
 
 type Alert = {
   type: 'error' | 'warning' | 'success'
@@ -59,62 +60,65 @@ export default function SystemAlertsWidget() {
   const showBody = variant === 'lg' || variant === 'md'
   const limit = variant === 'xs' ? 2 : 3
   const branchId = usePosBranchContext((s) => s.branchId)
+  const queryClient = useQueryClient()
 
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([loadReorderAlertItems(branchId), ARInvoices.list()]).then(([alertList, arRes]) => {
-      if (cancelled) return
+    // Tenant-wide AR figures (no branch), shared with the other dashboard widgets that ask for them.
+    Promise.all([loadReorderAlertItems(branchId), fetchArStats(queryClient)]).then(
+      ([alertList, arStats]) => {
+        if (cancelled) return
 
-      const outOfStockCount = alertList.filter((a) => a.currentQty === 0).length
-      const lowStockCount = alertList.length - outOfStockCount
+        const outOfStockCount = alertList.filter((a) => a.currentQty === 0).length
+        const lowStockCount = alertList.length - outOfStockCount
 
-      const invoices = arRes.data?.items ?? []
-      const overdueCount = invoices.filter((i) => i.status === 'OVERDUE').length
+        const overdueCount = arStats.overdue.count
 
-      const computed: Alert[] = []
-      if (outOfStockCount > 0) {
-        computed.push({
-          type: 'error',
-          icon: AlertOctagon,
-          title: `${outOfStockCount} item${outOfStockCount === 1 ? '' : 's'} out of stock`,
-          body: 'Zero on-hand quantity against an active reorder rule',
-        })
-      }
-      if (lowStockCount > 0) {
-        computed.push({
-          type: 'warning',
-          icon: AlertTriangle,
-          title: `${lowStockCount} item${lowStockCount === 1 ? '' : 's'} below reorder point`,
-          body: 'Stock has fallen under its configured minimum level',
-        })
-      }
-      if (overdueCount > 0) {
-        computed.push({
-          type: 'warning',
-          icon: AlertTriangle,
-          title: `${overdueCount} invoice${overdueCount === 1 ? '' : 's'} overdue`,
-          body: 'Past due date with an outstanding balance',
-        })
-      }
-      if (computed.length === 0) {
-        computed.push({
-          type: 'success',
-          icon: CheckCircle,
-          title: 'All systems normal',
-          body: 'No stock or invoice alerts right now',
-        })
-      }
+        const computed: Alert[] = []
+        if (outOfStockCount > 0) {
+          computed.push({
+            type: 'error',
+            icon: AlertOctagon,
+            title: `${outOfStockCount} item${outOfStockCount === 1 ? '' : 's'} out of stock`,
+            body: 'Zero on-hand quantity against an active reorder rule',
+          })
+        }
+        if (lowStockCount > 0) {
+          computed.push({
+            type: 'warning',
+            icon: AlertTriangle,
+            title: `${lowStockCount} item${lowStockCount === 1 ? '' : 's'} below reorder point`,
+            body: 'Stock has fallen under its configured minimum level',
+          })
+        }
+        if (overdueCount > 0) {
+          computed.push({
+            type: 'warning',
+            icon: AlertTriangle,
+            title: `${overdueCount} invoice${overdueCount === 1 ? '' : 's'} overdue`,
+            body: 'Past due date with an outstanding balance',
+          })
+        }
+        if (computed.length === 0) {
+          computed.push({
+            type: 'success',
+            icon: CheckCircle,
+            title: 'All systems normal',
+            body: 'No stock or invoice alerts right now',
+          })
+        }
 
-      setAlerts(computed)
-      setLoading(false)
-    })
+        setAlerts(computed)
+        setLoading(false)
+      }
+    )
     return () => {
       cancelled = true
     }
-  }, [branchId])
+  }, [branchId, queryClient])
 
   if (loading) {
     return (

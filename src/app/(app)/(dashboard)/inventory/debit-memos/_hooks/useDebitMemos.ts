@@ -39,6 +39,8 @@ function matchesQuery(memo: SupplierDebitMemo, q: string): boolean {
   return haystack.includes(q)
 }
 
+export const MEMO_PAGE_SIZE = 20
+
 /**
  * Every memo, fetched once and filtered here rather than per keystroke on the
  * server. Two reasons: the band's tiles and the status pills count the whole
@@ -48,6 +50,7 @@ function matchesQuery(memo: SupplierDebitMemo, q: string): boolean {
  */
 export function useDebitMemos() {
   const [filters, setFiltersState] = useState<DebitMemoFilters>(EMPTY_FILTERS)
+  const [requestedPage, setPage] = useState(1)
 
   const query = useQuery({
     queryKey: ['supplier-debit-memos'],
@@ -101,15 +104,34 @@ export function useDebitMemos() {
   const hasActiveFilters =
     filters.query !== '' || filters.status !== 'all' || filters.supplierId !== 'all'
 
+  // Paged here, after filtering, so the band and the pills above still count
+  // the whole set. Clamped rather than reset in an effect, so a page that
+  // stops existing (fewer matches) simply shows the last one.
+  const pageCount = Math.max(1, Math.ceil(memos.length / MEMO_PAGE_SIZE))
+  const page = Math.min(requestedPage, pageCount)
+  const pageStart = (page - 1) * MEMO_PAGE_SIZE
+  const pageMemos = memos.slice(pageStart, pageStart + MEMO_PAGE_SIZE)
+
   return {
     memos,
+    pageMemos,
+    page,
+    pageCount,
+    pageStart,
+    setPage,
     allMemos,
     stats,
     suppliers,
     filters,
-    setFilters: (patch: Partial<DebitMemoFilters>) =>
-      setFiltersState((prev) => ({ ...prev, ...patch })),
-    resetFilters: () => setFiltersState(EMPTY_FILTERS),
+    // A new filter starts from the first page of what it matches.
+    setFilters: (patch: Partial<DebitMemoFilters>) => {
+      setFiltersState((prev) => ({ ...prev, ...patch }))
+      setPage(1)
+    },
+    resetFilters: () => {
+      setFiltersState(EMPTY_FILTERS)
+      setPage(1)
+    },
     hasActiveFilters,
     isLoading: query.isLoading,
     isFetching: query.isFetching,

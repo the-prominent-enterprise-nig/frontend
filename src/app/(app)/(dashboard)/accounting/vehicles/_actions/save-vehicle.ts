@@ -1,0 +1,56 @@
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import { api, ApiResponse } from '@/src/libs/api/client'
+import { VehicleFormSchema } from '@/src/schema/inventory/vehicles'
+import { getSessionIfAvailable } from '@/src/libs/auth/actions'
+import { canAny } from '@/src/libs/guards/permission'
+import { DRIVER_ACCESS } from '@/src/libs/guards/shared-ownership'
+
+function failure(result: { error?: unknown; message?: unknown }, fallback: string) {
+  const errStr = Array.isArray(result.error) ? result.error.join(' ') : String(result.error ?? '')
+  const msg =
+    typeof result.message === 'string' ? result.message : JSON.stringify(result.message ?? '')
+  return { success: false as const, error: errStr || fallback, message: msg || errStr || fallback }
+}
+
+// Create (no id) or update (id). The roster is managed with the same
+// permissions as Drivers: accounting:drivers:* or inventory:drivers:*. An emptied Vehicle
+// Type is sent as '' so the backend clears it; an empty branch is dropped (head
+// office picks one, a branch-assigned user is forced into their own server-side).
+export async function saveVehicle(id: string | null, input: unknown): Promise<ApiResponse<void>> {
+  const session = await getSessionIfAvailable()
+  if (!session) return { success: false, error: 'Unauthorized', message: 'Authentication required' }
+  const needed = id ? DRIVER_ACCESS.UPDATE : DRIVER_ACCESS.CREATE
+  if (!canAny(session, needed)) {
+    return {
+      success: false,
+      error: 'Forbidden',
+      message: `You do not have permission to ${id ? 'edit' : 'add'} vehicles`,
+    }
+  }
+
+  const parsed = VehicleFormSchema.safeParse(input)
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: 'Validation failed',
+      message: parsed.error.issues.map((i) => i.message).join(', '),
+    }
+  }
+
+  const { branchId, ...rest } = parsed.data
+  const body = {
+    ...rest,
+    tag: rest.tag ?? '',
+    ...(branchId ? { branchId } : {}),
+  }
+
+  const result = id
+    ? await api.patch(`/inventory/vehicles/${id}`, body)
+    : await api.post('/inventory/vehicles', body)
+  if (!result.success) return failure(result, 'Failed to save vehicle')
+
+  revalidatePath('/accounting/vehicles')
+  return { success: true, message: id ? 'Vehicle updated' : 'Vehicle added' }
+}

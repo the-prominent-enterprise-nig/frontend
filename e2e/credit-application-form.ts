@@ -86,7 +86,6 @@ export async function fillTheRest(page: Page): Promise<void> {
 
   // Paper record.
   await pickOption(fieldBox(page, /^Down payment collection/).getByRole('combobox'), page, 'Branch')
-  await input(page, /^POS draft/).fill(`QT-E2E-${Date.now()}`)
   await pickOption(fieldBox(page, /^Applicant is unit user/).getByRole('combobox'), page, 'Yes')
   await page.getByRole('checkbox', { name: /Paper form fully complete and signed/ }).check()
 }

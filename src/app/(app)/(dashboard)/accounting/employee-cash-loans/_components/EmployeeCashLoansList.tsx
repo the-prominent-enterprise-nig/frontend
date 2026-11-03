@@ -32,7 +32,7 @@ export default function EmployeeCashLoansList({
 
   return (
     <div className="w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8">
-      <div className="mx-auto max-w-6xl space-y-6">
+      <div className="w-full space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-prominent-purple-900 md:text-3xl">
@@ -108,7 +108,7 @@ export default function EmployeeCashLoansList({
                     <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
                       Principal
                     </th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
                       Term
                     </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden md:table-cell">
@@ -159,8 +159,8 @@ export default function EmployeeCashLoansList({
                         <td className="px-4 py-3 text-right text-zinc-700 hidden md:table-cell">
                           {fmt(loan.principal)}
                         </td>
-                        <td className="px-4 py-3 text-center text-zinc-500 hidden md:table-cell">
-                          {loan.termMonths ? `${loan.termMonths}mo` : '—'}
+                        <td className="px-4 py-3 text-left text-zinc-500 hidden md:table-cell">
+                          {loan.termMonths ? `${loan.termMonths}mo` : 'On demand'}
                         </td>
                         <td className="px-4 py-3 text-right text-zinc-700 hidden md:table-cell">
                           {loan.monthlyDeduction ? fmt(loan.monthlyDeduction) : '—'}

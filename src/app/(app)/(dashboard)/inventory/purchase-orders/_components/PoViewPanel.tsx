@@ -104,14 +104,14 @@ export function PoViewPanel({ po, onClose }: Props) {
         {/* Header */}
         <div className="flex shrink-0 flex-wrap items-start justify-between gap-4 border-b border-[#e4e4e9] px-6 py-5">
           <div className="flex min-w-0 flex-col gap-[3px]">
-            <span className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+            <span className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
               Purchase Order
             </span>
             <div className="flex flex-wrap items-center gap-2.5">
               <h2 className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>{po.code}</h2>
               <StatusBadge status={po.status} />
             </div>
-            <p className="text-[13px] text-[#5b5b6b]">
+            <p className="text-[13px] text-[#4b4b5a]">
               {po.supplier.name} · {locationLabel(po.warehouse)}
             </p>
           </div>
@@ -143,7 +143,7 @@ export function PoViewPanel({ po, onClose }: Props) {
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#4b4b5a] hover:bg-[#f1f1f4] hover:text-[#17171c]"
             >
               <X className="h-4.5 w-4.5" />
             </button>

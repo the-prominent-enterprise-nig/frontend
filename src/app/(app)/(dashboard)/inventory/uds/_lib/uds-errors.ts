@@ -30,12 +30,27 @@ const UDS_ERROR_MESSAGES: Record<string, string> = {
     'The service centre still has this unit — receive it back first.',
   uds_is_still_with_a_repair_provider_receive_it_back_first:
     'The service centre still has this unit — receive it back first.',
-  repair_provider_not_found: 'That repair provider no longer exists.',
+  repair_provider_not_found: 'That service center no longer exists.',
   serial_number_not_found: 'That serial number no longer exists.',
   uds_not_found: 'That UDS no longer exists.',
 }
 
+/** Scenario 72 Part 10 — keys that carry the transfer number after a colon. */
+const UDS_ERROR_PREFIXES: [string, (number: string) => string][] = [
+  [
+    'uds_moves_on_transfer:',
+    (n) => `This step happens on transfer ${n} — dispatch or receive it there.`,
+  ],
+  [
+    'uds_unit_is_on_transfer:',
+    (n) => `The unit is on the road on transfer ${n} — receive it before cancelling.`,
+  ],
+]
+
 export function udsErrorMessage(raw: string | undefined, fallback: string): string {
   if (!raw) return fallback
-  return UDS_ERROR_MESSAGES[raw.trim()] ?? raw
+  const key = raw.trim()
+  const prefixed = UDS_ERROR_PREFIXES.find(([prefix]) => key.startsWith(prefix))
+  if (prefixed) return prefixed[1](key.slice(prefixed[0].length))
+  return UDS_ERROR_MESSAGES[key] ?? raw
 }

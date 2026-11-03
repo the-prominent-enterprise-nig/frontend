@@ -11,11 +11,5 @@ export default async function AgentsPage() {
   if (!session) redirect('/login')
   if (!can(session, CRM_PERMISSIONS.AGENTS_READ)) redirect('/403')
 
-  return (
-    <AgentsList
-      canCreate={can(session, CRM_PERMISSIONS.AGENTS_CREATE)}
-      canUpdate={can(session, CRM_PERMISSIONS.AGENTS_UPDATE)}
-      canDelete={can(session, CRM_PERMISSIONS.AGENTS_DELETE)}
-    />
-  )
+  return <AgentsList canCreate={can(session, CRM_PERMISSIONS.AGENTS_CREATE)} />
 }

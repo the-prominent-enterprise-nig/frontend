@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
+import { REMINDERS_ENABLED } from '@/src/libs/features'
 import CustomersList from './_components/CustomersList'
 
 export const metadata = { title: 'Customers | CRM' }
@@ -13,7 +14,7 @@ export default async function CustomersPage() {
 
   return (
     <CustomersList
-      canScheduleReminder={can(session, CRM_PERMISSIONS.REMINDERS_CREATE)}
+      canScheduleReminder={REMINDERS_ENABLED && can(session, CRM_PERMISSIONS.REMINDERS_CREATE)}
       canCreate={can(session, CRM_PERMISSIONS.CUSTOMERS_CREATE)}
       canReviewDuplicates={can(session, CRM_PERMISSIONS.CUSTOMERS_MERGE)}
       currentUserId={session.id}

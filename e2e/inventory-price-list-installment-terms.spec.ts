@@ -58,7 +58,7 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
     const name = `${NAME_PREFIX}${Date.now()}`
 
     // ─── Admin: create + price the list under CREDIT CARD ──────────────────
-    await gotoReady(page, '/inventory/price-lists')
+    await gotoReady(page, '/pos/catalog/price-lists')
     await clickStable(
       page.getByRole('button', { name: 'New Price List' }),
       page.getByRole('heading', { name: 'New Price List' })
@@ -74,7 +74,7 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
     // of opening a modal.
     const row = page.getByRole('row').filter({ hasText: name })
     await row.getByRole('link', { name: 'Manage Items' }).click()
-    await expect(page).toHaveURL(/\/inventory\/price-lists\/[^/]+$/, { timeout: 10_000 })
+    await expect(page).toHaveURL(/\/pos\/catalog\/price-lists\/[^/]+$/, { timeout: 10_000 })
     await expect(page.getByRole('heading', { name })).toBeVisible({ timeout: 10_000 })
 
     await openAddItemsPanel(page)
@@ -142,13 +142,8 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
     await openCustomSelect(termSelect)
     await page.getByRole('option').first().click()
 
-    // The down payment starts collapsed behind a static "10% min" badge —
-    // reveal the editable input (pre-filled with the current value) to read it.
-    await clickStable(
-      page.getByRole('button', { name: 'Change amount' }),
-      page.getByPlaceholder('Down payment')
-    )
-    await expect(page.getByPlaceholder('Down payment')).toHaveValue(CURATED_DOWN_PAYMENT, {
+    // The down payment is a field from the start, pre-filled with the current value.
+    await expect(page.getByTestId('down-payment-input')).toHaveValue(CURATED_DOWN_PAYMENT, {
       timeout: 10_000,
     })
 

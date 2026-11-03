@@ -1,18 +1,16 @@
 'use client'
 import ExportButton from '@/src/components/common/ExportButton'
+import TablePagination from '@/src/components/common/TablePagination'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
-import { formatAge } from '@/src/libs/format/date'
-import { ArrowDown, ArrowUp, ArrowUpDown, Search, X } from 'lucide-react'
 import type { ReactElement } from 'react'
-import type { AgingSort } from '../_hooks/useInventoryReports'
-import { CONTROL_CHROME, MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
+import type { AgingFilters } from '../_hooks/useInventoryReports'
 import {
-  SERIAL_AGING_BUCKET_LABELS,
-  SerialAgingBucketSchema,
-  type AgingReportResponse,
   type AgingReportItem,
+  type AgingReportResponse,
   type SerialAgingBucket,
 } from '@/src/schema/inventory/reports'
+
+type Option = { id: string; name: string }
 
 interface Props {
   data: AgingReportResponse | null | undefined
@@ -20,146 +18,270 @@ interface Props {
   isFetching: boolean
   page: number
   setPage: (page: number) => void
-  /** The filters this report was loaded with, minus paging — the Excel
-   * export returns every matching row, with pivot tables. */
-  exportParams: Record<string, string | number | undefined>
-  filters: {
-    serial?: string
-    brandId?: string
-    model?: string
-    receivedFrom?: string
-    receivedTo?: string
-  }
-  setFilter: (
-    key: 'serial' | 'brandId' | 'model' | 'receivedFrom' | 'receivedTo',
-    value: string | undefined
-  ) => void
-  warehouses: { id: string; name: string }[]
-  warehouseId: string | undefined
-  setWarehouseId: (v: string | undefined) => void
-  categoryId: string | undefined
-  setCategoryId: (v: string | undefined) => void
-  categoryOptions: { id: string; name: string }[]
-  sort: AgingSort
-  onSort: (sort: AgingSort) => void
+  /** The filters the report on screen was loaded with. */
+  filters: AgingFilters
+  onFiltersChange: (filters: AgingFilters) => void
+  warehouses: Option[]
+  categoryOptions: Option[]
+  typeOptions: Option[]
 }
 
-/** Column header that sorts the whole report; a second click flips direction. */
-function SortableTh({
-  label,
-  by,
-  sort,
-  onSort,
-  align,
-}: {
-  label: string
-  by: AgingSort['by']
-  sort: AgingSort
-  onSort: (sort: AgingSort) => void
-  align: 'left' | 'center'
-}): ReactElement {
-  const active = sort.by === by
-  const Icon = !active ? ArrowUpDown : sort.dir === 'asc' ? ArrowUp : ArrowDown
-  const nextDir: AgingSort['dir'] = active && sort.dir === 'desc' ? 'asc' : 'desc'
+type CardKey = SerialAgingBucket | 'total'
+
+const CARDS: { key: CardKey; label: string; tone: string; figure: string }[] = [
+  {
+    key: '0_6',
+    label: '0-6 months',
+    tone: 'border-[#cfe9d7] bg-[#ddf1e4]',
+    figure: 'text-[#2f6b3b]',
+  },
+  {
+    key: '7_14',
+    label: '7-14 months',
+    tone: 'border-[#f1e2b0] bg-[#f8edc9]',
+    figure: 'text-[#7a5a06]',
+  },
+  {
+    key: '15_plus',
+    label: '15 months and up',
+    tone: 'border-[#f0cccc] bg-[#f8dcdc]',
+    figure: 'text-[#8f1a2a]',
+  },
+  {
+    key: 'total',
+    label: 'Total',
+    tone: 'border-[#8fbfdc] bg-[#d6eaf5]',
+    figure: 'text-[#1f4e79]',
+  },
+]
+
+/** Age-pill tone per bucket — the same colours as the cards above. */
+const PILL_TONE: Record<SerialAgingBucket, string> = {
+  '0_6': 'bg-[#ddf1e4] text-[#2f6b3b]',
+  '7_14': 'bg-[#f8edc9] text-[#7a5a06]',
+  '15_plus': 'bg-[#f8dcdc] text-[#8f1a2a]',
+}
+
+const COLUMNS = ['Serial', 'Model', 'Brand', 'Branch/Warehouse', 'Inbound Age', 'Store Age', 'Cost']
+
+const peso = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })
+const amount = new Intl.NumberFormat('en-PH', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+function bucketFor(months: number): SerialAgingBucket {
+  if (months <= 6) return '0_6'
+  if (months <= 14) return '7_14'
+  return '15_plus'
+}
+
+function monthsLabel(months: number): string {
+  if (months < 1) return '< 1 mo'
+  return months === 1 ? '1 mo' : `${months} mos`
+}
+
+/** Only the two standalone warehouses keep the "Warehouse" suffix; other locations show bare names. */
+function locationLabel(name: string | null): string {
+  if (!name) return '—'
+  return /^(panay|negros)\b/i.test(name) ? name : name.replace(/\s+warehouse$/i, '')
+}
+
+function SummaryCards({ data }: { data: AgingReportResponse }): ReactElement {
   return (
-    <th
-      className={`px-4 py-[9px] font-medium text-${align}`}
-      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-    >
-      <button
-        type="button"
-        onClick={() => onSort({ by, dir: nextDir })}
-        className={`inline-flex cursor-pointer items-center gap-1 uppercase hover:text-[#17171c] ${active ? 'text-[#5b21b6]' : ''}`}
-      >
-        {label}
-        <Icon className="h-3 w-3" />
-      </button>
-    </th>
-  )
-}
-
-// Same tones as the stock views' status pills, one per age bucket.
-const BUCKET_TONE: Record<SerialAgingBucket, string> = {
-  '0_30': 'bg-[#e7f5ef] text-[#0b6644]',
-  '31_60': 'bg-[#fdf3d6] text-[#7a5a06]',
-  '61_90': 'bg-[#fdebd5] text-[#9a4a06]',
-  '91_180': 'bg-[#fdeceb] text-[#b42318]',
-  '180_plus': 'bg-[#f9d4d1] text-[#8f1a12]',
-}
-
-const INPUT =
-  'h-[38px] rounded-lg border bg-white px-3 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2] ' +
-  CONTROL_CHROME.idle +
-  ' focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]'
-
-function Metric({
-  label,
-  count,
-  highlight = false,
-}: {
-  label: string
-  count: number
-  highlight?: boolean
-}) {
-  return (
-    <div className={`flex flex-col gap-1 px-4 py-3 ${highlight ? 'bg-[#f4fbf7]' : ''}`}>
-      <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
-        {label}
-      </span>
-      <span className={`${MONO} text-[20px] font-semibold tracking-[-.01em]`}>
-        {count.toLocaleString()}
-      </span>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {CARDS.map((card) => {
+        const figures = card.key === 'total' ? data.totals : data.summary[card.key]
+        return (
+          <div key={card.key} className={`rounded-xl border-2 px-5 py-4 ${card.tone}`}>
+            <p className="text-[12px] font-semibold uppercase tracking-wide text-zinc-600">
+              {card.label}
+            </p>
+            <p className={`mt-1 text-[32px] font-bold leading-tight ${card.figure}`}>
+              {(figures?.count ?? 0).toLocaleString()}
+            </p>
+            <p className="text-[15px] text-zinc-600">{peso.format(figures?.totalValue ?? 0)}</p>
+          </div>
+        )
+      })}
     </div>
   )
 }
 
-/** M-D-YY date-in, e.g. 01-29-26, matching the client's sheet. */
-function formatDateIn(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date
-    .toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' })
-    .replace(/\//g, '-')
+function FilterField({ label, children }: { label: string; children: ReactElement }): ReactElement {
+  return (
+    <div className="flex min-w-[180px] flex-1 flex-col gap-1.5">
+      <span className="text-[12px] font-semibold uppercase tracking-wide text-zinc-500">
+        {label}
+      </span>
+      {children}
+    </div>
+  )
 }
 
-/** Only the two standalone warehouses keep the "Warehouse" suffix; other locations show bare names. */
-function locationLabel(name: string): string {
-  return /^(panay|negros)\b/i.test(name) ? name : name.replace(/\s+warehouse$/i, '')
-}
-
-/** Page number box: type a page and press Enter or click away to jump. */
-function PageJump({
-  page,
-  totalPages,
-  onJump,
+function OptionSelect({
+  value,
+  onChange,
+  placeholder,
+  options,
 }: {
-  page: number
-  totalPages: number
-  onJump: (page: number) => void
-}) {
-  const commit = (input: HTMLInputElement): void => {
-    const next = Math.min(totalPages, Math.max(1, Math.round(Number(input.value))))
-    if (input.value.trim() === '' || Number.isNaN(next)) {
-      input.value = String(page)
-      return
-    }
-    onJump(next)
-  }
+  value: string | undefined
+  onChange: (value: string | undefined) => void
+  placeholder: string
+  options: Option[]
+}): ReactElement {
+  return (
+    <SearchableSelect
+      value={value ?? ''}
+      onChange={(v) => onChange(v || undefined)}
+      placeholder={placeholder}
+      ariaLabel={placeholder}
+      clearable
+      options={options.map((o) => ({ value: o.id, label: o.name }))}
+    />
+  )
+}
+
+function FilterBar({
+  filters,
+  onFiltersChange,
+  warehouses,
+  categoryOptions,
+  typeOptions,
+  canExport,
+}: Pick<Props, 'filters' | 'onFiltersChange' | 'warehouses' | 'categoryOptions' | 'typeOptions'> & {
+  canExport: boolean
+}): ReactElement {
+  // Every change reloads the report, so the export always matches the screen.
+  const set = (patch: Partial<AgingFilters>): void => onFiltersChange({ ...filters, ...patch })
 
   return (
-    <input
-      key={page}
-      type="number"
-      min={1}
-      max={totalPages}
-      defaultValue={page}
-      aria-label="Go to page"
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') commit(e.currentTarget)
-      }}
-      onBlur={(e) => commit(e.currentTarget)}
-      className="h-7 w-14 rounded-lg border bg-white text-center text-[12.5px] text-[#17171c] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-    />
+    <div className="flex flex-wrap items-end gap-4">
+      <FilterField label="As of date">
+        <input
+          type="date"
+          aria-label="As of date"
+          value={filters.asOf}
+          onChange={(e) => set({ asOf: e.target.value })}
+          className="h-10 rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-prominent-purple-600"
+        />
+      </FilterField>
+      <FilterField label="Location">
+        <OptionSelect
+          value={filters.warehouseId}
+          onChange={(warehouseId) => set({ warehouseId })}
+          placeholder="All locations"
+          options={warehouses.map((w) => ({ id: w.id, name: locationLabel(w.name) }))}
+        />
+      </FilterField>
+      <FilterField label="Category">
+        <OptionSelect
+          value={filters.categoryId}
+          onChange={(categoryId) => set({ categoryId })}
+          placeholder="All categories"
+          options={categoryOptions}
+        />
+      </FilterField>
+      <FilterField label="Classification">
+        <OptionSelect
+          value={filters.typeId}
+          onChange={(typeId) => set({ typeId })}
+          placeholder="All classifications"
+          options={typeOptions}
+        />
+      </FilterField>
+      <ExportButton
+        endpoint="/inventory/reports/aging/export"
+        params={{ ...filters }}
+        fallbackFilename="inventory-aging.xlsx"
+        disabled={!canExport}
+      />
+    </div>
+  )
+}
+
+function AgePill({ months }: { months: number | null }): ReactElement {
+  if (months === null) return <span className="text-zinc-400">—</span>
+  return (
+    <span
+      className={`inline-block whitespace-nowrap rounded-full px-3 py-0.5 text-[12.5px] ${PILL_TONE[bucketFor(months)]}`}
+    >
+      {monthsLabel(months)}
+    </span>
+  )
+}
+
+function AgingRow({ row }: { row: AgingReportItem }): ReactElement {
+  return (
+    <tr className="even:bg-zinc-100/70">
+      <td className="px-4 py-3 font-semibold text-zinc-900">{row.serialNumber}</td>
+      <td className="px-4 py-3 text-zinc-700">{row.modelNumber ?? '—'}</td>
+      <td className="px-4 py-3 text-zinc-700">{row.brandName ?? '—'}</td>
+      <td className="px-4 py-3 text-zinc-700">{locationLabel(row.warehouseName)}</td>
+      <td className="px-4 py-3 text-center">
+        <AgePill months={row.inboundMonths} />
+      </td>
+      <td className="px-4 py-3 text-center">
+        <AgePill months={row.storeMonths} />
+      </td>
+      <td className="px-4 py-3 text-right tabular-nums text-zinc-700">
+        {amount.format(row.unitCost)}
+      </td>
+    </tr>
+  )
+}
+
+function AgingTable({ data }: { data: AgingReportResponse }): ReactElement {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-[#4c1d95] text-left text-white">
+            {COLUMNS.map((c) => (
+              <th
+                key={c}
+                className={`px-4 py-3.5 font-medium ${c === 'Cost' ? 'text-right' : c.endsWith('Age') ? 'text-center' : ''}`}
+              >
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.data.map((row) => (
+            <AgingRow key={row.serialNumberId} row={row} />
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-y border-zinc-200">
+            <td colSpan={6} className="px-4 py-3 text-right font-semibold text-zinc-900">
+              Total Cost:
+            </td>
+            <td className="px-4 py-3 text-right font-semibold tabular-nums text-zinc-900">
+              {peso.format(data.totals.totalValue)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
+function TableState({ isLoading }: { isLoading: boolean }): ReactElement {
+  if (isLoading) {
+    return (
+      <div>
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="h-[48px] animate-pulse border-t border-zinc-100 bg-white" />
+        ))}
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col items-center justify-center gap-1 py-16 text-center">
+      <p className="text-sm font-semibold text-zinc-900">No units match</p>
+      <p className="text-sm text-zinc-500">Try different filters.</p>
+    </div>
   )
 }
 
@@ -169,241 +291,47 @@ export default function AgingReport({
   isFetching,
   page,
   setPage,
-  exportParams,
   filters,
-  setFilter,
+  onFiltersChange,
   warehouses,
-  warehouseId,
-  setWarehouseId,
-  categoryId,
-  setCategoryId,
   categoryOptions,
-  sort,
-  onSort,
-}: Props) {
-  const summary = data?.summary
+  typeOptions,
+}: Props): ReactElement {
   const meta = data?.meta
-  const totalPages = meta?.lastPage ?? 1
-  const totalRows = meta?.total ?? 0
   const pageSize = meta?.limit ?? 20
-  const hasFilters = Boolean(
-    filters.serial || warehouseId || filters.model || filters.receivedFrom || filters.receivedTo
-  )
 
   return (
-    <div className={`${PLEX} flex flex-col gap-[14px] text-[#17171c] antialiased`}>
-      {/* Metric band — every bucket, whatever the table below is filtered to. */}
-      {!isLoading && summary && (
-        <div className="grid grid-cols-2 divide-x divide-y divide-[#eeeef1] overflow-hidden rounded-xl border border-[#e4e4e9] bg-white min-[640px]:grid-cols-3 min-[1080px]:grid-cols-5 min-[1080px]:divide-y-0">
-          {SerialAgingBucketSchema.options.map((bucket) => (
-            <Metric
-              key={bucket}
-              label={SERIAL_AGING_BUCKET_LABELS[bucket]}
-              count={summary[bucket]?.count ?? 0}
-              highlight={bucket === '0_30'}
-            />
-          ))}
-        </div>
-      )}
+    <div className="flex flex-col gap-6 rounded-2xl border border-zinc-200 bg-white p-5 md:p-8">
+      <div>
+        <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Inventory Aging Report</h1>
+        <p className="mt-1 text-sm text-zinc-500">How long each in-stock unit has been on hand.</p>
+      </div>
 
-      {/* Filter bar — same row as the stock views. */}
-      <div className="flex flex-wrap items-center gap-[10px] rounded-xl border border-[#e4e4e9] bg-white p-3">
-        <label
-          className={`flex h-[38px] min-w-[180px] flex-[1_1_180px] items-center gap-[9px] rounded-lg border px-3 ${CONTROL_CHROME.idle} focus-within:border-[#5b21b6] focus-within:shadow-[0_0_0_3px_#f0e9fc]`}
-        >
-          <Search className="h-3.5 w-3.5 shrink-0 text-[#8b8b9b]" />
-          <input
-            type="search"
-            aria-label="Search serial, model, brand, RR or origin"
-            placeholder="Search serial, model, brand, RR or origin…"
-            value={filters.serial ?? ''}
-            onChange={(e) => setFilter('serial', e.target.value)}
-            className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
+      {data && <SummaryCards data={data} />}
+
+      <FilterBar
+        filters={filters}
+        onFiltersChange={onFiltersChange}
+        warehouses={warehouses}
+        categoryOptions={categoryOptions}
+        typeOptions={typeOptions}
+        canExport={Boolean(data?.data.length)}
+      />
+
+      <div className={`transition-opacity ${isFetching ? 'opacity-60' : ''}`}>
+        {data?.data.length ? <AgingTable data={data} /> : <TableState isLoading={isLoading} />}
+        {meta && meta.lastPage > 1 && (
+          <TablePagination
+            page={page}
+            pageCount={meta.lastPage}
+            onPageChange={setPage}
+            pageStart={(page - 1) * pageSize}
+            pageSize={data?.data.length ?? 0}
+            totalItems={meta.total}
+            noun="unit"
           />
-        </label>
-        <SearchableSelect
-          className="w-[220px]"
-          value={warehouseId ?? ''}
-          onChange={(v) => setWarehouseId(v || undefined)}
-          placeholder="All locations"
-          chrome={CONTROL_CHROME}
-          clearable
-          options={warehouses.map((w) => ({
-            value: w.id,
-            label: locationLabel(w.name),
-          }))}
-        />
-        <SearchableSelect
-          className="w-[220px]"
-          value={categoryId ?? ''}
-          onChange={(v) => setCategoryId(v || undefined)}
-          placeholder="All categories"
-          chrome={CONTROL_CHROME}
-          clearable
-          options={categoryOptions.map((c) => ({ value: c.id, label: c.name }))}
-        />
-        {hasFilters && (
-          <button
-            type="button"
-            onClick={() => {
-              setFilter('serial', undefined)
-              setWarehouseId(undefined)
-              setFilter('receivedFrom', undefined)
-              setFilter('receivedTo', undefined)
-              setCategoryId(undefined)
-            }}
-            className="ml-auto flex items-center gap-1.5 rounded-lg px-[11px] py-[6px] text-[12.5px] text-[#5b21b6] hover:bg-[#f1ebfb]"
-          >
-            <X className="h-3.5 w-3.5" />
-            Clear
-          </button>
         )}
       </div>
-
-      {/* Export */}
-      <div className="flex items-center justify-between">
-        <p className="text-[13px] text-[#5b5b6b]">
-          Each row is one physical in-stock serial, aged from its goods-receipt date.
-        </p>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-[12.5px] text-[#5b5b6b]">
-            <input
-              type="date"
-              aria-label="RR date from"
-              value={filters.receivedFrom ?? ''}
-              onChange={(e) => setFilter('receivedFrom', e.target.value)}
-              className={INPUT}
-            />
-            <span>to</span>
-            <input
-              type="date"
-              aria-label="RR date to"
-              value={filters.receivedTo ?? ''}
-              onChange={(e) => setFilter('receivedTo', e.target.value)}
-              className={INPUT}
-            />
-          </div>
-          <ExportButton
-            endpoint="/inventory/reports/aging/export"
-            params={exportParams}
-            fallbackFilename="inventory-aging.xlsx"
-            disabled={!data?.data?.length}
-          />
-        </div>
-      </div>
-
-      {/* Table */}
-      <div
-        className={`overflow-hidden rounded-xl border border-[#e4e4e9] bg-white transition-opacity ${isFetching ? 'opacity-60' : ''}`}
-      >
-        {isLoading ? (
-          <div>
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="h-[52px] animate-pulse border-t border-[#f4f4f6] bg-white" />
-            ))}
-          </div>
-        ) : !data?.data?.length ? (
-          <div className="flex flex-col items-center justify-center gap-1 py-16 text-center">
-            <p className="text-[14px] font-semibold text-[#17171c]">No units match</p>
-            <p className="text-[13px] text-[#8b8b9b]">
-              {hasFilters ? 'Clear the filters to see more.' : 'Nothing is in stock to age yet.'}
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr
-                  className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[11.5px] uppercase tracking-[.09em] text-[#8b8b9b]`}
-                >
-                  <SortableTh label="datein" by="dateIn" sort={sort} onSort={onSort} align="left" />
-                  <th className="px-4 py-[9px] text-left font-medium">origin</th>
-                  <th className="px-4 py-[9px] text-left font-medium">rr</th>
-                  <th className="px-4 py-[9px] text-left font-medium">brand</th>
-                  <th className="px-4 py-[9px] text-left font-medium">type</th>
-                  <th className="px-4 py-[9px] text-left font-medium">model</th>
-                  <th className="px-4 py-[9px] text-left font-medium">serial</th>
-                  <th className="px-4 py-[9px] text-left font-medium">loc</th>
-                  <SortableTh label="age" by="age" sort={sort} onSort={onSort} align="center" />
-                </tr>
-              </thead>
-              <tbody>
-                {data.data.map((row: AgingReportItem) => (
-                  <tr
-                    key={row.serialNumberId}
-                    className="border-t border-[#f4f4f6] hover:bg-[#fcfcfd]"
-                  >
-                    <td className="px-4 py-[11px] text-[13px] text-[#5b5b6b]">
-                      {row.noDate ? '—' : formatDateIn(row.receivedAt)}
-                    </td>
-                    <td className="px-4 py-[11px] text-[13.5px] text-[#17171c]">
-                      {row.origin ?? '—'}
-                    </td>
-                    <td className={`${MONO} px-4 py-[11px] text-[12.5px] text-[#5b21b6]`}>
-                      {row.rrNumber ?? '—'}
-                    </td>
-                    <td className="px-4 py-[11px] text-[13.5px] text-[#5b5b6b]">
-                      {row.brandName ?? '—'}
-                    </td>
-                    <td className="px-4 py-[11px] text-[13.5px] text-[#5b5b6b]">
-                      {row.typeName ?? '—'}
-                    </td>
-                    <td className="px-4 py-[11px] text-[13.5px] font-medium text-[#17171c]">
-                      {row.modelNumber ?? '—'}
-                    </td>
-                    <td
-                      className={`${MONO} px-4 py-[11px] text-[14px] font-semibold text-[#17171c]`}
-                    >
-                      {row.serialNumber}
-                    </td>
-                    <td className="px-4 py-[11px] text-[13px] text-[#5b5b6b]">
-                      {row.warehouseName ? locationLabel(row.warehouseName) : '—'}
-                    </td>
-                    <td className="px-4 py-[11px] text-center">
-                      <span
-                        className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11.5px] font-medium ${row.bucket ? BUCKET_TONE[row.bucket] : 'text-[#8b8b9b]'}`}
-                      >
-                        {row.noDate ? '—' : (row.importedAge ?? formatAge(row.receivedAt))}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between text-[12.5px] text-[#5b5b6b]">
-          <span className={MONO}>
-            {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, totalRows)} of {totalRows}
-          </span>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setPage(Math.max(1, page - 1))}
-              disabled={page <= 1}
-              className="rounded-lg px-2.5 py-1 hover:bg-[#f1ebfb] disabled:opacity-40"
-            >
-              Prev
-            </button>
-            <span className="flex items-center gap-1.5 px-2 font-medium text-[#17171c]">
-              <PageJump page={page} totalPages={totalPages} onJump={setPage} />
-              <span>/ {totalPages}</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setPage(Math.min(totalPages, page + 1))}
-              disabled={page >= totalPages}
-              className="rounded-lg px-2.5 py-1 hover:bg-[#f1ebfb] disabled:opacity-40"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

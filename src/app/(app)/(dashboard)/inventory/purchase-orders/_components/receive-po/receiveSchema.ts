@@ -42,31 +42,27 @@ const ReceivePoLineSchema = z
   .superRefine((line, ctx) => {
     if (!line.selected) return
 
+    // A serial-tracked line's quantity is the number of serials typed — the
+    // receiver scans before they can count — so blank boxes are units not
+    // received yet, not missing data, and a line with none is simply left
+    // out of the receipt (the screen's own blocker covers "nothing at all").
+    if (line.isSerialTracked) {
+      const filled = (line.serialNumbers ?? []).filter((s) => s.trim().length > 0).length
+      if (filled !== line.quantityReceived) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Quantity must match the serial numbers entered',
+          path: ['quantityReceived'],
+        })
+      }
+      return
+    }
+
     if (line.quantityReceived <= 0) {
       ctx.addIssue({
         code: 'custom',
         message: 'Enter a quantity, or untick this line',
         path: ['quantityReceived'],
-      })
-      return
-    }
-
-    if (line.isSerialTracked) {
-      const serials = line.serialNumbers ?? []
-      if (serials.length !== line.quantityReceived) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'A serial number is required for every unit',
-          path: ['serialNumbers'],
-        })
-        return
-      }
-      // Flag the specific blank units so a partly-filled multi-unit line
-      // shows which box is missing, not just the first.
-      serials.forEach((serial, unitIdx) => {
-        if (serial.trim().length === 0) {
-          ctx.addIssue({ code: 'custom', message: 'Required', path: ['serialNumbers', unitIdx] })
-        }
       })
       return
     }

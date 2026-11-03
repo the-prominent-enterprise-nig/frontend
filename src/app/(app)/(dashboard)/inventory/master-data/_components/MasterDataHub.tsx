@@ -1,16 +1,12 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { IdCard, Settings, Tags, Truck, Warehouse, type LucideIcon } from 'lucide-react'
+import { Settings, Warehouse, type LucideIcon } from 'lucide-react'
 import { TabNav, type NavTab } from '@/src/components/ui/TabNav'
 import { can, type SessionUser } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
-import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 import { WarehouseList } from '../../warehouses/_components'
-import SupplierDirectory from '../../suppliers/_components/SupplierDirectory'
-import { PriceListsPageView } from '../../price-lists/_components'
 import { CostingConfigForm } from '../../settings/_components'
-import { DriverList } from '../../drivers/_components/DriverList'
 
 type MasterDataTab = NavTab & { icon: LucideIcon; permissions: string[] }
 
@@ -20,24 +16,6 @@ const TABS: MasterDataTab[] = [
     label: 'Warehouses',
     icon: Warehouse,
     permissions: [INVENTORY_PERMISSIONS.WAREHOUSES_READ],
-  },
-  {
-    id: 'suppliers',
-    label: 'Suppliers',
-    icon: Truck,
-    permissions: [PROCUREMENT_PERMISSIONS.SUPPLIERS_READ],
-  },
-  {
-    id: 'drivers',
-    label: 'Drivers',
-    icon: IdCard,
-    permissions: [INVENTORY_PERMISSIONS.TRANSFERS_READ],
-  },
-  {
-    id: 'price-lists',
-    label: 'Price Lists',
-    icon: Tags,
-    permissions: [INVENTORY_PERMISSIONS.PRICE_LISTS_READ],
   },
   {
     id: 'settings',
@@ -55,12 +33,6 @@ function TabBody({ id, session }: { id: string; session: SessionUser }) {
   switch (id) {
     case 'warehouses':
       return <WarehouseList session={session} />
-    case 'suppliers':
-      return <SupplierDirectory session={session} />
-    case 'drivers':
-      return <DriverList session={session} />
-    case 'price-lists':
-      return <PriceListsPageView session={session} />
     case 'settings':
       return (
         <div className="mx-auto w-full max-w-[1560px] p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
