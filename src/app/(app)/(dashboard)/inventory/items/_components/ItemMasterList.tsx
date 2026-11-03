@@ -373,6 +373,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         categories={categories}
         uomOptions={uomOptions}
         brandOptions={brandOptions}
+        typeOptions={typeOptions}
       />
 
       {/* Edit Modal */}

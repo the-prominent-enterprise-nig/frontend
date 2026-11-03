@@ -9,7 +9,7 @@ import type {
   UomOption,
 } from '@/src/schema/inventory/items'
 import { createItem } from '../_actions/create-item'
-import { getUnitsOfMeasure, getItemBrands } from '../_actions/get-lookup-data'
+import { getUnitsOfMeasure, getItemBrands, getItemTypes } from '../_actions/get-lookup-data'
 import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
 import CreateItemModal from './CreateItemModal'
 
@@ -59,6 +59,13 @@ export function AddItemModal({
     enabled: open,
   })
 
+  const types = useQuery({
+    queryKey: ['inventory-item-types'],
+    queryFn: () => getItemTypes(),
+    staleTime: LOOKUP_STALE,
+    enabled: open,
+  })
+
   const create = useMutation({
     mutationFn: (data: CreateItemFormValues) => createItem(data),
     onSuccess: (result) => {
@@ -81,6 +88,7 @@ export function AddItemModal({
       categories={flatToCategorySelectOptions(categories.data?.data?.data ?? [])}
       uomOptions={toUomOptions(uom.data?.data)}
       brandOptions={(brands.data?.data ?? []) as ClassificationOption[]}
+      typeOptions={(types.data?.data ?? []) as ClassificationOption[]}
     />
   )
 }
