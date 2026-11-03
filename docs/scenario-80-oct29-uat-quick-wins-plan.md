@@ -27,6 +27,13 @@ Branch `feat/scenario-80-oct29-uat-quick-wins` in both repos.
    down-payment toggle (POS-06), the reference rules (POS-07/13) and the moved Payment Mode / provider toggles
    (POS-09).
 
+## Merge with development (2026-11-03)
+
+Karms' #270 (WH-01 to WH-07) landed on development during this scenario. On the merge, conflicts went his way:
+WH-02 (Edit Request button), WH-03 (Add Item in the Item Master tab strip) and WH-04 (darker text) are his
+implementations now; ours were dropped. Kept from Scenario 80: STR-02 (bold transfer serials) and SNL-01 (Origin
+before Location, re-applied on his colours).
+
 ## Parts (easiest first; each part is committed and manually tested before the next)
 
 ### Part 1 — labels and looks (FE only)
