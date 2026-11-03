@@ -98,11 +98,17 @@ conflicts, and those items now come from development.
 | POS-18 | Calendar picker for the date                                                           |
 | POS-19 | A reason is required whenever the date differs from today                              |
 
-### Re-test only (no code)
+### Already fixed outside Scenario 80 (no code here)
 
-- **SNL-02:** cost is hidden by the `inventory:receive:cost-view` permission. Re-test with a branch account, not an
-  admin.
-- **CL-05:** BE 0584fa5 (2026-10-29) removed the ₱0.12 drift on a POS sale's ledger. Re-test with a CR-BR sale.
+- **CL-05 (CR-BR decimals): fixed on `main` first.** Chloe committed BE `0584fa5` directly to `main` on 2026-10-29
+  (15:21): a POS sale's ledger account carries the schedule's own monthly and total instead of re-deriving them from
+  the 6-place miFactor. It reached `development` with BE #247 "Sync main into development" (`f932571`, 2026-11-03),
+  whose only parent is `main`'s tip. No backfill: accounts created before Oct 29 keep any drift. Kian: no re-test.
+- **SNL-02 (cost hidden from branch users): in progress elsewhere, not merged.** Renz's BE branch
+  `fix/uat-hide-cost-branch-manager` (`dd0661a`, 2026-11-03) removes `inventory:costing:read` and
+  `inventory:receive:cost-view` from the Branch Manager (migration `20261103100000` + seed). It is on neither `main`
+  nor `development` yet, and it covers Branch Manager only. On the dev DB, Stock Controller holds the same two
+  grants, so its branch users would still see Cost.
 
 ## Tests
 
