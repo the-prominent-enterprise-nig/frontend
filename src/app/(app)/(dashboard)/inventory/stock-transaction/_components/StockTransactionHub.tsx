@@ -8,6 +8,7 @@ import {
   ClipboardList,
   ClipboardX,
   PackageCheck,
+  PackagePlus,
   PackageX,
   ShieldCheck,
   Truck,
@@ -22,6 +23,7 @@ import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissio
 import type { ProcurementHubPermissions } from '../../purchase-orders/_permissions/procurement-hub-permissions'
 import ReceivingReportsTab from '../../goods-receiving/_components/ReceivingReportsTab'
 import { TransferList } from '../../transfers/_components'
+import StockRequestTab from '../../transfers/_components/StockRequestTab'
 import { ReturnList } from '../../returns/_components'
 import { QualityHoldList } from '../../quality-hold/_components'
 import { BackordersPageView } from '../../backorders/_components'
@@ -43,6 +45,14 @@ const TABS: TransactionTab[] = [
     label: 'Receiving Report',
     icon: PackageCheck,
     permissions: [INVENTORY_PERMISSIONS.RECEIVE_READ],
+  },
+  {
+    // New stock transfer requests are raised here; the Stock Transfer tab
+    // lists and works them.
+    id: 'stock-request',
+    label: 'Stock Request',
+    icon: PackagePlus,
+    permissions: [INVENTORY_PERMISSIONS.TRANSFERS_CREATE],
   },
   {
     // Kept as 'transfers' so existing ?tab=transfers links still land here.
@@ -131,6 +141,8 @@ function TabBody({
           <ReceivingReportsTab />
         </div>
       )
+    case 'stock-request':
+      return <StockRequestTab session={session} />
     case 'transfers':
       return <TransferList session={session} />
     case 'returns':
@@ -180,9 +192,7 @@ export function StockTransactionHub({
   const searchParams = useSearchParams()
   const visible = TABS.filter((tab) => !tab.hidden && tab.permissions.some((p) => can(session, p)))
   const requested = searchParams.get('tab')
-  // The old Stock Request tab (purchase requests) now lives in Purchase Order.
-  const resolved = requested === 'stock-requests' ? 'purchase-orders' : requested
-  const active = visible.find((tab) => tab.id === resolved) ?? visible[0]
+  const active = visible.find((tab) => tab.id === requested) ?? visible[0]
 
   // A hidden or inaccessible ?tab= would show content with no tab highlighted,
   // so rewrite the URL to the tab that is actually shown.

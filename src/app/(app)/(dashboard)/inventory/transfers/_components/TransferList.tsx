@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Plus, X, ArrowRight, Search } from 'lucide-react'
+import Link from 'next/link'
+import { X, ArrowRight, Search } from 'lucide-react'
 import { useTransferManager } from '../_hooks/useTransferManager'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -464,18 +465,6 @@ export default function TransferList({ session }: { session: SessionUser }) {
               Move stock between branches with full ledger traceability.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-[9px]">
-            {canCreate && (
-              <button
-                type="button"
-                onClick={() => setIsCreateOpen(true)}
-                className="flex items-center gap-[7px] rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-semibold text-white hover:bg-[#4a189b]"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                New request
-              </button>
-            )}
-          </div>
         </div>
 
         {/* Scenario 60 Part 3 — ended caravans still holding stock, for the
@@ -678,13 +667,12 @@ export default function TransferList({ session }: { session: SessionUser }) {
                     movement is written to the stock ledger.
                   </p>
                   {canCreate && (
-                    <button
-                      type="button"
-                      onClick={() => setIsCreateOpen(true)}
+                    <Link
+                      href="/inventory/stock-transaction?tab=stock-request"
                       className="mt-3 rounded-lg bg-[#5b21b6] px-[15px] py-[9px] text-[13px] font-semibold text-white hover:bg-[#4a189b]"
                     >
-                      + New transfer
-                    </button>
+                      + New request
+                    </Link>
                   )}
                 </>
               )}
