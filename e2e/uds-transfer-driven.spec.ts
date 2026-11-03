@@ -131,8 +131,8 @@ test.describe('UDS — hops on their own documents', () => {
       await expect(row).toBeVisible({ timeout: 20_000 })
       await row.locator('td').first().click()
       await page.getByRole('button', { name: 'Set provider' }).click()
-      await expect(page.getByRole('heading', { name: 'Set Repair Provider' })).toBeVisible()
-      await page.getByPlaceholder('Search repair provider…').click()
+      await expect(page.getByRole('heading', { name: 'Set Service Center' })).toBeVisible()
+      await page.getByPlaceholder('Search service center…').click()
       const options = page.getByTestId('searchable-select-option')
       await expect(options.first()).toBeVisible({ timeout: 10_000 })
 

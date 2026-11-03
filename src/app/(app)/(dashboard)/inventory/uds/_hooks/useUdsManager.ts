@@ -153,14 +153,14 @@ export function useUdsManager() {
     onSuccess: (result) => {
       if (result.success) {
         showToast({
-          title: 'Repair provider updated',
+          title: 'Service center updated',
           description: result.message,
           status: 'success',
         })
         queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
       } else {
         showToast({
-          title: 'Failed to update repair provider',
+          title: 'Failed to update service center',
           description: result.message,
           status: 'error',
         })
