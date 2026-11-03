@@ -605,12 +605,9 @@ test.describe('POS Checkout — Mixed payment', () => {
     await expect(page.getByTestId('payment-reference-0')).toHaveCount(0)
     await expect(page.getByTestId('payment-reference-1')).toHaveCount(0)
 
-    // Missing CR: one entry in the list, on the one field. (On an installment
-    // cart the button reads "Create Installment Plan".)
-    await page.getByRole('button', { name: /Create Installment Plan/ }).click()
-    await expect(page.getByTestId('payment-issues')).toContainText('CR Number')
-    await expect(page.getByTestId('sale-cr-number')).toHaveClass(/border-red-400/)
-
+    // The CR is optional (Scenario 80, Oct 29 UAT POS-14) — no asterisk —
+    // but when it's given, every payment carries it.
+    await expect(page.getByText('CR Number', { exact: true })).toBeVisible()
     await fillStable(page.getByTestId('sale-cr-number'), 'CR-MPF11')
     await page.getByRole('button', { name: /Create Installment Plan/ }).click()
     await expect(page.getByText('Installment Plan Created', { exact: true })).toBeVisible({

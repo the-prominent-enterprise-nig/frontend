@@ -2124,9 +2124,9 @@ export default function CheckoutPage() {
     return 'Rate card + default'
   })()
 
-  /** The plan's one down payment box. An in-house plan may take 0; a TPF sale
-   * never. An X-Deal's is the cash portion and an Employee Appliance Loan's is
-   * optional — their own wording, the same single figure. */
+  /** The plan's one down payment box. A TPF sale may take 0; an in-house plan
+   * never (Oct 29 UAT POS-11). An X-Deal's is the cash portion and an Employee
+   * Appliance Loan's is optional — their own wording, the same single figure. */
   function renderPlanDownPayment() {
     if (xDealActive) {
       // Scenario 68 — the part paid now, if any.
@@ -2171,7 +2171,7 @@ export default function CheckoutPage() {
       <PlanDownPaymentField
         total={planDownPayment}
         max={planSaleAmount}
-        allowZero
+        allowZero={planProvider === 'tpf'}
         badge={planDpBadge}
         hint={
           installmentCartLines.length > 1
@@ -2271,15 +2271,13 @@ export default function CheckoutPage() {
   const regularTenderTarget = Math.round((cashLinesTotal + tpfCollectedAtRegister) * 100) / 100
   const tenderTarget = Math.round((regularTenderTarget + installmentDownPaymentsTotal) * 100) / 100
 
-  // CR Number (collection receipt) is optional on a plain sale. It stays
-  // required where a payment can't go through without one: card / bank /
-  // e-wallet / etc. (or whatever the method's own config says), and any sale
-  // collecting a down payment — the backend refuses a down payment without a
-  // reference because that reference IS its collection receipt.
+  // CR Number (collection receipt) is optional, a down payment's included
+  // (Oct 29 UAT POS-14). A payment's own reference stays required where it
+  // can't go through without one: QR / Billers / etc. (or whatever the
+  // method's own config says).
   const saleHasDownPayment = allDownPaymentsTotal > 0
   const crIsRequired = (p: PaymentRow) =>
-    (!noReference(p) && (REF_METHODS.includes(p.method) || p.refRequired === true)) ||
-    saleHasDownPayment
+    !noReference(p) && (REF_METHODS.includes(p.method) || p.refRequired === true)
 
   // Scenario 66 — the delivery fee as entered (0 while blank or not yet a
   // valid amount).
@@ -4806,6 +4804,17 @@ export default function CheckoutPage() {
       setError(fmiDateError)
       return
     }
+    // Oct 29 UAT POS-11 — an in-house plan (typed or from a term) takes a
+    // down payment above 0; the backend refuses one without.
+    if (
+      inhouseInstallmentCartLines.length > 0 &&
+      !xDealActive &&
+      !employeeApplianceLoanActive &&
+      planDownPayment <= 0
+    ) {
+      setError('An in-house installment sale needs a down payment above ₱0.')
+      return
+    }
     if (
       inhouseInstallmentCartLines.length > 0 &&
       !creditApplicationId &&
@@ -4904,15 +4913,13 @@ export default function CheckoutPage() {
         return
       }
       // A sale has a CR Number only with a down payment: one for the whole
-      // transaction. Without one, QR/GCash/Billers, card and bank transfer each
-      // need their own reference number. Reserve mode only asks for a
+      // transaction, optional (Oct 29 UAT POS-14). Without one, QR and Billers
+      // each need their own reference number. Reserve mode only asks for a
       // reference on REF_METHODS.
       const missingRefIndex =
         saleMode === 'sale'
           ? saleHasDownPayment
-            ? saleCr
-              ? -1
-              : 0
+            ? -1
             : payments.findIndex(
                 (p) =>
                   p.amount > 0 &&
@@ -4941,9 +4948,7 @@ export default function CheckoutPage() {
         setError(
           saleMode !== 'sale'
             ? `CR Number is required for ${PAYMENT_LABELS[missingRef.method]}.`
-            : saleHasDownPayment
-              ? 'CR Number is required for the down payment.'
-              : `${referenceLabelFor(missingRef, missingRefIndex)} is required.`
+            : `${referenceLabelFor(missingRef, missingRefIndex)} is required.`
         )
         return
       }
@@ -8237,11 +8242,12 @@ export default function CheckoutPage() {
                     />
                   </div>
                 ))}
-                {/* A down payment: ONE CR Number for the whole transaction. */}
+                {/* A down payment: ONE CR Number for the whole transaction,
+                    optional (Oct 29 UAT POS-14). */}
                 {saleHasDownPayment && (
                   <ReferenceField
                     label="CR Number"
-                    required
+                    required={false}
                     value={payments[0]?.referenceNumber ?? ''}
                     invalid={crInvalid}
                     onChange={(v) => updatePayment(0, { referenceNumber: v })}

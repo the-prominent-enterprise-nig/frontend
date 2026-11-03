@@ -212,10 +212,8 @@ export function mixedPaymentIssues(args: {
     })
   }
 
-  // The one CR of a down-payment sale lives on the first row and is asked once.
-  if (transactionCr && !(payments[0]?.referenceNumber ?? '').trim()) {
-    issues.push({ row: null, field: 'reference', message: 'CR Number' })
-  }
+  // The one CR of a down-payment sale lives on the first row and is asked
+  // once, but it is optional (Oct 29 UAT POS-14), so a blank one is no issue.
 
   if (balance > 0.009) {
     issues.push({ row: null, field: 'balance', message: `${fmt(balance)} still unpaid` })

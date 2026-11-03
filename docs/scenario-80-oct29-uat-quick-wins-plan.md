@@ -54,13 +54,13 @@ Branch `feat/scenario-80-oct29-uat-quick-wins` in both repos.
 
 ### Part 3 — rules (FE + BE)
 
-| ID             | Change                                                                                  |
-| -------------- | --------------------------------------------------------------------------------------- |
-| POS-04         | Customer phone optional (CRM/POS form schema and backend DTO)                           |
-| POS-11         | In-house down payment must be > 0 (FE field and BE check); TPF keeps 0 allowed          |
-| POS-14 / CC-01 | CR number optional for POS Collections, AR receipts and down-payment sales              |
-| DC-02          | Collections "Override current date" can't be in the future (FE `max` + BE rejection)    |
-| CR-01          | Daily Sales Monitoring: washing machines and other appliances no longer fall back to IT |
+| ID             | Change                                                                                                                                                                                                                                                |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POS-04         | Customer phone optional (CRM/POS form schema and backend DTO)                                                                                                                                                                                         |
+| POS-11         | In-house down payment must be > 0 (FE field and BE check); TPF keeps 0 allowed                                                                                                                                                                        |
+| POS-14 / CC-01 | CR number optional for POS Collections, AR receipts and down-payment sales                                                                                                                                                                            |
+| DC-02          | Collections "Override current date" can't be in the future (FE `max` + BE rejection)                                                                                                                                                                  |
+| CR-01          | Daily Sales Monitoring: an item with no (or an unlisted) Type is placed by its category group — Washer Dryer, Refrigeration, Television, Airconditioner, Electric Fan, Range → Appliances; AC Indoor/Outdoor → Split Type — before falling back to IT |
 
 ### Part 4 — filters
 
@@ -77,7 +77,7 @@ Branch `feat/scenario-80-oct29-uat-quick-wins` in both repos.
 | CL-01 | Customer phone on the single-plan (paper-form) printout |
 | CL-03 | Total Amount Due on the multi-plan printout             |
 
-### Part 6 — POS sale-date override
+### Deferred — POS sale-date override (Kian, 2026-11-03: leave all four for later)
 
 | ID     | Change                                                                                 |
 | ------ | -------------------------------------------------------------------------------------- |

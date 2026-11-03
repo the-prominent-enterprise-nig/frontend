@@ -356,7 +356,7 @@ export default function CustomerForm({
       isTaxExempt: form.isTaxExempt,
       taxExemptionRef: form.taxExemptionRef || undefined,
       email: form.email || undefined,
-      phone: form.phone,
+      phone: form.phone.trim() || undefined,
       address: form.address || undefined,
       barangayCode: form.barangayCode || undefined,
       // Ticked sends '' rather than leaving the fields out: an update only
@@ -534,7 +534,7 @@ export default function CustomerForm({
             onChange={(v) => setField('email', v)}
           />
           <div>
-            <label className="block text-[13px] font-medium text-gray-700">Phone *</label>
+            <label className="block text-[13px] font-medium text-gray-700">Phone</label>
             <PhoneField
               value={form.phone ?? ''}
               onChange={(v) => setField('phone', v)}

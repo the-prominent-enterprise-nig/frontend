@@ -456,14 +456,15 @@ test.describe('POS Checkout — typed installment plan (Scenario 71 Part 2)', ()
 
     await page.getByTestId('type-terms').click()
     const panel = typedPlan(page)
-    // No down payment (a friend of management): nothing is collected here.
-    await panel.getByLabel('Typed down payment').fill('0')
+    // A small down payment (a friend of management). Never 0 on an in-house
+    // plan since Scenario 80 (Oct 29 UAT POS-11).
+    await panel.getByLabel('Typed down payment').fill('1200')
     await page.getByTestId('use-covering-monthly').click()
     await panel.getByLabel('Typed months').fill('3')
     await page.getByTestId('use-covering-monthly').click()
     await panel.getByLabel('First due date').fill(fmi)
     await expect(page.getByTestId('typed-plan-problem')).toHaveCount(0)
-    await expect(page.getByTestId('typed-plan-summary')).toContainText('₱4,000.00/mo × 3')
+    await expect(page.getByTestId('typed-plan-summary')).toContainText('₱3,600.00/mo × 3')
 
     const section = exceptionSection(page)
     await openCustomSelect(section.getByRole('combobox', { name: 'Pick a reason…' }))
@@ -474,10 +475,12 @@ test.describe('POS Checkout — typed installment plan (Scenario 71 Part 2)', ()
     )
 
     await fillStable(page.getByLabel('Sales Invoice No.'), salesInvoiceNumber)
-    // With no down payment there is nothing to tender, so no method to choose
-    // (2026-10-28): the till says so instead of asking.
-    await expect(page.getByTestId('dp-payment-mode-toggle')).toHaveCount(0)
-    await expect(page.getByText('Nothing to collect for the items at checkout')).toBeVisible()
+    await page
+      .getByTestId('dp-payment-mode-toggle')
+      .getByRole('button', { name: 'Cash', exact: true })
+      .click()
+    await fillStable(page.getByLabel('Amount received'), '1200')
+    await fillStable(page.getByPlaceholder('CR Number'), `CR-PO2F06-${Date.now()}`)
 
     // Not clickStable — this submits a real sale.
     await page.getByRole('button', { name: /Create Installment Plan/ }).click()
@@ -499,8 +502,8 @@ test.describe('POS Checkout — typed installment plan (Scenario 71 Part 2)', ()
     expect(line.manualPlan).toBe(true)
     expect(line.financingTermId).toBeNull()
     expect(line.manualTermMonths).toBe(3)
-    expect(Number(line.manualMonthlyInstallment)).toBe(4000)
-    expect(Number(line.downPayment)).toBe(0)
+    expect(Number(line.manualMonthlyInstallment)).toBe(3600)
+    expect(Number(line.downPayment)).toBe(1200)
     expect(String(line.firstDueDate).slice(0, 10)).toBe(fmi)
 
     // The account the collectors see starts on the same date.
