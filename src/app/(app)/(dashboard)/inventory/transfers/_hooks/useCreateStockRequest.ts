@@ -14,7 +14,9 @@ import type { ApiResponse } from '@/src/libs/api/client'
 
 type CreateStockRequest = {
   warehouseOptions: WarehouseSummary[]
-  createTransfer: (data: CreateTransferFormValues) => Promise<ApiResponse<unknown>>
+  createTransfer: (
+    data: CreateTransferFormValues
+  ) => Promise<ApiResponse<{ id: string; transferNumber?: string }>>
   isCreating: boolean
   createCaravan: (data: NewCaravanFormValues) => Promise<ApiResponse<{ warehouseId: string }>>
   isCreatingCaravan: boolean
