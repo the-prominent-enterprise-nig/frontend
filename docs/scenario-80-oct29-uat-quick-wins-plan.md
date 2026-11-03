@@ -34,6 +34,10 @@ WH-02 (Edit Request button), WH-03 (Add Item in the Item Master tab strip) and W
 implementations now; ours were dropped. Kept from Scenario 80: STR-02 (bold transfer serials) and SNL-01 (Origin
 before Location, re-applied on his colours).
 
+A second merge the same day brought in Scenario 82 (#271 / BE #251), the same SC-02 and POS-20 / CS-01 renames
+(plus the "Repair Provider Payable" account label). Both sides wrote the same text, so it merged without
+conflicts, and those items now come from development.
+
 ## Parts (easiest first; each part is committed and manually tested before the next)
 
 ### Part 1 — labels and looks (FE only)
