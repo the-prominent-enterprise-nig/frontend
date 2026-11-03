@@ -47,9 +47,18 @@ type Props = {
   warehouses: WarehouseSummary[]
   // A Branch Manager is always requesting stock be sent TO their own branch
   // — "To Branch" locks to it, "From Branch" stays their free choice of who
-  // to ask. null/undefined (head office / Business Owner) leaves both fully
-  // open, matching this project's role-hierarchy convention.
+  // to ask. A Warehouse Custodian (canPickAnyDestination) instead starts on
+  // their own branch but may send to any branch. null/undefined (head office
+  // / Business Owner) leaves both fully open, matching this project's
+  // role-hierarchy convention.
   currentUserBranchId?: string | null
+  /** Set for a warehouse branch's staff: the region of the standalone
+   * warehouse (Negros / Panay, branchId null) that is theirs. Null for
+   * anyone else. */
+  currentUserRegion?: string | null
+  /** Warehouse Custodian: supplies the branches, so any branch can be the
+   * destination — their own is only the starting value. */
+  canPickAnyDestination?: boolean
   // Scenario 50 — gates the direct-transfer checkbox below. The backend
   // enforces this independently (ForbiddenException on
   // inventory:transfers:direct), so hiding the control isn't the real
@@ -359,6 +368,8 @@ export default function CreateTransferModal({
   isSubmitting,
   warehouses,
   currentUserBranchId,
+  currentUserRegion,
+  canPickAnyDestination = false,
   canSkipApproval = false,
   initialDraft = null,
   onCreateCaravan,
@@ -375,14 +386,24 @@ export default function CreateTransferModal({
     ? (editing?.toWarehouse?.branch ?? null)
     : null
 
+  // A warehouse branch has no warehouse row of its own — its staff work the
+  // standalone warehouse of their region (branchId null), so without this a
+  // Negros/Panay Warehouse user had an empty "To" list.
   const ownBranchWarehouses = currentUserBranchId
-    ? warehouses.filter((wh) => wh.branchId === currentUserBranchId)
+    ? warehouses.filter(
+        (wh) =>
+          wh.branchId === currentUserBranchId ||
+          (!!currentUserRegion && wh.branchId === null && wh.region === currentUserRegion)
+      )
     : []
   // Only lock the field when it resolves to exactly one warehouse — if a
   // branch ever has more than one, a Branch Manager still needs to choose
-  // among their own rather than have an arbitrary one silently picked.
+  // among their own rather than have an arbitrary one silently picked. A
+  // Warehouse Custodian is never locked, and starts with no destination.
   const lockedToWarehouseId =
-    ownBranchWarehouses.length === 1 ? ownBranchWarehouses[0].id : undefined
+    !canPickAnyDestination && ownBranchWarehouses.length === 1
+      ? ownBranchWarehouses[0].id
+      : undefined
 
   // Remounts the header's "add item" search box after each pick — it never
   // holds a confirmed value itself (each pick appends a new line instead),
@@ -500,13 +521,8 @@ export default function CreateTransferModal({
   // depend on lockedToWarehouseId directly since a locked field is never
   // something the user is actively editing.
   //
-  // Skipped while editing: an existing request already has a destination,
-  // and it cleared this very check when it was raised. Letting the lock
-  // re-apply here would quietly redirect the request being corrected to the
-  // editor's own branch the moment `warehouses` resolved.
-  //
-  // Skipped for a caravan destination too: the lock is the user's own
-  // branch, and the caravan is the destination instead.
+  // Skipped while editing (an existing request already has a destination)
+  // and for a caravan destination (the caravan is the destination instead).
   const destinationIsCaravan = watch('destinationType') === 'caravan'
   useEffect(() => {
     if (isOpen && !isEditing && !destinationIsCaravan && lockedToWarehouseId) {
@@ -539,7 +555,9 @@ export default function CreateTransferModal({
       (!currentUserBranchId || wh.branch?.hostBranch?.id === currentUserBranchId)
   )
   const branchDestinations = [
-    ...(currentUserBranchId ? ownBranchWarehouses : warehouses).filter(
+    // A Warehouse Custodian and head office can send to any branch; anyone
+    // else with a branch only to their own.
+    ...(currentUserBranchId && !canPickAnyDestination ? ownBranchWarehouses : warehouses).filter(
       (wh) => !isCaravanBranch(wh.branch)
     ),
     ...runningCaravans,
@@ -728,13 +746,11 @@ export default function CreateTransferModal({
                               onChange={field.onChange}
                               placeholder="Search source branch…"
                               chrome={CONTROL_CHROME}
-                              // A Branch Manager's own branch is normally the
-                              // destination, never the source — except when
-                              // it is sending to a caravan it hosts.
+                              // The branch picked as the destination can't
+                              // also be the source — except when it is
+                              // sending to a caravan it hosts.
                               options={warehouses
-                                .filter(
-                                  (wh) => isCaravanDestination || wh.id !== lockedToWarehouseId
-                                )
+                                .filter((wh) => isCaravanDestination || wh.id !== toId)
                                 .map((wh) => ({ value: wh.id, label: branchLabel(wh) }))}
                             />
                           )}
