@@ -209,7 +209,7 @@ export default function RowEditPanel({
         <Field label="Sales Invoice No.">{text('invoiceNo')}</Field>
         <Field
           label="Financing Partner"
-          hint="Fill in when the partner paid it — the credit goes to their receivable, not the customer's."
+          hint="Fill in when the partner paid it — the credit goes to their receivable, not the customer's. Left blank, a Description that names a partner counts."
           className="@min-[640px]:col-span-2"
         >
           <SearchableSelect
