@@ -7798,7 +7798,11 @@ export default function CheckoutPage() {
                     data-testid="installment-plan"
                     className="space-y-3 rounded-lg border border-prominent-purple-200 bg-prominent-purple-50/40 p-2.5"
                   >
-                    <div className="flex gap-1.5">
+                    {/* Oct 29 UAT POS-08 — as large as the Cash / Installment toggle above. */}
+                    <div
+                      data-testid="installment-provider-toggle"
+                      className="flex gap-1.5 rounded-lg border border-purple-200 bg-white p-1"
+                    >
                       {(['inhouse', 'tpf'] as InstallmentProvider[]).map((provider) => (
                         <button
                           key={provider}
@@ -7806,10 +7810,10 @@ export default function CheckoutPage() {
                           onClick={() => setLineInstallmentProvider(planLineIds, provider)}
                           // Scenario 67 — an X-Deal is inhouse-only.
                           disabled={xDealActive && provider === 'tpf'}
-                          className={`flex-1 rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
+                          className={`flex-1 rounded-lg px-3 py-2 text-[13.5px] font-semibold transition-colors ${
                             planProvider === provider
                               ? 'bg-prominent-purple-200 text-prominent-purple-800'
-                              : 'bg-gray-50 text-gray-400 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-50'
+                              : 'bg-white text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white'
                           }`}
                         >
                           {provider === 'inhouse' ? 'Inhouse Installment' : 'TPF Installment'}

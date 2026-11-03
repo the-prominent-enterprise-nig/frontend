@@ -376,7 +376,9 @@ export default function UdsList({ session }: { session: SessionUser }) {
                   <tr className="border-b border-[#eeeef1] bg-[#fbfbfc]">
                     <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Document</th>
                     <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Status</th>
-                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Units / Provider</th>
+                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>
+                      Units / Service Center
+                    </th>
                     <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Route</th>
                     <th className={`hidden px-4 py-3 text-left md:table-cell ${STOCK_TABLE_HEAD}`}>
                       Latest document

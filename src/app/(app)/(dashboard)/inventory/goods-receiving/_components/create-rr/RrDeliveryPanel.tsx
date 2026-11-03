@@ -234,7 +234,7 @@ export function RrDeliveryPanel({
                   <FieldError text="Pick the service center the units came back from." />
                 ) : (
                   <Hint>
-                    The repair provider on each unit&rsquo;s UDS. Ones with units out right now are
+                    The service center on each unit&rsquo;s UDS. Ones with units out right now are
                     listed first, with their count.
                   </Hint>
                 )

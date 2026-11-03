@@ -1336,7 +1336,7 @@ function CloseSessionModal({
     },
     {
       key: 'collections',
-      label: 'Counter collections',
+      label: 'MI collections',
       note: 'monthly installments (MI) paid in cash at the counter',
       amount: Number(reconciliation?.totalCollectionsCash ?? 0),
     },
@@ -2263,7 +2263,7 @@ function ReconciliationModal({
         {Number(data.totalCollectionsCash ?? 0) > 0 && (
           <div className="rounded-xl border border-gray-200 px-4 py-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Counter collections (cash)</span>
+              <span className="text-sm text-gray-600">MI collections (cash)</span>
               <span className="text-sm font-medium text-gray-900">
                 {formatCurrency(Number(data.totalCollectionsCash))}
               </span>

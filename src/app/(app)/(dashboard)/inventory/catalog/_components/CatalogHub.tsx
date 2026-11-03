@@ -7,13 +7,15 @@ import {
   type InventoryTab as NavTab,
 } from '@/src/components/inventory/InventoryTabNav'
 import ItemMasterList from '../../items/_components/ItemMasterList'
+import { AddItemButton } from '../../items/_components/AddItemButton'
 import CategoryManager from '../../categories/_components/CategoryManager'
 import AttributesPageView from '../../attributes/_components/AttributesPageView'
 import UomList from '../../uom/_components/UomList'
 import BarcodesPageView from '../../barcodes/_components/BarcodesPageView'
 import { BrandsPageView } from '../../brands/_components'
 import { TypesPageView } from '../../types/_components'
-import type { SessionUser } from '@/src/libs/guards/permission'
+import { can, type SessionUser } from '@/src/libs/guards/permission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
 // Serial Numbers moved to Stock (StockHub) — it's operational data (physical
 // units on hand), not a product definition like the rest of this hub's tabs.
@@ -47,6 +49,13 @@ export function CatalogHub({ session }: { session: SessionUser }) {
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50">
       <InventoryTabNav tabs={visible} />
+      {/* Oct 29 UAT WH-03 — Add Item lives on Item Master (moved off Stock),
+          on every tab since the Items tab itself is hidden. */}
+      {can(session, INVENTORY_PERMISSIONS.ITEMS_CREATE) && (
+        <div className="flex justify-end px-4 pt-4 md:px-6">
+          <AddItemButton />
+        </div>
+      )}
       {tab === 'brands' ? (
         <BrandsPageView session={session} />
       ) : tab === 'types' ? (

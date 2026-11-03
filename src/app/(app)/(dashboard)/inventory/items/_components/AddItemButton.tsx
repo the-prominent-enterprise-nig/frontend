@@ -25,8 +25,9 @@ function toUomOptions(d: unknown): UomOption[] {
 }
 
 /**
- * Scenario 56 — "Add Item" wherever stock is looked at, not only on the
- * Catalog. Same CreateItemModal and action as Item Master; its lookups share
+ * Scenario 56 — "Add Item" outside the Items list. Shown on the Item Master hub
+ * (Scenario 80 / UAT WH-03 moved it there from Stock, since the hub's Items tab
+ * is hidden). Same CreateItemModal and action as Item Master; its lookups share
  * Item Master's cache keys and only load once the modal is opened. A new item
  * refreshes both the catalog and Stock Balance (initial stock may have been
  * recorded with it).

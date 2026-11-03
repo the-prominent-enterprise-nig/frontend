@@ -59,10 +59,10 @@ function TransferSerials({ lines }: { lines: TransferSummary['lines'] }) {
   return (
     <p
       title={serials.join(', ')}
-      className={`${MONO} mt-1 truncate text-[12px] font-medium text-[#17171c]`}
+      className={`${MONO} mt-1 truncate text-[12px] font-semibold text-[#0b0b0f]`}
     >
       {shown}
-      {more > 0 && <span className="text-[#8b8b9b]"> +{more} more</span>}
+      {more > 0 && <span className="text-[#4a4a57]"> +{more} more</span>}
     </p>
   )
 }
@@ -72,7 +72,7 @@ function TransferProgress({ lines }: { lines: TransferSummary['lines'] }) {
   if (!total) return <span className="text-[#c9c9d3]">—</span>
   const pct = Math.min((received / total) * 100, 100)
   const fill = pct >= 100 ? 'bg-[#0f7b52]' : pct > 0 ? 'bg-[#d18b1d]' : 'bg-[#e4e4e9]'
-  const tone = pct >= 100 ? 'text-[#0b6644]' : pct > 0 ? 'text-[#8a4b06]' : 'text-[#8b8b9b]'
+  const tone = pct >= 100 ? 'text-[#0b6644]' : pct > 0 ? 'text-[#8a4b06]' : 'text-[#4a4a57]'
   return (
     <div className="flex w-[140px] flex-col gap-[5px]">
       <div className="h-[5px] overflow-hidden rounded-[3px] bg-[#eeeef1]">
@@ -478,7 +478,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
               searchFocused ? `border ${CONTROL_CHROME.focused}` : `border ${CONTROL_CHROME.idle}`
             }`}
           >
-            <Search className="h-[13px] w-[13px] shrink-0 text-[#8b8b9b]" />
+            <Search className="h-[13px] w-[13px] shrink-0 text-[#4a4a57]" />
             <input
               type="text"
               placeholder="Search transfer #, item, SKU, or serial…"
@@ -492,7 +492,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
               <button
                 type="button"
                 onClick={() => setSearch('')}
-                className="shrink-0 text-[12px] text-[#8b8b9b] hover:text-[#5b5b6b]"
+                className="shrink-0 text-[12px] text-[#4a4a57] hover:text-[#5b5b6b]"
               >
                 clear
               </button>
@@ -578,7 +578,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
           >
             All
             <span
-              className={`${MONO} text-[10.5px] ${!statusFilter ? 'text-[#ddd0f7]' : 'text-[#8b8b9b]'}`}
+              className={`${MONO} text-[10.5px] ${!statusFilter ? 'text-[#ddd0f7]' : 'text-[#4a4a57]'}`}
             >
               {totalCount}
             </span>
@@ -597,14 +597,14 @@ export default function TransferList({ session }: { session: SessionUser }) {
                   active
                     ? 'border border-[#5b21b6] bg-[#5b21b6] font-medium text-white'
                     : `border border-[#e4e4e9] bg-white hover:bg-[#fbfbfc] ${
-                        count === 0 ? 'text-[#a3a3b2]' : 'text-[#3d3d4a]'
+                        count === 0 ? 'text-[#6b6b7b]' : 'text-[#3d3d4a]'
                       }`
                 }`}
               >
                 <Icon className={`h-[13px] w-[13px] shrink-0 ${active ? '' : cfg.tone}`} />
                 {cfg.label}
                 <span
-                  className={`${MONO} text-[10.5px] ${active ? 'text-[#ddd0f7]' : 'text-[#8b8b9b]'}`}
+                  className={`${MONO} text-[10.5px] ${active ? 'text-[#ddd0f7]' : 'text-[#4a4a57]'}`}
                 >
                   {count}
                 </span>

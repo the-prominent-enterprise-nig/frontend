@@ -31,6 +31,7 @@ import {
   ExternalLink,
   Lock,
   Repeat,
+  Pencil,
 } from 'lucide-react'
 import {
   DispatchTransferFormSchema,
@@ -319,7 +320,7 @@ function ItemSerialGroup({
     <div>
       <label className="mb-1 block text-xs font-medium text-zinc-600">
         {itemLabel} {slotIndices.length > 0 && <span className="text-red-500">*</span>}{' '}
-        <span className="font-normal text-zinc-400">
+        <span className="font-normal text-zinc-600">
           {slotIndices.length === 0
             ? `(all ${pinnedSerials.length} picked by the requester)`
             : pinnedSerials.length > 0
@@ -336,7 +337,7 @@ function ItemSerialGroup({
               title="Picked by the requester — re-verified at dispatch, not chosen again"
               className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-100 py-1 pl-2.5 pr-3 font-mono text-[13.5px] font-semibold text-[#17171c]"
             >
-              <Lock className="h-3 w-3 text-zinc-400" aria-hidden />
+              <Lock className="h-3 w-3 text-zinc-600" aria-hidden />
               {sn}
             </span>
           ))}
@@ -417,7 +418,7 @@ function ItemSerialGroup({
                 permission. */}
             {canOverride && (
               <div className="mt-1.5">
-                <label className="flex items-center gap-1.5 text-[11px] text-zinc-500">
+                <label className="flex items-center gap-1.5 text-[11px] text-zinc-700">
                   <input
                     type="checkbox"
                     checked={overrideChecked}
@@ -528,7 +529,7 @@ function UnlistedSerialInputs({
               <button
                 type="button"
                 onClick={() => commit(slots.filter((_, i) => i !== unitIndex))}
-                className="shrink-0 text-zinc-400 hover:text-red-600"
+                className="shrink-0 text-zinc-600 hover:text-red-600"
                 aria-label={`Remove serial ${unitIndex + 1}`}
               >
                 <X className="h-3 w-3" />
@@ -739,10 +740,10 @@ function Fact({
 }) {
   return (
     <div className="min-w-0">
-      <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>{label}</p>
+      <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#4a4a57]`}>{label}</p>
       <p
         className={`mt-1 truncate text-[13px] font-medium ${mono ? MONO : ''} ${
-          value ? 'text-[#17171c]' : 'text-[#8b8b9b]'
+          value ? 'text-[#17171c]' : 'text-[#4a4a57]'
         }`}
       >
         {value || 'Not set'}
@@ -754,7 +755,7 @@ function Fact({
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs font-medium text-zinc-400">{label}</p>
+      <p className="text-xs font-medium text-zinc-600">{label}</p>
       <p className="mt-0.5 text-zinc-800">{value}</p>
     </div>
   )
@@ -1402,7 +1403,7 @@ export default function TransferDetailModal({
 
         {isLoading || !transfer ? (
           <div className="flex flex-1 items-center justify-center py-16">
-            <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
+            <Loader2 className="h-6 w-6 animate-spin text-zinc-600" />
           </div>
         ) : (
           <div className="flex-1 space-y-3.5 overflow-y-auto bg-[#f7f7f8] px-6 pb-[26px] pt-[18px]">
@@ -1413,7 +1414,7 @@ export default function TransferDetailModal({
                 <div className="min-w-0 flex-1">
                   {/* Scenario 56 — who asks whom: the destination requests,
                       the source supplies. */}
-                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>
+                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#4a4a57]`}>
                     From · Supplying branch
                   </p>
                   <LocationName
@@ -1421,7 +1422,7 @@ export default function TransferDetailModal({
                     className="mt-1 text-[16px] font-semibold"
                     subtitleClassName="text-[12px] text-[#5b5b6b]"
                   />
-                  <p className="mt-0.5 truncate text-[11.5px] text-[#8b8b9b]">
+                  <p className="mt-0.5 truncate text-[11.5px] text-[#4a4a57]">
                     Sends the stock · deducted on dispatch
                   </p>
                 </div>
@@ -1429,7 +1430,7 @@ export default function TransferDetailModal({
                   <ArrowRight className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 flex-1 text-right">
-                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>
+                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#4a4a57]`}>
                     To · Requesting branch
                   </p>
                   <LocationName
@@ -1437,7 +1438,7 @@ export default function TransferDetailModal({
                     className="mt-1 text-[16px] font-semibold"
                     subtitleClassName="text-[12px] text-[#5b5b6b]"
                   />
-                  <p className="mt-0.5 truncate text-[11.5px] text-[#8b8b9b]">
+                  <p className="mt-0.5 truncate text-[11.5px] text-[#4a4a57]">
                     Asked for the stock · added on receipt
                   </p>
                 </div>
@@ -1551,7 +1552,7 @@ export default function TransferDetailModal({
                             <span className="text-zinc-700">
                               {line.item?.name ?? line.itemId}
                               {line.notes && (
-                                <span className="ml-1.5 text-xs text-zinc-400">— {line.notes}</span>
+                                <span className="ml-1.5 text-xs text-zinc-600">— {line.notes}</span>
                               )}
                             </span>
                             <span className="font-medium text-zinc-700">
@@ -1604,25 +1605,25 @@ export default function TransferDetailModal({
                     <thead>
                       <tr className="border-b border-[#eeeef1] bg-[#fbfbfc]">
                         <th
-                          className={`${MONO} px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                          className={`${MONO} px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4a4a57]`}
                         >
                           Item
                         </th>
                         {hasSerialLine && (
                           <th
-                            className={`${MONO} px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                            className={`${MONO} px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4a4a57]`}
                           >
                             Serial
                           </th>
                         )}
                         <th
-                          className={`${MONO} px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                          className={`${MONO} px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4a4a57]`}
                         >
                           Qty
                         </th>
                         {isReceivedStatus && (
                           <th
-                            className={`${MONO} px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                            className={`${MONO} px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4a4a57]`}
                           >
                             Received
                           </th>
@@ -1637,17 +1638,17 @@ export default function TransferDetailModal({
                               {line.item?.name ?? line.itemId ?? '—'}
                             </p>
                             {line.item?.sku && (
-                              <p className={`${MONO} mt-0.5 text-[10.5px] text-[#8b8b9b]`}>
+                              <p className={`${MONO} mt-0.5 text-[10.5px] text-[#4a4a57]`}>
                                 {line.item.sku}
                               </p>
                             )}
                           </td>
                           {hasSerialLine && (
-                            <td className="px-3 py-2 font-mono text-[13px] text-[#17171c]">
+                            <td className="px-3 py-2 font-mono text-[13px] font-semibold text-[#0b0b0f]">
                               {awaitingDispatch &&
                               !line.serialNumber?.serialNumber &&
                               line.item?.isSerialTracked ? (
-                                <span className="font-sans text-xs italic text-zinc-400">
+                                <span className="font-sans text-xs italic text-zinc-600">
                                   Assigned at dispatch
                                 </span>
                               ) : line.receiptCorrectedFromSerial ? (
@@ -1796,7 +1797,7 @@ export default function TransferDetailModal({
                               setProposingLineId(null)
                               proposeForm.reset()
                             }}
-                            className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100"
+                            className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100"
                           >
                             Cancel
                           </button>
@@ -1834,7 +1835,7 @@ export default function TransferDetailModal({
                       Substitution proposed for {line.item?.name ?? 'this line'}
                     </p>
                     <p className="text-[12.5px] text-[#17171c]">
-                      <span className="text-zinc-400 line-through">{line.item?.name}</span>{' '}
+                      <span className="text-zinc-600 line-through">{line.item?.name}</span>{' '}
                       <ArrowRight className="inline h-3 w-3" />{' '}
                       <span className="font-medium">
                         {line.proposedItem?.name ?? line.proposedItemId}
@@ -1843,7 +1844,7 @@ export default function TransferDetailModal({
                       {line.proposedQuantity}
                     </p>
                     {line.substitutionReason && (
-                      <p className="text-[11.5px] text-zinc-500">
+                      <p className="text-[11.5px] text-zinc-700">
                         Reason: {line.substitutionReason}
                       </p>
                     )}
@@ -1867,7 +1868,7 @@ export default function TransferDetailModal({
                         </button>
                       </div>
                     ) : (
-                      <p className="text-[11.5px] italic text-zinc-400">
+                      <p className="text-[11.5px] italic text-zinc-600">
                         Waiting on the requesting branch to confirm.
                       </p>
                     )}
@@ -1889,7 +1890,7 @@ export default function TransferDetailModal({
                       : 'Request created'
                   }
                   timestamp={transfer.createdAt}
-                  color="text-zinc-500 bg-zinc-100"
+                  color="text-zinc-700 bg-zinc-100"
                 />
                 {status === 'pending_manager_approval' && (
                   <LedgerEvent
@@ -2007,7 +2008,7 @@ export default function TransferDetailModal({
 
                 <div>
                   <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Expected Arrival <span className="font-normal text-zinc-400">(optional)</span>
+                    Expected Arrival <span className="font-normal text-zinc-600">(optional)</span>
                   </label>
                   <Controller
                     name="expectedArrival"
@@ -2034,10 +2035,10 @@ export default function TransferDetailModal({
 
                 {serialGroups.length > 0 && (
                   <div>
-                    <p className="mb-2 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+                    <p className="mb-2 text-xs font-semibold tracking-wide text-zinc-600 uppercase">
                       Assign Serial Numbers
                     </p>
-                    <p className="mb-2 text-xs text-zinc-500">
+                    <p className="mb-2 text-xs text-zinc-700">
                       Pick the exact unit being sent for each serial-tracked item — the requester
                       couldn&apos;t know what&apos;s on your shelf, so it&apos;s chosen here.
                     </p>
@@ -2060,7 +2061,7 @@ export default function TransferDetailModal({
                   </div>
                 )}
 
-                <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-zinc-600">
                   Logistics / Driver
                 </p>
 
@@ -2227,7 +2228,7 @@ export default function TransferDetailModal({
                             <p className="truncate text-sm font-medium text-zinc-800">
                               {lineField.itemLabel ?? '—'}
                             </p>
-                            <p className="truncate text-xs text-zinc-400">
+                            <p className="truncate text-xs text-zinc-600">
                               {lineField.isSerial
                                 ? (lineField.serialLabel ?? '—')
                                 : `Remaining: ${lineField.dispatchedQty}`}
@@ -2302,7 +2303,7 @@ export default function TransferDetailModal({
                   <div className="mb-1 flex items-center justify-between">
                     <label className="block text-xs font-medium text-zinc-600">
                       Unlisted Items{' '}
-                      <span className="font-normal text-zinc-400">
+                      <span className="font-normal text-zinc-600">
                         (received but not on the transfer)
                       </span>
                     </label>
@@ -2394,7 +2395,7 @@ export default function TransferDetailModal({
                               <button
                                 type="button"
                                 onClick={() => removeExtraLine(idx)}
-                                className="shrink-0 rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                                className="shrink-0 rounded-lg p-1.5 text-zinc-600 hover:bg-red-50 hover:text-red-600"
                                 aria-label="Remove unlisted item"
                               >
                                 <X className="h-3.5 w-3.5" />
@@ -2413,7 +2414,7 @@ export default function TransferDetailModal({
                       })}
                     </div>
                   )}
-                  <p className="mt-1 text-xs text-zinc-400">
+                  <p className="mt-1 text-xs text-zinc-600">
                     A serial-tracked pick switches to serial entry — one box per unit, scanner
                     ready.
                   </p>
@@ -2658,7 +2659,7 @@ export default function TransferDetailModal({
           !confirmCancel && (
             <div className="flex items-center justify-between gap-4 border-t border-[#e4e4e9] bg-white px-6 py-3.5">
               <div className="min-w-0">
-                <p className="text-[11.5px] text-[#8b8b9b]">
+                <p className="text-[11.5px] text-[#4a4a57]">
                   {totalUnits} {totalUnits === 1 ? 'unit' : 'units'} ·{' '}
                   {(transfer.lines ?? []).length}{' '}
                   {(transfer.lines ?? []).length === 1 ? 'line' : 'lines'}
@@ -2668,9 +2669,9 @@ export default function TransferDetailModal({
                     <button
                       type="button"
                       onClick={() => onEdit(transfer)}
-                      className="text-[12.5px] font-medium text-[#5b21b6] hover:underline"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-[#d9d6fe] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#5b21b6] hover:bg-[#f4f3ff]"
                     >
-                      Edit Request
+                      <Pencil className="h-3.5 w-3.5" /> Edit Request
                     </button>
                   )}
                   {canCancelThis && (
@@ -2905,12 +2906,12 @@ function TransferStageTrail({ transfer, status }: { transfer: TransferSummary; s
               <div className="leading-tight">
                 <p
                   className={`text-[11.5px] font-semibold ${
-                    done ? 'text-[#0b6644]' : active ? 'text-[#3f1490]' : 'text-[#8b8b9b]'
+                    done ? 'text-[#0b6644]' : active ? 'text-[#3f1490]' : 'text-[#4a4a57]'
                   }`}
                 >
                   {step.label}
                 </p>
-                <p className="text-[10.5px] text-[#8b8b9b]">{step.meta}</p>
+                <p className="text-[10.5px] text-[#4a4a57]">{step.meta}</p>
               </div>
             </div>
             {i < steps.length - 1 && (
@@ -2943,7 +2944,7 @@ function LedgerEvent({
       </span>
       <div>
         <p className="text-[12.5px] font-medium text-[#17171c]">{label}</p>
-        <p className="text-[11px] text-[#8b8b9b]">{formatDate(timestamp)}</p>
+        <p className="text-[11px] text-[#4a4a57]">{formatDate(timestamp)}</p>
       </div>
     </li>
   )

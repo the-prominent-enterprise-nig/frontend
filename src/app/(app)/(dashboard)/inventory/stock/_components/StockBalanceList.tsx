@@ -10,10 +10,6 @@ import CategorySelect from '@/src/components/ui/CategorySelect'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import type { StockBalance, StockStateFilter } from '@/src/schema/inventory/goods-receiving'
-import type { SessionUser } from '@/src/libs/guards/permission'
-import { hasPermission } from '@/src/hooks/usePermission'
-import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
-import { AddItemButton } from '../../items/_components/AddItemButton'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
 import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
 import { stockStatusOf, type StockStatus } from '@/src/libs/inventory/stock-status'
@@ -95,10 +91,8 @@ function SkeletonBar({ wide }: { wide?: boolean }) {
 }
 
 export default function StockBalanceList({
-  session,
   onLocationsChange,
 }: {
-  session: SessionUser
   /** Lets StockHub snapshot the current location filter so the Ledger tab
    * can inherit it when it's opened next. */
   onLocationsChange?: (v: LocationToken[]) => void
@@ -165,10 +159,6 @@ export default function StockBalanceList({
               One row per item — on-hand, sold, reserved and available, rolled up across every
               selected location.
             </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Scenario 56 — add an item without leaving Stock. */}
-            {hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_CREATE) && <AddItemButton />}
           </div>
         </div>
 
