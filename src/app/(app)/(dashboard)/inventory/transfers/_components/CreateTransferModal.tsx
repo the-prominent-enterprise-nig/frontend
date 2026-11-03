@@ -86,6 +86,10 @@ type Props = {
   // the two differ only in where the initial values come from and where the
   // submit goes.
   editing?: TransferSummary | null
+  // 'page' renders the form inline as a tab's content (Stock Transaction's
+  // Stock Request tab) instead of over the list: no close button, Cancel
+  // clears the form, and the footer sticks to the viewport bottom.
+  variant?: 'overlay' | 'page'
 }
 
 /**
@@ -362,9 +366,11 @@ export default function CreateTransferModal({
   isCreatingCaravan = false,
   canCreateCaravan = false,
   editing = null,
+  variant = 'overlay',
 }: Props) {
   const today = new Date().toISOString().split('T')[0]
   const isEditing = !!editing
+  const isPage = variant === 'page'
   const editingCaravan = isCaravanBranch(editing?.toWarehouse?.branch)
     ? (editing?.toWarehouse?.branch ?? null)
     : null
@@ -629,7 +635,9 @@ export default function CreateTransferModal({
   }
 
   return (
-    <div className={`absolute inset-0 z-50 flex flex-col bg-[#f2f2f3] ${PLEX}`}>
+    <div
+      className={`${isPage ? 'flex-1' : 'absolute inset-0 z-50'} flex flex-col bg-[#f2f2f3] ${PLEX}`}
+    >
       {/* Header */}
       <div className="shrink-0 border-b border-[#e4e4e9] bg-white px-6 py-4">
         <div className="flex items-start justify-between gap-4">
@@ -649,21 +657,23 @@ export default function CreateTransferModal({
                 : 'Submitted as a request — routed to the source branch, or to head office first if approval is required.'}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close dialog"
-            className="rounded-lg p-2 text-[#5b5b6b] hover:bg-[#f1f1f4]"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          {!isPage && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close dialog"
+              className="rounded-lg p-2 text-[#5b5b6b] hover:bg-[#f1f1f4]"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
         </div>
       </div>
 
       <form
         onSubmit={handleSubmit(handleFormSubmit)}
         noValidate
-        className="flex flex-1 flex-col overflow-hidden"
+        className={`flex flex-1 flex-col ${isPage ? '' : 'overflow-hidden'}`}
       >
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <div className="mx-auto flex max-w-[1400px] flex-col gap-4">
@@ -1028,7 +1038,9 @@ export default function CreateTransferModal({
         </div>
 
         {/* Sticky footer */}
-        <div className="flex shrink-0 items-center justify-between gap-4 border-t border-[#e4e4e9] bg-white px-6 py-3.5">
+        <div
+          className={`flex shrink-0 items-center justify-between gap-4 border-t border-[#e4e4e9] bg-white px-6 py-3.5 ${isPage ? 'sticky bottom-0' : ''}`}
+        >
           <div className="hidden sm:flex flex-col gap-0.5">
             <span className="text-[11px] text-[#5b5b6b]">Units selected</span>
             <span className={`${MONO} text-[16px] font-semibold tracking-[-0.01em] text-[#17171c]`}>
@@ -1042,7 +1054,7 @@ export default function CreateTransferModal({
               disabled={isSubmitting}
               className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#5b5b6b] hover:bg-[#f1f1f4] disabled:opacity-50"
             >
-              Cancel
+              {isPage ? 'Clear' : 'Cancel'}
             </button>
             <button
               type="submit"
