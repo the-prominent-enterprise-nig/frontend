@@ -83,7 +83,7 @@ export type UpdateUdsStatusFormValues = z.infer<typeof UpdateUdsStatusFormSchema
 // ─── Set Repair Provider ─────────────────────────────────────────────────────
 
 export const SetRepairProviderFormSchema = z.object({
-  repairProviderId: z.string().min(1, 'Repair provider is required'),
+  repairProviderId: z.string().min(1, 'Service center is required'),
 })
 
 export type SetRepairProviderFormValues = z.infer<typeof SetRepairProviderFormSchema>

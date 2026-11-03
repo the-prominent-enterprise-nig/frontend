@@ -30,7 +30,7 @@ export function ProviderCoverageWarning({
     <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5">
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
       <div className="text-xs text-amber-800">
-        <p className="font-medium">This provider isn&apos;t on file as a supplier of:</p>
+        <p className="font-medium">This service center isn&apos;t on file as a supplier of:</p>
         <ul className="mt-1 list-disc pl-4">
           {uncovered.map((u) => (
             <li key={u.serialNumber}>
