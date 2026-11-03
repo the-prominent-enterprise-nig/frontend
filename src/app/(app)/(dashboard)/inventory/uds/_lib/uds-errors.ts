@@ -30,7 +30,7 @@ const UDS_ERROR_MESSAGES: Record<string, string> = {
     'The service centre still has this unit — receive it back first.',
   uds_is_still_with_a_repair_provider_receive_it_back_first:
     'The service centre still has this unit — receive it back first.',
-  repair_provider_not_found: 'That repair provider no longer exists.',
+  repair_provider_not_found: 'That service center no longer exists.',
   serial_number_not_found: 'That serial number no longer exists.',
   uds_not_found: 'That UDS no longer exists.',
 }

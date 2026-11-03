@@ -15,6 +15,9 @@ export interface InstallmentAccountOption {
   /** The linked AR invoice number, if any — a receiver with the physical
    * invoice in hand can search by its number instead. */
   invoiceNumber?: string | null
+  /** The Sales Invoice No. on the customer's paperwork — the sale's SI No.,
+   * then its own number, else (hand-entered/imported) the account number. */
+  siNumber?: string | null
 }
 
 interface InstallmentAccountListResponse {

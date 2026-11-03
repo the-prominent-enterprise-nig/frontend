@@ -35,7 +35,7 @@ export function ImportDone({ result, priceListId, onUploadAnother }: Props) {
             .
           </p>
           {result.targets.length > 1 && (
-            <ul className="space-y-0.5 text-xs text-[#5b5b6b]">
+            <ul className="space-y-0.5 text-xs text-[#4b4b5a]">
               {result.targets.map((t) => (
                 <li key={t.listId}>
                   <span className="font-medium">{t.priceUse}</span> → {t.listName}:{' '}
@@ -46,7 +46,7 @@ export function ImportDone({ result, priceListId, onUploadAnother }: Props) {
             </ul>
           )}
           {pending && (
-            <p className="text-sm text-[#5b5b6b]">
+            <p className="text-sm text-[#4b4b5a]">
               {result.targets.length > 1 ? 'These lists are' : 'The list is'} now Pending Approval —{' '}
               {result.targets.length > 1 ? 'they apply' : 'it applies'} at checkout once approved.
             </p>

@@ -30,7 +30,7 @@ export function RrAttachmentsPanel({
         <span className="text-[13.5px] font-semibold">
           Attachments <span className="text-[#b42318]">*</span>
         </span>
-        <span className="text-[11.5px] text-[#8b8b9b]">
+        <span className="text-[11.5px] text-[#6f6f7f]">
           Scans or photos of the signed documents. Required before the receipt can be created.
         </span>
       </div>
@@ -93,7 +93,7 @@ function Slot({
         </button>
       </div>
       {files.length === 0 ? (
-        <p className={`text-[11.5px] ${invalid ? 'text-[#b42318]' : 'text-[#a3a3b2]'}`}>
+        <p className={`text-[11.5px] ${invalid ? 'text-[#b42318]' : 'text-[#8e8e9d]'}`}>
           {invalid ? `${kind} is required.` : 'Nothing attached yet.'}
         </p>
       ) : (
@@ -104,14 +104,14 @@ function Slot({
               className="flex items-center justify-between rounded-lg border border-[#eeeef1] px-2.5 py-1.5"
             >
               <span className="flex min-w-0 items-center gap-2 text-[12px] text-[#3d3d4a]">
-                <Paperclip className="h-3.5 w-3.5 shrink-0 text-[#a3a3b2]" />
+                <Paperclip className="h-3.5 w-3.5 shrink-0 text-[#8e8e9d]" />
                 <span className="truncate">{file.name}</span>
               </span>
               <button
                 type="button"
                 onClick={() => onChange(files.filter((_, j) => j !== i))}
                 aria-label={`Remove ${file.name}`}
-                className="rounded p-1 text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                className="rounded p-1 text-[#8e8e9d] hover:bg-[#fdeceb] hover:text-[#b42318]"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>

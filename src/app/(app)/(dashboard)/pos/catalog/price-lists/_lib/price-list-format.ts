@@ -13,8 +13,8 @@ export const STATUS_BADGE_CLASS: Record<string, string> = {
   pending_approval: 'bg-[#fbeed8] text-[#8a4b06]',
   active: 'bg-[#d7ebe2] text-[#0b6644]',
   rejected: 'bg-[#fbdedb] text-[#b42318]',
-  inactive: 'bg-[#f1f1f4] text-[#5b5b6b]',
-  expired: 'bg-[#f1f1f4] text-[#5b5b6b]',
+  inactive: 'bg-[#f1f1f4] text-[#4b4b5a]',
+  expired: 'bg-[#f1f1f4] text-[#4b4b5a]',
 }
 
 export const STATUS_LABELS: Record<string, string> = {
@@ -26,7 +26,7 @@ export const STATUS_LABELS: Record<string, string> = {
 }
 
 export function statusBadge(status: string) {
-  return STATUS_BADGE_CLASS[status] ?? 'bg-[#f1f1f4] text-[#5b5b6b]'
+  return STATUS_BADGE_CLASS[status] ?? 'bg-[#f1f1f4] text-[#4b4b5a]'
 }
 
 export function itemCountLabel(itemCount: number | undefined) {
@@ -71,12 +71,12 @@ export const STATUS_TONES: Record<string, StatusTone> = {
   active: { chip: 'bg-[#e7f5ef] text-[#0b6644]', dot: 'bg-[#0f7b52]' },
   pending_approval: { chip: 'bg-[#fdf3e7] text-[#8a4b06]', dot: 'bg-[#d18b1d]' },
   rejected: { chip: 'bg-[#fdeceb] text-[#b42318]', dot: 'bg-[#b42318]' },
-  inactive: { chip: 'bg-[#f1f1f4] text-[#5b5b6b]', dot: 'bg-[#a3a3b2]' },
-  expired: { chip: 'bg-[#f1f1f4] text-[#5b5b6b]', dot: 'bg-[#a3a3b2]' },
+  inactive: { chip: 'bg-[#f1f1f4] text-[#4b4b5a]', dot: 'bg-[#a3a3b2]' },
+  expired: { chip: 'bg-[#f1f1f4] text-[#4b4b5a]', dot: 'bg-[#a3a3b2]' },
 }
 
 export function statusTone(status: string): StatusTone {
-  return STATUS_TONES[status] ?? { chip: 'bg-[#f1f1f4] text-[#5b5b6b]', dot: 'bg-[#a3a3b2]' }
+  return STATUS_TONES[status] ?? { chip: 'bg-[#f1f1f4] text-[#4b4b5a]', dot: 'bg-[#a3a3b2]' }
 }
 
 /** Short, scannable branch scope for a table cell — the full list of names

@@ -374,7 +374,7 @@ export default function CreateReturnScreen({
               className={`${PANEL} flex shrink-0 flex-col items-center gap-[7px] px-6 py-[52px] text-center`}
             >
               <span className="text-[14.5px] font-semibold">Find the customer</span>
-              <span className="max-w-[400px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+              <span className="max-w-[400px] text-[12.5px] leading-[1.55] text-[#4b4b5a]">
                 Their purchase history gives you the item, the serial, the price paid and whether it
                 is still inside the return window.
               </span>
@@ -407,7 +407,7 @@ export default function CreateReturnScreen({
                       {customerLabel ||
                         (searchedInvoice ? 'Walk-in — no account' : 'This customer')}
                     </span>
-                    <span className="text-[11.5px] text-[#5b5b6b]">
+                    <span className="text-[11.5px] text-[#4b4b5a]">
                       Tick what is coming back — each line gets its own decision.
                     </span>
                   </div>
@@ -444,13 +444,13 @@ export default function CreateReturnScreen({
                 </div>
 
                 {purchasesQuery.isLoading ? (
-                  <p className="flex items-center justify-center gap-2 px-[18px] py-10 text-[12.5px] text-[#5b5b6b]">
+                  <p className="flex items-center justify-center gap-2 px-[18px] py-10 text-[12.5px] text-[#4b4b5a]">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Looking up what they bought…
                   </p>
                 ) : visible.length === 0 ? (
                   <div className="flex flex-col items-center gap-4 px-[18px] py-10 text-center">
-                    <p className="text-[12.5px] text-[#5b5b6b]">
+                    <p className="text-[12.5px] text-[#4b4b5a]">
                       {purchases.length === 0
                         ? searchedInvoice
                           ? `No sale found for “${searchedInvoice}”. It may predate the system, have been voided, or already have been returned through POS.`

@@ -348,6 +348,9 @@ export const TransferSummarySchema = z.object({
   reason: z.string().nullable().optional(),
   createdAt: z.string().optional(),
   dispatchedAt: z.string().nullable().optional(),
+  // Who dispatched it — never the same person who receives it (WH-01).
+  // Null on transfers dispatched before this was recorded.
+  dispatchedById: z.string().nullable().optional(),
   receivedDate: z.string().nullable().optional(),
   cancelledAt: z.string().nullable().optional(),
   driverName: z.string().nullable().optional(),

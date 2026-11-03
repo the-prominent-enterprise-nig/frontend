@@ -20,7 +20,7 @@ export async function setRepairProvider(
     return {
       success: false,
       error: 'Forbidden',
-      message: 'You do not have permission to set the repair provider',
+      message: 'You do not have permission to set the service center',
     }
   }
 
@@ -44,11 +44,11 @@ export async function setRepairProvider(
       typeof result.message === 'string' ? result.message : JSON.stringify(result.message ?? '')
     return {
       success: false,
-      error: errStr || 'Failed to set repair provider',
-      message: udsErrorMessage(msg || errStr, 'Failed to set repair provider'),
+      error: errStr || 'Failed to set service center',
+      message: udsErrorMessage(msg || errStr, 'Failed to set service center'),
     }
   }
 
   revalidatePath('/inventory/uds')
-  return { success: true, data: result.data, message: 'Repair provider updated' }
+  return { success: true, data: result.data, message: 'Service center updated' }
 }

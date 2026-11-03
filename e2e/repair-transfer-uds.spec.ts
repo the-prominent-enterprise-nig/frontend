@@ -88,7 +88,7 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     // labels render with a trailing "(optional)" span, so this can't use
     // exact text matching — the `form` scope alone is enough to avoid
     // colliding with the list table's "Repair Provider" column header.
-    const repairProviderInput = form.getByPlaceholder('Search repair provider…')
+    const repairProviderInput = form.getByPlaceholder('Search service center…')
     // The file <input> itself is visually hidden (className="hidden") behind
     // a styled, clickable <label> — assert the label, not the input, is
     // visible; setInputFiles works on a hidden input regardless.
@@ -128,7 +128,7 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     }
     await serialOptions.first().click()
 
-    const providerLabel = await pickComboboxOption(page, 'Search repair provider…')
+    const providerLabel = await pickComboboxOption(page, 'Search service center…')
     const providerName = providerLabel.split('—').slice(1).join('—').trim()
 
     await rfsFileInput.setInputFiles(path.join(__dirname, 'fixtures', 'rfs-form-sample.txt'))
@@ -140,7 +140,7 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     const rfsFileLabel = form.getByText('rfs-form-sample.txt')
     await expect(async () => {
       if ((await repairProviderInput.inputValue()) === '') {
-        await pickComboboxOption(page, 'Search repair provider…')
+        await pickComboboxOption(page, 'Search service center…')
       }
       if (!(await rfsFileLabel.isVisible().catch(() => false))) {
         await rfsFileInput.setInputFiles(path.join(__dirname, 'fixtures', 'rfs-form-sample.txt'))
@@ -357,9 +357,9 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     await expect(serialOptions.first()).toBeVisible({ timeout: 10_000 })
     await serialOptions.first().click()
 
-    const repairProviderInput = form.getByPlaceholder('Search repair provider…')
+    const repairProviderInput = form.getByPlaceholder('Search service center…')
     await expect(async () => {
-      await pickComboboxOption(page, 'Search repair provider…')
+      await pickComboboxOption(page, 'Search service center…')
       await expect(repairProviderInput).not.toHaveValue('')
       await form.getByRole('button', { name: 'Issue UDS' }).click()
       await expect(page.getByText('UDS issued').first()).toBeVisible({ timeout: 3_000 })
@@ -475,7 +475,7 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
     await expect(setProviderButton).toBeVisible()
     await setProviderButton.click()
 
-    const setProviderHeading = page.getByRole('heading', { name: 'Set Repair Provider' })
+    const setProviderHeading = page.getByRole('heading', { name: 'Set Service Center' })
     await expect(setProviderHeading).toBeVisible({ timeout: 10_000 })
     // The detail view closes underneath so its stale (providerless) snapshot
     // isn't left showing once this modal's own mutation succeeds.
@@ -488,7 +488,7 @@ test.describe('Repair Transfer — Issue UDS with RFS form + repair provider', (
 
     await expect(async () => {
       await page.getByRole('button', { name: 'Save' }).click()
-      await expect(page.getByText('Repair provider updated').first()).toBeVisible({
+      await expect(page.getByText('Service center updated').first()).toBeVisible({
         timeout: 3_000,
       })
     }).toPass({ timeout: 15_000 })

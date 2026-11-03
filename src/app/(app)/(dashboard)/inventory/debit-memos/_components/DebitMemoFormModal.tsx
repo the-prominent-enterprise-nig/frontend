@@ -46,8 +46,8 @@ const labelClass = 'block text-xs font-medium text-[#3d3d4a]'
 const fieldClass =
   'w-full rounded-lg border border-[#d3d3db] bg-white px-3 py-2 text-sm text-[#17171c] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]'
 const sectionHeadClass = 'text-[13.5px] font-semibold text-[#17171c]'
-const sectionNoteClass = 'text-[11.5px] leading-relaxed text-[#5b5b6b]'
-const monoHeadClass = `${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`
+const sectionNoteClass = 'text-[11.5px] leading-relaxed text-[#4b4b5a]'
+const monoHeadClass = `${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4b4b5a]`
 
 // Shared by the column headings and every goods row — one definition so the
 // two can never drift out of alignment.
@@ -83,7 +83,7 @@ const cellClass =
 // The computed Total column. Not an input, so it carries no border — a box
 // the user cannot type in reads as a disabled field.
 const readOnlyCellClass =
-  'flex w-full items-center justify-between gap-2 rounded-lg bg-[#f7f7f8] px-2.5 py-1.5 text-right text-[13px] tabular-nums text-[#5b5b6b] md:justify-end'
+  'flex w-full items-center justify-between gap-2 rounded-lg bg-[#f7f7f8] px-2.5 py-1.5 text-right text-[13px] tabular-nums text-[#4b4b5a] md:justify-end'
 
 /** The reasons a unit comes back. Picking one writes it into the line's
  * description, which is the only per-line free-text the memo carries — and
@@ -454,14 +454,14 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                 </span>
               )}
             </div>
-            <p className="mt-1 text-xs text-[#5b5b6b]">
+            <p className="mt-1 text-xs text-[#4b4b5a]">
               {isPosted
                 ? 'This memo has already posted — saving reverses it and posts the revision.'
                 : 'Stock going back out to a supplier. Nothing moves until an approver posts it.'}
             </p>
           </div>
           <div className="flex shrink-0 flex-col items-start gap-0.5 sm:items-end">
-            <span className="text-[11px] text-[#5b5b6b]">Claimed from the supplier</span>
+            <span className="text-[11px] text-[#4b4b5a]">Claimed from the supplier</span>
             <span className={`${MONO} text-xl font-semibold tracking-tight text-[#17171c]`}>
               {fmtMoney(totals.total)}
             </span>
@@ -494,7 +494,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
             {fromDr && (
               <div className="rounded-xl border border-[#ddd0f7] bg-[#faf7ff] px-4 py-3 text-xs text-[#3f1490]">
                 <p className="font-semibold">Drafted from delivery receipt {fromDr.drNumber}</p>
-                <p className="mt-1 leading-relaxed text-[#5b5b6b]">
+                <p className="mt-1 leading-relaxed text-[#4b4b5a]">
                   The units, the supplier and the branch are the DR&apos;s — edit the DR to change
                   them. You can change what each unit is claimed at and add charges here.
                   {fromDr.status === 'approved' || fromDr.status === 'posted'
@@ -521,7 +521,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                     Supplier <span className="text-[#b42318]">*</span>
                   </label>
                   {fromDr ? (
-                    <p className={`${fieldClass} bg-[#f7f7f8] text-[#5b5b6b]`}>
+                    <p className={`${fieldClass} bg-[#f7f7f8] text-[#4b4b5a]`}>
                       {memo?.supplier?.name ?? '—'}
                     </p>
                   ) : (
@@ -546,7 +546,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                     Returning from <span className="text-[#b42318]">*</span>
                   </label>
                   {fromDr ? (
-                    <p className={`${fieldClass} bg-[#f7f7f8] text-[#5b5b6b]`}>
+                    <p className={`${fieldClass} bg-[#f7f7f8] text-[#4b4b5a]`}>
                       {memo?.warehouse ? locationLabel(memo.warehouse) : '—'}
                     </p>
                   ) : (
@@ -563,7 +563,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                       )}
                     />
                   )}
-                  <p className="mt-1 text-[11px] text-[#8b8b9b]">
+                  <p className="mt-1 text-[11px] text-[#6f6f7f]">
                     The branch the units physically leave.
                   </p>
                 </div>
@@ -617,7 +617,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                   )}
 
                   {goodsRows.length === 0 ? (
-                    <p className="rounded-lg border border-dashed border-[#d3d3db] px-4 py-6 text-center text-xs text-[#8b8b9b]">
+                    <p className="rounded-lg border border-dashed border-[#d3d3db] px-4 py-6 text-center text-xs text-[#6f6f7f]">
                       Nothing added yet — add a line to search for what is going back.
                     </p>
                   ) : (
@@ -655,7 +655,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                                 accountsLoading={accountsQuery.isLoading}
                               />
                               <div className="flex flex-wrap items-center gap-1.5 md:pl-1">
-                                <span className="text-[11px] text-[#8b8b9b]">Why:</span>
+                                <span className="text-[11px] text-[#6f6f7f]">Why:</span>
                                 {RETURN_REASONS.map((reason) => {
                                   const isOn = description.trim() === reason
                                   return (
@@ -684,7 +684,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                                   <button
                                     type="button"
                                     onClick={() => remove(index)}
-                                    className="ml-auto flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                                    className="ml-auto flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-[#8e8e9d] hover:bg-[#fdeceb] hover:text-[#b42318]"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                     Remove line
@@ -736,7 +736,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                 </div>
 
                 {chargeRows.length === 0 ? (
-                  <p className="text-xs text-[#a3a3b2]">None — most memos are stock only.</p>
+                  <p className="text-xs text-[#8e8e9d]">None — most memos are stock only.</p>
                 ) : (
                   <div className="space-y-2">
                     {chargeRows.map(({ field, index }) => (
@@ -809,7 +809,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                       />
                     )}
                   />
-                  <p className="mt-1 text-[11px] text-[#8b8b9b]">
+                  <p className="mt-1 text-[11px] text-[#6f6f7f]">
                     The DR that went out with the goods.
                   </p>
                 </div>
@@ -859,19 +859,19 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                     {blocking.length} {blocking.length === 1 ? 'thing' : 'things'} to fix before
                     this can be saved
                   </p>
-                  <p className="truncate text-[11.5px] text-[#5b5b6b]">{blocking[0]}</p>
+                  <p className="truncate text-[11.5px] text-[#4b4b5a]">{blocking[0]}</p>
                 </>
               ) : cautions.length > 0 ? (
                 <>
                   <p className="text-[11.5px] font-medium text-[#8a4b06]">
                     Ready to save — {cautions.length} worth checking
                   </p>
-                  <p className="truncate text-[11.5px] text-[#5b5b6b]">{cautions[0]}</p>
+                  <p className="truncate text-[11.5px] text-[#4b4b5a]">{cautions[0]}</p>
                 </>
               ) : (
                 <>
                   <p className="text-[11.5px] font-medium text-[#0b6644]">Ready to save</p>
-                  <p className="truncate text-[11.5px] text-[#5b5b6b]">
+                  <p className="truncate text-[11.5px] text-[#4b4b5a]">
                     {fmtMoney(totals.total)} claimed from the supplier
                   </p>
                 </>
@@ -882,7 +882,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                 type="button"
                 onClick={onClose}
                 disabled={saving}
-                className="rounded-lg px-4 py-2.5 text-sm font-medium text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#17171c] disabled:opacity-50"
+                className="rounded-lg px-4 py-2.5 text-sm font-medium text-[#4b4b5a] hover:bg-[#f1f1f4] hover:text-[#17171c] disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -969,7 +969,7 @@ function TotalRow({
     >
       <div className="min-w-0">
         <p className={`text-[12.5px] text-[#17171c] ${strong ? 'font-semibold' : ''}`}>{label}</p>
-        {note && <p className="text-[11px] text-[#5b5b6b]">{note}</p>}
+        {note && <p className="text-[11px] text-[#4b4b5a]">{note}</p>}
       </div>
       <span
         className={`${MONO} shrink-0 tabular-nums ${
@@ -1081,7 +1081,7 @@ function LineRow({
             placeholder="1"
             aria-label="Quantity"
             disabled={locked}
-            className={`${cellClass} text-right disabled:bg-[#f7f7f8] disabled:text-[#5b5b6b]`}
+            className={`${cellClass} text-right disabled:bg-[#f7f7f8] disabled:text-[#4b4b5a]`}
           />
         )}
       />
@@ -1139,7 +1139,7 @@ function LineRow({
       <span className={`${readOnlyCellClass} ${MONO} font-medium text-[#17171c]`}>
         {/* Below md the row stacks and the headings are hidden, so the cell
             names itself the way the inputs' placeholders do. */}
-        <span className="text-[11px] font-normal uppercase tracking-wide text-[#8b8b9b] md:hidden">
+        <span className="text-[11px] font-normal uppercase tracking-wide text-[#6f6f7f] md:hidden">
           Total
         </span>
         <span>{fmtMoney(lineGross(line))}</span>
@@ -1228,7 +1228,7 @@ function ChargeRow({
         )}
       />
       <span className={`${readOnlyCellClass} ${MONO} font-medium text-[#17171c]`}>
-        <span className="text-[11px] font-normal uppercase tracking-wide text-[#8b8b9b] md:hidden">
+        <span className="text-[11px] font-normal uppercase tracking-wide text-[#6f6f7f] md:hidden">
           Total
         </span>
         <span>{fmtMoney(lineGross(line))}</span>
@@ -1236,7 +1236,7 @@ function ChargeRow({
       <button
         type="button"
         onClick={onRemove}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-[#8e8e9d] hover:bg-[#fdeceb] hover:text-[#b42318]"
         aria-label="Remove charge"
         title="Remove charge"
       >

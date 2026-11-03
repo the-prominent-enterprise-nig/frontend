@@ -281,7 +281,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
             <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Unit Document Sheets</h1>
-            <p className="text-[13px] text-[#5b5b6b]">
+            <p className="text-[13px] text-[#4b4b5a]">
               Track units leaving the branch for repair, pull-out, maintenance, or loan.
             </p>
           </div>
@@ -376,7 +376,9 @@ export default function UdsList({ session }: { session: SessionUser }) {
                   <tr className="border-b border-[#eeeef1] bg-[#fbfbfc]">
                     <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Document</th>
                     <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Status</th>
-                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Units / Provider</th>
+                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>
+                      Units / Service Center
+                    </th>
                     <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Route</th>
                     <th className={`hidden px-4 py-3 text-left md:table-cell ${STOCK_TABLE_HEAD}`}>
                       Latest document
