@@ -883,6 +883,9 @@ export default function TransferDetailModal({
   const [showRejectHqForm, setShowRejectHqForm] = useState(false)
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [showRejectManagerForm, setShowRejectManagerForm] = useState(false)
+  // The dispatch form only validates; the stock moves once the dispatcher
+  // confirms in the dispatch modal — a dispatch can't be undone.
+  const [pendingDispatch, setPendingDispatch] = useState<DispatchTransferFormValues | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [isPrinting, setIsPrinting] = useState(false)
 
@@ -1181,8 +1184,9 @@ export default function TransferDetailModal({
     setShowDispatchForm(true)
   }
 
-  async function handleDispatchSubmit(data: DispatchTransferFormValues) {
-    if (!transfer) return
+  async function handleDispatchConfirmed() {
+    if (!transfer || !pendingDispatch) return
+    const data = pendingDispatch
     const result = await onDispatch(transfer.id, {
       expectedArrival: data.expectedArrival,
       notes: data.notes || undefined,
@@ -1201,6 +1205,9 @@ export default function TransferDetailModal({
       vehiclePlate: data.vehiclePlate,
       carrierName: data.carrierName?.trim() || undefined,
     })
+    // Closed either way: on a refusal the toast says why and the form is
+    // still there to correct.
+    setPendingDispatch(null)
     if (result.success) {
       setShowDispatchForm(false)
       dispatchForm.reset()
@@ -2036,7 +2043,7 @@ export default function TransferDetailModal({
             {/* Dispatch form (inline) */}
             {showDispatchForm && (
               <form
-                onSubmit={dispatchForm.handleSubmit(handleDispatchSubmit)}
+                onSubmit={dispatchForm.handleSubmit((data) => setPendingDispatch(data))}
                 className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 space-y-3"
               >
                 <p className="flex items-center gap-1.5 text-sm font-semibold text-blue-800">
@@ -2200,7 +2207,7 @@ export default function TransferDetailModal({
                     className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
                   >
                     {isDispatching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Confirm Dispatch
+                    Dispatch
                   </button>
                 </div>
               </form>
@@ -2665,6 +2672,35 @@ export default function TransferDetailModal({
 
         {/* Rendered inside the panel so a click on its backdrop stays in the
             drawer instead of bubbling up and closing it. */}
+        <ConfirmDialog
+          open={!!pendingDispatch}
+          title="Dispatch this transfer?"
+          message={
+            <>
+              <p>
+                {totalUnits} {totalUnits === 1 ? 'unit leaves' : 'units leave'}{' '}
+                <span className="font-medium text-zinc-800">
+                  {branchLabel(transfer?.fromWarehouse, 'the source branch')}
+                </span>{' '}
+                for{' '}
+                <span className="font-medium text-zinc-800">
+                  {branchLabel(transfer?.toWarehouse, 'the destination branch')}
+                </span>
+                .
+              </p>
+              <p>
+                Stock is deducted from the source now and the transfer goes in transit. This cannot
+                be undone.
+              </p>
+            </>
+          }
+          confirmLabel="Yes, dispatch"
+          cancelLabel="Back"
+          confirmColorClassName="bg-[#5b21b6] hover:bg-[#4c1a99]"
+          loading={isDispatching}
+          onConfirm={handleDispatchConfirmed}
+          onCancel={() => setPendingDispatch(null)}
+        />
         <ConfirmDialog
           open={confirmCancel}
           title="Cancel this transfer?"
