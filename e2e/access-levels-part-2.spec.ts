@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, loginAs } from './utils'
+import { clickStable, gotoReady, loginAs } from './utils'
 
 // Access Levels Part 2: the client sheet's limits, as each role sees them.
 // The server enforces them (backend test/access-level-limits.e2e-spec.ts);
@@ -88,7 +88,12 @@ test("Settings: Expense Clerk's account limits show the sheet's two accounts", a
   const list = Array.isArray(roles) ? roles : roles.data
   const role = list.find((r) => r.name === 'Expense Clerk')!
   await gotoReady(page, `/settings/roles/${role.id}`)
-  await page.getByRole('link', { name: /Account limits/ }).click()
+  // Retried until the limits page shows: a click before hydration is lost.
+  await clickStable(
+    page.getByRole('link', { name: /Account limits/ }),
+    page.getByRole('button', { name: 'Save limits' }),
+    { timeout: 30_000 }
+  )
   await expect(page.getByRole('heading', { name: 'Expense Clerk' })).toBeVisible()
   await expect(page.getByText('Revolving Fund - Panay')).toBeVisible()
   await expect(page.getByText('Panay Special Fund - Construction')).toBeVisible()
