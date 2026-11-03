@@ -577,14 +577,15 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     await toggle(page).check()
     await fillStable(feeInput(page), '150')
     await fillStable(feeCr(page), ` ${cr.toLowerCase()} `)
-    // A plain cash sale has no payment CR. A GCash payment's own reference is
-    // the number the fee's CR must still differ from.
+    // A plain cash sale has no payment CR. A QR payment's own reference is
+    // the number the fee's CR must still differ from. (GCash takes no
+    // reference since Scenario 80 POS-07.)
     await page
       .getByTestId('cash-sub-mode-toggle')
-      .getByRole('button', { name: 'GCash', exact: true })
+      .getByRole('button', { name: 'QR', exact: true })
       .click()
     await fillStable(page.getByLabel('Amount received'), '100000')
-    await fillStable(page.getByLabel('GCash reference'), cr)
+    await fillStable(page.getByLabel('QR reference'), cr)
 
     await confirm(page).click()
     await expect(

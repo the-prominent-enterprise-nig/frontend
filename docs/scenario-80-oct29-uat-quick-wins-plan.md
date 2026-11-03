@@ -18,7 +18,14 @@ Branch `feat/scenario-80-oct29-uat-quick-wins` in both repos.
      every method.
      Both are flagged in the PR for Chloe's review.
 3. **WH-05:** a Branch filter on the repairs (Unit Documents) list. The create form's "Location" picker stays as is.
-4. **CA-02:** the "Waive credit application" checkbox also shows when the cart has TPF lines, not only in-house.
+4. **CA-02:** "Allow the waiver on TPF sales" was the first reading, but a TPF sale never needs a credit
+   application, so a waiver there would do nothing. Built instead: **Third-Party Financing (TPF)** is offered as a
+   reason when the credit application is waived. The backend adds it to every tenant's override reasons once, and
+   refuses it on anything but a waiver.
+5. **Chloe's code (2026-11-03):** Kian first said not to change Chloe's work, then "carry on" after seeing that all
+   of Part 2 sits on it. The Part 2 changes that touch her code are listed in the PR for her review: the moved
+   down-payment toggle (POS-06), the reference rules (POS-07/13) and the moved Payment Mode / provider toggles
+   (POS-09).
 
 ## Parts (easiest first; each part is committed and manually tested before the next)
 
@@ -37,13 +44,13 @@ Branch `feat/scenario-80-oct29-uat-quick-wins` in both repos.
 
 ### Part 2 — checkout layout and fields (FE, BE where a field was required)
 
-| ID     | Change                                                                               |
-| ------ | ------------------------------------------------------------------------------------ |
-| POS-06 | The down payment's Cash / Debit-Credit Card toggle moves down to the Payment section |
-| POS-07 | No reference number field for GCash and bank payments                                |
-| POS-13 | No reference number field for debit/credit card payments                             |
-| POS-09 | In-house / TPF selector placed before the price override                             |
-| CA-02  | Credit application waiver also offered on TPF sales                                  |
+| ID     | Change                                                                                                                                              |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POS-06 | The down payment's Cash / Debit-Credit Card toggle moves down to the Payment section                                                                |
+| POS-07 | No reference for GCash and bank transfer. BE: a QR payment through a GCash gateway needs none; FE sends the first GCash gateway when none is picked |
+| POS-13 | No reference for debit/credit card                                                                                                                  |
+| POS-09 | Payment Mode (Cash / Installment) and Inhouse / TPF move to the top of Order Summary                                                                |
+| CA-02  | "Third-Party Financing (TPF)" reason, offered only on a waived credit application                                                                   |
 
 ### Part 3 — rules (FE + BE)
 
