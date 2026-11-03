@@ -79,7 +79,10 @@ const CreateItemFormBaseSchema = z.object({
   weightKg: z.number().min(0).optional(),
   warrantyPeriodDays: z.number().int().min(0).optional(),
   brandId: z.string().optional(),
-  typeId: z.string().optional(),
+  // Required since WH: an untyped item fell into the wrong report row and GL
+  // line (a washing machine counted under IT Products), and the Edit form is
+  // the only other place a Type can be set.
+  typeId: z.string().min(1, 'Item type is required'),
   modelNumber: z.string().max(60).optional(),
   // Optional — record one already-in-hand unit at creation time (date in /
   // RR # / origin / cost / serial). Left blank, no initial stock is recorded.
