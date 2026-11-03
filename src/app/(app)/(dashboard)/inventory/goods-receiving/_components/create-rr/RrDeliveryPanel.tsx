@@ -34,7 +34,7 @@ const toggleBtnClass = (active: boolean) =>
   `shrink-0 rounded-md border px-2 py-1 text-[11.5px] font-medium transition-colors ${
     active
       ? 'border-[#ddd0f7] bg-[#f1ebfb] text-[#3f1490]'
-      : 'border-[#d3d3db] text-[#5b5b6b] hover:border-[#a3a3b2]'
+      : 'border-[#d3d3db] text-[#4b4b5a] hover:border-[#a3a3b2]'
   }`
 
 // Scenario 55 — why this is a no-PO receipt with no registered supplier.
@@ -170,7 +170,7 @@ export function RrDeliveryPanel({
             Linked to {linkedPo.code}
           </span>
         ) : (
-          <span className="text-[11.5px] text-[#8b8b9b]">
+          <span className="text-[11.5px] text-[#6f6f7f]">
             Direct delivery, no purchase order linked
           </span>
         )}
@@ -564,7 +564,7 @@ export function RrDeliveryPanel({
                   <button
                     type="button"
                     onClick={onUnlinkPo}
-                    className="flex h-9.5 items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 text-[12.5px] text-[#5b5b6b] hover:border-[#a3a3b2] hover:text-[#17171c]"
+                    className="flex h-9.5 items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 text-[12.5px] text-[#4b4b5a] hover:border-[#a3a3b2] hover:text-[#17171c]"
                   >
                     <Link2Off className="h-3.5 w-3.5" />
                     Unlink
@@ -621,10 +621,10 @@ function Field({
       <span className="flex items-center gap-1 text-[12px] font-medium text-[#3d3d4a]">
         {label}
         {required && <span className="text-[#b42318]"> *</span>}
-        {hint && <span className="ml-1 font-normal text-[#8b8b9b]">{hint}</span>}
+        {hint && <span className="ml-1 font-normal text-[#6f6f7f]">{hint}</span>}
         {tooltip && (
           <Tooltip label={tooltip}>
-            <Info className="h-3 w-3 text-[#a3a3b2]" />
+            <Info className="h-3 w-3 text-[#8e8e9d]" />
           </Tooltip>
         )}
       </span>
@@ -640,7 +640,7 @@ function Field({
 }
 
 function Hint({ children }: { children: React.ReactNode }): React.ReactElement {
-  return <span className="text-[11px] leading-[1.4] text-[#8b8b9b]">{children}</span>
+  return <span className="text-[11px] leading-[1.4] text-[#6f6f7f]">{children}</span>
 }
 
 function FieldError({ text }: { text?: string }): React.ReactElement {

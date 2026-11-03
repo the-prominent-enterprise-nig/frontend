@@ -11,7 +11,7 @@ export const TEXTAREA =
   'min-h-[76px] w-full rounded-lg border border-[#d3d3db] bg-white px-3 py-2 text-[13px] text-[#17171c] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]'
 
 export const READONLY =
-  'flex h-[38px] w-full items-center truncate whitespace-nowrap rounded-lg border border-[#e4e4e9] bg-[#f6f6f8] px-3 text-[13px] text-[#8b8b9b]'
+  'flex h-[38px] w-full items-center truncate whitespace-nowrap rounded-lg border border-[#e4e4e9] bg-[#f6f6f8] px-3 text-[13px] text-[#6f6f7f]'
 
 export function Section({
   title,
@@ -29,7 +29,7 @@ export function Section({
       <header className="flex items-start justify-between gap-3 border-b border-[#eeeef1] px-5 py-3.5">
         <div>
           <h2 className="text-[13.5px] font-semibold text-[#17171c]">{title}</h2>
-          {description && <p className="mt-0.5 text-[11.5px] text-[#8b8b9b]">{description}</p>}
+          {description && <p className="mt-0.5 text-[11.5px] text-[#6f6f7f]">{description}</p>}
         </div>
         {aside}
       </header>
@@ -107,7 +107,7 @@ export function DrShell({
               <h2 className="text-xl font-semibold tracking-tight text-[#17171c]">{title}</h2>
               {chip}
             </div>
-            <p className="mt-1 text-xs text-[#5b5b6b]">{subtitle}</p>
+            <p className="mt-1 text-xs text-[#4b4b5a]">{subtitle}</p>
           </div>
           {headerAside}
         </div>
@@ -117,7 +117,7 @@ export function DrShell({
       </div>
       <div className="flex-none border-t border-[#e4e4e9] bg-white px-4 py-3 shadow-[0_-8px_24px_-18px_rgba(20,20,30,.35)] md:px-6">
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0 flex-1 text-[11.5px] text-[#5b5b6b]">{status}</div>
+          <div className="min-w-0 flex-1 text-[11.5px] text-[#4b4b5a]">{status}</div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
         </div>
       </div>
@@ -145,14 +145,14 @@ export function HeaderFigure({
 }): React.JSX.Element {
   return (
     <div className="flex shrink-0 flex-col items-start gap-0.5 sm:items-end">
-      <span className="text-[11px] text-[#5b5b6b]">{label}</span>
+      <span className="text-[11px] text-[#4b4b5a]">{label}</span>
       <span className={`${MONO} text-xl font-semibold tracking-tight text-[#17171c]`}>{value}</span>
     </div>
   )
 }
 
 export const BTN_GHOST =
-  'rounded-lg px-4 py-2.5 text-sm font-medium text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#17171c] disabled:opacity-50'
+  'rounded-lg px-4 py-2.5 text-sm font-medium text-[#4b4b5a] hover:bg-[#f1f1f4] hover:text-[#17171c] disabled:opacity-50'
 export const BTN_SECONDARY =
   'flex items-center gap-2 rounded-lg border border-[#d3d3db] bg-white px-4 py-2.5 text-sm font-medium text-[#17171c] hover:bg-[#fbfbfc] disabled:opacity-50'
 export const BTN_PRIMARY =

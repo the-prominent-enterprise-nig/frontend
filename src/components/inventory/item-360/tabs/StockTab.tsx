@@ -103,9 +103,9 @@ export default function StockTab({
   if (stockedBalances.length === 0) {
     return (
       <div className={`${PLEX} flex flex-col items-center justify-center py-16 text-center`}>
-        <Package className="mb-3 h-10 w-10 text-[#c9c9d3]" />
-        <p className="text-[13px] font-medium text-[#5b5b6b]">No stock on hand</p>
-        <p className="mt-1 text-[12px] text-[#8b8b9b]">Receive stock to see balances here.</p>
+        <Package className="mb-3 h-10 w-10 text-[#b0b0bc]" />
+        <p className="text-[13px] font-medium text-[#4b4b5a]">No stock on hand</p>
+        <p className="mt-1 text-[12px] text-[#6f6f7f]">Receive stock to see balances here.</p>
       </div>
     )
   }
@@ -222,7 +222,7 @@ export default function StockTab({
               }`}
             >
               <p
-                className={`${MONO} text-[10px] font-semibold tracking-[.08em] text-[#8b8b9b] uppercase`}
+                className={`${MONO} text-[10px] font-semibold tracking-[.08em] text-[#6f6f7f] uppercase`}
               >
                 {m.label}
               </p>
@@ -232,11 +232,11 @@ export default function StockTab({
               >
                 {m.value.toLocaleString()}
               </p>
-              <p className="mt-0.5 text-[11px] text-[#8b8b9b]">{m.note}</p>
+              <p className="mt-0.5 text-[11px] text-[#6f6f7f]">{m.note}</p>
             </div>
           ))}
         </div>
-        <p className={`${MONO} text-[11.5px] text-[#5b5b6b]`}>
+        <p className={`${MONO} text-[11.5px] text-[#4b4b5a]`}>
           {onHandTotal.toLocaleString()} on hand − {reservedTotal.toLocaleString()} reserved ={' '}
           {availableTotal.toLocaleString()} available
         </p>
@@ -248,7 +248,7 @@ export default function StockTab({
           <span className="text-[13px] font-semibold text-[#17171c]">Stock by location</span>
           {isSerialTracked ? (
             <div className="relative">
-              <Search className="pointer-events-none absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2 text-[#a3a3b2]" />
+              <Search className="pointer-events-none absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2 text-[#8e8e9d]" />
               <input
                 value={serialQuery}
                 onChange={(e) => setSerialQuery(e.target.value)}
@@ -259,11 +259,11 @@ export default function StockTab({
               />
             </div>
           ) : (
-            <span className="text-[11.5px] text-[#8b8b9b]">On hand per location</span>
+            <span className="text-[11.5px] text-[#6f6f7f]">On hand per location</span>
           )}
         </div>
         {query && matchCount === 0 && (
-          <p className="border-b border-[#eeeef1] px-4 py-2.5 text-[12px] text-[#8b8b9b]">
+          <p className="border-b border-[#eeeef1] px-4 py-2.5 text-[12px] text-[#6f6f7f]">
             No serial matches &ldquo;{serialQuery}&rdquo;.
           </p>
         )}
@@ -284,7 +284,7 @@ export default function StockTab({
         {goneMatches.length > 0 && (
           <div ref={goneMatchesRef} className="border-b border-[#eeeef1] bg-[#fbfaff] px-4 py-3">
             <p
-              className={`${MONO} mb-2 text-[9.5px] font-semibold tracking-[.08em] text-[#8b8b9b] uppercase`}
+              className={`${MONO} mb-2 text-[9.5px] font-semibold tracking-[.08em] text-[#6f6f7f] uppercase`}
             >
               Sold / removed — no longer on the shelf
             </p>
@@ -300,7 +300,7 @@ export default function StockTab({
                   <span className={`${MONO} truncate text-[11.5px] font-medium text-[#3d3d4a]`}>
                     {serial.serialNumber}
                   </span>
-                  <span className="shrink-0 rounded-[5px] bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] font-medium text-[#5b5b6b]">
+                  <span className="shrink-0 rounded-[5px] bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] font-medium text-[#4b4b5a]">
                     {SERIAL_STATUS_LABELS[serial.status]}
                   </span>
                 </button>
@@ -354,7 +354,7 @@ export default function StockTab({
                   <div className="flex min-w-0 flex-1 items-center gap-2">
                     {canExpand && (
                       <ChevronDown
-                        className={`h-3.5 w-3.5 shrink-0 text-[#a3a3b2] transition-transform ${
+                        className={`h-3.5 w-3.5 shrink-0 text-[#8e8e9d] transition-transform ${
                           isOpen ? 'rotate-180' : ''
                         }`}
                       />
@@ -381,7 +381,7 @@ export default function StockTab({
                       >
                         {Number(balance.onHandQty ?? 0).toLocaleString()}
                       </p>
-                      <p className="text-[10px] text-[#8b8b9b]">on hand</p>
+                      <p className="text-[10px] text-[#6f6f7f]">on hand</p>
                     </div>
                     <div className="text-right">
                       <p
@@ -390,7 +390,7 @@ export default function StockTab({
                       >
                         {Number(balance.availableQty ?? 0).toLocaleString()}
                       </p>
-                      <p className="text-[10px] text-[#8b8b9b]">available</p>
+                      <p className="text-[10px] text-[#6f6f7f]">available</p>
                     </div>
                     <StockStatusBadge
                       status={status}
@@ -408,7 +408,7 @@ export default function StockTab({
                   >
                     <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
                       <p
-                        className={`${MONO} text-[9.5px] font-semibold tracking-[.08em] text-[#8b8b9b] uppercase`}
+                        className={`${MONO} text-[9.5px] font-semibold tracking-[.08em] text-[#6f6f7f] uppercase`}
                       >
                         Serial numbers at this location
                       </p>
@@ -424,12 +424,12 @@ export default function StockTab({
                         ))}
                       </div>
                     ) : locationSerials.length === 0 ? (
-                      <p className="flex items-center gap-1.5 text-[12px] text-[#8b8b9b]">
+                      <p className="flex items-center gap-1.5 text-[12px] text-[#6f6f7f]">
                         <Hash className="h-3.5 w-3.5 shrink-0" />
                         No serial numbers registered for this location yet.
                       </p>
                     ) : filteredSerials.length === 0 ? (
-                      <p className="text-[12px] text-[#8b8b9b]">
+                      <p className="text-[12px] text-[#6f6f7f]">
                         No serials here match &ldquo;{serialQuery}&rdquo;.
                       </p>
                     ) : (
@@ -485,7 +485,7 @@ export default function StockTab({
                                     >
                                       {serial.serialNumber}
                                     </span>
-                                    <span className="text-[10.5px] text-[#8b8b9b]">
+                                    <span className="text-[10.5px] text-[#6f6f7f]">
                                       <SerialAges
                                         firstReceivedAt={serial.firstReceivedAt}
                                         locationSince={serial.locationSince}
@@ -494,7 +494,7 @@ export default function StockTab({
                                     </span>
                                   </span>
                                   {!selectable && (
-                                    <span className="shrink-0 rounded-[5px] bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] font-medium text-[#5b5b6b]">
+                                    <span className="shrink-0 rounded-[5px] bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] font-medium text-[#4b4b5a]">
                                       {serial.status === 'in_stock' && serial.openTransfer
                                         ? `On ${serial.openTransfer.transferNumber}`
                                         : SERIAL_STATUS_LABELS[serial.status]}

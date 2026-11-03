@@ -26,7 +26,7 @@ export function FileStep({ file, isBusy, onFile }: Props) {
       <div className="space-y-4">
         <div>
           <h2 className="text-base font-semibold text-prominent-purple-900">1. Choose your CSV</h2>
-          <p className="mt-1 text-sm text-[#5b5b6b]">
+          <p className="mt-1 text-sm text-[#4b4b5a]">
             Export your sheet as CSV (File → Download → Comma-separated values). You will see what
             would change before anything is saved.
           </p>
@@ -36,7 +36,7 @@ export function FileStep({ file, isBusy, onFile }: Props) {
           type="button"
           disabled={isBusy}
           onClick={() => inputRef.current?.click()}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[#d3d3db] py-10 text-sm text-[#5b5b6b] hover:border-[#5b21b6] hover:bg-[#f1ebfb] hover:text-[#3f1490] disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[#d3d3db] py-10 text-sm text-[#4b4b5a] hover:border-[#5b21b6] hover:bg-[#f1ebfb] hover:text-[#3f1490] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
           {isBusy ? 'Reading your file…' : file ? 'Choose a different file' : 'Choose CSV file'}
@@ -54,7 +54,7 @@ export function FileStep({ file, isBusy, onFile }: Props) {
           <div className="flex items-center gap-2 rounded-lg border border-[#d7ebe2] bg-[#eef7f2] px-4 py-3">
             <FileText className="h-4 w-4 shrink-0 text-[#0b6644]" />
             <span className="truncate text-sm text-[#0b6644]">{file.name}</span>
-            <span className={`${MONO} ml-auto shrink-0 text-xs text-[#5b5b6b]`}>
+            <span className={`${MONO} ml-auto shrink-0 text-xs text-[#4b4b5a]`}>
               {(file.size / 1024).toFixed(1)} KB
             </span>
           </div>

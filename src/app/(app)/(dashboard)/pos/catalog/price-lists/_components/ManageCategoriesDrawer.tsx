@@ -117,11 +117,11 @@ export default function ManageCategoriesDrawer({
       <div role="rowgroup" className="space-y-2">
         <div className="flex flex-wrap items-baseline gap-2 px-1 pt-1">
           <span
-            className={`${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`}
+            className={`${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4b4b5a]`}
           >
             {title}
           </span>
-          <span className="text-[11px] text-[#8b8b9b]">{note}</span>
+          <span className="text-[11px] text-[#6f6f7f]">{note}</span>
         </div>
         {types.map((type) => {
           const used = usageCount(type)
@@ -136,20 +136,20 @@ export default function ManageCategoriesDrawer({
               <div role="cell" className="min-w-0 flex-1 space-y-1.5">
                 <span
                   className={`inline-block rounded px-2 py-0.5 ${MONO} text-[11px] font-semibold ${
-                    type.isActive ? 'bg-[#f1ebfb] text-[#3f1490]' : 'bg-[#f1f1f4] text-[#5b5b6b]'
+                    type.isActive ? 'bg-[#f1ebfb] text-[#3f1490]' : 'bg-[#f1f1f4] text-[#4b4b5a]'
                   }`}
                 >
                   {type.name}
                 </span>
-                <p className="text-xs text-[#5b5b6b]">{type.description || '—'}</p>
+                <p className="text-xs text-[#4b4b5a]">{type.description || '—'}</p>
               </div>
 
               <div className="flex shrink-0 items-center gap-3">
                 <div role="cell" className="text-right">
-                  <p className={`${MONO} text-xs ${used ? 'text-[#3d3d4a]' : 'text-[#8b8b9b]'}`}>
+                  <p className={`${MONO} text-xs ${used ? 'text-[#3d3d4a]' : 'text-[#6f6f7f]'}`}>
                     {used ? `${used} list${used === 1 ? '' : 's'}` : 'Unused'}
                   </p>
-                  <p className="text-[11px] text-[#8b8b9b]">
+                  <p className="text-[11px] text-[#6f6f7f]">
                     {used ? 'priced under it' : 'no price lists'}
                   </p>
                 </div>
@@ -183,7 +183,7 @@ export default function ManageCategoriesDrawer({
                       className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                         type.isActive
                           ? 'bg-[#e7f5ef] text-[#0b6644]'
-                          : 'bg-[#f1f1f4] text-[#5b5b6b]'
+                          : 'bg-[#f1f1f4] text-[#4b4b5a]'
                       }`}
                     >
                       {type.isActive ? 'Active' : 'Inactive'}
@@ -198,7 +198,7 @@ export default function ManageCategoriesDrawer({
                         type="button"
                         aria-label="Edit"
                         onClick={() => openEditModal(type)}
-                        className="rounded-lg border border-[#e4e4e9] p-1.5 text-[#5b5b6b] hover:bg-[#fbfbfc] hover:text-[#3f1490]"
+                        className="rounded-lg border border-[#e4e4e9] p-1.5 text-[#4b4b5a] hover:bg-[#fbfbfc] hover:text-[#3f1490]"
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
@@ -210,7 +210,7 @@ export default function ManageCategoriesDrawer({
                         onClick={() => setDeletingType(type)}
                         className={`rounded-lg border p-1.5 ${
                           used
-                            ? 'border-[#e4e4e9] text-[#c9c9d3]'
+                            ? 'border-[#e4e4e9] text-[#b0b0bc]'
                             : 'border-[#f3c9c5] text-[#b42318] hover:bg-[#fdeceb]'
                         }`}
                       >
@@ -238,14 +238,14 @@ export default function ManageCategoriesDrawer({
         panelClassName={PLEX}
       >
         <div className="space-y-4 p-5">
-          <p className="text-sm text-[#5b5b6b]">
+          <p className="text-sm text-[#4b4b5a]">
             The payment scenarios a price list can price for. Every price list belongs to exactly
             one of them.
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-[200px] flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8b8b9b]" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f6f7f]" />
               <input
                 type="text"
                 value={search}
@@ -287,21 +287,21 @@ export default function ManageCategoriesDrawer({
             className={`space-y-3 transition-opacity ${isFetching ? 'opacity-60' : ''}`}
           >
             {isLoading ? (
-              <div className="rounded-xl border border-[#e4e4e9] bg-white p-8 text-center text-sm text-[#8b8b9b]">
+              <div className="rounded-xl border border-[#e4e4e9] bg-white p-8 text-center text-sm text-[#6f6f7f]">
                 Loading price use types…
               </div>
             ) : priceUseTypes.length === 0 ? (
               <div className="flex flex-col items-center justify-center rounded-xl border border-[#e4e4e9] bg-white py-16">
-                <Tags className="mb-3 h-10 w-10 text-[#c9c9d3]" />
-                <p className="text-sm font-medium text-[#5b5b6b]">No price use types yet</p>
+                <Tags className="mb-3 h-10 w-10 text-[#b0b0bc]" />
+                <p className="text-sm font-medium text-[#4b4b5a]">No price use types yet</p>
                 {canManage && (
-                  <p className="mt-1 text-xs text-[#8b8b9b]">
+                  <p className="mt-1 text-xs text-[#6f6f7f]">
                     Create one to start categorizing price lists, e.g. WIP, CR-BR, SSC.
                   </p>
                 )}
               </div>
             ) : visible.length === 0 ? (
-              <div className="rounded-xl border border-[#e4e4e9] bg-white py-12 text-center text-sm text-[#8b8b9b]">
+              <div className="rounded-xl border border-[#e4e4e9] bg-white py-12 text-center text-sm text-[#6f6f7f]">
                 No price use type matches “{search}”.
               </div>
             ) : (
@@ -332,7 +332,7 @@ export default function ManageCategoriesDrawer({
             <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
               <h2 className="text-lg font-semibold text-[#17171c]">Delete price use type?</h2>
               {canHardDelete ? (
-                <p className="mt-2 text-sm text-[#5b5b6b]">
+                <p className="mt-2 text-sm text-[#4b4b5a]">
                   This removes <strong>{deletingType.name}</strong>. No price list is using it, so
                   nothing else changes.
                 </p>
@@ -342,7 +342,7 @@ export default function ManageCategoriesDrawer({
                 // produce an error. Turning it off is what the reader actually
                 // wants: the existing lists keep pricing, nobody can pick it
                 // for a new one.
-                <p className="mt-2 text-sm text-[#5b5b6b]">
+                <p className="mt-2 text-sm text-[#4b4b5a]">
                   <strong>{deletingType.name}</strong> is used by {deletingUsage} price list
                   {deletingUsage === 1 ? '' : 's'}. Deleting it would leave{' '}
                   {deletingUsage === 1 ? 'that list' : 'those lists'} without a use type, so it

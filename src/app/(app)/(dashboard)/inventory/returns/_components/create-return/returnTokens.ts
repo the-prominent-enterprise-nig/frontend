@@ -16,9 +16,9 @@ export const INPUT_BAD =
   'h-9 rounded-lg border border-[#b42318] bg-[#fdeceb] px-2.5 text-[12.5px] text-[#17171c] outline-none focus:border-[#b42318] focus:shadow-[0_0_0_3px_#fdeceb]'
 
 /** The mono micro-caption over every field and ledger cell. */
-export const CAPTION = `${MONO} text-[9.5px] uppercase tracking-[.08em] text-[#5b5b6b]`
+export const CAPTION = `${MONO} text-[9.5px] uppercase tracking-[.08em] text-[#4b4b5a]`
 
-export const LABEL = `${MONO} text-[9.5px] uppercase tracking-[.08em] text-[#5b5b6b]`
+export const LABEL = `${MONO} text-[9.5px] uppercase tracking-[.08em] text-[#4b4b5a]`
 
 /**
  * The dot beside each disposition, and nothing else about it.

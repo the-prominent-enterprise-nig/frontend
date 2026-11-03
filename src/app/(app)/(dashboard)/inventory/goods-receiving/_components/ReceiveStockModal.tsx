@@ -1245,19 +1245,19 @@ export default function ReceiveStockModal({
     >
       <div className="flex shrink-0 flex-wrap items-start justify-between gap-5 border-b border-[#e4e4e9] bg-white px-4 py-3.5 lg:px-5">
         <div className="flex min-w-0 flex-col gap-1">
-          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
             Inventory › Receiving › New
           </div>
           <h2 className="text-[21px] font-semibold tracking-[-.02em]">{title}</h2>
-          <p className="text-[12.5px] text-[#5b5b6b]">{subtitle}</p>
+          <p className="text-[12.5px] text-[#4b4b5a]">{subtitle}</p>
         </div>
 
         <div className="flex items-start gap-4">
           <div className="flex flex-col items-end gap-0.5">
-            <span className="text-[11px] text-[#5b5b6b]">Receiving</span>
+            <span className="text-[11px] text-[#4b4b5a]">Receiving</span>
             <span
               className={`${MONO} text-[18px] font-semibold tracking-[-.02em] ${
-                totals.units > 0 ? 'text-[#17171c]' : 'text-[#a3a3b2]'
+                totals.units > 0 ? 'text-[#17171c]' : 'text-[#8e8e9d]'
               }`}
             >
               {totals.units} {totals.units === 1 ? 'unit' : 'units'} · {totals.lines}{' '}
@@ -1269,7 +1269,7 @@ export default function ReceiveStockModal({
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#6f6f7f] hover:bg-[#f1f1f4] hover:text-[#17171c]"
             >
               <X className="h-4.5 w-4.5" />
             </button>
@@ -1350,11 +1350,11 @@ export default function ReceiveStockModal({
                   <span className="text-[13.5px] font-semibold">
                     Items received <span className="text-[#b42318]">*</span>
                   </span>
-                  <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+                  <span className={`${MONO} text-[11px] text-[#6f6f7f]`}>
                     {fields.length} {fields.length === 1 ? 'line' : 'lines'} · {totals.units} units
                   </span>
                 </div>
-                <span className="text-[11.5px] text-[#8b8b9b]">
+                <span className="text-[11.5px] text-[#6f6f7f]">
                   Pick a catalog item, or mark it &ldquo;Non-catalog items&rdquo; for anything not
                   in the catalog.
                 </span>
@@ -1386,12 +1386,12 @@ export default function ReceiveStockModal({
               ManualRrForm.tsx's own Defaults bar exactly: applied to every
               new line going forward, not retroactively. */}
             <div className="flex flex-wrap items-center gap-2 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2">
-              <span className="text-[11px] text-[#8b8b9b]">Input tax type</span>
+              <span className="text-[11px] text-[#6f6f7f]">Input tax type</span>
               <select
                 value={defaultTaxCode}
                 onChange={(e) => setDefaultTaxCode(e.target.value)}
                 aria-label="Default tax code"
-                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#4b4b5a] outline-none focus:border-[#5b21b6]"
               >
                 {MANUAL_RR_TAX_CODES.map((code) => (
                   <option key={code.value} value={code.value}>
@@ -1399,12 +1399,12 @@ export default function ReceiveStockModal({
                   </option>
                 ))}
               </select>
-              <span className="ml-2 text-[11px] text-[#8b8b9b]">Withholding tax</span>
+              <span className="ml-2 text-[11px] text-[#6f6f7f]">Withholding tax</span>
               <select
                 value={defaultWithholdingClass}
                 onChange={(e) => setDefaultWithholdingClass(e.target.value)}
                 aria-label="Default withholding"
-                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#4b4b5a] outline-none focus:border-[#5b21b6]"
               >
                 {withholdingClassOptions(ewt.rateFor).map((cls) => (
                   <option key={cls.value} value={cls.value}>
@@ -1418,7 +1418,7 @@ export default function ReceiveStockModal({
               <div className="flex flex-col items-center gap-2 px-5.5 py-10 text-center">
                 <PackagePlus className="h-7 w-7 text-[#d3d3db]" />
                 <span className="text-[13.5px] font-semibold">No items added yet.</span>
-                <span className="max-w-[430px] text-[12px] leading-[1.55] text-[#5b5b6b]">
+                <span className="max-w-[430px] text-[12px] leading-[1.55] text-[#4b4b5a]">
                   {linkedPo
                     ? `Add a line, or pull the lines ${linkedPo.code} is still waiting on.`
                     : 'Add a line, then pick a catalog item or name what arrived.'}
@@ -1434,7 +1434,7 @@ export default function ReceiveStockModal({
             ) : (
               <>
                 <div
-                  className={`${MONO} ${RR_LINE_GRID} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] lg:grid`}
+                  className={`${MONO} ${RR_LINE_GRID} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#6f6f7f] lg:grid`}
                 >
                   <span>Item / SKU</span>
                   <span className="text-right">Qty</span>
@@ -1497,7 +1497,7 @@ export default function ReceiveStockModal({
                 })}
 
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[#e4e4e9] bg-[#fbfbfc] px-4.5 py-3">
-                  <span className="text-[11.5px] text-[#8b8b9b]">
+                  <span className="text-[11.5px] text-[#6f6f7f]">
                     Held lines land in quarantine, not as sellable stock. Freebies are received at
                     zero cost.
                   </span>
@@ -1514,7 +1514,7 @@ export default function ReceiveStockModal({
         )}
         <div className={`${PANEL} flex flex-col gap-2 px-4.5 py-3.5`}>
           <label className="text-[12px] font-medium text-[#3d3d4a]">
-            Notes <span className="font-normal text-[#8b8b9b]">optional</span>
+            Notes <span className="font-normal text-[#6f6f7f]">optional</span>
           </label>
           <Controller
             name="notes"

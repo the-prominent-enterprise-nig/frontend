@@ -62,17 +62,17 @@ function TransferSerials({ lines }: { lines: TransferSummary['lines'] }) {
       className={`${MONO} mt-1 truncate text-[12px] font-medium text-[#17171c]`}
     >
       {shown}
-      {more > 0 && <span className="text-[#5b5b6b]"> +{more} more</span>}
+      {more > 0 && <span className="text-[#4b4b5a]"> +{more} more</span>}
     </p>
   )
 }
 
 function TransferProgress({ lines }: { lines: TransferSummary['lines'] }) {
   const { total, received } = lineTotals(lines)
-  if (!total) return <span className="text-[#a3a3b2]">—</span>
+  if (!total) return <span className="text-[#8e8e9d]">—</span>
   const pct = Math.min((received / total) * 100, 100)
   const fill = pct >= 100 ? 'bg-[#0f7b52]' : pct > 0 ? 'bg-[#d18b1d]' : 'bg-[#e4e4e9]'
-  const tone = pct >= 100 ? 'text-[#0b6644]' : pct > 0 ? 'text-[#8a4b06]' : 'text-[#5b5b6b]'
+  const tone = pct >= 100 ? 'text-[#0b6644]' : pct > 0 ? 'text-[#8a4b06]' : 'text-[#4b4b5a]'
   return (
     <div className="flex w-[140px] flex-col gap-[5px]">
       <div className="h-[5px] overflow-hidden rounded-[3px] bg-[#eeeef1]">
@@ -108,7 +108,7 @@ function daysSince(iso: string | undefined): number | null {
 
 function TransferAge({ transfer }: { transfer: TransferSummary }) {
   const days = daysSince(transfer.transferDate ?? transfer.createdAt)
-  if (days === null) return <span className="text-[#a3a3b2]">—</span>
+  if (days === null) return <span className="text-[#8e8e9d]">—</span>
   const threshold = STALE_AFTER_DAYS[transfer.status]
   const stale = threshold !== undefined && days >= threshold
   return (
@@ -480,7 +480,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
               searchFocused ? `border ${CONTROL_CHROME.focused}` : `border ${CONTROL_CHROME.idle}`
             }`}
           >
-            <Search className="h-[13px] w-[13px] shrink-0 text-[#8b8b9b]" />
+            <Search className="h-[13px] w-[13px] shrink-0 text-[#6f6f7f]" />
             <input
               type="text"
               placeholder="Search transfer #, item, SKU, or serial…"
@@ -494,7 +494,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
               <button
                 type="button"
                 onClick={() => setSearch('')}
-                className="shrink-0 text-[12px] text-[#5b5b6b] hover:text-[#17171c]"
+                className="shrink-0 text-[12px] text-[#4b4b5a] hover:text-[#17171c]"
               >
                 clear
               </button>
@@ -580,7 +580,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
           >
             All
             <span
-              className={`${MONO} text-[10.5px] ${!statusFilter ? 'text-[#ddd0f7]' : 'text-[#5b5b6b]'}`}
+              className={`${MONO} text-[10.5px] ${!statusFilter ? 'text-[#ddd0f7]' : 'text-[#4b4b5a]'}`}
             >
               {totalCount}
             </span>
@@ -599,14 +599,14 @@ export default function TransferList({ session }: { session: SessionUser }) {
                   active
                     ? 'border border-[#5b21b6] bg-[#5b21b6] font-medium text-white'
                     : `border border-[#e4e4e9] bg-white hover:bg-[#fbfbfc] ${
-                        count === 0 ? 'text-[#8b8b9b]' : 'text-[#17171c]'
+                        count === 0 ? 'text-[#6f6f7f]' : 'text-[#17171c]'
                       }`
                 }`}
               >
                 <Icon className={`h-[13px] w-[13px] shrink-0 ${active ? '' : cfg.tone}`} />
                 {cfg.label}
                 <span
-                  className={`${MONO} text-[10.5px] ${active ? 'text-[#ddd0f7]' : 'text-[#5b5b6b]'}`}
+                  className={`${MONO} text-[10.5px] ${active ? 'text-[#ddd0f7]' : 'text-[#4b4b5a]'}`}
                 >
                   {count}
                 </span>
@@ -730,7 +730,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                               wh={tr.fromWarehouse}
                               className="text-[12.5px] text-[#3d3d4a]"
                             />
-                            <ArrowRight className="h-3 w-3 shrink-0 text-[#c9c9d3]" />
+                            <ArrowRight className="h-3 w-3 shrink-0 text-[#b0b0bc]" />
                             <LocationName
                               wh={tr.toWarehouse}
                               className="text-[12.5px] font-semibold"
@@ -768,7 +768,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                             className={`w-[112px] rounded-[7px] px-[10px] py-[7px] text-[12.5px] font-medium transition-colors ${
                               action.primary
                                 ? 'bg-[#5b21b6] text-white hover:bg-[#4a189b]'
-                                : 'border border-[#e4e4e9] bg-white text-[#5b5b6b] hover:bg-[#fbfbfc]'
+                                : 'border border-[#e4e4e9] bg-white text-[#4b4b5a] hover:bg-[#fbfbfc]'
                             }`}
                           >
                             {action.label}
