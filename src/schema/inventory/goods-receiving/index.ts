@@ -57,6 +57,10 @@ const ReceiveStockLineSchema = z
     // from the picked serial's sale when it resolves to exactly one account,
     // editable/overridable either way.
     installmentAccountId: z.string().optional(),
+    // Repair/return only — the POS sale (cash or financed) the unit was sold
+    // on, picked by its Sales Invoice No.; installmentAccountId is the
+    // repossession link.
+    salesTransactionId: z.string().optional(),
   })
   .refine(
     (line) =>
@@ -198,14 +202,15 @@ export const ReceiveStockFormSchema = z
       path: ['serviceCenterId'],
     }
   )
-  .refine(
-    (data) =>
-      !!data.warehouseId || data.reason === 'repossession' || data.reason === 'repair_return',
-    {
-      message: 'Destination warehouse is required',
-      path: ['warehouseId'],
-    }
-  )
+  // Every receipt lands somewhere — receiveStock() requires it. A unit return
+  // used to be exempt because the form silently filled one in, falling back
+  // to the first standalone warehouse (Negros) for a head-office receiver
+  // (WH-07); now the receiver's own branch fills it, and anyone without one
+  // picks it.
+  .refine((data) => !!data.warehouseId, {
+    message: 'Pick where the goods are received',
+    path: ['warehouseId'],
+  })
 
 export type ReceiveStockFormValues = z.infer<typeof ReceiveStockFormSchema>
 

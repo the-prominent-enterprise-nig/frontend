@@ -288,7 +288,7 @@ function TransferLineRow({
           <p className="truncate text-[13px] font-semibold text-[#17171c]">
             {itemName || 'Unknown item'}
           </p>
-          {itemSku && <p className={`${MONO} mt-0.5 text-[11px] text-[#8b8b9b]`}>{itemSku}</p>}
+          {itemSku && <p className={`${MONO} mt-0.5 text-[11px] text-[#6f6f7f]`}>{itemSku}</p>}
           {itemError && <p className="mt-1 text-[11.5px] text-[#b42318]">{itemError}</p>}
         </div>
 
@@ -313,7 +313,7 @@ function TransferLineRow({
               type="button"
               onClick={onRemove}
               disabled={!canRemove}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318] disabled:cursor-not-allowed disabled:opacity-30"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#8e8e9d] hover:bg-[#fdeceb] hover:text-[#b42318] disabled:cursor-not-allowed disabled:opacity-30"
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -330,7 +330,7 @@ function TransferLineRow({
       {showAvailability && (
         <p
           className={`mt-1 pl-0.5 text-[11.5px] ${
-            exceedsAvailable ? 'font-medium text-[#b42318]' : 'text-[#8b8b9b]'
+            exceedsAvailable ? 'font-medium text-[#b42318]' : 'text-[#6f6f7f]'
           }`}
         >
           {exceedsAvailable
@@ -642,7 +642,7 @@ export default function CreateTransferModal({
       <div className="shrink-0 border-b border-[#e4e4e9] bg-white px-6 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className={`${MONO} mb-1 text-[10.5px] uppercase tracking-[0.08em] text-[#a3a3b2]`}>
+            <p className={`${MONO} mb-1 text-[10.5px] uppercase tracking-[0.08em] text-[#8e8e9d]`}>
               Inventory &rsaquo; Stock transfers &rsaquo;{' '}
               {isEditing ? (editing?.transferNumber ?? 'Edit') : 'New'}
             </p>
@@ -651,7 +651,7 @@ export default function CreateTransferModal({
                 ? `Edit Request ${editing?.transferNumber ?? ''}`.trim()
                 : 'New Stock Request'}
             </h2>
-            <p className="mt-1 text-[13px] text-[#5b5b6b]">
+            <p className="mt-1 text-[13px] text-[#4b4b5a]">
               {isEditing
                 ? 'Saving resubmits this request for approval from the start — any sign-off it already has is cleared.'
                 : 'Submitted as a request — routed to the source branch, or to head office first if approval is required.'}
@@ -662,7 +662,7 @@ export default function CreateTransferModal({
               type="button"
               onClick={onClose}
               aria-label="Close dialog"
-              className="rounded-lg p-2 text-[#5b5b6b] hover:bg-[#f1f1f4]"
+              className="rounded-lg p-2 text-[#4b4b5a] hover:bg-[#f1f1f4]"
             >
               <X className="h-5 w-5" />
             </button>
@@ -698,7 +698,7 @@ export default function CreateTransferModal({
                         className="relative h-[18px] w-8 shrink-0 rounded-full bg-[#d3d3db] transition-colors after:absolute after:top-[2px] after:left-[2px] after:h-[14px] after:w-[14px] after:rounded-full after:bg-white after:transition-transform peer-checked:bg-[#5b21b6] peer-checked:after:translate-x-[14px] peer-focus-visible:ring-2 peer-focus-visible:ring-[#5b21b6]/40"
                       />
                       <span className="font-medium">For a caravan</span>
-                      <span className="hidden text-[#8b8b9b] sm:inline">
+                      <span className="hidden text-[#6f6f7f] sm:inline">
                         — requesting stock for a caravan event hosted at a branch
                       </span>
                     </label>
@@ -708,7 +708,7 @@ export default function CreateTransferModal({
                   <div>
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                       <span
-                        className={`${MONO} text-[10px] font-semibold tracking-[.09em] text-[#8b8b9b] uppercase`}
+                        className={`${MONO} text-[10px] font-semibold tracking-[.09em] text-[#6f6f7f] uppercase`}
                       >
                         Route
                       </span>
@@ -739,7 +739,7 @@ export default function CreateTransferModal({
                             />
                           )}
                         />
-                        <p className="mt-1 text-[11px] text-[#5b5b6b]">
+                        <p className="mt-1 text-[11px] text-[#4b4b5a]">
                           {isCaravanBranch(fromWarehouse?.branch)
                             ? `Caravan stock, recorded under ${fromWarehouse?.branch?.hostBranch?.name ?? 'its host branch'}.`
                             : 'Stock leaves here.'}
@@ -814,7 +814,7 @@ export default function CreateTransferModal({
                                 }
                               />
                             )}
-                            <p className="mt-1 text-[11px] text-[#5b5b6b]">
+                            <p className="mt-1 text-[11px] text-[#4b4b5a]">
                               {isCaravanDestination
                                 ? ''
                                 : lockedToWarehouseId
@@ -922,7 +922,7 @@ export default function CreateTransferModal({
                           <span className="font-medium">
                             Send directly — no destination approval required
                           </span>
-                          <span className="block text-[11.5px] text-[#5b5b6b]">
+                          <span className="block text-[11.5px] text-[#4b4b5a]">
                             Skips the receiving branch manager&apos;s sign-off for this request
                             only. Other stock requests still need it.
                           </span>
@@ -953,7 +953,7 @@ export default function CreateTransferModal({
                   <span className="text-[13.5px] font-semibold text-[#17171c]">
                     Items to request <span className="text-[#b42318]">*</span>
                   </span>
-                  <span className={`${MONO} text-[11px] text-[#5b5b6b]`}>
+                  <span className={`${MONO} text-[11px] text-[#4b4b5a]`}>
                     {fields.length} {fields.length === 1 ? 'line' : 'lines'} · {totalUnits} units
                   </span>
                 </div>
@@ -994,7 +994,7 @@ export default function CreateTransferModal({
               {/* Column headings — matches each line row's own grid below */}
               {fields.length > 0 && (
                 <div
-                  className={`${MONO} hidden items-center gap-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-[18px] py-2 text-[10px] font-semibold tracking-[.09em] text-[#8b8b9b] uppercase sm:grid sm:grid-cols-[minmax(0,1fr)_96px_40px]`}
+                  className={`${MONO} hidden items-center gap-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-[18px] py-2 text-[10px] font-semibold tracking-[.09em] text-[#6f6f7f] uppercase sm:grid sm:grid-cols-[minmax(0,1fr)_96px_40px]`}
                 >
                   <span>Item / SKU</span>
                   <span className="text-center">Units</span>
@@ -1004,9 +1004,9 @@ export default function CreateTransferModal({
 
               {fields.length === 0 && (
                 <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
-                  <PackageSearch className="h-7 w-7 text-[#c9c9d3]" />
+                  <PackageSearch className="h-7 w-7 text-[#b0b0bc]" />
                   <p className="text-[13.5px] font-semibold text-[#17171c]">No items yet</p>
-                  <p className="max-w-[420px] text-[12px] leading-relaxed text-[#5b5b6b]">
+                  <p className="max-w-[420px] text-[12px] leading-relaxed text-[#4b4b5a]">
                     Use the search above to add stock held at{' '}
                     {fromLabel ? branchLabel(fromLabel) : 'the source branch'}, then say how many
                     units you need.
@@ -1042,7 +1042,7 @@ export default function CreateTransferModal({
           className={`flex shrink-0 items-center justify-between gap-4 border-t border-[#e4e4e9] bg-white px-6 py-3.5 ${isPage ? 'sticky bottom-0' : ''}`}
         >
           <div className="hidden sm:flex flex-col gap-0.5">
-            <span className="text-[11px] text-[#5b5b6b]">Units selected</span>
+            <span className="text-[11px] text-[#4b4b5a]">Units selected</span>
             <span className={`${MONO} text-[16px] font-semibold tracking-[-0.01em] text-[#17171c]`}>
               {totalUnits}
             </span>
@@ -1052,7 +1052,7 @@ export default function CreateTransferModal({
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#5b5b6b] hover:bg-[#f1f1f4] disabled:opacity-50"
+              className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#4b4b5a] hover:bg-[#f1f1f4] disabled:opacity-50"
             >
               {isPage ? 'Clear' : 'Cancel'}
             </button>

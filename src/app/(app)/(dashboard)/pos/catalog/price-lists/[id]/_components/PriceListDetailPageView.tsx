@@ -86,7 +86,7 @@ export function PriceListDetailPageView({
 
   if (isLoading) {
     return (
-      <div className="flex min-h-full items-center justify-center py-24 text-[#8b8b9b]">
+      <div className="flex min-h-full items-center justify-center py-24 text-[#6f6f7f]">
         <Loader2 className="h-6 w-6 animate-spin" />
       </div>
     )
@@ -98,7 +98,7 @@ export function PriceListDetailPageView({
         <div className="mx-auto max-w-3xl">
           <Link
             href="/pos/catalog/price-lists"
-            className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-[#5b5b6b] hover:text-[#3f1490]"
+            className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-[#4b4b5a] hover:text-[#3f1490]"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to Price Lists
@@ -125,7 +125,7 @@ export function PriceListDetailPageView({
       label: 'Items priced',
       value: total.toLocaleString(),
       note: 'across the whole list',
-      tone: total === 0 ? 'text-[#c9c9d3]' : 'text-[#17171c]',
+      tone: total === 0 ? 'text-[#b0b0bc]' : 'text-[#17171c]',
     },
     {
       label: 'No down payment',
@@ -147,7 +147,7 @@ export function PriceListDetailPageView({
         <div>
           <Link
             href="/pos/catalog/price-lists"
-            className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#5b5b6b] hover:text-[#3f1490]"
+            className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#4b4b5a] hover:text-[#3f1490]"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to Price Lists
@@ -169,13 +169,13 @@ export function PriceListDetailPageView({
                   {STATUS_LABELS[priceList.status] ?? priceList.status}
                 </span>
               </div>
-              <p className="mt-1.5 text-sm text-[#5b5b6b]">
+              <p className="mt-1.5 text-sm text-[#4b4b5a]">
                 {eff.label} ({eff.note}) · {branchScopeLabel(priceList.allowedBranchIds, branches)}{' '}
                 · {priceList.currency} ·{' '}
                 {priceList.pricingMode === 'exclusive' ? 'VAT exclusive' : 'VAT inclusive'}
               </p>
               {priceList.description && (
-                <p className="mt-1 text-sm text-[#8b8b9b]">{priceList.description}</p>
+                <p className="mt-1 text-sm text-[#6f6f7f]">{priceList.description}</p>
               )}
             </div>
 
@@ -210,14 +210,14 @@ export function PriceListDetailPageView({
               className={`flex flex-col gap-1 px-4 py-3 ${index % 2 === 1 ? 'border-l border-[#eeeef1]' : ''} lg:border-l lg:first:border-l-0 ${index > 1 ? 'border-t border-[#eeeef1] lg:border-t-0' : ''}`}
             >
               <span
-                className={`${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`}
+                className={`${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4b4b5a]`}
               >
                 {stat.label}
               </span>
               <span className={`${MONO} text-[19px] font-semibold tracking-tight ${stat.tone}`}>
                 {stat.value}
               </span>
-              <span className="text-[11px] text-[#5b5b6b]">{stat.note}</span>
+              <span className="text-[11px] text-[#4b4b5a]">{stat.note}</span>
             </div>
           ))}
         </div>
@@ -259,7 +259,7 @@ export function PriceListDetailPageView({
                       setMode(option.value)
                     }}
                     className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                      isOn ? 'bg-[#5b21b6] text-white' : 'text-[#5b5b6b] hover:text-[#17171c]'
+                      isOn ? 'bg-[#5b21b6] text-white' : 'text-[#4b4b5a] hover:text-[#17171c]'
                     }`}
                   >
                     {option.label}
@@ -271,7 +271,7 @@ export function PriceListDetailPageView({
 
           {mode === 'filter' && (
             <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8b8b9b]" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f6f7f]" />
               <input
                 type="text"
                 value={search}
@@ -282,7 +282,7 @@ export function PriceListDetailPageView({
             </div>
           )}
 
-          <span className="text-xs text-[#5b5b6b]">
+          <span className="text-xs text-[#4b4b5a]">
             {mode === 'filter'
               ? `Searches the ${total.toLocaleString()} item${total === 1 ? '' : 's'} already priced here.`
               : 'Searches the whole catalog. Adding an item sends the list back for approval.'}

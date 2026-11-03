@@ -106,7 +106,7 @@ function CopyButton({ code }: { code: string }): React.ReactElement {
       type="button"
       onClick={copy}
       title="Copy PO code"
-      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[#a3a3b2] hover:bg-[#f1ebfb] hover:text-[#3f1490]"
+      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[#8e8e9d] hover:bg-[#f1ebfb] hover:text-[#3f1490]"
     >
       <svg
         width="11"
@@ -136,7 +136,7 @@ function ReceivingCell({ po }: { po: PurchaseOrderSummary }): React.ReactElement
         : received > 0
           ? 'bg-[#d18b1d]'
           : 'bg-[#e4e4e9]'
-  const pctTone = full ? 'text-[#0b6644]' : received > 0 ? 'text-[#8a4b06]' : 'text-[#5b5b6b]'
+  const pctTone = full ? 'text-[#0b6644]' : received > 0 ? 'text-[#8a4b06]' : 'text-[#4b4b5a]'
   return (
     <div className="flex min-w-0 flex-col gap-[5px]">
       <div className="flex items-baseline justify-between gap-2">
@@ -181,7 +181,7 @@ function IconBtn({ action }: { action: RowActionSpec }): React.ReactElement {
       ? 'border-[#ddd0f7] text-[#5b21b6] hover:bg-[#f1ebfb] hover:text-[#3f1490]'
       : action.tone === 'green'
         ? 'border-[#c3e5d6] text-[#0b6644] hover:bg-[#e7f5ef]'
-        : 'border-[#e4e4e9] text-[#5b5b6b] hover:border-[#d3d3db] hover:bg-[#f6f6f8] hover:text-[#17171c]'
+        : 'border-[#e4e4e9] text-[#4b4b5a] hover:border-[#d3d3db] hover:bg-[#f6f6f8] hover:text-[#17171c]'
   return (
     <Tooltip label={action.label} align="end" className="shrink-0">
       <button
@@ -617,7 +617,7 @@ export function PurchaseOrderList({
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
             <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Purchase Orders</h1>
-            <p className="text-[13px] text-[#5b5b6b]">
+            <p className="text-[13px] text-[#4b4b5a]">
               Manage and track purchase orders across your organisation
             </p>
           </div>
@@ -644,7 +644,7 @@ export function PurchaseOrderList({
                 searchFocus ? CONTROL_CHROME.focused : CONTROL_CHROME.idle
               }`}
             >
-              <Search className="h-3.25 w-3.25 shrink-0 text-[#8b8b9b]" />
+              <Search className="h-3.25 w-3.25 shrink-0 text-[#6f6f7f]" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -659,7 +659,7 @@ export function PurchaseOrderList({
                     type="button"
                     onClick={() => setSearch('')}
                     aria-label="Clear search"
-                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
+                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[#6f6f7f] hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -701,7 +701,7 @@ export function PurchaseOrderList({
             />
 
             <div className="ml-auto flex items-center gap-2">
-              <span className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+              <span className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
                 Sort
               </span>
               <div className="relative">
@@ -714,7 +714,7 @@ export function PurchaseOrderList({
                   <option value="desc">Newest first</option>
                   <option value="asc">Oldest first</option>
                 </select>
-                <ChevronDown className="pointer-events-none absolute right-[9px] top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8b8b9b]" />
+                <ChevronDown className="pointer-events-none absolute right-[9px] top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6f6f7f]" />
               </div>
             </div>
           </div>
@@ -851,7 +851,7 @@ export function PurchaseOrderList({
                           </span>
                           <CopyButton code={po.code} />
                         </div>
-                        <span className="text-[11px] text-[#8b8b9b]">{fmtDate(po.createdAt)}</span>
+                        <span className="text-[11px] text-[#6f6f7f]">{fmtDate(po.createdAt)}</span>
                       </div>
 
                       <div role="cell" className="flex min-w-0 items-center gap-[9px] pl-1.5">
@@ -861,7 +861,7 @@ export function PurchaseOrderList({
                             {po.supplier.name}
                           </span>
                           {po.supplier.taxId && (
-                            <span className={`${MONO} truncate text-[10.5px] text-[#8b8b9b]`}>
+                            <span className={`${MONO} truncate text-[10.5px] text-[#6f6f7f]`}>
                               TIN {po.supplier.taxId}
                             </span>
                           )}
@@ -897,7 +897,7 @@ export function PurchaseOrderList({
                             {po.fromPr.code}
                           </button>
                         ) : (
-                          <span className={`${MONO} truncate text-[11.5px] text-[#8b8b9b]`}>
+                          <span className={`${MONO} truncate text-[11.5px] text-[#6f6f7f]`}>
                             Direct
                           </span>
                         )}
@@ -916,7 +916,7 @@ export function PurchaseOrderList({
               })}
 
               <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
-                <span className="text-[11.5px] text-[#8b8b9b]">
+                <span className="text-[11.5px] text-[#6f6f7f]">
                   {/* Requests alone can fill the table, so 0 orders is possible. */}
                   {pagination.total === 0
                     ? 'No orders yet'
@@ -925,7 +925,7 @@ export function PurchaseOrderList({
                     ` · ${inlineRequests.length} open ${inlineRequests.length === 1 ? 'request' : 'requests'}`}
                 </span>
                 <div className="flex items-center gap-[10px]">
-                  <span className="text-[11.5px] text-[#8b8b9b]">Rows</span>
+                  <span className="text-[11.5px] text-[#6f6f7f]">Rows</span>
                   <select
                     value={limit}
                     onChange={(e) => setLimit(Number(e.target.value))}
@@ -980,7 +980,7 @@ export function PurchaseOrderList({
                           <span className={`${MONO} text-[13px] font-medium`}>{po.code}</span>
                           <CopyButton code={po.code} />
                         </div>
-                        <span className="text-[11.5px] text-[#8b8b9b]">
+                        <span className="text-[11.5px] text-[#6f6f7f]">
                           {fmtDate(po.createdAt)}
                         </span>
                       </div>
@@ -992,7 +992,7 @@ export function PurchaseOrderList({
                       <div className="flex min-w-0 flex-col gap-px">
                         <span className="truncate text-[13px] font-medium">{po.supplier.name}</span>
                         {po.supplier.taxId && (
-                          <span className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>
+                          <span className={`${MONO} text-[10.5px] text-[#6f6f7f]`}>
                             TIN {po.supplier.taxId}
                           </span>
                         )}
@@ -1004,7 +1004,7 @@ export function PurchaseOrderList({
 
                     <div className="flex flex-col gap-[5px]">
                       <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-[11.5px] text-[#8b8b9b]">
+                        <span className="text-[11.5px] text-[#6f6f7f]">
                           Received {received} / {ordered}
                         </span>
                         <span
@@ -1013,7 +1013,7 @@ export function PurchaseOrderList({
                               ? 'text-[#0b6644]'
                               : received > 0
                                 ? 'text-[#8a4b06]'
-                                : 'text-[#5b5b6b]'
+                                : 'text-[#4b4b5a]'
                           }`}
                         >
                           {pct}%
@@ -1045,12 +1045,12 @@ export function PurchaseOrderList({
                             {po.fromPr.code}
                           </button>
                         ) : (
-                          <span className={`${MONO} truncate text-[11.5px] text-[#8b8b9b]`}>
+                          <span className={`${MONO} truncate text-[11.5px] text-[#6f6f7f]`}>
                             Direct
                           </span>
                         )}
                         <span
-                          className={`truncate text-[11.5px] ${late > 0 ? 'font-medium text-[#b25e09]' : 'text-[#5b5b6b]'}`}
+                          className={`truncate text-[11.5px] ${late > 0 ? 'font-medium text-[#b25e09]' : 'text-[#4b4b5a]'}`}
                         >
                           {po.expectedDeliveryDate
                             ? `Expected ${fmtDate(po.expectedDeliveryDate)}`
@@ -1090,7 +1090,7 @@ export function PurchaseOrderList({
                   <SkeletonBar wide />
                 </div>
               ))}
-              <div className="border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px] text-[11.5px] text-[#8b8b9b]">
+              <div className="border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px] text-[11.5px] text-[#6f6f7f]">
                 Loading purchase orders…
               </div>
             </div>
@@ -1104,7 +1104,7 @@ export function PurchaseOrderList({
                 <div className="mt-1 text-[14px] font-semibold">
                   No purchase orders match your filters
                 </div>
-                <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+                <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#4b4b5a]">
                   {search
                     ? `Nothing matches “${search}”. Check the PO or PR number, or search by supplier name instead.`
                     : 'No orders match the filters you have applied. Clear a filter to see more.'}
@@ -1121,7 +1121,7 @@ export function PurchaseOrderList({
               <div className="flex flex-col items-center gap-2 px-6 py-13 text-center">
                 <div className="h-[34px] w-[34px] rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb]" />
                 <div className="mt-1 text-[15px] font-semibold">No purchase orders yet</div>
-                <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+                <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#4b4b5a]">
                   Purchase orders appear here once you raise one from a purchase request or create
                   one directly. Approved orders can then be received against.
                 </div>

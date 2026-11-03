@@ -68,7 +68,7 @@ export function NewCaravanFields({
               />
             )}
           />
-          <p className="mt-1 text-[11px] text-[#5b5b6b]">
+          <p className="mt-1 text-[11px] text-[#4b4b5a]">
             The branch this caravan belongs to. Its stock is recorded under this branch and sold on
             its POS.
           </p>
@@ -111,7 +111,7 @@ export function NewCaravanFields({
             />
           )}
         />
-        <p className="mt-1 text-[11px] text-[#5b5b6b]">
+        <p className="mt-1 text-[11px] text-[#4b4b5a]">
           Where the caravan is physically set up, so staff know where these units are going.
         </p>
         {err?.location && <p className={errorClass}>{err.location.message}</p>}
@@ -130,7 +130,7 @@ export function NewCaravanFields({
           error={err?.endDate?.message}
         />
       </div>
-      <p className="mt-2.5 text-[11px] text-[#5b5b6b]">
+      <p className="mt-2.5 text-[11px] text-[#4b4b5a]">
         The caravan is listed as a branch until its end date. Remaining stock can still be
         transferred out after it ends.
       </p>

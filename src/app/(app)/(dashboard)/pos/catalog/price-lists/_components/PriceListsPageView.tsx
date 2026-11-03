@@ -106,7 +106,7 @@ function PriceListActions({
         <Link
           href={`/pos/catalog/price-lists/${pl.id}`}
           aria-label="Manage Items"
-          className="rounded-lg p-1.5 text-[#5b5b6b] hover:bg-[#f1f1f4]"
+          className="rounded-lg p-1.5 text-[#4b4b5a] hover:bg-[#f1f1f4]"
         >
           <ListChecks className="h-4 w-4" />
         </Link>
@@ -300,7 +300,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Price Lists</h1>
-            <p className="mt-1 text-sm text-[#5b5b6b]">
+            <p className="mt-1 text-sm text-[#4b4b5a]">
               One selling price per item, per price use type, per branch. Priority settles the
               overlaps.
             </p>
@@ -355,17 +355,17 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                 <span className="flex items-center gap-2">
                   <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${tile.dot}`} />
                   <span
-                    className={`${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`}
+                    className={`${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4b4b5a]`}
                   >
                     {tile.label}
                   </span>
                 </span>
                 <span
-                  className={`${MONO} text-[20px] font-semibold tracking-tight ${tile.value === 0 ? 'text-[#a3a3b2]' : 'text-[#17171c]'}`}
+                  className={`${MONO} text-[20px] font-semibold tracking-tight ${tile.value === 0 ? 'text-[#8e8e9d]' : 'text-[#17171c]'}`}
                 >
                   {isLoading ? '—' : tile.value}
                 </span>
-                <span className="text-[11px] text-[#5b5b6b]">{tile.note}</span>
+                <span className="text-[11px] text-[#4b4b5a]">{tile.note}</span>
               </button>
             )
           })}
@@ -374,7 +374,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8b8b9b]" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f6f7f]" />
             <input
               type="text"
               value={filters.query}
@@ -431,7 +431,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
               >
                 {pill.label}
                 <span
-                  className={`rounded-full px-1.5 py-px text-[10px] font-semibold ${isOn ? 'bg-white/20' : 'bg-[#f1f1f4] text-[#5b5b6b]'}`}
+                  className={`rounded-full px-1.5 py-px text-[10px] font-semibold ${isOn ? 'bg-white/20' : 'bg-[#f1f1f4] text-[#4b4b5a]'}`}
                 >
                   {pill.count}
                 </span>
@@ -451,12 +451,12 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
           className={`overflow-hidden rounded-xl border border-[#e4e4e9] bg-white shadow-sm transition-opacity ${isFetching ? 'opacity-60' : ''}`}
         >
           {isLoading ? (
-            <div className="p-8 text-center text-sm text-[#8b8b9b]">Loading price lists…</div>
+            <div className="p-8 text-center text-sm text-[#6f6f7f]">Loading price lists…</div>
           ) : isEmptyOverall ? (
             <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-              <Tag className="mb-3 h-10 w-10 text-[#c9c9d3]" />
+              <Tag className="mb-3 h-10 w-10 text-[#b0b0bc]" />
               <p className="text-sm font-medium text-[#3d3d4a]">No price lists yet</p>
-              <p className="mt-1 max-w-md text-xs text-[#5b5b6b]">
+              <p className="mt-1 max-w-md text-xs text-[#4b4b5a]">
                 A price list holds the selling price for each item under one price use type — cash,
                 credit card, zero interest. Create the first one, then price items into it.
               </p>
@@ -473,9 +473,9 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
             </div>
           ) : isFilteredEmpty ? (
             <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-              <Search className="mb-3 h-8 w-8 text-[#c9c9d3]" />
+              <Search className="mb-3 h-8 w-8 text-[#b0b0bc]" />
               <p className="text-sm font-medium text-[#3d3d4a]">No price lists match</p>
-              <p className="mt-1 max-w-md text-xs text-[#5b5b6b]">
+              <p className="mt-1 max-w-md text-xs text-[#4b4b5a]">
                 {filters.query
                   ? `Nothing matches “${filters.query}” inside the current filters.`
                   : 'No price list falls inside these filters.'}
@@ -506,7 +506,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                             {pl.name}
                           </Link>
                           {pl.description && (
-                            <p className="truncate text-xs text-[#8b8b9b]">{pl.description}</p>
+                            <p className="truncate text-xs text-[#6f6f7f]">{pl.description}</p>
                           )}
                         </div>
                         <StatusChip status={pl.status} />
@@ -517,7 +517,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                             {pl.priceUseType.name}
                           </span>
                         )}
-                        <span className="text-[11px] text-[#8b8b9b]">
+                        <span className="text-[11px] text-[#6f6f7f]">
                           {pl.currency} · Priority {pl.priority}
                         </span>
                         {/* Scenario 50 Gap 7 — every list now stores a real
@@ -525,24 +525,24 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                             NULL DEFAULT 'inclusive'), so this no longer papers
                             over undeclared rows. The non-exclusive branch stays
                             the default for resilience only. */}
-                        <span className="inline-flex rounded-md bg-[#f1f1f4] px-2 py-0.5 text-[11px] font-medium text-[#5b5b6b]">
+                        <span className="inline-flex rounded-md bg-[#f1f1f4] px-2 py-0.5 text-[11px] font-medium text-[#4b4b5a]">
                           VAT {pl.pricingMode === 'exclusive' ? 'Exclusive' : 'Inclusive'}
                         </span>
                       </div>
                       <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
                         <div>
-                          <dt className="text-[11px] text-[#8b8b9b]">Items priced</dt>
+                          <dt className="text-[11px] text-[#6f6f7f]">Items priced</dt>
                           <dd className="font-semibold text-[#17171c]">
                             {(pl.itemCount ?? 0).toLocaleString()}
                           </dd>
-                          <dd className="text-[11px] text-[#8b8b9b]">
+                          <dd className="text-[11px] text-[#6f6f7f]">
                             {itemCountLabel(pl.itemCount)} — {cover.note}
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-[11px] text-[#8b8b9b]">Applies to</dt>
+                          <dt className="text-[11px] text-[#6f6f7f]">Applies to</dt>
                           <dd className="text-[#3d3d4a]">{scope.label}</dd>
-                          <dd className="text-[11px] text-[#8b8b9b]">
+                          <dd className="text-[11px] text-[#6f6f7f]">
                             {effectiveSummary(pl.effectiveFrom, pl.effectiveTo).label}
                           </dd>
                         </div>
@@ -574,7 +574,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                 <table className="w-full min-w-[64rem] table-fixed text-sm">
                   <thead>
                     <tr
-                      className={`border-b border-[#eeeef1] bg-[#fbfbfc] text-left ${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`}
+                      className={`border-b border-[#eeeef1] bg-[#fbfbfc] text-left ${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4b4b5a]`}
                     >
                       <th className="w-[23%] px-4 py-3">Price list</th>
                       <th className="w-[16%] px-4 py-3">Use type</th>
@@ -604,8 +604,8 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                               {pl.name}
                             </Link>
                             <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                              <span className="text-[11px] text-[#8b8b9b]">{pl.currency}</span>
-                              <span className="inline-flex rounded-md bg-[#f1f1f4] px-2 py-0.5 text-[11px] font-medium text-[#5b5b6b]">
+                              <span className="text-[11px] text-[#6f6f7f]">{pl.currency}</span>
+                              <span className="inline-flex rounded-md bg-[#f1f1f4] px-2 py-0.5 text-[11px] font-medium text-[#4b4b5a]">
                                 VAT {pl.pricingMode === 'exclusive' ? 'Exclusive' : 'Inclusive'}
                               </span>
                             </div>
@@ -618,9 +618,9 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                                 {pl.priceUseType.name}
                               </span>
                             ) : (
-                              <span className="text-xs text-[#8b8b9b]">—</span>
+                              <span className="text-xs text-[#6f6f7f]">—</span>
                             )}
-                            <p className="mt-1 text-[11px] text-[#8b8b9b]">
+                            <p className="mt-1 text-[11px] text-[#6f6f7f]">
                               Priority {pl.priority}
                             </p>
                           </td>
@@ -640,7 +640,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                               </span>
                             </Tooltip>
                             <p
-                              className={`text-[11px] ${isThin ? 'text-[#d18b1d]' : 'text-[#8b8b9b]'}`}
+                              className={`text-[11px] ${isThin ? 'text-[#d18b1d]' : 'text-[#6f6f7f]'}`}
                             >
                               {cover.note}
                             </p>
@@ -657,11 +657,11 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                             >
                               <span className="truncate text-[#3d3d4a]">{scope.label}</span>
                             </Tooltip>
-                            <p className="text-[11px] text-[#8b8b9b]">{scope.note}</p>
+                            <p className="text-[11px] text-[#6f6f7f]">{scope.note}</p>
                           </td>
                           <td className="px-4 py-3">
                             <p className="truncate text-[#3d3d4a]">{eff.label}</p>
-                            <p className="text-[11px] text-[#8b8b9b]">{eff.note}</p>
+                            <p className="text-[11px] text-[#6f6f7f]">{eff.note}</p>
                           </td>
                           <td className="px-4 py-3">
                             <StatusChip status={pl.status} />
@@ -692,7 +692,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
           )}
 
           {priceLists.length > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#eeeef1] px-4 py-3 text-sm text-[#5b5b6b]">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#eeeef1] px-4 py-3 text-sm text-[#4b4b5a]">
               <span className="text-xs">
                 Showing {priceLists.length} of {pagination.total} price list
                 {pagination.total === 1 ? '' : 's'}

@@ -142,12 +142,12 @@ export default function PurchaseRow({
           </span>
           <span className="flex flex-wrap items-center gap-[7px]">
             {purchase.itemSku && (
-              <span className={`${MONO} text-[10.5px] text-[#5b5b6b]`}>{purchase.itemSku}</span>
+              <span className={`${MONO} text-[10.5px] text-[#4b4b5a]`}>{purchase.itemSku}</span>
             )}
             {purchase.serialNumber && (
               <span className={`${CHIP} bg-[#f1f1f4] text-[#3d3d4a]`}>{purchase.serialNumber}</span>
             )}
-            <span className={`${CHIP} bg-[#f7f7f8] text-[#5b5b6b]`}>
+            <span className={`${CHIP} bg-[#f7f7f8] text-[#4b4b5a]`}>
               {purchase.salesInvoiceNumber ?? purchase.transactionNumber}
             </span>
             <span
@@ -170,7 +170,7 @@ export default function PurchaseRow({
           <span className={`${MONO} text-[13.5px] font-semibold text-[#17171c]`}>
             {fmtPeso(Number(purchase.unitPrice))}
           </span>
-          <span className="text-[10px] text-[#5b5b6b]">
+          <span className="text-[10px] text-[#4b4b5a]">
             {soldQty} {soldQty === 1 ? 'unit' : 'units'} sold
           </span>
         </span>
@@ -192,7 +192,7 @@ export default function PurchaseRow({
                   aria-label="Quantity coming back"
                   className={`${MONO} w-[74px] shrink-0 text-right ${overSold ? INPUT_BAD : INPUT}`}
                 />
-                <span className="text-[11.5px] whitespace-nowrap text-[#5b5b6b]">
+                <span className="text-[11.5px] whitespace-nowrap text-[#4b4b5a]">
                   of {soldQty} sold
                 </span>
               </div>

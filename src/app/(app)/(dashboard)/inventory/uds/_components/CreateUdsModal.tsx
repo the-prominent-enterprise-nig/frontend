@@ -167,7 +167,7 @@ export default function CreateUdsModal({
           <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#17171c]">
             Issue Unit Document Sheet
           </h2>
-          <p className="mt-0.5 text-[13px] text-[#5b5b6b]">
+          <p className="mt-0.5 text-[13px] text-[#4b4b5a]">
             Track units leaving the branch for repair, pull-out, or maintenance.
           </p>
         </div>

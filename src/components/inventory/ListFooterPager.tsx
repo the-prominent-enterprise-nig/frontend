@@ -27,7 +27,7 @@ export function ListFooterPager({
 }): React.JSX.Element {
   return (
     <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-[18px] py-[11px]">
-      <span className="text-[11.5px] text-[#5b5b6b]">
+      <span className="text-[11.5px] text-[#4b4b5a]">
         Showing {shown} of {total} {noun}
       </span>
       {pageCount > 1 && (

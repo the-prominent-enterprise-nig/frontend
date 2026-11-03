@@ -62,17 +62,17 @@ function TransferSerials({ lines }: { lines: TransferSummary['lines'] }) {
       className={`${MONO} mt-1 truncate text-[12px] font-semibold text-[#0b0b0f]`}
     >
       {shown}
-      {more > 0 && <span className="text-[#4a4a57]"> +{more} more</span>}
+      {more > 0 && <span className="text-[#4b4b5a]"> +{more} more</span>}
     </p>
   )
 }
 
 function TransferProgress({ lines }: { lines: TransferSummary['lines'] }) {
   const { total, received } = lineTotals(lines)
-  if (!total) return <span className="text-[#c9c9d3]">—</span>
+  if (!total) return <span className="text-[#8e8e9d]">—</span>
   const pct = Math.min((received / total) * 100, 100)
   const fill = pct >= 100 ? 'bg-[#0f7b52]' : pct > 0 ? 'bg-[#d18b1d]' : 'bg-[#e4e4e9]'
-  const tone = pct >= 100 ? 'text-[#0b6644]' : pct > 0 ? 'text-[#8a4b06]' : 'text-[#4a4a57]'
+  const tone = pct >= 100 ? 'text-[#0b6644]' : pct > 0 ? 'text-[#8a4b06]' : 'text-[#4b4b5a]'
   return (
     <div className="flex w-[140px] flex-col gap-[5px]">
       <div className="h-[5px] overflow-hidden rounded-[3px] bg-[#eeeef1]">
@@ -108,7 +108,7 @@ function daysSince(iso: string | undefined): number | null {
 
 function TransferAge({ transfer }: { transfer: TransferSummary }) {
   const days = daysSince(transfer.transferDate ?? transfer.createdAt)
-  if (days === null) return <span className="text-[#c9c9d3]">—</span>
+  if (days === null) return <span className="text-[#8e8e9d]">—</span>
   const threshold = STALE_AFTER_DAYS[transfer.status]
   const stale = threshold !== undefined && days >= threshold
   return (
@@ -118,7 +118,7 @@ function TransferAge({ transfer }: { transfer: TransferSummary }) {
       >
         {days} {days === 1 ? 'day' : 'days'}
       </span>
-      <span className="text-[10px] text-[#5b5b6b]">{stale ? 'needs action' : 'since raised'}</span>
+      <span className="text-[10px] text-[#3d3d4a]">{stale ? 'needs action' : 'since raised'}</span>
     </div>
   )
 }
@@ -287,6 +287,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
   function rowAction(tr: TransferSummary): { label: string; primary: boolean } {
     const fromInScope = inScope(tr.fromWarehouse?.branchId, tr.fromWarehouse?.region)
     const toInScope = inScope(tr.toWarehouse?.branchId, tr.toWarehouse?.region)
+    // The dispatcher is never the receiver (WH-01).
+    const canReceiveThis = canReceive && toInScope && tr.dispatchedById !== session.id
 
     if (
       tr.status === 'pending_manager_approval' &&
@@ -300,9 +302,9 @@ export default function TransferList({ session }: { session: SessionUser }) {
       return { label: 'Review', primary: true }
     if (tr.status === 'draft' && canDispatch && fromInScope)
       return { label: 'Dispatch', primary: true }
-    if (tr.status === 'in_transit' && canReceive && toInScope)
+    if (tr.status === 'in_transit' && canReceiveThis)
       return { label: 'Mark received', primary: true }
-    if (tr.status === 'partially_received' && canReceive && toInScope)
+    if (tr.status === 'partially_received' && canReceiveThis)
       return { label: 'Receive more', primary: true }
 
     return { label: 'View', primary: false }
@@ -461,7 +463,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
             <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Stock Transfers</h1>
-            <p className="text-[13px] text-[#5b5b6b]">
+            <p className="text-[13px] text-[#3d3d4a]">
               Move stock between branches with full ledger traceability.
             </p>
           </div>
@@ -478,7 +480,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
               searchFocused ? `border ${CONTROL_CHROME.focused}` : `border ${CONTROL_CHROME.idle}`
             }`}
           >
-            <Search className="h-[13px] w-[13px] shrink-0 text-[#4a4a57]" />
+            <Search className="h-[13px] w-[13px] shrink-0 text-[#6f6f7f]" />
             <input
               type="text"
               placeholder="Search transfer #, item, SKU, or serial…"
@@ -492,7 +494,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
               <button
                 type="button"
                 onClick={() => setSearch('')}
-                className="shrink-0 text-[12px] text-[#4a4a57] hover:text-[#5b5b6b]"
+                className="shrink-0 text-[12px] text-[#4b4b5a] hover:text-[#17171c]"
               >
                 clear
               </button>
@@ -578,7 +580,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
           >
             All
             <span
-              className={`${MONO} text-[10.5px] ${!statusFilter ? 'text-[#ddd0f7]' : 'text-[#4a4a57]'}`}
+              className={`${MONO} text-[10.5px] ${!statusFilter ? 'text-[#ddd0f7]' : 'text-[#4b4b5a]'}`}
             >
               {totalCount}
             </span>
@@ -597,14 +599,14 @@ export default function TransferList({ session }: { session: SessionUser }) {
                   active
                     ? 'border border-[#5b21b6] bg-[#5b21b6] font-medium text-white'
                     : `border border-[#e4e4e9] bg-white hover:bg-[#fbfbfc] ${
-                        count === 0 ? 'text-[#6b6b7b]' : 'text-[#3d3d4a]'
+                        count === 0 ? 'text-[#6f6f7f]' : 'text-[#17171c]'
                       }`
                 }`}
               >
                 <Icon className={`h-[13px] w-[13px] shrink-0 ${active ? '' : cfg.tone}`} />
                 {cfg.label}
                 <span
-                  className={`${MONO} text-[10.5px] ${active ? 'text-[#ddd0f7]' : 'text-[#4a4a57]'}`}
+                  className={`${MONO} text-[10.5px] ${active ? 'text-[#ddd0f7]' : 'text-[#4b4b5a]'}`}
                 >
                   {count}
                 </span>
@@ -646,7 +648,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
               {hasFilters ? (
                 <>
                   <p className="mt-1 text-[14.5px] font-semibold">No transfers match</p>
-                  <p className="max-w-[420px] text-[12.5px] leading-relaxed text-[#5b5b6b]">
+                  <p className="max-w-[420px] text-[12.5px] leading-relaxed text-[#3d3d4a]">
                     {search
                       ? `Nothing matches “${search}”. Try the transfer number or an item SKU.`
                       : 'No transfers fall inside these filters. Clear one to see more.'}
@@ -662,7 +664,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
               ) : (
                 <>
                   <p className="mt-1 text-[15px] font-semibold">No transfers yet</p>
-                  <p className="max-w-[440px] text-[12.5px] leading-relaxed text-[#5b5b6b]">
+                  <p className="max-w-[440px] text-[12.5px] leading-relaxed text-[#3d3d4a]">
                     Raise a transfer when a branch needs stock another branch is holding. Every
                     movement is written to the stock ledger.
                   </p>
@@ -710,7 +712,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                             <span className={`${MONO} text-[12.5px] font-semibold`}>
                               #{tr.id.slice(0, 8).toUpperCase()}
                             </span>
-                            <span className="text-[11px] text-[#5b5b6b]">
+                            <span className="text-[11px] text-[#3d3d4a]">
                               {tr.transferDate
                                 ? new Date(tr.transferDate).toLocaleDateString('en-PH', {
                                     month: 'short',
@@ -726,9 +728,9 @@ export default function TransferList({ session }: { session: SessionUser }) {
                           <div className="flex min-w-0 items-center gap-2">
                             <LocationName
                               wh={tr.fromWarehouse}
-                              className="text-[12.5px] text-[#5b5b6b]"
+                              className="text-[12.5px] text-[#3d3d4a]"
                             />
-                            <ArrowRight className="h-3 w-3 shrink-0 text-[#c9c9d3]" />
+                            <ArrowRight className="h-3 w-3 shrink-0 text-[#b0b0bc]" />
                             <LocationName
                               wh={tr.toWarehouse}
                               className="text-[12.5px] font-semibold"
@@ -742,7 +744,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                             <span className={`${MONO} text-[13px] font-semibold`}>
                               {unitTotal > 0 ? unitTotal.toFixed(0) : lineCount}
                             </span>
-                            <span className="text-[10px] text-[#5b5b6b]">
+                            <span className="text-[10px] text-[#3d3d4a]">
                               {lineCount} {lineCount === 1 ? 'line' : 'lines'}
                             </span>
                           </div>
@@ -766,7 +768,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                             className={`w-[112px] rounded-[7px] px-[10px] py-[7px] text-[12.5px] font-medium transition-colors ${
                               action.primary
                                 ? 'bg-[#5b21b6] text-white hover:bg-[#4a189b]'
-                                : 'border border-[#e4e4e9] bg-white text-[#5b5b6b] hover:bg-[#fbfbfc]'
+                                : 'border border-[#e4e4e9] bg-white text-[#4b4b5a] hover:bg-[#fbfbfc]'
                             }`}
                           >
                             {action.label}
@@ -784,7 +786,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
               visible even on a single page. */}
           {!isLoading && transfers.length > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-[18px] py-[11px]">
-              <span className="text-[11.5px] text-[#5b5b6b]">
+              <span className="text-[11.5px] text-[#3d3d4a]">
                 Showing {transfers.length} of {pagination.total} transfers
               </span>
               {pagination.totalPages > 1 && (
@@ -855,6 +857,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         canManagerApprove={canManagerApprove}
         canManagerReject={canManagerReject}
         currentUserBranchId={session.branchId}
+        currentUserId={session.id}
         currentUserRegion={currentUserRegion}
         onAccept={acceptTransfer}
         onReject={rejectTransfer}

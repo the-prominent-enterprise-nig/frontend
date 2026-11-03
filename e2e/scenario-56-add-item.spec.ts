@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { gotoReady } from './utils'
 
 // Scenario 56 Part 11 — Add Item on the slimmed form. Opened from the Item Master
-// hub: Scenario 80 (UAT WH-03) moved the button there from the Stock page.
+// hub: the Oct 29 UAT (WH-03, #270) moved the button there from the Stock page.
 // Costing method, Item Type and the accounting overrides live on Edit only.
 // Opened and closed — nothing is created. The sidebar staying visible is a
 // manual check (layout, not behaviour).

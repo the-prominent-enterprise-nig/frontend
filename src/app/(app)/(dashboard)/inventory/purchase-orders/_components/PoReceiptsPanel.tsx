@@ -80,7 +80,7 @@ function QcHoldChip() {
 function OverallProgress({ received, ordered }: { received: number; ordered: number }) {
   const pct = ordered > 0 ? Math.min(Math.round((received / ordered) * 100), 100) : 0
   const bar = pct >= 100 ? 'bg-[#0f7b52]' : pct > 0 ? 'bg-[#d18b1d]' : 'bg-[#e4e4e9]'
-  const tone = pct >= 100 ? 'text-[#0b6644]' : pct > 0 ? 'text-[#8a4b06]' : 'text-[#5b5b6b]'
+  const tone = pct >= 100 ? 'text-[#0b6644]' : pct > 0 ? 'text-[#8a4b06]' : 'text-[#4b4b5a]'
 
   return (
     <div className="flex items-center gap-2">
@@ -130,7 +130,7 @@ function SerialPreview({ serials }: { serials: string[] }) {
         </span>
       ))}
       {hidden > 0 && (
-        <span className={`${MONO} rounded bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] text-[#a3a3b2]`}>
+        <span className={`${MONO} rounded bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] text-[#8e8e9d]`}>
           +{hidden}
         </span>
       )}
@@ -184,7 +184,7 @@ function ReceiptListItem({
         </div>
       </div>
 
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-[#8b8b9b]">
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-[#6f6f7f]">
         <span className="flex items-center gap-1">
           <CalendarDays className="h-3 w-3" />
           {new Date(grn.receivedAt).toLocaleDateString('en-PH', {
@@ -255,7 +255,7 @@ function DocumentToolbar({
         <span className={`${MONO} text-[13px] font-semibold text-[#17171c]`}>{grn.code}</span>
         <ReceiptStatusChip received={received} ordered={ordered} />
         {receivedByName && (
-          <span className="text-[12px] text-[#5b5b6b]">Received by {receivedByName}</span>
+          <span className="text-[12px] text-[#4b4b5a]">Received by {receivedByName}</span>
         )}
       </div>
       <div className="flex items-center gap-2">
@@ -399,11 +399,11 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
         <div className="border-b border-[#e4e4e9] px-6 py-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex min-w-0 flex-col gap-[3px]">
-              <span className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+              <span className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
                 Delivery Receipts
               </span>
               <h2 className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>{po.code}</h2>
-              <p className="text-[13px] text-[#5b5b6b]">
+              <p className="text-[13px] text-[#4b4b5a]">
                 {po.supplier.name} · {locationLabel(po.warehouse)}
               </p>
             </div>
@@ -412,21 +412,21 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
               <div className="flex flex-col gap-2.5">
                 <div className="flex items-center gap-5 text-[13px]">
                   <div>
-                    <p className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+                    <p className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
                       Deliveries
                     </p>
                     <p className="text-[15px] font-semibold text-[#17171c]">{receipts.length}</p>
                   </div>
                   <div className="h-6 w-px bg-[#e4e4e9]" />
                   <div>
-                    <p className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+                    <p className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
                       Units received
                     </p>
                     <p className="text-[15px] font-semibold text-[#17171c]">{totalReceived}</p>
                   </div>
                   <div className="h-6 w-px bg-[#e4e4e9]" />
                   <div>
-                    <p className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+                    <p className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
                       Ordered
                     </p>
                     <p className="text-[15px] font-semibold text-[#17171c]">{totalOrdered}</p>
@@ -440,7 +440,7 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
                 type="button"
                 onClick={onClose}
                 aria-label="Close"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#4b4b5a] hover:bg-[#f1f1f4] hover:text-[#17171c]"
               >
                 <X className="h-4.5 w-4.5" />
               </button>
@@ -463,10 +463,10 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
         ) : receipts.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center bg-[#f7f7f8] px-6 py-20 text-center">
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#eeeef1]">
-              <PackageCheck className="h-8 w-8 text-[#a3a3b2]" />
+              <PackageCheck className="h-8 w-8 text-[#8e8e9d]" />
             </div>
             <p className="text-[13px] font-semibold text-[#17171c]">No deliveries yet</p>
-            <p className="mt-1 max-w-xs text-[12px] text-[#8b8b9b]">
+            <p className="mt-1 max-w-xs text-[12px] text-[#6f6f7f]">
               Receiving reports appear here as stock arrives against this purchase order.
             </p>
           </div>

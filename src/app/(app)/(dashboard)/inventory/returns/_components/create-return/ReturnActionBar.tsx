@@ -60,7 +60,7 @@ export default function ReturnActionBar({
         <div className="flex min-w-0 flex-col gap-0.5">
           <span
             className={`text-[11.5px] ${
-              hasSale && settlement.lines > 0 && blocked ? 'text-[#b42318]' : 'text-[#5b5b6b]'
+              hasSale && settlement.lines > 0 && blocked ? 'text-[#b42318]' : 'text-[#4b4b5a]'
             }`}
           >
             {note}
@@ -72,7 +72,7 @@ export default function ReturnActionBar({
           <button
             type="button"
             onClick={onCancel}
-            className="cursor-pointer rounded-lg px-[15px] py-[11px] text-[13px] text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+            className="cursor-pointer rounded-lg px-[15px] py-[11px] text-[13px] text-[#4b4b5a] hover:bg-[#f1f1f4] hover:text-[#17171c]"
           >
             Cancel
           </button>
