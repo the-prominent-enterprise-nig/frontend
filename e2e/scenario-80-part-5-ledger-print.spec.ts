@@ -20,11 +20,16 @@ async function findCustomer(
   request: APIRequestContext,
   wanted: (l: Ledger) => boolean
 ): Promise<string | null> {
-  const res = await request.get('/api/crm/installment-accounts', { params: { limit: '50' } })
+  const res = await request.get('/api/crm/installment-accounts', { params: { limit: '20' } })
+  expect(res.ok(), await res.text()).toBeTruthy()
   const body = await res.json()
-  const ids = [
-    ...new Set(((body.data ?? body) as { customerId: string }[]).map((a) => a.customerId)),
-  ]
+  // The list comes back bare, as { data }, or as { data: { data, meta } }.
+  const list: { customerId: string }[] = Array.isArray(body)
+    ? body
+    : Array.isArray(body.data)
+      ? body.data
+      : (body.data?.data ?? [])
+  const ids = [...new Set(list.map((a) => a.customerId))]
   for (const id of ids) {
     if (wanted(await ledgerOf(request, id))) return id
   }

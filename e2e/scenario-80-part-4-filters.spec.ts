@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, pickComboboxOption } from './utils'
+import { clickStable, gotoReady, pickComboboxOption } from './utils'
 
 // Scenario 80 Part 4 — Oct 29 UAT filters:
 //   - POS-02 / POS-03 the Overview's period: this month by default, or a range
@@ -20,19 +20,22 @@ test.describe('Scenario 80 Part 4 — filters', () => {
   }) => {
     await gotoReady(page, '/pos')
     const period = page.getByTestId('overview-period')
-    await period.getByRole('button', { name: 'Date range' }).click()
-    await expect(page.getByLabel('From')).toBeVisible()
-    await expect(page.getByLabel('To')).toBeVisible()
+    // clickStable: the first click can land before the page hydrates.
+    await clickStable(
+      period.getByRole('button', { name: 'Date range' }),
+      page.getByLabel('From', { exact: true })
+    )
+    await expect(page.getByLabel('To', { exact: true })).toBeVisible()
 
     const yesterday = new Date(Date.now() - 86_400_000)
     const iso = (d: Date) =>
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    await page.getByLabel('From').fill(iso(yesterday))
+    await page.getByLabel('From', { exact: true }).fill(iso(yesterday))
     await expect(page.getByTestId('overview-period-label')).toContainText('–')
     await expect(page.getByText('Total Sales')).toBeVisible()
 
     await period.getByRole('button', { name: 'Month' }).click()
-    await expect(page.getByLabel('From')).toHaveCount(0)
+    await expect(page.getByLabel('From', { exact: true })).toHaveCount(0)
   })
 
   test('WH-05: the repairs list filters by branch', async ({ page }) => {

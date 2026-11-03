@@ -459,7 +459,6 @@ test.describe('POS Checkout — typed installment plan (Scenario 71 Part 2)', ()
     // A small down payment (a friend of management). Never 0 on an in-house
     // plan since Scenario 80 (Oct 29 UAT POS-11).
     await panel.getByLabel('Typed down payment').fill('1200')
-    await page.getByTestId('use-covering-monthly').click()
     await panel.getByLabel('Typed months').fill('3')
     await page.getByTestId('use-covering-monthly').click()
     await panel.getByLabel('First due date').fill(fmi)
