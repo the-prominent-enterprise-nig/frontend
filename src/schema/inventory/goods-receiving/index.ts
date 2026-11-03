@@ -57,6 +57,10 @@ const ReceiveStockLineSchema = z
     // from the picked serial's sale when it resolves to exactly one account,
     // editable/overridable either way.
     installmentAccountId: z.string().optional(),
+    // Repair/return only — the POS sale (cash or financed) the unit was sold
+    // on, picked by its Sales Invoice No.; installmentAccountId is the
+    // repossession link.
+    salesTransactionId: z.string().optional(),
   })
   .refine(
     (line) =>

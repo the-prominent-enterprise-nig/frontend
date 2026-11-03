@@ -45,7 +45,8 @@ import { RrDeliveryPanel, type WarehouseOption } from './create-rr/RrDeliveryPan
 import { RrLineRow } from './create-rr/RrLineRow'
 import { requiredAttachmentKinds, type RrAttachmentKind } from './create-rr/rrAttachments'
 import { collectRrBlockers, rrLineIssues, toIssueLines } from './create-rr/rrChecks'
-import { costFromPricing, rrTotals, type RrLine } from './create-rr/rrTotals'
+import { costFromPricing, invoiceKeyOf, rrTotals, type RrLine } from './create-rr/rrTotals'
+import type { RepairIntakeSale } from '../_actions/get-repair-intake-sales'
 import { PANEL, RR_LINE_GRID } from './create-rr/rrTokens'
 
 type Props = {
@@ -214,7 +215,7 @@ export default function ReceiveStockModal({
   const [otherLineTrackSerial, setOtherLineTrackSerial] = useState<Record<string, boolean>>({})
   // Repossession and Repair/Return share one panel: a list of invoices the
   // units are coming back from. What's checked under each is the receipt's
-  // lines (linked by installmentAccountId), so this holds display state only.
+  // lines (linked through invoiceKeyOf), so this holds display state only.
   const [returnBlocks, setReturnBlocks] = useState<ReturnBlock[]>(() => [newReturnBlock()])
   // Scenario 73 — From Service Center: the units ticked (each one a line) and
   // their actual repair cost, by serialNumberId.
@@ -536,15 +537,35 @@ export default function ReceiveStockModal({
     setReturnBlocks([newReturnBlock()])
     setStagedFiles({ UDS: [], RFS: [] })
     if (isUnitReturn) {
-      replace(lines.filter((l) => !!l.installmentAccountId))
+      replace(lines.filter((l) => !!invoiceKeyOf(l)))
       return
     }
-    const keep = lines.filter((l) => !l.installmentAccountId && !l.existingSerialNumberIds?.length)
+    const keep = lines.filter((l) => !invoiceKeyOf(l) && !l.existingSerialNumberIds?.length)
     replace(
       keep.length > 0 ? keep : [{ quantityReceived: 1, taxCode: 'VAT', withholdingClass: 'goods' }]
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUnitReturn])
+
+  // Repossession searches installment accounts and Repair/Return searches
+  // sales, so an invoice picked under one means nothing under the other —
+  // switching straight between the two starts the panel over. Moving into or
+  // out of a unit return at all is the effect above's job.
+  const prevReason = useRef(watched.reason)
+  useEffect(() => {
+    const prev = prevReason.current
+    prevReason.current = watched.reason
+    const unitReturnReasons = ['repossession', 'repair_return']
+    if (prev === watched.reason) return
+    if (
+      !unitReturnReasons.includes(prev ?? '') ||
+      !unitReturnReasons.includes(watched.reason ?? '')
+    )
+      return
+    setReturnBlocks([newReturnBlock()])
+    replace(lines.filter((l) => !invoiceKeyOf(l)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watched.reason])
 
   // Repossession → Repair/Return (or back) while units are checked: a repo cost
   // only applies to a repossession.
@@ -552,7 +573,7 @@ export default function ReceiveStockModal({
     if (!isUnitReturn) return
     const units = returnBlocksRef.current.flatMap((b) => b.units ?? [])
     lines.forEach((line, index) => {
-      if (!line.installmentAccountId) return
+      if (!invoiceKeyOf(line)) return
       const unit = units.find((u) => u.serialNumberId === line.existingSerialNumberIds?.[0])
       const next = !isRepo ? undefined : unit && unit.repoCost > 0 ? unit.repoCost : line.unitCost
       if (next === line.unitCost) return
@@ -655,7 +676,9 @@ export default function ReceiveStockModal({
       quantityReceived: 1,
       itemId: unit.itemId,
       existingSerialNumberIds: [unit.serialNumberId],
-      installmentAccountId: accountId,
+      // A repossession's invoice is the installment account; a
+      // repair/return's is the sale itself.
+      ...(isRepo ? { installmentAccountId: accountId } : { salesTransactionId: accountId }),
       unitCost: costForUnit(unit),
     })
   }
@@ -677,7 +700,7 @@ export default function ReceiveStockModal({
     }
     // A different invoice replaces the old one — its checked units go with it.
     if (block.accountId && block.accountId !== id) {
-      replace(lines.filter((l) => l.installmentAccountId !== block.accountId))
+      replace(lines.filter((l) => invoiceKeyOf(l) !== block.accountId))
     }
     patchBlock(key, {
       accountId: id,
@@ -715,6 +738,37 @@ export default function ReceiveStockModal({
     })()
   }
 
+  /** Repair/return: the picked sale already carries its customer and units,
+   * so Returned by, Customer ID and the unit list fill in at once. A sale
+   * with one unit out is pre-checked, same as an installment invoice. */
+  function pickSale(key: string, sale: RepairIntakeSale): void {
+    if (returnBlocks.some((b) => b.key !== key && b.accountId === sale.id)) {
+      showToast({ title: 'That invoice is already on this receipt', status: 'error' })
+      return
+    }
+    const block = returnBlocks.find((b) => b.key === key)
+    if (block?.accountId && block.accountId !== sale.id) {
+      replace(lines.filter((l) => invoiceKeyOf(l) !== block.accountId))
+    }
+    const available = sale.unitItems.filter((u) => u.serialNumberId && u.serialStatus === 'sold')
+    patchBlock(key, {
+      accountId: sale.id,
+      invoiceLabel: sale.siNumber,
+      units: available,
+      exhausted: available.length === 0,
+      loading: false,
+      fallbackSerialLabel: '',
+      ...(sale.customer
+        ? {
+            customerId: sale.customer.id,
+            customerLabel: sale.customer.name,
+            customerCode: sale.customer.customerCode,
+          }
+        : {}),
+    })
+    if (available.length === 1) addUnitLine(sale.id, available[0])
+  }
+
   function pickCustomer(key: string, id: string, label?: string): void {
     patchBlock(key, { customerId: id, customerLabel: label ?? '', customerCode: undefined })
   }
@@ -730,7 +784,7 @@ export default function ReceiveStockModal({
       lines.filter(
         (l) =>
           !(
-            l.installmentAccountId === block.accountId &&
+            invoiceKeyOf(l) === block.accountId &&
             l.existingSerialNumberIds?.[0] === unit.serialNumberId
           )
       )
@@ -739,7 +793,7 @@ export default function ReceiveStockModal({
 
   function removeBlock(key: string): void {
     const block = returnBlocks.find((b) => b.key === key)
-    if (block?.accountId) replace(lines.filter((l) => l.installmentAccountId !== block.accountId))
+    if (block?.accountId) replace(lines.filter((l) => invoiceKeyOf(l) !== block.accountId))
     setReturnBlocks((prev) => prev.filter((b) => b.key !== key))
   }
 
@@ -748,7 +802,7 @@ export default function ReceiveStockModal({
   function manualLineIndex(accountId: string, serialNumberId?: string): number {
     return lines.findIndex(
       (l) =>
-        l.installmentAccountId === accountId &&
+        invoiceKeyOf(l) === accountId &&
         (!serialNumberId || l.existingSerialNumberIds?.[0] === serialNumberId)
     )
   }
@@ -1141,6 +1195,9 @@ export default function ReceiveStockModal({
         // reason so a stale pick from switching reasons mid-form can't ride
         // along.
         installmentAccountId: unitReturn ? line.installmentAccountId || undefined : undefined,
+        // The sale a repair/return unit was sold on — repair/return only.
+        salesTransactionId:
+          reason === 'repair_return' ? line.salesTransactionId || undefined : undefined,
       })),
       confirmWarehouseMismatch: warehouseMismatchWarning !== null,
     })
@@ -1250,6 +1307,7 @@ export default function ReceiveStockModal({
               showErrors={showErrors}
               itemNameFor={(itemId) => (itemId ? metaFor(itemId)?.name : undefined)}
               onPickInvoice={pickInvoice}
+              onPickSale={pickSale}
               onPickCustomer={pickCustomer}
               onToggleUnit={toggleUnit}
               onFallbackItem={fallbackItem}

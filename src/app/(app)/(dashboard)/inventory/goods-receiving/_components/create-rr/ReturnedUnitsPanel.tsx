@@ -16,13 +16,16 @@ import { ItemSearchCombobox } from '../../../purchase-requests/_components/ItemS
 import { MONO, fmtPeso } from '../../../purchase-orders/_components/procurementTokens'
 import type { InstallmentAccountUnitItem } from '../../_actions/get-installment-account'
 import { PANEL } from './rrTokens'
-import type { RrLine } from './rrTotals'
+import { invoiceKeyOf, type RrLine } from './rrTotals'
+import { RepairIntakeSaleSearchCombobox } from './RepairIntakeSaleSearchCombobox'
+import type { RepairIntakeSale } from '../../_actions/get-repair-intake-sales'
 
 /** One invoice the units are coming back from. Its checked units are the
- * receipt's lines (linked by installmentAccountId), so this holds only what
- * the panel needs to show — never what gets posted. */
+ * receipt's lines (linked through invoiceKeyOf), so this holds only what the
+ * panel needs to show — never what gets posted. */
 export type ReturnBlock = {
   key: string
+  /** The installment account (repossession) or the sale (repair/return). */
   accountId: string
   invoiceLabel?: string
   customerId: string
@@ -45,6 +48,8 @@ type Props = {
   showErrors: boolean
   itemNameFor: (itemId?: string) => string | undefined
   onPickInvoice: (key: string, id: string, meta?: InstallmentAccountMeta, label?: string) => void
+  /** Repair/return: the sale picked by its Sales Invoice No. */
+  onPickSale: (key: string, sale: RepairIntakeSale) => void
   onPickCustomer: (key: string, id: string, label?: string) => void
   onToggleUnit: (key: string, unit: InstallmentAccountUnitItem, checked: boolean) => void
   onFallbackItem: (key: string, option: SearchComboboxOption) => void
@@ -72,6 +77,7 @@ export function ReturnedUnitsPanel({
   showErrors,
   itemNameFor,
   onPickInvoice,
+  onPickSale,
   onPickCustomer,
   onToggleUnit,
   onFallbackItem,
@@ -132,6 +138,7 @@ export function ReturnedUnitsPanel({
           itemNameFor={itemNameFor}
           canRemove={blocks.length > 1}
           onPickInvoice={onPickInvoice}
+          onPickSale={onPickSale}
           onPickCustomer={onPickCustomer}
           onToggleUnit={onToggleUnit}
           onFallbackItem={onFallbackItem}
@@ -165,6 +172,7 @@ function Block({
   itemNameFor,
   canRemove,
   onPickInvoice,
+  onPickSale,
   onPickCustomer,
   onToggleUnit,
   onFallbackItem,
@@ -180,6 +188,7 @@ function Block({
   itemNameFor: (itemId?: string) => string | undefined
   canRemove: boolean
   onPickInvoice: Props['onPickInvoice']
+  onPickSale: Props['onPickSale']
   onPickCustomer: Props['onPickCustomer']
   onToggleUnit: Props['onToggleUnit']
   onFallbackItem: Props['onFallbackItem']
@@ -192,13 +201,11 @@ function Block({
   // No linked sale to list units from (hand-entered/imported account, or every
   // unit already taken back): the item + serial are searched by hand instead.
   const manual = hasInvoice && block.units !== undefined && units.length === 0
-  const manualLine = manual
-    ? lines.find((l) => l?.installmentAccountId === block.accountId)
-    : undefined
+  const manualLine = manual ? lines.find((l) => invoiceKeyOf(l) === block.accountId) : undefined
   const isChecked = (unit: InstallmentAccountUnitItem): boolean =>
     lines.some(
       (l) =>
-        l?.installmentAccountId === block.accountId &&
+        invoiceKeyOf(l) === block.accountId &&
         !!unit.serialNumberId &&
         l.existingSerialNumberIds?.[0] === unit.serialNumberId
     )
@@ -208,24 +215,49 @@ function Block({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <span className={CAPTION}>Invoice #</span>
-          <InstallmentAccountSearchCombobox
-            key={block.accountId || 'none'}
-            value={block.accountId}
-            onChange={(id) => onPickInvoice(block.key, id)}
-            onSelect={(option: SearchComboboxOption) =>
-              onPickInvoice(
-                block.key,
-                option.id,
-                option.meta as InstallmentAccountMeta,
-                option.primary
-              )
-            }
-            initialLabel={block.invoiceLabel}
-            customerId={block.customerId || undefined}
-            error={showErrors && !hasInvoice && lines.length === 0 ? 'Pick the invoice' : undefined}
-            placeholder="Search by invoice number…"
-            typeToSearchMessage="Type an invoice number to search…"
-          />
+          {/* Repossession takes back a financed unit, so it searches
+              installment accounts; a repair/return can be any sale, cash or
+              financed, found by its Sales Invoice No. */}
+          {isRepo ? (
+            <InstallmentAccountSearchCombobox
+              key={block.accountId || 'none'}
+              value={block.accountId}
+              onChange={(id) => onPickInvoice(block.key, id)}
+              onSelect={(option: SearchComboboxOption) =>
+                onPickInvoice(
+                  block.key,
+                  option.id,
+                  option.meta as InstallmentAccountMeta,
+                  option.primary
+                )
+              }
+              initialLabel={block.invoiceLabel}
+              customerId={block.customerId || undefined}
+              error={
+                showErrors && !hasInvoice && lines.length === 0 ? 'Pick the invoice' : undefined
+              }
+              placeholder="Search by invoice number…"
+              typeToSearchMessage="Type an invoice number to search…"
+            />
+          ) : (
+            <RepairIntakeSaleSearchCombobox
+              key={block.accountId || 'none'}
+              value={block.accountId}
+              // A pick fires onChange before onSelect; only onSelect carries
+              // the sale, and handing its id to onPickInvoice would look it
+              // up as an installment account and wipe the units. onChange
+              // only clears.
+              onChange={(id) => {
+                if (!id) onPickInvoice(block.key, '')
+              }}
+              onSelect={(sale) => onPickSale(block.key, sale)}
+              initialLabel={block.invoiceLabel}
+              customerId={block.customerId || undefined}
+              error={
+                showErrors && !hasInvoice && lines.length === 0 ? 'Pick the invoice' : undefined
+              }
+            />
+          )}
 
           <div className="mt-2.5 grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2">
             <div className="min-w-0">
@@ -328,7 +360,7 @@ function Block({
                     <UnitCostInput
                       line={lines.find(
                         (l) =>
-                          l?.installmentAccountId === block.accountId &&
+                          invoiceKeyOf(l) === block.accountId &&
                           l.existingSerialNumberIds?.[0] === unit.serialNumberId
                       )}
                       showErrors={showErrors}
