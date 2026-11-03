@@ -165,6 +165,14 @@ export function canNavigateAny(user: SessionUser, perms: Permission[]): boolean 
   return perms.some((p) => canNavigate(user, p))
 }
 
+/** Navigation only: canAccessModule on the roles' own rows. A module the role
+ * reaches only through what its features bring (CRM's customer lookups bring
+ * accounting:* reads) is not one to land in — its entry page counts own rows
+ * and would find nothing to open. */
+export function canNavigateModule(user: SessionUser, module: string): boolean {
+  return canAccessModule({ ...user, permissions: user.rolePermissions ?? user.permissions }, module)
+}
+
 // Permissions granted by the admin role
 const ADMIN_ROLE_PERMISSIONS = ['admin:roles:manage', 'admin:permissions:manage'] as const
 

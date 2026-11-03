@@ -1,5 +1,5 @@
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { isAdmin, canAccessModule } from '@/src/libs/guards/permission'
+import { isAdmin, canNavigateModule } from '@/src/libs/guards/permission'
 import { MODULES } from '@/src/libs/guards/modules'
 import { redirect } from 'next/navigation'
 
@@ -16,9 +16,11 @@ export default async function RootPage() {
 
   // Non-admins: redirect to the first module their role allows access to.
   // Uses canAccessModule (respects ROLE_MODULE_ACCESS allowlists) so a cashier
-  // with inventory:items:read doesn't get sent to /inventory.
+  // with inventory:items:read doesn't get sent to /inventory, on the roles' own
+  // rows so Aircon Staff's CRM doesn't send them to an /accounting with nothing
+  // of theirs in it (403 right after login).
   for (const mod of MODULES) {
-    if (canAccessModule(session, mod.key)) {
+    if (canNavigateModule(session, mod.key)) {
       redirect(mod.href)
     }
   }
