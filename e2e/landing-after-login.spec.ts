@@ -31,4 +31,12 @@ test.describe('Landing after login', () => {
       await expect(page.getByText('Access Forbidden')).toHaveCount(0)
     })
   }
+
+  // The Cashier holds Expenses, CRM and Inventory as well as POS (Access
+  // Levels), and Accounting sorts first; their home is still the till.
+  test('Cashier lands in POS', async ({ page }) => {
+    await loginAs(page, 'technova.b1.cashier@test.com', PASSWORD)
+    await page.waitForURL((url) => url.pathname !== '/', { timeout: 30_000 })
+    await expect(page).toHaveURL(/\/pos/)
+  })
 })
