@@ -27,7 +27,7 @@ The sheet's 254 rows group into 21 distinct permission sets. Each set is one rol
 | Aircon Staff        | 6      |
 | Aircon Clerk        | 1      |
 | HR Officer          | 2      |
-| Service Coordinator | 2      |
+| Repair In-Charge    | 2      |
 | Receptionist        | 4      |
 | Custodian           | 3      |
 | Collector           | 9      |
@@ -198,7 +198,7 @@ Several sheet restrictions are allow-lists that a permission string can't expres
 | Special Accounts by GL code    | Liquidation Clerk: 1-01-320, 1-01-321, 1-01-323 · Bank Clerk: 1-01-321, 1-01-323 · Payables Clerk: 1-03-010, 1-03-020, 1-03-021, 1-03-022, 1-03-030, 1-03-040, 1-03-060 · HR Officer: 1-01-320 to 1-01-323 |
 | Expense "Paid From" petty cash | Receptionist and branch staff: their own branch's petty cash · Aircon Clerk: Petty Cash - Aircool. Until this lands they see every account in "Paid from"                                                  |
 | Acknowledgment receipt only    | Treasury Clerk on POS › New Receipts                                                                                                                                                                       |
-| No item cost                   | Branch roles, Warehouse Custodian, and Service Coordinator on Stock Ledger                                                                                                                                 |
+| No item cost                   | Branch roles, Warehouse Custodian, and Repair In-Charge on Stock Ledger                                                                                                                                    |
 
 **Proposal:**
 

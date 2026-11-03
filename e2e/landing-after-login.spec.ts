@@ -12,7 +12,7 @@ const ROLES: [string, string][] = [
   ['Aircon Staff', 'technova.al-aircon-staff@test.com'],
   ['Sales Support', 'technova.al-sales-support@test.com'],
   ['Sales Admin', 'technova.al-sales-admin@test.com'],
-  ['Service Coordinator', 'technova.al-service-coordinator@test.com'],
+  ['Repair In-Charge', 'technova.al-repair-in-charge@test.com'],
   ['HR Officer', 'technova.al-hr-officer@test.com'],
   ['Collector', 'technova.b1.al-collector@test.com'],
   ['Custodian', 'technova.b1.al-custodian@test.com'],
