@@ -500,22 +500,38 @@ export default function ReceiveStockModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watched.reason])
 
-  // Repossession drops Location from the form entirely (developer-confirmed
-  // 2026-09-28) — the destination still has to be a real warehouseId
-  // server-side (receiveStock() requires one unconditionally), so it's set
-  // here instead: the receiver's own branch warehouse, same one
-  // stock.service.ts already forces a branch-scoped reasoned receipt into
-  // regardless of what's submitted. Never overwrites an already-set value —
-  // a PO link, or a Location picked before switching Reason on, both stay.
+  // A unit handed back by a customer lands in the receiver's own branch —
+  // stock.service.ts refuses a branch-scoped reasoned receipt anywhere else —
+  // so it's filled in (and the field locked) for them. Someone with no branch
+  // of their own (head office) picks it: there's no silent default any more,
+  // which used to be the first standalone warehouse, i.e. Negros (WH-07).
+  // A service-center return is left alone: it lands wherever the custodian
+  // receives it.
+  const ownBranchWarehouseId = actorBranchId
+    ? warehouses.find((w) => w.branchId === actorBranchId)?.id
+    : undefined
   useEffect(() => {
-    if (!isUnitReturn || watched.warehouseId) return
-    const ownBranch = actorBranchId
-      ? warehouses.find((w) => w.branchId === actorBranchId)
-      : undefined
-    const target = ownBranch ?? warehouses.find((w) => !w.branchId)
-    if (target) setValue('warehouseId', target.id, { shouldValidate: false })
+    if (!isUnitReturn || fromServiceCenter) return
+    if (ownBranchWarehouseId) {
+      if (watched.warehouseId !== ownBranchWarehouseId)
+        setValue('warehouseId', ownBranchWarehouseId, { shouldValidate: false })
+      return
+    }
+    // Head office on a repair intake picks among branches, so a standalone
+    // warehouse carried over from another reason isn't kept.
+    if (watched.reason !== 'repair_return') return
+    const current = warehouses.find((w) => w.id === watched.warehouseId)
+    if (current && !current.branchId && !current.branch)
+      setValue('warehouseId', '', { shouldValidate: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isUnitReturn, watched.warehouseId, actorBranchId, warehouses])
+  }, [
+    isUnitReturn,
+    fromServiceCenter,
+    watched.reason,
+    watched.warehouseId,
+    ownBranchWarehouseId,
+    warehouses,
+  ])
 
   const outstandingNotPulled = useMemo(() => {
     if (!linkedPo) return []
@@ -1280,6 +1296,7 @@ export default function ReceiveStockModal({
           onBrowsePo={() => setPoPickerOpen(true)}
           onUnlinkPo={unlinkPo}
           origin={watched.origin}
+          ownBranchWarehouseId={ownBranchWarehouseId}
           serviceCenterOptions={serviceCenterOptions}
           serviceCentersLoading={serviceCentersQuery.isLoading || suppliersQuery.isLoading}
         />
