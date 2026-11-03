@@ -629,6 +629,9 @@ export interface CustomerLedger {
      * purchase, the receivable is the partner's. */
     totalFinanced: number
     outstanding: number
+    /** Oct 29 UAT CL-03 — what is demandable now across these plans (the Due
+     * column's rule as at today). Optional for a backend without it. */
+    totalDue?: number
   }
 }
 
