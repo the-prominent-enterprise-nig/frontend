@@ -115,6 +115,10 @@ interface ConfirmDialogProps {
   cancelLabel?: string
   loading?: boolean
   destructive?: boolean
+  /** Background classes for the confirm button when a screen's own primary
+   * colour should carry over (Stock Transfer's purple). Overrides the
+   * default and `destructive` colours. */
+  confirmColorClassName?: string
   onConfirm: () => void
   onCancel: () => void
 }
@@ -127,6 +131,7 @@ export function ConfirmDialog({
   cancelLabel = 'Cancel',
   loading,
   destructive,
+  confirmColorClassName,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -151,9 +156,10 @@ export function ConfirmDialog({
             onClick={onConfirm}
             disabled={loading}
             className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
-              destructive
+              confirmColorClassName ??
+              (destructive
                 ? 'bg-red-600 hover:bg-red-700'
-                : 'bg-prominent-purple-600 hover:bg-prominent-purple-700'
+                : 'bg-prominent-purple-600 hover:bg-prominent-purple-700')
             }`}
           >
             {loading ? 'Working...' : confirmLabel}

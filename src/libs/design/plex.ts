@@ -22,4 +22,4 @@ export const CONTROL_CHROME = {
  * set of tables. Typography only: each table keeps its own cell padding, which
  * is what lines a heading up with the column under it. */
 export const STOCK_TABLE_HEAD =
-  'font-mono text-[12px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]'
+  'font-mono text-[12px] font-semibold uppercase tracking-[0.09em] text-[#4b4b5a]'

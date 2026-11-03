@@ -71,14 +71,14 @@ export default function DispositionGrid({ value, onChange, unavailable, showErro
             <span className="flex min-w-0 flex-col gap-px">
               <span
                 className={`truncate text-[12px] ${selected ? 'font-semibold' : 'font-medium'} ${
-                  off ? 'text-[#a3a3b2]' : 'text-[#17171c]'
+                  off ? 'text-[#8e8e9d]' : 'text-[#17171c]'
                 }`}
               >
                 {meta.label}
               </span>
               <span
                 className={`text-[10px] leading-[1.3] ${
-                  off ? 'text-[#a3a3b2]' : selected ? 'text-[#3d3d4a]' : 'text-[#5b5b6b]'
+                  off ? 'text-[#8e8e9d]' : selected ? 'text-[#3d3d4a]' : 'text-[#4b4b5a]'
                 }`}
               >
                 {blocked ? blocked.note : meta.note}

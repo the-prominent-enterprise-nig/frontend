@@ -53,7 +53,7 @@ export default function ReplacementPicker({
               leaves stock here.
             </p>
           ) : isLoading ? (
-            <span className="flex items-center gap-2 text-[11.5px] text-[#5b5b6b]">
+            <span className="flex items-center gap-2 text-[11.5px] text-[#4b4b5a]">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               Looking for one in stock…
             </span>
@@ -77,7 +77,7 @@ export default function ReplacementPicker({
                   </option>
                 ))}
               </select>
-              <span className={`${MONO} text-[10px] text-[#8b8b9b]`}>
+              <span className={`${MONO} text-[10px] text-[#6f6f7f]`}>
                 {units.length} available here
               </span>
             </>
@@ -88,12 +88,12 @@ export default function ReplacementPicker({
           <span className={LABEL}>Difference</span>
           <span
             className={`${MONO} text-[14px] font-semibold ${
-              serialTracked && !value ? 'text-[#a3a3b2]' : 'text-[#17171c]'
+              serialTracked && !value ? 'text-[#8e8e9d]' : 'text-[#17171c]'
             }`}
           >
             {serialTracked && !value ? '—' : 'Even swap'}
           </span>
-          <span className="text-[11px] leading-[1.4] text-[#5b5b6b]">
+          <span className="text-[11px] leading-[1.4] text-[#4b4b5a]">
             {serialTracked && !value
               ? 'Pick the unit going out to settle the swap.'
               : 'Same item at the same price — nothing is credited.'}

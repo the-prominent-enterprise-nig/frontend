@@ -25,7 +25,7 @@ export function PrintMemoIconButton({
           await printMemo(kind, id)
           setBusy(false)
         }}
-        className="rounded-md p-1.5 text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#3f1490] disabled:opacity-50"
+        className="rounded-md p-1.5 text-[#4b4b5a] hover:bg-[#f1f1f4] hover:text-[#3f1490] disabled:opacity-50"
       >
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
       </button>

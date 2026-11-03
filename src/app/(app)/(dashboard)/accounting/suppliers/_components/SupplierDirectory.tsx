@@ -148,7 +148,7 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="max-w-2xl">
             <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Suppliers</h1>
-            <p className="mt-1 text-sm text-[#5b5b6b]">
+            <p className="mt-1 text-sm text-[#4b4b5a]">
               Who you buy from, the terms you buy on, and the items they carry.
             </p>
           </div>
@@ -199,7 +199,7 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
                 {pill.label}
                 <span
                   className={`rounded-full px-1.5 py-px text-[10px] font-semibold ${
-                    isOn ? 'bg-white/20' : 'bg-[#f1f1f4] text-[#5b5b6b]'
+                    isOn ? 'bg-white/20' : 'bg-[#f1f1f4] text-[#4b4b5a]'
                   }`}
                 >
                   {pill.count}
@@ -267,7 +267,7 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
             ) : (
               <div className="rounded-xl border border-dashed border-[#d3d3db] bg-white px-6 py-20 text-center">
                 <p className="text-sm font-medium text-[#3d3d4a]">Pick a supplier</p>
-                <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-[#5b5b6b]">
+                <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-[#4b4b5a]">
                   Their terms, their details and the items they carry all read from here.
                 </p>
               </div>

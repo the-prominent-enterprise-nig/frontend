@@ -47,6 +47,16 @@
   --color-input: #f0f0f0;
   --color-ring: #3d2563;
 
+  /* Grey text, a little darker for readability. Tailwind's 400/500 greys are
+     where secondary and muted text lives across the app (~3,400 uses), so they
+     are nudged ~40% toward the next shade here rather than class by class.
+     300 is left alone — it is mostly borders. Hex greys used as text
+     (#8b8b9b, #5b5b6b, …) were darkened in place to match. */
+  --color-zinc-400: #8b8b94;
+  --color-zinc-500: #5e5e67;
+  --color-gray-400: #868d99;
+  --color-gray-500: #596170;
+
   /* Chart Colors */
   --color-chart-1: #3d2563;
   --color-chart-2: #5d4681;

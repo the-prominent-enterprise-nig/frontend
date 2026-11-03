@@ -72,8 +72,8 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   pending_approval: 'bg-[#fbeed8] text-[#8a4b06]',
   active: 'bg-[#d7ebe2] text-[#0b6644]',
   rejected: 'bg-[#fbdedb] text-[#b42318]',
-  inactive: 'bg-[#f1f1f4] text-[#5b5b6b]',
-  expired: 'bg-[#f1f1f4] text-[#5b5b6b]',
+  inactive: 'bg-[#f1f1f4] text-[#4b4b5a]',
+  expired: 'bg-[#f1f1f4] text-[#4b4b5a]',
 }
 
 const REGION_LABELS: Record<string, string> = {
@@ -128,7 +128,7 @@ function SegmentedControl<T extends string>({
             aria-pressed={isOn}
             onClick={() => onChange(option.value)}
             className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              isOn ? 'bg-[#5b21b6] text-white' : 'text-[#5b5b6b] hover:text-[#17171c]'
+              isOn ? 'bg-[#5b21b6] text-white' : 'text-[#4b4b5a] hover:text-[#17171c]'
             }`}
           >
             {option.label}
@@ -299,7 +299,7 @@ export default function PriceListModal({
         subtitle="One selling price per item under this use type. Items are priced after it exists."
         footer={
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-[#5b5b6b]">
+            <p className="text-xs text-[#4b4b5a]">
               {issues.length > 0 ? issues[0].label : 'Everything checks out.'}
             </p>
             <div className="flex items-center gap-3">
@@ -336,7 +336,7 @@ export default function PriceListModal({
               <div className="space-y-5 rounded-xl border border-[#e4e4e9] bg-white p-5">
                 <div>
                   <h3 className="text-sm font-semibold text-[#17171c]">Identity</h3>
-                  <p className="mt-0.5 text-xs text-[#5b5b6b]">
+                  <p className="mt-0.5 text-xs text-[#4b4b5a]">
                     What it is called, what it prices for, and how VAT is treated.
                   </p>
                 </div>
@@ -357,7 +357,7 @@ export default function PriceListModal({
                       />
                     )}
                   />
-                  <p className="mt-1 text-xs text-[#8b8b9b]">
+                  <p className="mt-1 text-xs text-[#6f6f7f]">
                     Cashiers pick by this name at the till — lead with the use type.
                   </p>
                   {errors.name && (
@@ -412,7 +412,7 @@ export default function PriceListModal({
                                   {isOn && <Check className="h-2.5 w-2.5" />}
                                 </span>
                               </span>
-                              <span className="text-xs leading-snug text-[#5b5b6b]">
+                              <span className="text-xs leading-snug text-[#4b4b5a]">
                                 {type.description || 'No description'}
                               </span>
                             </button>
@@ -440,12 +440,12 @@ export default function PriceListModal({
                       Currency
                     </label>
                     <div
-                      className={`${fieldClass} flex items-center gap-2 bg-[#fbfbfc] text-[#5b5b6b]`}
+                      className={`${fieldClass} flex items-center gap-2 bg-[#fbfbfc] text-[#4b4b5a]`}
                     >
-                      <span className={`${MONO} text-xs font-semibold text-[#5b5b6b]`}>PHP</span>
+                      <span className={`${MONO} text-xs font-semibold text-[#4b4b5a]`}>PHP</span>
                       Philippine Peso
                     </div>
-                    <p className="mt-1 text-xs text-[#8b8b9b]">Set at company level.</p>
+                    <p className="mt-1 text-xs text-[#6f6f7f]">Set at company level.</p>
                   </div>
 
                   <div>
@@ -472,7 +472,7 @@ export default function PriceListModal({
                         />
                       )}
                     />
-                    <p className="mt-1 text-xs text-[#8b8b9b]">
+                    <p className="mt-1 text-xs text-[#6f6f7f]">
                       {pricingMode === 'exclusive'
                         ? 'VAT is added on top at the till — use for wholesale or B2B lists.'
                         : 'Prices already contain VAT. Most retail lists are inclusive.'}
@@ -483,7 +483,7 @@ export default function PriceListModal({
                 <div>
                   <label className="mb-1 block text-sm font-medium text-[#3d3d4a]">
                     Description{' '}
-                    <span className="ml-1 text-xs font-normal text-[#8b8b9b]">optional</span>
+                    <span className="ml-1 text-xs font-normal text-[#6f6f7f]">optional</span>
                   </label>
                   <Controller
                     name="description"
@@ -503,11 +503,11 @@ export default function PriceListModal({
                   <div>
                     <label className="mb-1 block text-sm font-medium text-[#3d3d4a]">Status</label>
                     <span
-                      className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_BADGE_CLASS[initial.status] ?? 'bg-[#f1f1f4] text-[#5b5b6b]'}`}
+                      className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_BADGE_CLASS[initial.status] ?? 'bg-[#f1f1f4] text-[#4b4b5a]'}`}
                     >
                       {STATUS_LABELS[initial.status] ?? initial.status}
                     </span>
-                    <p className="mt-1 text-xs text-[#8b8b9b]">
+                    <p className="mt-1 text-xs text-[#6f6f7f]">
                       Set by the approval workflow, not editable here.
                     </p>
                   </div>
@@ -562,7 +562,7 @@ export default function PriceListModal({
                       <div>
                         <label className="mb-1 block text-sm font-medium text-[#3d3d4a]">
                           Effective To{' '}
-                          <span className="ml-1 text-xs font-normal text-[#8b8b9b]">
+                          <span className="ml-1 text-xs font-normal text-[#6f6f7f]">
                             (optional)
                           </span>
                         </label>
@@ -585,7 +585,7 @@ export default function PriceListModal({
                       </div>
                     </div>
                   ) : (
-                    <p className="text-xs text-[#5b5b6b]">
+                    <p className="text-xs text-[#4b4b5a]">
                       The list stays live until someone deactivates it or a newer version supersedes
                       it.
                     </p>
@@ -658,7 +658,7 @@ export default function PriceListModal({
                           />
 
                           {scopeMode === 'company' ? (
-                            <p className="text-xs text-[#5b5b6b]">
+                            <p className="text-xs text-[#4b4b5a]">
                               Every branch uses this list. Switch to specific branches only when a
                               region genuinely prices differently — that split is the main reason
                               pricing drifts apart.
@@ -666,7 +666,7 @@ export default function PriceListModal({
                           ) : (
                             <div className="rounded-lg border border-[#e4e4e9]">
                               <div className="flex items-center gap-2 border-b border-[#e4e4e9] px-3 py-2">
-                                <Search className="h-4 w-4 shrink-0 text-[#8b8b9b]" />
+                                <Search className="h-4 w-4 shrink-0 text-[#6f6f7f]" />
                                 <input
                                   type="text"
                                   value={branchSearch}
@@ -687,10 +687,10 @@ export default function PriceListModal({
 
                               <div className="max-h-64 space-y-3 overflow-y-auto p-3">
                                 {branches.length === 0 && (
-                                  <p className="text-xs text-[#8b8b9b]">No branches found.</p>
+                                  <p className="text-xs text-[#6f6f7f]">No branches found.</p>
                                 )}
                                 {branches.length > 0 && filtered.length === 0 && (
-                                  <p className="text-xs text-[#8b8b9b]">
+                                  <p className="text-xs text-[#6f6f7f]">
                                     No branches match &ldquo;{branchSearch}&rdquo;.
                                   </p>
                                 )}
@@ -702,7 +702,7 @@ export default function PriceListModal({
                                   return (
                                     <div key={key}>
                                       <div className="mb-1.5 flex items-center justify-between">
-                                        <span className="text-[11px] font-semibold uppercase tracking-wide text-[#8b8b9b]">
+                                        <span className="text-[11px] font-semibold uppercase tracking-wide text-[#6f6f7f]">
                                           {regionLabel(key === 'other' ? undefined : key)}
                                         </span>
                                         <button
@@ -730,7 +730,7 @@ export default function PriceListModal({
                                               />
                                               <span className="truncate">{branch.name}</span>
                                               {branch.code && (
-                                                <span className="shrink-0 text-xs text-[#8b8b9b]">
+                                                <span className="shrink-0 text-xs text-[#6f6f7f]">
                                                   {branch.code}
                                                 </span>
                                               )}
@@ -770,7 +770,7 @@ export default function PriceListModal({
                             ? `No clash — nothing else is live for ${selectedTypeName}`
                             : 'Pick a price use type to check for clashes'}
                       </p>
-                      <p className="mt-0.5 text-xs text-[#5b5b6b]">
+                      <p className="mt-0.5 text-xs text-[#4b4b5a]">
                         {hasClash
                           ? `${clashingLists
                               .slice(0, 3)
@@ -787,7 +787,7 @@ export default function PriceListModal({
                     <div>
                       <label className="mb-1 block text-sm font-medium text-[#3d3d4a]">
                         Priority{' '}
-                        <span className="ml-1 text-xs font-normal text-[#8b8b9b]">
+                        <span className="ml-1 text-xs font-normal text-[#6f6f7f]">
                           (higher wins conflicts)
                         </span>
                       </label>
@@ -817,7 +817,7 @@ export default function PriceListModal({
                         )}
                       />
                       <p
-                        className={`mt-1 text-xs ${priorityLoses ? 'text-[#8a4b06]' : 'text-[#8b8b9b]'}`}
+                        className={`mt-1 text-xs ${priorityLoses ? 'text-[#8a4b06]' : 'text-[#6f6f7f]'}`}
                       >
                         {hasClash
                           ? priorityLoses
@@ -833,7 +833,7 @@ export default function PriceListModal({
                     <div>
                       <label className="mb-1 block text-sm font-medium text-[#3d3d4a]">
                         Supersedes{' '}
-                        <span className="ml-1 text-xs font-normal text-[#8b8b9b]">
+                        <span className="ml-1 text-xs font-normal text-[#6f6f7f]">
                           (optional — the prior version this replaces)
                         </span>
                       </label>
@@ -856,7 +856,7 @@ export default function PriceListModal({
                           />
                         )}
                       />
-                      <p className="mt-1 text-xs text-[#8b8b9b]">
+                      <p className="mt-1 text-xs text-[#6f6f7f]">
                         On approval the superseded list auto-expires, so only one price is ever in
                         force. Only lists under the same Price Use Type are shown.
                       </p>
@@ -875,7 +875,7 @@ export default function PriceListModal({
                       <p className="truncate text-base font-semibold text-[#17171c]">
                         {name.trim() || 'Untitled price list'}
                       </p>
-                      <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#5b5b6b]">
+                      <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#4b4b5a]">
                         <span
                           className={`rounded bg-[#f1ebfb] px-2 py-0.5 ${MONO} text-[11px] font-semibold text-[#3f1490]`}
                         >
@@ -937,14 +937,14 @@ export default function PriceListModal({
                         key={row.label}
                         className="flex items-start justify-between gap-4 px-5 py-3"
                       >
-                        <dt className="text-[#5b5b6b]">{row.label}</dt>
+                        <dt className="text-[#4b4b5a]">{row.label}</dt>
                         <dd className="text-right">
                           <p
                             className={`font-medium ${row.missing ? 'text-[#b42318]' : 'text-[#17171c]'}`}
                           >
                             {row.value}
                           </p>
-                          <p className="text-[11px] text-[#8b8b9b]">{row.note}</p>
+                          <p className="text-[11px] text-[#6f6f7f]">{row.note}</p>
                         </dd>
                       </div>
                     ))}
