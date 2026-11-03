@@ -14,6 +14,8 @@ export interface AcknowledgementImportRowData {
   clearedDate: string | null
   customerName: string | null
   invoiceNo: string | null
+  /** The financing partner (Tonik, Salmon…) that paid it, when one is named. */
+  financingPartnerName: string | null
   bankAccountName: string | null
   description: string | null
   grossAmount: number
@@ -31,7 +33,7 @@ export interface AcknowledgementImportRowData {
 
 /** A row's raw, editable values — exactly what the CSV cell held, all strings,
  * '' for blank. Keys: receiptType, branch, date, reference, cleared, clearDate,
- * customer, invoiceNo, receivedIn, description, gross, subsidy, subsidyAccount,
+ * customer, invoiceNo, financingPartner, receivedIn, description, gross, subsidy, subsidyAccount,
  * withholding, withholdingAccount, net (the backend may add `account`, which
  * this screen ignores). */
 export type AcknowledgementImportCells = Record<string, string>
@@ -46,6 +48,7 @@ export const IMPORT_CELL_KEYS = [
   'clearDate',
   'customer',
   'invoiceNo',
+  'financingPartner',
   'receivedIn',
   'description',
   'gross',

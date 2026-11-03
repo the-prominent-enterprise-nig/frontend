@@ -18,17 +18,17 @@ export function toAmount(value: string | number | null | undefined): number {
 }
 
 /**
- * The Net that reaches the bank: Gross − Subsidy − Withholding Tax.
+ * The Net that reaches the bank: Gross − Subsidy + Withholding Tax.
  *
- * Both deductions are debits that stand in for cash — the subsidy goes to
- * Sales Discounts and Rebates, the withholding tax to Withholding Tax
- * Receivable (creditable withholding tax, which the customer paid to the BIR
- * on the company's behalf) — so each one lowers the cash received. This is the
- * one place the sign lives: the form, its journal preview and the backend's
- * own calculation must all agree with it.
+ * The subsidy is a debit (a sales discount) and comes out of the cash. The
+ * withholding tax is a credit to a withholding tax payable account and goes
+ * the other way, adding to it — that is how the client's own sheet works it
+ * (Withholding Tax (CREDIT), Net Amount (CREDITED TO BANK)). This is the one
+ * place the sign lives: the form, its journal preview and the backend's own
+ * calculation must all agree with it.
  */
 export function computeSettlementNet(gross: number, subsidy: number, withholding: number): number {
-  return round2(gross - subsidy - withholding)
+  return round2(gross - subsidy + withholding)
 }
 
 /** Today as YYYY-MM-DD in the user's own timezone. */
@@ -82,13 +82,6 @@ export function buildJournalPreview(input: {
       amount: input.subsidy,
     })
   }
-  if (input.withholding > 0) {
-    lines.push({
-      side: 'Dr',
-      label: input.withholdingAccountLabel || 'Withholding Tax Receivable (default)',
-      amount: input.withholding,
-    })
-  }
   if (input.gross > 0) {
     lines.push({
       side: 'Cr',
@@ -96,6 +89,13 @@ export function buildJournalPreview(input: {
         input.creditAccountLabel ||
         'Other / Miscellaneous Collections (held until applied to the invoice)',
       amount: input.gross,
+    })
+  }
+  if (input.withholding > 0) {
+    lines.push({
+      side: 'Cr',
+      label: input.withholdingAccountLabel || 'Withholding Tax account (pick one)',
+      amount: input.withholding,
     })
   }
   return lines

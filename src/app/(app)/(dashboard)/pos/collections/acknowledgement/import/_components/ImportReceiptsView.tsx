@@ -133,12 +133,7 @@ export default function ImportReceiptsView() {
   const blocked = !!preview?.blockingErrors
   // Confirm waits for the re-check: until it lands, the statuses on screen
   // describe the rows as they were before the last edit.
-  const canImport =
-    !!preview &&
-    preview.summary.total > 0 &&
-    !blocked &&
-    !imp.checking &&
-    (netMismatchRows.length === 0 || imp.acceptNetMismatch)
+  const canImport = !!preview && preview.summary.total > 0 && !blocked && !imp.checking
   const importedCount = imp.result?.imported ?? imp.result?.created ?? preview?.summary.total ?? 0
 
   return (
@@ -213,21 +208,11 @@ export default function ImportReceiptsView() {
                       {netMismatchRows.length === 1 ? 'row has' : 'rows have'} a Net Amount that
                       differs from the calculated one
                     </span>{' '}
-                    (Gross − Subsidy − Withholding Tax). The entry has to balance, so only one Net
-                    can be posted — the calculated one. Fix the rows (Edit), or tick the box below
-                    to post them with the calculated Net.
+                    (Gross − Subsidy + Withholding Tax). You can still import: the entry has to
+                    balance, so the calculated Net is the one that posts. Fix the rows (Edit) if the
+                    file&apos;s Net is the one that is right.
                   </p>
                 </div>
-                <label className="flex cursor-pointer items-center gap-2 pl-6 font-medium">
-                  <input
-                    type="checkbox"
-                    checked={imp.acceptNetMismatch}
-                    disabled={phase === 'applying'}
-                    onChange={(e) => imp.setAcceptNetMismatch(e.target.checked)}
-                    className="h-4 w-4 rounded border-amber-400"
-                  />
-                  Post these rows using the calculated Net
-                </label>
               </div>
             )}
 

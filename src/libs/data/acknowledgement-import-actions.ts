@@ -84,14 +84,11 @@ export async function previewAcknowledgementReceiptImport(
 }
 
 /** The real import — re-sends the same file once the user has read the
- * preview. FormData fields: `file`, `acceptNetMismatch` ('true' | 'false'). */
+ * preview. FormData field: `file`. */
 export async function commitAcknowledgementReceiptImport(
   formData: FormData
 ): Promise<ApiResponse<AcknowledgementImportResult>> {
-  const accept = formData.get('acceptNetMismatch') === 'true' ? 'true' : 'false'
-  const res = await send<AcknowledgementImportResult>('import', formData, {
-    acceptNetMismatch: accept,
-  })
+  const res = await send<AcknowledgementImportResult>('import', formData, {})
   if (res.success) revalidatePath('/pos/collections/acknowledgement')
   return res
 }
