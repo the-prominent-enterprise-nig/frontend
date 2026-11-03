@@ -44,6 +44,60 @@ const APPROVAL_GRID_COLS: Record<number, string> = {
   4: 'lg:grid-cols-4',
 }
 
+/** Local calendar date as YYYY-MM-DD (what a date input holds). */
+function localIso(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/**
+ * Oct 29 UAT POS-02 / POS-03 — the period the Overview's figures cover: a
+ * calendar month (the default, the current one — accumulated sales for the
+ * month) or a date range. Returned as the instants the transactions endpoint
+ * compares occurredAt against: local start of the first day, local end of
+ * the last.
+ */
+type OverviewPeriod = { mode: 'month'; month: string } | { mode: 'range'; from: string; to: string }
+
+function periodBounds(p: OverviewPeriod): { dateFrom: string; dateTo: string } {
+  const [fromDay, toDay] =
+    p.mode === 'month'
+      ? (() => {
+          const [y, m] = p.month.split('-').map(Number)
+          return [new Date(y, m - 1, 1), new Date(y, m, 0)]
+        })()
+      : (() => {
+          const [a, b] = [p.from, p.to].sort()
+          const parse = (iso: string) => {
+            const [y, m, d] = iso.split('-').map(Number)
+            return new Date(y, m - 1, d)
+          }
+          return [parse(a), parse(b)]
+        })()
+  const start = new Date(fromDay)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(toDay)
+  end.setHours(23, 59, 59, 999)
+  return { dateFrom: start.toISOString(), dateTo: end.toISOString() }
+}
+
+function periodLabel(p: OverviewPeriod): string {
+  if (p.mode === 'month') {
+    const [y, m] = p.month.split('-').map(Number)
+    return new Date(y, m - 1, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
+  }
+  const fmt = (iso: string) => {
+    const [y, m, d] = iso.split('-').map(Number)
+    return new Date(y, m - 1, d).toLocaleDateString('en-PH', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })
+  }
+  const [a, b] = [p.from, p.to].sort()
+  return a === b ? fmt(a) : `${fmt(a)} – ${fmt(b)}`
+}
+
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', {
     style: 'currency',
@@ -68,6 +122,13 @@ export default function PosOverviewPage() {
   const { branchId } = usePosBranchContext()
   const branchFilter = branchId ? { branchId } : undefined
 
+  const todayIso = localIso(new Date())
+  const [period, setPeriod] = useState<OverviewPeriod>({
+    mode: 'month',
+    month: todayIso.slice(0, 7),
+  })
+  const txFilter = { ...branchFilter, ...periodBounds(period) }
+
   const { data: me } = useMe()
   const canReadApprovals = !!me && can(me, POS_PERMISSIONS.TRANSACTIONS_READ)
   const canOverrideApprovals = !!me && can(me, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
@@ -78,7 +139,7 @@ export default function PosOverviewPage() {
     isLoading: txLoading,
     refetch,
     isFetching,
-  } = useTransactions(branchFilter, autoRefresh)
+  } = useTransactions(txFilter, autoRefresh)
   const { data: sessData, isLoading: sessLoading } = useSessions(branchFilter, autoRefresh)
   const { data: termData, isLoading: termLoading } = useTerminals(branchFilter, autoRefresh)
 
@@ -266,6 +327,71 @@ export default function PosOverviewPage() {
             )}
           </div>
         )}
+
+        {/* Oct 29 UAT POS-02 / POS-03 — the period Total Sales, Transactions
+            and Recent Transactions cover. */}
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm"
+          data-testid="overview-period"
+        >
+          <div className="inline-flex rounded-lg border border-purple-200 p-0.5">
+            {(['month', 'range'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() =>
+                  setPeriod(
+                    mode === 'month'
+                      ? { mode: 'month', month: todayIso.slice(0, 7) }
+                      : { mode: 'range', from: todayIso, to: todayIso }
+                  )
+                }
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  period.mode === mode
+                    ? 'bg-purple-200 text-purple-800'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {mode === 'month' ? 'Month' : 'Date range'}
+              </button>
+            ))}
+          </div>
+          {period.mode === 'month' ? (
+            <input
+              type="month"
+              aria-label="Month"
+              value={period.month}
+              max={todayIso.slice(0, 7)}
+              onChange={(e) =>
+                e.target.value && setPeriod({ mode: 'month', month: e.target.value })
+              }
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800"
+            />
+          ) : (
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <input
+                type="date"
+                aria-label="From"
+                value={period.from}
+                max={todayIso}
+                onChange={(e) => e.target.value && setPeriod({ ...period, from: e.target.value })}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800"
+              />
+              to
+              <input
+                type="date"
+                aria-label="To"
+                value={period.to}
+                max={todayIso}
+                onChange={(e) => e.target.value && setPeriod({ ...period, to: e.target.value })}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800"
+              />
+            </div>
+          )}
+          <span className="text-sm text-gray-500" data-testid="overview-period-label">
+            Showing {periodLabel(period)}
+          </span>
+        </div>
 
         {/* Stat Cards */}
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
