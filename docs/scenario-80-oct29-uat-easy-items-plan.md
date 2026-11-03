@@ -1,4 +1,4 @@
-# Scenario 80 — Oct 29 UAT quick wins
+# Scenario 80 — Oct 29 UAT Easy items
 
 Source: the "NIG Marketing UAT Checklist" (consolidated UAT notes, Oct 29 2026), its **Easy** items, audited against
 `origin/development` on 2026-11-03 (FE 4e2008ab, BE f932571).
@@ -7,7 +7,7 @@ Of the 33 Easy items, 3 were already done (PO-01, POS-10, POS-12), 2 look done a
 CL-05), 4 were partial and 24 not done. This scenario finishes the partials and builds the rest, plus POS-15 (the
 sale-date override) because POS-16/18/19 can't exist without it.
 
-Branch `feat/scenario-80-oct29-uat-quick-wins` in both repos.
+Branch `feat/scenario-80-oct29-uat-easy-items` in both repos.
 
 ## Decisions (Kian, 2026-11-03)
 
