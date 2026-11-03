@@ -7,7 +7,7 @@ import { X, ArrowRight, Search } from 'lucide-react'
 import { useTransferManager } from '../_hooks/useTransferManager'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
-import type { SessionUser } from '@/src/libs/guards/permission'
+import { hasRole, type SessionUser } from '@/src/libs/guards/permission'
 import type { TransferStatus, TransferSummary } from '@/src/schema/inventory/transfers'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { CONTROL_CHROME, MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
@@ -838,6 +838,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
         canCreateCaravan={canManageCaravan}
         warehouses={warehouseOptions}
         currentUserBranchId={session.branchId}
+        currentUserRegion={currentUserRegion}
+        canPickAnyDestination={hasRole(session, 'Warehouse Custodian')}
         canSkipApproval={canSkipApproval}
         initialDraft={createDraft}
       />

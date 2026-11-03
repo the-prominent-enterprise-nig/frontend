@@ -82,7 +82,12 @@ export function isSuperAdmin(user: SessionUser): boolean {
 }
 
 export function hasPrivilegedRole(user: SessionUser): boolean {
-  return user.primaryRole === 'Business Owner' || user.roles.includes('Business Owner')
+  return hasRole(user, 'Business Owner')
+}
+
+/** Whether the user holds the named role, as their primary role or any other. */
+export function hasRole(user: SessionUser, role: string): boolean {
+  return user.primaryRole === role || user.roles.includes(role)
 }
 
 function matchesPermission(userPermission: string, requiredPermission: string): boolean {
