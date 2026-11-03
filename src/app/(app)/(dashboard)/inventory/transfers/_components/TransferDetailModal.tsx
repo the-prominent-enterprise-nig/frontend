@@ -783,6 +783,9 @@ type Props = {
   canManagerApprove: boolean
   canManagerReject: boolean
   currentUserBranchId?: string | null
+  // The dispatcher is never the receiver (WH-01) — compared against the
+  // transfer's dispatchedById to withhold Receive from whoever shipped it.
+  currentUserId?: string
   // The region of the caller's own warehouse branch — drives whether they can
   // act on a transfer touching a real standalone warehouse (branchId: null,
   // Scenario 27), which exact branch-ownership can never match. null/
@@ -846,6 +849,7 @@ export default function TransferDetailModal({
   canManagerApprove,
   canManagerReject,
   currentUserBranchId,
+  currentUserId,
   currentUserRegion,
   onAccept,
   onReject,
@@ -1028,8 +1032,17 @@ export default function TransferDetailModal({
     inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
   const canDispatchThis =
     canDispatch && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
-  const canReceiveThis =
+  // Mirrors the backend's receive() refusal: whoever dispatched a transfer
+  // can't also confirm it arrived, even head office, which inScope lets
+  // through. A transfer dispatched before dispatchedById existed has none.
+  const dispatchedByMe = !!transfer?.dispatchedById && transfer.dispatchedById === currentUserId
+  const canReceiveInScope =
     canReceive && inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+  const canReceiveThis = canReceiveInScope && !dispatchedByMe
+  const receiveBlockedForDispatcher =
+    canReceiveInScope &&
+    dispatchedByMe &&
+    (status === 'in_transit' || status === 'partially_received')
   // Manager approval is scoped to the TO warehouse's branch too — it's the
   // requester's own branch manager signing off, same direction as receive.
   const canManagerApproveThis =
@@ -2663,6 +2676,13 @@ export default function TransferDetailModal({
                   {(transfer.lines ?? []).length}{' '}
                   {(transfer.lines ?? []).length === 1 ? 'line' : 'lines'}
                 </p>
+                {receiveBlockedForDispatcher && (
+                  <p className="mt-0.5 flex items-center gap-1 text-[12px] text-[#8a4b06]">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    You dispatched this transfer, so someone else at the receiving branch has to
+                    receive it.
+                  </p>
+                )}
                 <div className="mt-0.5 flex items-center gap-3">
                   {canEditThis && onEdit && (
                     <button

@@ -287,6 +287,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
   function rowAction(tr: TransferSummary): { label: string; primary: boolean } {
     const fromInScope = inScope(tr.fromWarehouse?.branchId, tr.fromWarehouse?.region)
     const toInScope = inScope(tr.toWarehouse?.branchId, tr.toWarehouse?.region)
+    // The dispatcher is never the receiver (WH-01).
+    const canReceiveThis = canReceive && toInScope && tr.dispatchedById !== session.id
 
     if (
       tr.status === 'pending_manager_approval' &&
@@ -300,9 +302,9 @@ export default function TransferList({ session }: { session: SessionUser }) {
       return { label: 'Review', primary: true }
     if (tr.status === 'draft' && canDispatch && fromInScope)
       return { label: 'Dispatch', primary: true }
-    if (tr.status === 'in_transit' && canReceive && toInScope)
+    if (tr.status === 'in_transit' && canReceiveThis)
       return { label: 'Mark received', primary: true }
-    if (tr.status === 'partially_received' && canReceive && toInScope)
+    if (tr.status === 'partially_received' && canReceiveThis)
       return { label: 'Receive more', primary: true }
 
     return { label: 'View', primary: false }
@@ -855,6 +857,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         canManagerApprove={canManagerApprove}
         canManagerReject={canManagerReject}
         currentUserBranchId={session.branchId}
+        currentUserId={session.id}
         currentUserRegion={currentUserRegion}
         onAccept={acceptTransfer}
         onReject={rejectTransfer}
