@@ -915,12 +915,10 @@ function buildPurchaseOrderHtml(
       <div class="sig-block">
         <p class="sig-label">Prepared By:</p>
         <div class="sig-line"></div>
-        ${po.preparedByName ? `<p class="sig-name">${esc(po.preparedByName)}</p>` : ''}
       </div>
       <div class="sig-block">
         <p class="sig-label">Approved by:</p>
         <div class="sig-line"></div>
-        ${po.approvedByName ? `<p class="sig-name">${esc(po.approvedByName)}</p>` : ''}
       </div>
     </div>
 
