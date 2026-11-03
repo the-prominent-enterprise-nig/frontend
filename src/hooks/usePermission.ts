@@ -11,10 +11,10 @@ interface SessionUser {
 // Roles that have a fixed module allowlist. Keep in sync with ROLE_MODULE_ACCESS in
 // src/libs/guards/permission.ts — both must agree on which modules each role can reach.
 const ROLE_MODULE_ACCESS: Record<string, string[]> = {
-  // 2026-09-19 — Cashier reaches POS only; customer creation moved to POS's
-  // own /pos/customers screen. See the sibling copy of this map in
-  // src/libs/guards/permission.ts for the full rationale.
-  cashier: ['pos'],
+  // Cashier is not here: the client's Access Levels sheet gives the Branch
+  // Cashier Expenses, CRM and Stock Transaction as well as POS, so its modules
+  // come from its permissions. See the sibling copy of this map in
+  // src/libs/guards/permission.ts.
   'pos-manager': ['pos'],
   pos: ['pos'],
 }

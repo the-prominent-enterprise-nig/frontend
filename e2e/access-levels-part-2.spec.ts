@@ -47,6 +47,11 @@ test.describe('Access Levels Part 2', () => {
     page,
   }) => {
     await loginAs(page, 'technova.b1.cashier@test.com', PASSWORD)
+    await gotoReady(page, '/pos')
+    const sidebar = await sidebarHrefs(page)
+    for (const href of ['/accounting', '/crm', '/inventory', '/pos']) {
+      expect(sidebar).toContain(href)
+    }
     for (const path of ['/accounting/expenses', '/crm/customers', '/inventory/stock-transaction']) {
       await gotoReady(page, path)
       await expect(page).not.toHaveURL(/\/403/)
