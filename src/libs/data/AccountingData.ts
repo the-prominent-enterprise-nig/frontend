@@ -104,6 +104,11 @@ export interface Transaction {
   item?: { id: string; name: string; sku: string } | null
   quantity?: number | null
   unitPrice?: number | null
+  /** The bank / cash fund a Cash and Cash Equivalents line moves. Every bank
+   *  shares that one GL account, so this is what tells one bank's transactions
+   *  from another's. Null on every line that moves no bank. */
+  bankAccountId?: string | null
+  bankAccount?: { id: string; name: string; bankName: string; accountNumber: string } | null
   debit: number
   credit: number
   description?: string | null
@@ -259,6 +264,8 @@ export interface JournalEntryInput {
     item?: string | null
     quantity?: number | null
     unitPrice?: number | null
+    /** Required on a Cash and Cash Equivalents line, refused on any other. */
+    bankAccountId?: string | null
     debit: number
     credit: number
     description?: string | null
