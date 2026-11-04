@@ -781,7 +781,7 @@ export default function CollectionsScreen() {
                   // the old "Pay Selected" opened a brand-new modal each
                   // time (see the component's own doc comment).
                   //
-                  // Scenario 83 (DC-01 / CL-04) — and whenever the date
+                  // Scenario 84 (DC-01 / CL-04) — and whenever the date
                   // override changes. The panel seeds its Payment date, and
                   // its rebate/penalty defaults, from the override once, when
                   // it mounts: an override set AFTER ticking the dues moved

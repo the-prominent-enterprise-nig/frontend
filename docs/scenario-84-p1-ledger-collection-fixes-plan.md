@@ -1,9 +1,9 @@
-# Scenario 83 — Oct 29 UAT P1 Medium fixes
+# Scenario 84 — Oct 29 UAT P1 Medium fixes
 
 Source: the "NIG Marketing UAT Checklist" (consolidated UAT notes, Oct 29 2026), its **P1 Medium** items that are
 not Karms' (WH-01, WH-06, WH-07) or Renz's (SNL-02, BE #248).
 
-Branch `feat/scenario-83-p1-ledger-collection-fixes` in both repos, branched off `development` on 2026-11-04
+Branch `feat/scenario-84-p1-ledger-collection-fixes` in both repos, branched off `development` on 2026-11-04
 (BE 4409ee0, FE 56b5c6b2).
 
 ## Decisions (Kian, 2026-11-04)
@@ -45,7 +45,7 @@ keep that history, and the totals and ledger go on reading it. The `crm:installm
 permission stays too: it still gates the **Record payment** button.
 
 **Tests:** unit cases for an on-time partial on a POS plan (`customer-ledger-rows.spec.ts`); e2e
-`test/scenario-83-part-2-partial-payment.e2e-spec.ts` (₱1,000 due, ₱400 paid → ₱600 on the account, the ledger,
+`test/scenario-84-part-2-partial-payment.e2e-spec.ts` (₱1,000 due, ₱400 paid → ₱600 on the account, the ledger,
 its header and the Collections list, for a POS plan and an imported account; the retired route 404s). The
 e2e suites that tested the old endpoint's own behaviour dropped those tests; `installment-account-customer-ledger`
 now seeds its historic `InstallmentPaymentRecord` rows directly.
@@ -83,7 +83,7 @@ into due 3.
   Collections / collector due figures still never go below zero. The customer (unified) ledger uses the same rows, so
   it shows advances too.
 - **Frontend:** no code change. Both ledger views and the print already show a negative Due as "-₱620.00", red in the
-  table. `e2e/scenario-83-part-3-advance-negative.spec.ts` pins that.
+  table. `e2e/scenario-84-part-3-advance-negative.spec.ts` pins that.
 - **Reverses Chloe's 2026-09-08 design** (18c4efc, "you are owed a negative amount is not a thing a collector can
   act on"), because the client asked. Flag for her review.
 - **Merging with Scenario 80:** S80's CL-03 `ledgerDueAsOf` shares this calculator and floors too. When S80 lands,
@@ -92,7 +92,7 @@ into due 3.
 **Tests:** `customer-ledger-rows.spec.ts` (the Oct 11 sale and a due paid ahead now pin the advance;
 `withLedgerAdvance`), `installment-account.service.spec.ts` (imported: a negative sheet Total Due, a collection beyond
 Total Due, an account ahead of its sheet; hand-entered rows stay floored); e2e
-`test/scenario-83-part-3-advance-negative.e2e-spec.ts`. In `installment-account-customer-ledger`, the two tests
+`test/scenario-84-part-3-advance-negative.e2e-spec.ts`. In `installment-account-customer-ledger`, the two tests
 that pinned "never negative" now pin the advance.
 
 ### Part 4 — Purchase Request cost (PR-01)
@@ -114,7 +114,7 @@ overrides it.
 - **Dev data:** the local dev DB has no suppliers, so the supplier-price case needs one created (manual test 4A).
   The test DB has 37 suppliers, 3 priced links.
 
-**Tests:** `e2e/scenario-83-part-4-pr-cost-prefill.spec.ts` (cost price with no supplier; blank with no cost;
+**Tests:** `e2e/scenario-84-part-4-pr-cost-prefill.spec.ts` (cost price with no supplier; blank with no cost;
 supplier price over cost; read-only, fixtures looked up through the API). No backend change, so no backend e2e.
 
 ## Found along the way, not fixed (pre-existing)
@@ -155,7 +155,7 @@ a time, with every remaining failure confirmed identical on untouched developmen
 
 **Not verified yet:**
 
-- **None of the four manual tests** (`NIG/Scenario-83-Manual-Test.md`) has been run. Kian moved on from each part
+- **None of the four manual tests** (`NIG/Scenario-84-Manual-Test.md`) has been run. Kian moved on from each part
   without running them, 2026-11-04.
 - ~~None of the Playwright specs has been run~~ — run 2026-11-04 on an isolated pair (frontend :3010, backend :3011,
   test DB; the shared :3000/:3001 left alone): part 1 3/3, part 3 2/2, part 4 3/3. Parts 1 and 4 shown to fail
@@ -163,7 +163,7 @@ a time, with every remaining failure confirmed identical on untouched developmen
   the test DB had none, so a throwaway one was seeded for the run and deleted after. Three spec fixes came out of the
   run: the accounts list caps `limit` at 20, the list flattens the schedule (a POS plan is the row with item names),
   the narrowed customer ledger renders the plan ledger, and a SearchCombobox is a button until opened.
-- **Playwright regression, all failing before S83's code is reached** (S83 changes four frontend source files:
+- **Playwright regression, all failing before S84's code is reached** (S84 changes four frontend source files:
   `CollectionsScreen.tsx`, `PurchaseOrderFormFields.tsx`, `libs/api/crm.ts`, `schema/crm/installment-account.ts`):
   `pos-collections-multiple-payments` 5/6 (POS checkout never reaches "Installment Plan Created"),
   `pos-collections-rebate`, `installment-account-customer-ledger`, `customer360-installment-plan-detail`,

@@ -430,7 +430,7 @@ function LineItemsCard({
 
   const anyOpen = Object.values(openLines).some(Boolean)
 
-  // Scenario 83 (PR-01, client UAT 2026-10-29): "Cost shown for items in
+  // Scenario 84 (PR-01, client UAT 2026-10-29): "Cost shown for items in
   // Purchase Requests must reflect the correct item cost." A new line's Unit
   // Price used to start at 0. It starts at the chosen supplier's price for the
   // item (ItemSupplier.unitPrice), else the item's own cost price, else 0 as

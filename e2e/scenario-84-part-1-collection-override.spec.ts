@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { fillStable, gotoReady } from './utils'
 
-// Scenario 83 Part 1 (DC-01 / CL-04) — the Collections screen's Payment date
+// Scenario 84 Part 1 (DC-01 / CL-04) — the Collections screen's Payment date
 // follows "Override current date", whenever the override is set.
 //
 // The panel used to seed its Payment date from the override once, when it
@@ -10,7 +10,7 @@ import { fillStable, gotoReady } from './utils'
 // stayed on today — so the collection saved on today, and never reached the
 // overridden day's Collection Report or ledger row. That the saved date then
 // lands on the right report and ledger is the backend's
-// scenario-83-part-1-collection-penalty e2e.
+// scenario-84-part-1-collection-penalty e2e.
 //
 // Read-only: nothing is collected, so any customer with an open due will do.
 
@@ -24,7 +24,7 @@ const overrideInput = (page: Page) => page.locator('input[type="date"]:not([requ
 // The panel's own field is the required one.
 const paymentDateInput = (page: Page) => page.locator('input[type="date"][required]')
 
-test.describe('Scenario 83 Part 1 — Payment date follows the date override', () => {
+test.describe('Scenario 84 Part 1 — Payment date follows the date override', () => {
   let customerName: string
 
   test.beforeAll(async ({ request }) => {
@@ -54,7 +54,7 @@ test.describe('Scenario 83 Part 1 — Payment date follows the date override', (
     await expect(paymentDateInput(page)).toBeVisible({ timeout: 10_000 })
   }
 
-  test('S83-FE-1.1: an override set after ticking the dues moves the Payment date with it', async ({
+  test('S84-FE-1.1: an override set after ticking the dues moves the Payment date with it', async ({
     page,
   }) => {
     await tickFirstDue(page)
@@ -66,7 +66,7 @@ test.describe('Scenario 83 Part 1 — Payment date follows the date override', (
     await expect(paymentDateInput(page)).toHaveValue(yesterday)
   })
 
-  test('S83-FE-1.2: changing the override again, then resetting it, keeps the Payment date in step', async ({
+  test('S84-FE-1.2: changing the override again, then resetting it, keeps the Payment date in step', async ({
     page,
   }) => {
     await tickFirstDue(page)
@@ -81,7 +81,7 @@ test.describe('Scenario 83 Part 1 — Payment date follows the date override', (
     await expect(paymentDateInput(page)).toHaveValue(localDay())
   })
 
-  test('S83-FE-1.3: the ticked dues stay ticked when the override changes', async ({ page }) => {
+  test('S84-FE-1.3: the ticked dues stay ticked when the override changes', async ({ page }) => {
     await tickFirstDue(page)
     await fillStable(overrideInput(page), localDay(-1))
     // The panel reopens for the new date, but over the same selection.

@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
 import { fillStable, gotoReady } from './utils'
 
-// Scenario 83 Part 4 (PR-01) — "Cost shown for items in Purchase Requests must
+// Scenario 84 Part 4 (PR-01) — "Cost shown for items in Purchase Requests must
 // reflect the correct item cost." A line added to a Purchase Request (or a PO
 // being edited — the form is shared) used to start at Unit price 0. It now
 // starts at the chosen supplier's price for the item, else the item's own cost
@@ -44,7 +44,7 @@ async function pickFrom(page: Page, placeholder: string, text: string) {
 
 const unitPrice = (page: Page) => page.getByLabel('Unit price').first()
 
-test.describe('Scenario 83 Part 4 — a new line’s Unit price starts at the item’s cost', () => {
+test.describe('Scenario 84 Part 4 — a new line’s Unit price starts at the item’s cost', () => {
   let costed: Item | undefined
   let uncosted: Item | undefined
   let quoted:
@@ -70,7 +70,7 @@ test.describe('Scenario 83 Part 4 — a new line’s Unit price starts at the it
     }
   })
 
-  test('S83-FE-4.1: with no supplier picked, it starts at the item’s cost price', async ({
+  test('S84-FE-4.1: with no supplier picked, it starts at the item’s cost price', async ({
     page,
   }) => {
     test.skip(!costed, 'No costed item on this database')
@@ -79,7 +79,7 @@ test.describe('Scenario 83 Part 4 — a new line’s Unit price starts at the it
     await expect(unitPrice(page)).toHaveValue(shown(Number(costed!.costPrice)))
   })
 
-  test('S83-FE-4.2: an item with no cost price starts blank, as before', async ({ page }) => {
+  test('S84-FE-4.2: an item with no cost price starts blank, as before', async ({ page }) => {
     test.skip(!uncosted, 'No uncosted item on this database')
     await openNewRequest(page)
     await pickFrom(page, 'Search item by name or SKU to add a line…', uncosted!.sku)
@@ -87,7 +87,7 @@ test.describe('Scenario 83 Part 4 — a new line’s Unit price starts at the it
     await expect(unitPrice(page)).toHaveValue(/^0?$/)
   })
 
-  test('S83-FE-4.3: the chosen supplier’s price for the item wins over its cost price', async ({
+  test('S84-FE-4.3: the chosen supplier’s price for the item wins over its cost price', async ({
     page,
   }) => {
     test.skip(!quoted, 'No supplier with a priced item on this database')

@@ -1,9 +1,9 @@
 import { test, expect, type Page, type Route } from '@playwright/test'
 import { gotoReady } from './utils'
 
-// Scenario 83 Part 3 (CL-07) — "Advance payments should show the amount due as
+// Scenario 84 Part 3 (CL-07) — "Advance payments should show the amount due as
 // a negative amount." The backend now returns a negative Due for money paid
-// ahead (backend e2e: scenario-83-part-3-advance-negative); this pins that the
+// ahead (backend e2e: scenario-84-part-3-advance-negative); this pins that the
 // two ledger screens show it as one — "-₱620.00", in red in the Due column —
 // rather than hiding or flipping the sign.
 //
@@ -46,7 +46,7 @@ const dueCellOfLastRow = (page: Page) =>
     .locator('td')
     .nth(6)
 
-test.describe('Scenario 83 Part 3 — an advance shows as a negative Due', () => {
+test.describe('Scenario 84 Part 3 — an advance shows as a negative Due', () => {
   let accountId: string
   let customerId: string
 
@@ -65,7 +65,7 @@ test.describe('Scenario 83 Part 3 — an advance shows as a negative Due', () =>
     customerId = plan!.customerId
   })
 
-  test('S83-FE-3.1: the plan ledger shows the advance in Tot. Amt. Due and, in red, on its last row', async ({
+  test('S84-FE-3.1: the plan ledger shows the advance in Tot. Amt. Due and, in red, on its last row', async ({
     page,
   }) => {
     await endOnAdvance(page, /\/api\/crm\/installment-accounts\/[^/]+\/ledger(\?|$)/)
@@ -79,7 +79,7 @@ test.describe('Scenario 83 Part 3 — an advance shows as a negative Due', () =>
     await expect(due).toHaveClass(/text-red-600/)
   })
 
-  test('S83-FE-3.2: View ledger (the customer ledger narrowed to the plan) shows it in Tot. Amt. Due and, in red, on its last row', async ({
+  test('S84-FE-3.2: View ledger (the customer ledger narrowed to the plan) shows it in Tot. Amt. Due and, in red, on its last row', async ({
     page,
   }) => {
     // Narrowed to one plan, the customer ledger renders that plan's own ledger
