@@ -3,6 +3,8 @@
  * agree with it on spelling, never decide validity. */
 
 export const RECEIPT_TYPE_LABELS = ['Acknowledgement', 'Collection']
+/** What the Paid by column and the page's choice say when the customer paid. */
+export const PAID_BY_CUSTOMER = 'Customer'
 export const CLEARED_LABELS = ['Same date', 'Later date', 'Past date']
 
 /** The option label a cell's text names, ignoring case and surrounding
