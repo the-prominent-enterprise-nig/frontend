@@ -52,7 +52,7 @@ export function DrItemsSection(): React.JSX.Element {
     >
       {fields.length > 0 && (
         <div
-          className={`${GRID} hidden text-[11px] font-medium uppercase tracking-[.06em] text-[#6f6f7f] md:grid`}
+          className={`${GRID} hidden text-[11px] font-medium uppercase tracking-[.06em] text-ink-muted md:grid`}
         >
           <span>Model</span>
           <span>Brand</span>
@@ -81,7 +81,7 @@ export function DrItemsSection(): React.JSX.Element {
           Add item
         </button>
         {!warehouseId && (
-          <span className="ml-3 text-[11.5px] text-[#6f6f7f]">Pick the issuing branch first.</span>
+          <span className="ml-3 text-[11.5px] text-ink-muted">Pick the issuing branch first.</span>
         )}
       </div>
       <Field label="Remarks">
@@ -112,7 +112,7 @@ function DrRepairItems(): React.JSX.Element {
       description="The units on the repair ticket. They cannot be changed here."
     >
       {lines.length === 0 ? (
-        <p className="text-[12.5px] text-[#6f6f7f]">Loading the ticket&apos;s units…</p>
+        <p className="text-[12.5px] text-ink-muted">Loading the ticket&apos;s units…</p>
       ) : (
         <div className="divide-y divide-[#eeeef1] rounded-lg border border-[#eeeef1]">
           {lines.map((l) => (
@@ -122,7 +122,7 @@ function DrRepairItems(): React.JSX.Element {
             >
               <span className="font-medium text-[#1f1f2b]">
                 {l.itemLabel}
-                {l.brandName && <span className="ml-2 text-[#6f6f7f]">{l.brandName}</span>}
+                {l.brandName && <span className="ml-2 text-ink-muted">{l.brandName}</span>}
               </span>
               <span className="font-mono text-[12px] text-[#4b4b5a]">
                 {l.serials.map((s) => s.label).join(', ') || '—'}
@@ -193,7 +193,7 @@ function DrLineRow({
           onChange={(id) => setValue(`lines.${index}.itemId`, id, { shouldDirty: true })}
           onSelect={(o) => pickItem(o.id, o.primary, o.meta as ItemSearchMeta | undefined)}
         />
-        {line.modelNumber && <span className="text-[11px] text-[#6f6f7f]">{line.modelNumber}</span>}
+        {line.modelNumber && <span className="text-[11px] text-ink-muted">{line.modelNumber}</span>}
       </div>
       <div className={`${INPUT} flex items-center text-[#4b4b5a]`}>{line.brandName || '—'}</div>
       <SerialCell index={index} warehouseId={warehouseId} />
@@ -298,7 +298,7 @@ function SerialCell({
     staleTime: 30_000,
   })
   if (!line.isSerialTracked) {
-    return <div className={`${INPUT} flex items-center text-[#8e8e9d]`}>Not serialized</div>
+    return <div className={`${INPUT} flex items-center text-ink-subtle`}>Not serialized</div>
   }
   const pickedElsewhere = new Set(
     lines.flatMap((l, i) => (i === index ? [] : l.serials.map((s) => s.id)))

@@ -112,7 +112,7 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
       {currentBalances.length > 0 && (
         <div className="space-y-1">
           <p
-            className={`${MONO} text-[10.5px] font-semibold tracking-[.08em] text-[#6f6f7f] uppercase`}
+            className={`${MONO} text-[10.5px] font-semibold tracking-[.08em] text-ink-muted uppercase`}
           >
             Current Stock
           </p>
@@ -137,11 +137,11 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
                       b.warehouse?.code ??
                       'Unknown'}
                   </span>
-                  <span className="text-[#8e8e9d]">·</span>
+                  <span className="text-ink-subtle">·</span>
                   <span className={`${MONO} font-semibold text-[#17171c]`}>{b.availableQty}</span>
-                  <span className="text-[#8e8e9d]">avail</span>
+                  <span className="text-ink-subtle">avail</span>
                   {b.reservedQty > 0 && (
-                    <span className="text-[#8e8e9d]">· {b.reservedQty} reserved</span>
+                    <span className="text-ink-subtle">· {b.reservedQty} reserved</span>
                   )}
                 </button>
               )
@@ -175,7 +175,7 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
           onChange={(e) => setStartDate(e.target.value || undefined)}
           className="rounded-lg border border-[#d3d3db] bg-white px-2.5 py-1.5 text-[12px] text-[#3d3d4a] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
         />
-        <span className="text-[12px] text-[#6f6f7f]">to</span>
+        <span className="text-[12px] text-ink-muted">to</span>
         <label htmlFor="movements-end-date" className="sr-only">
           To date
         </label>
@@ -199,7 +199,7 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
         )}
 
         {isFetching && !isLoading && (
-          <RefreshCw className="h-3.5 w-3.5 animate-spin text-[#8e8e9d]" />
+          <RefreshCw className="h-3.5 w-3.5 animate-spin text-ink-subtle" />
         )}
       </div>
 
@@ -221,15 +221,15 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
           </div>
         ) : entries.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Activity className="mb-3 h-8 w-8 text-[#b0b0bc]" />
+            <Activity className="mb-3 h-8 w-8 text-ink-faint" />
             <p className="text-[13px] font-medium text-[#4b4b5a]">No movements found</p>
-            <p className="mt-1 text-[12px] text-[#6f6f7f]">Try adjusting the filters above.</p>
+            <p className="mt-1 text-[12px] text-ink-muted">Try adjusting the filters above.</p>
           </div>
         ) : (
           <div role="table" aria-label="Stock movements">
             <div
               role="row"
-              className={`${LEDGER_GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] tracking-[.08em] text-[#6f6f7f] uppercase`}
+              className={`${LEDGER_GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] tracking-[.08em] text-ink-muted uppercase`}
             >
               <span role="columnheader">Date</span>
               <span role="columnheader">Reference</span>
@@ -282,7 +282,7 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
                           </span>
                         )
                       ) : (
-                        <span className="text-[#8e8e9d]">—</span>
+                        <span className="text-ink-subtle">—</span>
                       )}
                     </span>
 
@@ -298,23 +298,23 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
                       {isFieldEdit ? (
                         <>
                           {humanizeField(entry.field ?? '')}:{' '}
-                          <span className="text-[#8e8e9d] line-through">
+                          <span className="text-ink-subtle line-through">
                             {entry.oldValue ?? '—'}
                           </span>{' '}
-                          <span className="text-[#b0b0bc]">→</span>{' '}
+                          <span className="text-ink-faint">→</span>{' '}
                           <span className="font-medium">{entry.newValue ?? '—'}</span>
                         </>
                       ) : (
                         (location ?? '—')
                       )}
                       {!isFieldEdit && entry.notes && (
-                        <span className="ml-1.5 text-[#8e8e9d] italic">{entry.notes}</span>
+                        <span className="ml-1.5 text-ink-subtle italic">{entry.notes}</span>
                       )}
                     </span>
 
                     <span role="cell" className={`${MONO} text-right text-[13px] font-bold`}>
                       {isFieldEdit ? (
-                        <span className="text-[#8e8e9d]">—</span>
+                        <span className="text-ink-subtle">—</span>
                       ) : hasIn ? (
                         <span className="text-[#0b6644]">+{entry.quantityIn}</span>
                       ) : hasOut ? (
@@ -333,7 +333,7 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-[12px] text-[#6f6f7f]">
+        <div className="flex items-center justify-between text-[12px] text-ink-muted">
           <span>
             {(page - 1) * 20 + 1}–{Math.min(page * 20, total)} of {total}
           </span>

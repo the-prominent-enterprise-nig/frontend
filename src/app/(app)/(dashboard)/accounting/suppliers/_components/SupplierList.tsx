@@ -37,7 +37,7 @@ export default function SupplierList({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2.5">
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f6f7f]" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
         <input
           type="search"
           value={query}
@@ -52,7 +52,7 @@ export default function SupplierList({
             onClick={() => onQueryChange('')}
             aria-label="Clear search"
             title="Clear search"
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-[#6f6f7f] hover:text-[#3d3d4a]"
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-ink-muted hover:text-[#3d3d4a]"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -61,7 +61,7 @@ export default function SupplierList({
 
       <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         {isLoading ? (
-          <p className="px-4 py-10 text-center text-sm text-[#6f6f7f]">Loading suppliers…</p>
+          <p className="px-4 py-10 text-center text-sm text-ink-muted">Loading suppliers…</p>
         ) : suppliers.length === 0 ? (
           <div className="px-5 py-12 text-center">
             <p className="text-sm font-medium text-[#3d3d4a]">

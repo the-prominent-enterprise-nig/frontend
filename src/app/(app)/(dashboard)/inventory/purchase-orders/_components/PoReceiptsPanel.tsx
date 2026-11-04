@@ -130,7 +130,7 @@ function SerialPreview({ serials }: { serials: string[] }) {
         </span>
       ))}
       {hidden > 0 && (
-        <span className={`${MONO} rounded bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] text-[#8e8e9d]`}>
+        <span className={`${MONO} rounded bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] text-ink-subtle`}>
           +{hidden}
         </span>
       )}
@@ -184,7 +184,7 @@ function ReceiptListItem({
         </div>
       </div>
 
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-[#6f6f7f]">
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-ink-muted">
         <span className="flex items-center gap-1">
           <CalendarDays className="h-3 w-3" />
           {new Date(grn.receivedAt).toLocaleDateString('en-PH', {
@@ -399,7 +399,7 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
         <div className="border-b border-[#e4e4e9] px-6 py-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex min-w-0 flex-col gap-[3px]">
-              <span className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
+              <span className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-ink-subtle`}>
                 Delivery Receipts
               </span>
               <h2 className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>{po.code}</h2>
@@ -412,21 +412,21 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
               <div className="flex flex-col gap-2.5">
                 <div className="flex items-center gap-5 text-[13px]">
                   <div>
-                    <p className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
+                    <p className={`${MONO} text-[10px] uppercase tracking-[.08em] text-ink-subtle`}>
                       Deliveries
                     </p>
                     <p className="text-[15px] font-semibold text-[#17171c]">{receipts.length}</p>
                   </div>
                   <div className="h-6 w-px bg-[#e4e4e9]" />
                   <div>
-                    <p className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
+                    <p className={`${MONO} text-[10px] uppercase tracking-[.08em] text-ink-subtle`}>
                       Units received
                     </p>
                     <p className="text-[15px] font-semibold text-[#17171c]">{totalReceived}</p>
                   </div>
                   <div className="h-6 w-px bg-[#e4e4e9]" />
                   <div>
-                    <p className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
+                    <p className={`${MONO} text-[10px] uppercase tracking-[.08em] text-ink-subtle`}>
                       Ordered
                     </p>
                     <p className="text-[15px] font-semibold text-[#17171c]">{totalOrdered}</p>
@@ -463,10 +463,10 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
         ) : receipts.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center bg-[#f7f7f8] px-6 py-20 text-center">
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#eeeef1]">
-              <PackageCheck className="h-8 w-8 text-[#8e8e9d]" />
+              <PackageCheck className="h-8 w-8 text-ink-subtle" />
             </div>
             <p className="text-[13px] font-semibold text-[#17171c]">No deliveries yet</p>
-            <p className="mt-1 max-w-xs text-[12px] text-[#6f6f7f]">
+            <p className="mt-1 max-w-xs text-[12px] text-ink-muted">
               Receiving reports appear here as stock arrives against this purchase order.
             </p>
           </div>

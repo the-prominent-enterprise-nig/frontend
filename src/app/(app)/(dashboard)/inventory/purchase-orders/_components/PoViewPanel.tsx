@@ -104,7 +104,7 @@ export function PoViewPanel({ po, onClose }: Props) {
         {/* Header */}
         <div className="flex shrink-0 flex-wrap items-start justify-between gap-4 border-b border-[#e4e4e9] px-6 py-5">
           <div className="flex min-w-0 flex-col gap-[3px]">
-            <span className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
+            <span className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-ink-subtle`}>
               Purchase Order
             </span>
             <div className="flex flex-wrap items-center gap-2.5">

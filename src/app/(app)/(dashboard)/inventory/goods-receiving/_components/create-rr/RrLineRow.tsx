@@ -327,7 +327,7 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
                   aria-label="Unit cost"
                   aria-invalid={!!rowErrors?.unitCost}
                   className={`${rowErrors?.unitCost ? INPUT_BAD : INPUT} text-right ${MONO} text-[12.5px] ${
-                    line.isFreebie ? 'bg-[#f5f5f7] text-[#8e8e9d]' : ''
+                    line.isFreebie ? 'bg-[#f5f5f7] text-ink-subtle' : ''
                   }`}
                 />
               )}
@@ -362,7 +362,7 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
               type="button"
               onClick={onDuplicate}
               aria-label="Duplicate line"
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-[#6f6f7f] hover:bg-[#f1f1f4] hover:text-[#3f1490]"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-muted hover:bg-[#f1f1f4] hover:text-[#3f1490]"
             >
               <Copy className="h-3.5 w-3.5" />
             </button>
@@ -380,7 +380,7 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
               className={`flex h-7 w-7 items-center justify-center rounded-lg text-[11px] font-semibold ${
                 line.qualityHold
                   ? 'bg-[#fdf3e7] text-[#8a4b06] hover:bg-[#fbe8cf]'
-                  : 'text-[#6f6f7f] hover:bg-[#f1f1f4] hover:text-[#8a4b06]'
+                  : 'text-ink-muted hover:bg-[#f1f1f4] hover:text-[#8a4b06]'
               }`}
             >
               QC
@@ -391,7 +391,7 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
               type="button"
               onClick={onRemove}
               aria-label="Remove line"
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-[#6f6f7f] hover:bg-[#fdeceb] hover:text-[#b42318]"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-muted hover:bg-[#fdeceb] hover:text-[#b42318]"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
@@ -414,7 +414,7 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
 
       {canViewCost && taxOpen && (
         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[10px] border border-[#e4e4e9] bg-[#fbfbfc] px-3.5 py-2.5">
-          <span className="text-[11px] text-[#6f6f7f]">Tax code</span>
+          <span className="text-[11px] text-ink-muted">Tax code</span>
           <Controller
             name={`lines.${lineIndex}.taxCode`}
             control={control}
@@ -433,7 +433,7 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
               </select>
             )}
           />
-          <span className="text-[11px] text-[#6f6f7f]">Withholding</span>
+          <span className="text-[11px] text-ink-muted">Withholding</span>
           <Controller
             name={`lines.${lineIndex}.withholdingClass`}
             control={control}
@@ -469,7 +469,7 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
                   type="button"
                   onClick={() => setDiscountsOpen(false)}
                   aria-label="Collapse discounts"
-                  className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-md text-[#8e8e9d] hover:bg-white hover:text-[#3f1490]"
+                  className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-md text-ink-subtle hover:bg-white hover:text-[#3f1490]"
                 >
                   <ChevronUp className="h-3.5 w-3.5" />
                 </button>
@@ -520,7 +520,7 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
                         type="button"
                         onClick={() => setChain(chain.filter((_, i) => i !== di))}
                         aria-label="Remove discount"
-                        className="flex h-7 w-7 items-center justify-center rounded-md text-[#6f6f7f] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-ink-muted hover:bg-[#fdeceb] hover:text-[#b42318]"
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -535,7 +535,7 @@ export function RrLineRow(props: RrLineRowProps): React.ReactElement {
                   + Add another discount
                 </button>
                 {!hasSrp && (
-                  <p className="mt-1.5 text-[11px] text-[#6f6f7f]">
+                  <p className="mt-1.5 text-[11px] text-ink-muted">
                     Set an SRP above for the discount chain to compute a Unit Price.
                   </p>
                 )}

@@ -23,7 +23,7 @@ type Props = {
 const BOX =
   'rounded-lg border border-[#e4e4e9] bg-white px-2 py-1.5 text-[13px] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]'
 
-const LABEL = 'text-[11px] font-semibold uppercase tracking-wide text-[#6f6f7f]'
+const LABEL = 'text-[11px] font-semibold uppercase tracking-wide text-ink-muted'
 
 /**
  * The agreed pricing carried over from the PO, and the means to correct it.
@@ -49,7 +49,7 @@ export function LinePricingDrawer({
     <div className="rounded-[10px] border border-[#ddd0f7] bg-[#fcfaff] px-4 py-3.5">
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className={`${MONO} text-[10px] uppercase tracking-[.09em] text-[#8e8e9d]`}>
+          <span className={`${MONO} text-[10px] uppercase tracking-[.09em] text-ink-subtle`}>
             Pricing from the purchase order
           </span>
           <div className="flex items-center gap-2">
@@ -87,7 +87,7 @@ export function LinePricingDrawer({
               />
               <Readout label="Line total this delivery" value={fmtPeso(lineTotal)} strong />
             </div>
-            <span className="text-[11px] text-[#6f6f7f]">
+            <span className="text-[11px] text-ink-muted">
               Unit cost follows SRP through the discount chain. Press Edit if the delivery is priced
               differently from the PO — the variance is what the 3-way match is for.
             </span>
@@ -181,7 +181,7 @@ export function LinePricingDrawer({
                           type="button"
                           aria-label="Remove discount"
                           onClick={() => setChain(chain.filter((_, n) => n !== di))}
-                          className="rounded-lg p-1 text-[#8e8e9d] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                          className="rounded-lg p-1 text-ink-subtle hover:bg-[#fdeceb] hover:text-[#b42318]"
                         >
                           <X className="h-3.5 w-3.5" />
                         </button>
@@ -221,7 +221,7 @@ export function LinePricingDrawer({
                   />
                 )}
               />
-              <span className="text-[11px] text-[#8e8e9d]">auto from SRP &minus; discounts</span>
+              <span className="text-[11px] text-ink-subtle">auto from SRP &minus; discounts</span>
             </label>
 
             <label className="flex flex-col gap-1">
@@ -298,7 +298,7 @@ function Readout({
 }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[11px] text-[#6f6f7f]">{label}</span>
+      <span className="text-[11px] text-ink-muted">{label}</span>
       <span
         className={`${MONO} text-[12.5px] ${strong ? 'font-semibold' : ''} ${tone ?? 'text-[#17171c]'}`}
       >

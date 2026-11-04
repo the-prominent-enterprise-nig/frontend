@@ -361,7 +361,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                   </span>
                 </span>
                 <span
-                  className={`${MONO} text-[20px] font-semibold tracking-tight ${tile.value === 0 ? 'text-[#8e8e9d]' : 'text-[#17171c]'}`}
+                  className={`${MONO} text-[20px] font-semibold tracking-tight ${tile.value === 0 ? 'text-ink-subtle' : 'text-[#17171c]'}`}
                 >
                   {isLoading ? '—' : tile.value}
                 </span>
@@ -374,7 +374,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f6f7f]" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
             <input
               type="text"
               value={filters.query}
@@ -451,10 +451,10 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
           className={`overflow-hidden rounded-xl border border-[#e4e4e9] bg-white shadow-sm transition-opacity ${isFetching ? 'opacity-60' : ''}`}
         >
           {isLoading ? (
-            <div className="p-8 text-center text-sm text-[#6f6f7f]">Loading price lists…</div>
+            <div className="p-8 text-center text-sm text-ink-muted">Loading price lists…</div>
           ) : isEmptyOverall ? (
             <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-              <Tag className="mb-3 h-10 w-10 text-[#b0b0bc]" />
+              <Tag className="mb-3 h-10 w-10 text-ink-faint" />
               <p className="text-sm font-medium text-[#3d3d4a]">No price lists yet</p>
               <p className="mt-1 max-w-md text-xs text-[#4b4b5a]">
                 A price list holds the selling price for each item under one price use type — cash,
@@ -473,7 +473,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
             </div>
           ) : isFilteredEmpty ? (
             <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-              <Search className="mb-3 h-8 w-8 text-[#b0b0bc]" />
+              <Search className="mb-3 h-8 w-8 text-ink-faint" />
               <p className="text-sm font-medium text-[#3d3d4a]">No price lists match</p>
               <p className="mt-1 max-w-md text-xs text-[#4b4b5a]">
                 {filters.query
@@ -506,7 +506,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                             {pl.name}
                           </Link>
                           {pl.description && (
-                            <p className="truncate text-xs text-[#6f6f7f]">{pl.description}</p>
+                            <p className="truncate text-xs text-ink-muted">{pl.description}</p>
                           )}
                         </div>
                         <StatusChip status={pl.status} />
@@ -517,7 +517,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                             {pl.priceUseType.name}
                           </span>
                         )}
-                        <span className="text-[11px] text-[#6f6f7f]">
+                        <span className="text-[11px] text-ink-muted">
                           {pl.currency} · Priority {pl.priority}
                         </span>
                         {/* Scenario 50 Gap 7 — every list now stores a real
@@ -531,18 +531,18 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                       </div>
                       <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
                         <div>
-                          <dt className="text-[11px] text-[#6f6f7f]">Items priced</dt>
+                          <dt className="text-[11px] text-ink-muted">Items priced</dt>
                           <dd className="font-semibold text-[#17171c]">
                             {(pl.itemCount ?? 0).toLocaleString()}
                           </dd>
-                          <dd className="text-[11px] text-[#6f6f7f]">
+                          <dd className="text-[11px] text-ink-muted">
                             {itemCountLabel(pl.itemCount)} — {cover.note}
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-[11px] text-[#6f6f7f]">Applies to</dt>
+                          <dt className="text-[11px] text-ink-muted">Applies to</dt>
                           <dd className="text-[#3d3d4a]">{scope.label}</dd>
-                          <dd className="text-[11px] text-[#6f6f7f]">
+                          <dd className="text-[11px] text-ink-muted">
                             {effectiveSummary(pl.effectiveFrom, pl.effectiveTo).label}
                           </dd>
                         </div>
@@ -604,7 +604,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                               {pl.name}
                             </Link>
                             <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                              <span className="text-[11px] text-[#6f6f7f]">{pl.currency}</span>
+                              <span className="text-[11px] text-ink-muted">{pl.currency}</span>
                               <span className="inline-flex rounded-md bg-[#f1f1f4] px-2 py-0.5 text-[11px] font-medium text-[#4b4b5a]">
                                 VAT {pl.pricingMode === 'exclusive' ? 'Exclusive' : 'Inclusive'}
                               </span>
@@ -618,9 +618,9 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                                 {pl.priceUseType.name}
                               </span>
                             ) : (
-                              <span className="text-xs text-[#6f6f7f]">—</span>
+                              <span className="text-xs text-ink-muted">—</span>
                             )}
-                            <p className="mt-1 text-[11px] text-[#6f6f7f]">
+                            <p className="mt-1 text-[11px] text-ink-muted">
                               Priority {pl.priority}
                             </p>
                           </td>
@@ -640,7 +640,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                               </span>
                             </Tooltip>
                             <p
-                              className={`text-[11px] ${isThin ? 'text-[#d18b1d]' : 'text-[#6f6f7f]'}`}
+                              className={`text-[11px] ${isThin ? 'text-[#d18b1d]' : 'text-ink-muted'}`}
                             >
                               {cover.note}
                             </p>
@@ -657,11 +657,11 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                             >
                               <span className="truncate text-[#3d3d4a]">{scope.label}</span>
                             </Tooltip>
-                            <p className="text-[11px] text-[#6f6f7f]">{scope.note}</p>
+                            <p className="text-[11px] text-ink-muted">{scope.note}</p>
                           </td>
                           <td className="px-4 py-3">
                             <p className="truncate text-[#3d3d4a]">{eff.label}</p>
-                            <p className="text-[11px] text-[#6f6f7f]">{eff.note}</p>
+                            <p className="text-[11px] text-ink-muted">{eff.note}</p>
                           </td>
                           <td className="px-4 py-3">
                             <StatusChip status={pl.status} />

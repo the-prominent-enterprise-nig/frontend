@@ -12,7 +12,7 @@ export const INPUT_BAD =
   'h-[38px] w-full rounded-lg border border-[#b42318] bg-[#fdeceb] px-3 text-[13px] text-[#17171c] outline-none focus:border-[#b42318]'
 
 /** Small uppercase mono caption used above every grouped block. */
-export const CAPTION = 'text-[10px] uppercase tracking-[.09em] text-[#8e8e9d]'
+export const CAPTION = 'text-[10px] uppercase tracking-[.09em] text-ink-subtle'
 
 /** The line-items grid, shared by the header row and every wide line so the
  * columns actually line up.

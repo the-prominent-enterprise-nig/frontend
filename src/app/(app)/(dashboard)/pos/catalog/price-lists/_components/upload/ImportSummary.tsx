@@ -115,7 +115,7 @@ export function ImportSummary({
       )}
 
       {result.skippedBlankRows > 0 && (
-        <p className="text-xs text-[#6f6f7f]">
+        <p className="text-xs text-ink-muted">
           {result.skippedBlankRows} fully blank row(s) ignored.
         </p>
       )}

@@ -11,7 +11,7 @@ export const TEXTAREA =
   'min-h-[76px] w-full rounded-lg border border-[#d3d3db] bg-white px-3 py-2 text-[13px] text-[#17171c] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]'
 
 export const READONLY =
-  'flex h-[38px] w-full items-center truncate whitespace-nowrap rounded-lg border border-[#e4e4e9] bg-[#f6f6f8] px-3 text-[13px] text-[#6f6f7f]'
+  'flex h-[38px] w-full items-center truncate whitespace-nowrap rounded-lg border border-[#e4e4e9] bg-[#f6f6f8] px-3 text-[13px] text-ink-muted'
 
 export function Section({
   title,
@@ -29,7 +29,7 @@ export function Section({
       <header className="flex items-start justify-between gap-3 border-b border-[#eeeef1] px-5 py-3.5">
         <div>
           <h2 className="text-[13.5px] font-semibold text-[#17171c]">{title}</h2>
-          {description && <p className="mt-0.5 text-[11.5px] text-[#6f6f7f]">{description}</p>}
+          {description && <p className="mt-0.5 text-[11.5px] text-ink-muted">{description}</p>}
         </div>
         {aside}
       </header>
