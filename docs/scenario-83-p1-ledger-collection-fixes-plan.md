@@ -97,7 +97,25 @@ that pinned "never negative" now pin the advance.
 
 ### Part 4 — Purchase Request cost (PR-01)
 
-Adding an item leaves Unit Price at 0, though the item's cost is already loaded.
+**Cause:** the cost was never filled in, rather than wrong. `addFromCatalog` (shared PR / PO form,
+`PurchaseOrderFormFields.tsx`) appended every new line at Unit price 0, though the item search already loads the
+item's `costPrice` and the form already loads the chosen supplier's linked items with their `unitPrice`.
+
+**Change (Kian, 2026-11-04):** a new line's Unit price starts at the chosen supplier's price for the item
+(`ItemSupplier.unitPrice`), else the item's `costPrice`, else 0 as before. A supplier-listed search result carries no
+item meta, so its cost is read with `getItem`. SRP stays blank, keeping Karms' 2026-09-14 rule ("the price on THIS
+supplier's quote, which the item's own last cost is not a safe stand-in for"). The fallback to cost price is the
+nearest this comes to his concern; flag for him. Typing SRP still re-derives Unit price; typing Unit price still
+overrides it.
+
+- Frontend only. The PO edit form gets it too (same component).
+- Not covered: auto-raised PRs (`purchase-request.service.ts`, low-stock) still store no price; they never pass
+  through this form.
+- **Dev data:** the local dev DB has no suppliers, so the supplier-price case needs one created (manual test 4A).
+  The test DB has 37 suppliers, 3 priced links.
+
+**Tests:** `e2e/scenario-83-part-4-pr-cost-prefill.spec.ts` (cost price with no supplier; blank with no cost;
+supplier price over cost; read-only, fixtures looked up through the API). No backend change, so no backend e2e.
 
 ## Found along the way, not fixed (pre-existing)
 

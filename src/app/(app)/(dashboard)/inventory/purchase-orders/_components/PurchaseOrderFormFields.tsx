@@ -9,8 +9,12 @@ import type { CreatePoFormValues } from '@/src/schema/inventory/purchase-orders'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSearchCombobox'
-import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import {
+  ItemSearchCombobox,
+  type ItemSearchMeta,
+} from '../../purchase-requests/_components/ItemSearchCombobox'
 import { getSupplierItems } from '@/src/app/(app)/(dashboard)/accounting/suppliers/_actions/get-supplier-items'
+import { getItem } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-item'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from './procurementTokens'
 import { NoDestinationWarning } from './NoDestinationWarning'
@@ -426,12 +430,32 @@ function LineItemsCard({
 
   const anyOpen = Object.values(openLines).some(Boolean)
 
-  const addFromCatalog = (option: SearchComboboxOption): void => {
+  // Scenario 83 (PR-01, client UAT 2026-10-29): "Cost shown for items in
+  // Purchase Requests must reflect the correct item cost." A new line's Unit
+  // Price used to start at 0. It starts at the chosen supplier's price for the
+  // item (ItemSupplier.unitPrice), else the item's own cost price, else 0 as
+  // before (Kian, 2026-11-04). Either is the buyer's starting point to type
+  // over, and SRP still drives it once entered.
+  const startingUnitPrice = async (option: SearchComboboxOption): Promise<number> => {
+    const quoted = (supplierItemsQuery.data?.data ?? []).find(
+      (m) => m.itemId === option.id
+    )?.unitPrice
+    if (quoted != null && Number(quoted) > 0) return Number(Number(quoted).toFixed(2))
+    // A supplier-listed result carries no meta; read the item itself.
+    let cost = (option.meta as ItemSearchMeta | undefined)?.costPrice
+    if (option.meta === undefined) {
+      const res = await getItem(option.id)
+      cost = res.success && res.data?.costPrice != null ? Number(res.data.costPrice) : null
+    }
+    return cost != null && cost > 0 ? Number(cost.toFixed(2)) : 0
+  }
+
+  const addFromCatalog = async (option: SearchComboboxOption): Promise<void> => {
     setLabels((s) => ({ ...s, [option.id]: { name: option.primary, sku: option.secondary } }))
+    setNonce((n) => n + 1)
     // SRP is deliberately left blank — it is the price on THIS supplier's
     // quote, which the item's own last cost is not a safe stand-in for.
-    append({ ...EMPTY_LINE, itemId: option.id })
-    setNonce((n) => n + 1)
+    append({ ...EMPTY_LINE, itemId: option.id, unitPrice: await startingUnitPrice(option) })
   }
 
   return (
@@ -455,7 +479,7 @@ function LineItemsCard({
             key={nonce}
             value=""
             onChange={() => {}}
-            onSelect={addFromCatalog}
+            onSelect={(o) => void addFromCatalog(o)}
             compact
             supplierId={supplierId || undefined}
             placeholder="Search item by name or SKU to add a line…"
