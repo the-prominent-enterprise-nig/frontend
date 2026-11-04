@@ -780,7 +780,15 @@ export default function CollectionsScreen() {
                   // the previous selection should never carry over, same as
                   // the old "Pay Selected" opened a brand-new modal each
                   // time (see the component's own doc comment).
-                  key={Array.from(selectedLineIds).sort().join(',')}
+                  //
+                  // Scenario 83 (DC-01 / CL-04) — and whenever the date
+                  // override changes. The panel seeds its Payment date, and
+                  // its rebate/penalty defaults, from the override once, when
+                  // it mounts: an override set AFTER ticking the dues moved
+                  // the banner but left the Payment date on today, so the
+                  // collection saved on the wrong day and never reached the
+                  // overridden day's Collection Report or ledger row.
+                  key={`${Array.from(selectedLineIds).sort().join(',')}|${effectivePaymentDateIso}`}
                   lines={selectedPayableLines}
                   payrollOnly={
                     openSchedules.length > 0 &&
