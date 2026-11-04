@@ -133,3 +133,40 @@ supplier price over cost; read-only, fixtures looked up through the API). No bac
 - **`customer-ledger-unified` e2e:** 2 fail on untouched development (a Due of 50 where 0 is expected).
 - **Staging data:** accounts paid through the old CRM endpoint before 2026-10-28 may still show a stale Total Due.
   The dev DB has none (0 `installment_payment_records`); staging can't be checked from here.
+
+## Implementation Log — 2026-11-04
+
+**For this scenario, I have done:**
+
+- Part 1 — DC-01 / CL-04: the Collection Report's PENALTY column and AMOUNT/DEBIT include the late penalty; Close
+  Session's expected cash and undeposited amount count it; the Collections Payment date follows the date override
+  (BE c5094cc, FE d14e3da8).
+- Part 2 — CL-06: the CRM "Record payment" endpoint is retired (BE fcbec8e, FE 34281808); follow-up, the Installment
+  Accounts list lays an imported account's collections over its stored figures (BE dcb4aad).
+- Part 3 — CL-07: the ledger's Due goes negative for an advance; unknown history keeps its floor; the plan ledger's
+  Tot. Amt. Due follows (BE 22e8d32, FE aebc80a5).
+- Part 4 — PR-01: a new PR/PO line's Unit price starts at the supplier's price, else the item's cost price
+  (FE ef7b3432).
+
+**Verified:** backend unit regression 154 suites / 2,488 tests; the new backend e2e suites (part 1: 8/8, part 2: 8/8,
+part 3: 7/7), each shown to fail with its fix reverted; the neighbouring e2e suites listed per part above, one suite at
+a time, with every remaining failure confirmed identical on untouched development. Backend and frontend lint and
+`tsc --noEmit` on every changed file.
+
+**Not verified yet:**
+
+- **None of the four manual tests** (`NIG/Scenario-83-Manual-Test.md`) has been run. Kian moved on from each part
+  without running them, 2026-11-04.
+- **None of the Playwright specs** (`e2e/scenario-83-part-{1,3,4}-*.spec.ts`) has been run; they need the servers.
+- `next build` was not run.
+
+**Worth flagging:**
+
+- Committed in both repos, **not pushed, no PR** (Kian: "commit but dont push or pr anything").
+- Reversals for review: Chloe's 2026-09-08 zero floor on the ledger's Due (Part 3); Karms' Close Session expected
+  cash (Part 1) and his PR/PO line pricing (Part 4, SRP rule kept).
+- On-time points and reminder auto-close on payment have no writer since the CRM endpoint was retired (dormant since
+  Scenario 79); needs its own decision.
+- Merging with Scenario 80: its DC-02 (no future override date) meets Part 1's Collections change, and its CL-03
+  `ledgerDueAsOf` must follow Part 3's rule. Part 1's manual test uses a future override date, which DC-02 will block.
+- AC-01 is out of this scenario (needs client answers; conflicts with Renz's BE #246).
