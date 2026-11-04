@@ -33,8 +33,27 @@ Branch `feat/scenario-83-p1-ledger-collection-fixes` in both repos, branched off
 
 ### Part 2 — partial payment not deducted (CL-06)
 
-The old CRM "record payment" (imported accounts) lowers `currentBalance` but never `totalDue` / `miDue` /
-`uncollected`, so the ledger's Due, Total Amount Due and aging stay at the full installment.
+**Cause:** the CRM's own "Record payment" endpoint (`POST /crm/installment-accounts/:id/payments`). On a
+loaded/imported account it lowered `currentBalance` but never `totalDue` / `miDue` / `uncollected`, so the ledger's
+Due, Tot. Amt. Due and the aging stayed at the full installment. Scenario 79 took its modal off the screen on
+2026-10-28 (on main the same day, a day before the client's notes), so **Record payment** already went to POS
+Collections (POS plans) or AR New Receipt (imported accounts). Both post an ARPayment, which deducts correctly.
+
+**Change (Kian, 2026-11-04: "if it was removed then retire it"):** the endpoint is retired: route, service method,
+DTO, and the frontend's unused API wrapper. `InstallmentPaymentRecord` stays: accounts paid through it before then
+keep that history, and the totals and ledger go on reading it. The `crm:installment-accounts:record_payment`
+permission stays too: it still gates the **Record payment** button.
+
+**Tests:** unit cases for an on-time partial on a POS plan (`customer-ledger-rows.spec.ts`); e2e
+`test/scenario-83-part-2-partial-payment.e2e-spec.ts` (₱1,000 due, ₱400 paid → ₱600 on the account, the ledger,
+its header and the Collections list, for a POS plan and an imported account; the retired route 404s). The
+e2e suites that tested the old endpoint's own behaviour dropped those tests; `installment-account-customer-ledger`
+now seeds its historic `InstallmentPaymentRecord` rows directly.
+
+**Flagged, not fixed (Kian: "Retire, flag gap"):** the retired endpoint was the only payment path that added on-time
+**points** (+1 per on-time month) and auto-completed the account's open collector **reminder**. POS Collections and
+AR New Receipt do neither, so both have been dormant since Scenario 79 (early payoff still closes reminders). How
+points should work with AR payments needs its own decision.
 
 ### Part 3 — advance payment shows as negative (CL-07)
 
@@ -54,3 +73,8 @@ Adding an item leaves Unit Price at 0, though the item's cost is already loaded.
 - **`pos-collections-due-figure` e2e:** fails on untouched development. Its fixture puts the partial payment on the
   invoice's `amountPaid` only, while Due is worked out from each due line's own paid amount.
 - **`daily-sales-monitoring` e2e:** S61P2-01 and S61P2-02 fail on untouched development.
+- **`installment-account-customer-ledger` e2e:** 2 fail on untouched development (same-day date-picker ordering;
+  a collected penalty shown once). A third that failed there now passes, with Part 2's direct seeding.
+- **`installment-account-auto-close` e2e:** the 2 POS-originated cases fail on untouched development.
+- **Staging data:** accounts paid through the old CRM endpoint before 2026-10-28 may still show a stale Total Due.
+  The dev DB has none (0 `installment_payment_records`); staging can't be checked from here.
