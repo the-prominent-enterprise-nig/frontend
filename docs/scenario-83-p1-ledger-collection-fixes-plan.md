@@ -50,6 +50,11 @@ its header and the Collections list, for a POS plan and an imported account; the
 e2e suites that tested the old endpoint's own behaviour dropped those tests; `installment-account-customer-ledger`
 now seeds its historic `InstallmentPaymentRecord` rows directly.
 
+**Follow-up (found while writing Part 3's manual test):** the CRM Installment Accounts list showed an imported
+account's stored sheet figures alone, so a partial payment at AR New Receipt never came off its **MI Due** or
+**Outstanding Balance** there (the account screen, its ledger and aging all lay it over). The list now applies the
+same `overlayCollections()` to the page's imported accounts, with one query for their collections.
+
 **Flagged, not fixed (Kian: "Retire, flag gap"):** the retired endpoint was the only payment path that added on-time
 **points** (+1 per on-time month) and auto-completed the account's open collector **reminder**. POS Collections and
 AR New Receipt do neither, so both have been dormant since Scenario 79 (early payoff still closes reminders). How
