@@ -15,7 +15,7 @@ import { gotoReady, clickStable } from './utils'
  * Business-Owner storageState is fine here.
  */
 test('P&L report has a branch selector that scopes the report', async ({ page }) => {
-  await gotoReady(page, '/accounting/reports?tab=pnl')
+  await gotoReady(page, '/reports?tab=pnl')
 
   const branchSelect = page.getByLabel('Branch')
   await expect(branchSelect).toBeVisible({ timeout: 10_000 })

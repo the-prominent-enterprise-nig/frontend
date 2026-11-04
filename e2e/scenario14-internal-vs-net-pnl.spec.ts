@@ -16,7 +16,7 @@ import { gotoReady, clickStable } from './utils'
  * JwtAuthGuard only), so the default Business-Owner storageState is fine.
  */
 test('P&L report has a Net/Internal view toggle', async ({ page }) => {
-  await gotoReady(page, '/accounting/reports?tab=pnl')
+  await gotoReady(page, '/reports?tab=pnl')
 
   const viewSelect = page.getByLabel('View')
   await expect(viewSelect).toBeVisible({ timeout: 10_000 })

@@ -148,7 +148,7 @@ export default function CustomerDetail({ id }: { id: string }) {
               </div>
               <div className="flex items-center gap-2">
                 <Link
-                  href={`/accounting/reports?tab=customer-statement&customerId=${customer.id}`}
+                  href={`/reports?tab=customer-statement&customerId=${customer.id}`}
                   className="flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-50"
                 >
                   <FileText className="h-4 w-4" /> View Statement

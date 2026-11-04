@@ -1,21 +1,16 @@
-import { Suspense } from 'react'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { requirePermission } from '@/src/libs/guards/require-permission'
-import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
-import ReportsHub from './_components/ReportsHub'
+import { redirect } from 'next/navigation'
 
-export const metadata = { title: 'Reports | NIG Central' }
-
-export default async function ReportsPage() {
-  const session = await getSessionOrNull()
-  requirePermission(session, ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ)
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <Suspense
-        fallback={<div className="p-6 text-sm text-gray-400 animate-pulse">Loading reports…</div>}
-      >
-        <ReportsHub />
-      </Suspense>
-    </div>
-  )
+// Reports moved to its own module (/reports). Old links and bookmarks —
+// including ?tab=customer-statement&customerId=… — land on the same report.
+export default async function AccountingReportsRedirect({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(await searchParams)) {
+    for (const v of Array.isArray(value) ? value : value ? [value] : []) params.append(key, v)
+  }
+  const qs = params.toString()
+  redirect(qs ? `/reports?${qs}` : '/reports')
 }

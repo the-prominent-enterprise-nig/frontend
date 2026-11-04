@@ -28,7 +28,7 @@ test.describe('Accounting — Expenses per Branch (Scenario 47)', () => {
   test('the Reports hub has an Expenses tab with a date range and branch filter', async ({
     page,
   }) => {
-    await gotoReady(page, '/accounting/reports?tab=expenses')
+    await gotoReady(page, '/reports?tab=expenses')
 
     await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible({
       timeout: 15_000,
@@ -45,7 +45,7 @@ test.describe('Accounting — Expenses per Branch (Scenario 47)', () => {
   })
 
   test('running the report renders the branch/category table', async ({ page }) => {
-    await gotoReady(page, '/accounting/reports?tab=expenses')
+    await gotoReady(page, '/reports?tab=expenses')
     await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible({
       timeout: 15_000,
     })
@@ -60,7 +60,7 @@ test.describe('Accounting — Expenses per Branch (Scenario 47)', () => {
   })
 
   test('Export to Excel downloads a real .xlsx', async ({ page }) => {
-    await gotoReady(page, '/accounting/reports?tab=expenses')
+    await gotoReady(page, '/reports?tab=expenses')
     await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible({
       timeout: 15_000,
     })

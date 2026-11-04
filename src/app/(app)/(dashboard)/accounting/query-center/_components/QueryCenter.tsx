@@ -15,6 +15,7 @@ import {
   FileText,
   Filter,
   Lock,
+  Pause,
   Play,
   Plus,
   Rows3,
@@ -39,6 +40,32 @@ import {
 // export preview replaces the results card in place.
 
 const PAGE_SIZE = 100
+/** How often live results re-run while they are on screen. */
+const LIVE_REFRESH_MS = 15_000
+
+/**
+ * Keeps the results on screen live: re-runs `refresh` every LIVE_REFRESH_MS
+ * while `active`, and at once when the tab comes back into view. Paused while
+ * the tab is hidden, so a forgotten tab doesn't keep querying.
+ */
+function useLiveRefresh(active: boolean, refresh: () => void): void {
+  const refreshRef = useRef(refresh)
+  useEffect(() => {
+    refreshRef.current = refresh
+  })
+  useEffect(() => {
+    if (!active) return
+    const tick = () => {
+      if (document.visibilityState === 'visible') refreshRef.current()
+    }
+    const timer = setInterval(tick, LIVE_REFRESH_MS)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', tick)
+    }
+  }, [active])
+}
 const EXPORT_PREVIEW_ROWS = 10
 const EXPORT_MAX_ROWS = 100_000
 
@@ -266,6 +293,10 @@ export default function QueryCenter() {
 
   const [result, setResult] = useState<QueryResult | null>(null)
   const [lastRun, setLastRun] = useState<string>('')
+  // Live results: the query last run, re-run quietly while it stays on screen.
+  const [lastQuery, setLastQuery] = useState<{ ds: QueryDataset; q: DatasetQuery } | null>(null)
+  const [live, setLive] = useState(true)
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const [offset, setOffset] = useState(0)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -310,6 +341,8 @@ export default function QueryCenter() {
     setResult(res.data)
     setOffset(nextOffset)
     setExportPreview(null)
+    setLastQuery({ ds, q: q ? { ...q, offset: nextOffset } : query(nextOffset) })
+    setUpdatedAt(new Date())
     setLastRun(
       q
         ? JSON.stringify({
@@ -320,6 +353,17 @@ export default function QueryCenter() {
         : signature
     )
   }
+
+  // Re-runs the query on screen without the Running… state, so the table
+  // updates in place; an error leaves the last good results up.
+  const refresh = async () => {
+    if (!lastQuery || running) return
+    const res = await QueryCenterApi.preview(lastQuery.ds.key, lastQuery.q)
+    if (!res.success || !res.data) return
+    setResult(res.data)
+    setUpdatedAt(new Date())
+  }
+  useLiveRefresh(live && !!result && !stale && !!lastQuery, refresh)
 
   const pick = (d: QueryDataset) => {
     const defaults = defaultColumns(d)
@@ -433,6 +477,9 @@ export default function QueryCenter() {
                     running={running}
                     stale={stale}
                     onPage={(o) => run(dataset, o)}
+                    live={live}
+                    onToggleLive={() => setLive((v) => !v)}
+                    updatedAt={updatedAt}
                   />
                 )
               )}
@@ -1045,18 +1092,64 @@ function DataTable({ result, dim }: { result: QueryResult; dim?: boolean }) {
   )
 }
 
+/** "Live · updated 3:04:12 PM" with a pause / resume switch. */
+function LiveBadge({
+  live,
+  stale,
+  updatedAt,
+  onToggle,
+}: {
+  live: boolean
+  /** The builder changed since the run: nothing refreshes until it's re-run. */
+  stale: boolean
+  updatedAt: Date | null
+  onToggle: () => void
+}) {
+  const on = live && !stale
+  const time = updatedAt?.toLocaleTimeString('en-PH', {
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+  return (
+    <div className="mr-2 flex items-center gap-2 text-xs" data-testid="query-live">
+      <span className={`flex items-center gap-1.5 ${on ? 'text-emerald-700' : 'text-gray-400'}`}>
+        <span
+          className={`h-2 w-2 rounded-full ${on ? 'animate-pulse bg-emerald-500' : 'bg-gray-300'}`}
+        />
+        {on ? 'Live' : stale ? 'Paused until you run the query' : 'Paused'}
+        {time && <span className="text-gray-400">· updated {time}</span>}
+      </span>
+      <button
+        onClick={onToggle}
+        aria-label={live ? 'Pause live updates' : 'Resume live updates'}
+        className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-gray-600 hover:bg-gray-50"
+      >
+        {live ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+        {live ? 'Pause' : 'Resume'}
+      </button>
+    </div>
+  )
+}
+
 function Results({
   result,
   offset,
   running,
   stale,
   onPage,
+  live,
+  onToggleLive,
+  updatedAt,
 }: {
   result: QueryResult
   offset: number
   running: boolean
   stale: boolean
   onPage: (offset: number) => void
+  live: boolean
+  onToggleLive: () => void
+  updatedAt: Date | null
 }) {
   const from = result.total ? offset + 1 : 0
   const to = offset + result.rows.length
@@ -1074,6 +1167,7 @@ function Results({
           )}
         </div>
         <div className="flex items-center gap-1">
+          <LiveBadge live={live} stale={stale} updatedAt={updatedAt} onToggle={onToggleLive} />
           <button
             onClick={() => onPage(Math.max(0, offset - PAGE_SIZE))}
             disabled={offset === 0 || running}

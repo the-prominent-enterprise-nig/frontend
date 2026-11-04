@@ -28,7 +28,7 @@ test.describe('Accounting — GL Reconciliation (Scenario 29 ACC-07)', () => {
   })
 
   test('all three checks load real data on the Reports page', async ({ page }) => {
-    await gotoReady(page, '/accounting/reports?tab=reconciliation')
+    await gotoReady(page, '/reports?tab=reconciliation')
 
     await expect(
       page.getByRole('heading', { name: 'AR Subledger vs. AR Receivable (GL)' })
@@ -49,7 +49,7 @@ test.describe('Accounting — GL Reconciliation (Scenario 29 ACC-07)', () => {
   })
 
   test('the shared report controls are hidden on this tab, which has its own', async ({ page }) => {
-    await gotoReady(page, '/accounting/reports?tab=reconciliation')
+    await gotoReady(page, '/reports?tab=reconciliation')
     await expect(
       page.getByRole('heading', { name: 'AR Subledger vs. AR Receivable (GL)' })
     ).toBeVisible({ timeout: 15_000 })
