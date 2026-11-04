@@ -163,13 +163,10 @@ test.describe('POS Checkout — installment down payment floor', () => {
     await expect(downPaymentInput).not.toHaveValue('')
     await expect(page.getByText('Nothing to collect at checkout for this cart.')).toHaveCount(0)
 
-    // There is no percentage floor (2026-10-15), and since 2026-10-28 an
-    // in-house plan may take no down payment at all: 0 is accepted, and with
-    // nothing to collect at the register the till says so instead of asking
-    // for a payment.
+    // There is no percentage floor (2026-10-15), but an in-house plan takes
+    // a down payment above 0 (Scenario 80, Oct 29 UAT POS-11).
     await fillStable(downPaymentInput, '0')
-    await expect(page.getByTestId('down-payment-error')).toHaveCount(0)
-    await expect(page.getByText('Nothing to collect for the items at checkout')).toBeVisible()
+    await expect(page.getByTestId('down-payment-error')).toContainText('not 0')
 
     // Still on checkout — the sale was never submitted.
     await expect(page).toHaveURL(/\/pos\/checkout/)

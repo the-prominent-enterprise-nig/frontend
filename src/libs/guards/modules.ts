@@ -7,10 +7,6 @@ export interface AppModule {
   // just one of the listed permissions, not all.
   requiredPermission: string | string[]
   icon: string // icon name for sidebar
-  /** Shown to anyone holding one of requiredPermission, rather than by the
-   *  backend's moduleAccess list — for a module whose pages run on another
-   *  module's permissions (Reports runs on accounting:*). */
-  accessByPermission?: boolean
 }
 
 export const MODULES: AppModule[] = [
@@ -71,19 +67,6 @@ export const MODULES: AppModule[] = [
     href: '/crm',
     requiredPermission: 'crm:*',
     icon: 'users-round',
-  },
-  // Reports and the Data Query Center, out of Accounting's nav into a module
-  // of their own. Their pages keep their own permission checks: financial
-  // reports on accounting:financial_report:read, the Data Query Center on
-  // the exact accounting:query-center:read (Business Owner only).
-  {
-    key: 'reports',
-    routeSegment: 'reports',
-    label: 'Reports',
-    href: '/reports',
-    requiredPermission: ['accounting:financial_report:read', 'accounting:query-center:read'],
-    icon: 'file-bar-chart',
-    accessByPermission: true,
   },
   // add more modules here — sidebar auto-updates
 ]

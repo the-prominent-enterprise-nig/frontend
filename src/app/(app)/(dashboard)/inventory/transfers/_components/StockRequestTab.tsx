@@ -12,8 +12,9 @@ import CreateTransferModal from './CreateTransferModal'
 const TRANSFERS_TAB = '/inventory/stock-transaction?tab=transfers'
 
 // Stock Transaction's Stock Request tab — the New Stock Request form shown
-// inline. Clearing remounts it blank; submitting goes to the Stock Transfer
-// tab with the new request open, so the requester sees where it landed.
+// inline, with no Clear button. Submitting remounts it blank and goes to the
+// Stock Transfer tab with the new request open, so the requester sees where
+// it landed.
 export default function StockRequestTab({ session }: { session: SessionUser }): React.JSX.Element {
   const router = useRouter()
   const [formKey, setFormKey] = useState(0)

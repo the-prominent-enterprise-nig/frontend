@@ -650,11 +650,12 @@ export default function SerialNumberList({
                         <th className="px-4 py-[9px] text-left">Serial #</th>
                         <th className="px-4 py-[9px] text-left hidden lg:table-cell">Brand</th>
                         <th className="px-4 py-[9px] text-left hidden lg:table-cell">Model</th>
-                        <th className="px-4 py-[9px] text-left hidden sm:table-cell">
-                          Location / RR# / Date
-                        </th>
+                        {/* UAT 2026-10-29 §6: Origin before Location. */}
                         <th className="px-4 py-[9px] text-left hidden lg:table-cell">
                           Origin / REF# / Date
+                        </th>
+                        <th className="px-4 py-[9px] text-left hidden sm:table-cell">
+                          Location / RR# / Date
                         </th>
                         <th className="px-4 py-[9px] text-left hidden md:table-cell">
                           Destination / REF# / Date
@@ -732,6 +733,19 @@ export default function SerialNumberList({
                             <td className="px-4 py-[11px] text-[14px] font-medium text-[#17171c] hidden lg:table-cell">
                               {serial.item?.modelNumber ?? '—'}
                             </td>
+                            <td className="px-4 py-[11px] text-[13.5px] text-[#4b4b5a] hidden lg:table-cell">
+                              <div className="font-medium text-[#17171c]">
+                                {originLabel(serial)}
+                              </div>
+                              <div className={`${MONO} text-[12.5px] text-[#5b21b6]`}>
+                                {originRef(serial) ?? '—'}
+                              </div>
+                              <div className="text-[12.5px] text-[#6f6f7f]">
+                                {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
+                                  ? formatShortDate(serial.goodsReceiptLine.goodsReceipt.receivedAt)
+                                  : '—'}
+                              </div>
+                            </td>
                             <td className="px-4 py-[11px] text-[13.5px] text-[#4b4b5a] hidden sm:table-cell">
                               <div className="font-medium text-[#17171c]">
                                 {serial.consignedToVenue ??
@@ -749,19 +763,6 @@ export default function SerialNumberList({
                                 ) : (
                                   '—'
                                 )}
-                              </div>
-                              <div className="text-[12.5px] text-[#6f6f7f]">
-                                {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
-                                  ? formatShortDate(serial.goodsReceiptLine.goodsReceipt.receivedAt)
-                                  : '—'}
-                              </div>
-                            </td>
-                            <td className="px-4 py-[11px] text-[13.5px] text-[#4b4b5a] hidden lg:table-cell">
-                              <div className="font-medium text-[#17171c]">
-                                {originLabel(serial)}
-                              </div>
-                              <div className={`${MONO} text-[12.5px] text-[#5b21b6]`}>
-                                {originRef(serial) ?? '—'}
                               </div>
                               <div className="text-[12.5px] text-[#6f6f7f]">
                                 {serial.goodsReceiptLine?.goodsReceipt?.receivedAt

@@ -63,6 +63,8 @@ type Props = {
   control: Control<ReceiveStockFormValues>
   errors: FieldErrors<ReceiveStockFormValues>
   warehouses: WarehouseOption[]
+  /** True while `warehouses` is being fetched — an empty list is not loading. */
+  warehousesLoading: boolean
   /** Validation messages are held back until the receiver has tried to post,
    * so an untouched form isn't red on open. */
   showErrors: boolean
@@ -84,8 +86,8 @@ type Props = {
   onUnlinkPo: () => void
   /** Scenario 73 — Repair/Return's Origin; undefined reads as From Customer. */
   origin?: string
-  /** The receiver's own branch location, when they have one. A unit handed
-   * back by a customer lands there, so the field is locked to it. */
+  /** The receiver's own branch location, when they have one. A repossessed
+   * unit lands there, so the field is hidden for them. */
   ownBranchWarehouseId?: string
   /** Scenario 73 — the service centers (repair providers) holding units. */
   serviceCenterOptions: SearchableSelectOption[]
@@ -98,6 +100,7 @@ export function RrDeliveryPanel({
   control,
   errors,
   warehouses,
+  warehousesLoading,
   showErrors,
   supplierId,
   supplierName,
@@ -138,18 +141,13 @@ export function RrDeliveryPanel({
   // Scenario 73 — units back from a service center: Service Center replaces
   // Repair Type, and the service center's own DR is worth a reference.
   const fromServiceCenter = reason === 'repair_return' && origin === 'service_center'
-  // A customer's unit handed in for repair is received at a branch (WH-05):
-  // the field shows as Receiving branch, branches only, and is locked for a
-  // receiver who has a branch of their own.
+  // A customer's unit handed in for repair (WH-05): the field shows as
+  // Receiving branch — any branch or either warehouse, for every receiver.
   const repairIntake = reason === 'repair_return' && !fromServiceCenter
   // Where a unit from a customer lands. A repossession still hides the field
   // for a branch receiver (it's filled with their own branch); head office
   // sees it for every unit return and has to choose — there's no default.
   const showLocation = !isUnitReturn || fromServiceCenter || repairIntake || !ownBranchWarehouseId
-  const lockedToOwnBranch = isUnitReturn && !fromServiceCenter && !!ownBranchWarehouseId
-  const branchOptions = locationOptions.filter((option) =>
-    warehouses.some((w) => w.id === option.value && isBranchLocation(w))
-  )
   // Read off the value, not the resolver: posting stops at the blockers list
   // before the resolver runs, and the field should still say why.
   const serviceCenterId = useWatch({ control, name: 'serviceCenterId' })
@@ -439,11 +437,10 @@ export function RrDeliveryPanel({
                   value={field.value ?? ''}
                   onChange={field.onChange}
                   placeholder={repairIntake ? 'Select branch…' : 'Select location…'}
-                  loading={warehouses.length === 0}
+                  loading={warehousesLoading}
                   loadingLabel="Loading locations…"
                   chrome={showErrors && errors.warehouseId ? INVALID_CHROME : CONTROL_CHROME}
-                  options={repairIntake ? branchOptions : locationOptions}
-                  disabled={lockedToOwnBranch}
+                  options={locationOptions}
                 />
               )}
             />
