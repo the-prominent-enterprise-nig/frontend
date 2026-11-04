@@ -22,6 +22,7 @@ import type { RepossessedSerialMeta } from '@/src/components/inventory/Repossess
 import type { InstallmentAccountMeta } from '@/src/components/inventory/InstallmentAccountSearchCombobox'
 import { uploadRrAttachment } from '../_actions/upload-rr-attachment'
 import { getServiceCenters } from '../_actions/service-center-units'
+import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 import type { ServiceCenterUnit } from '@/src/schema/inventory/goods-receiving/service-center-units'
 import {
@@ -285,6 +286,17 @@ export default function ReceiveStockModal({
   // than handed in by a customer: no invoice, no Repair Type, no UDS/RFS.
   const fromServiceCenter =
     watched.reason === 'repair_return' && watched.origin === 'service_center'
+  // A customer's unit handed in for repair can be received at any branch, by
+  // anyone — the receiver's own location list is branch-scoped, so a repair
+  // intake fetches every location instead.
+  const repairIntake = watched.reason === 'repair_return' && !fromServiceCenter
+  const allLocationsQuery = useQuery({
+    queryKey: ['inventory-warehouses-lookup', 'all-branches'],
+    queryFn: () => getWarehouses({ limit: 200, status: 'active', allBranches: true }),
+    staleTime: 5 * 60_000,
+    enabled: isOpen && repairIntake,
+  })
+  const locationWarehouses = repairIntake ? (allLocationsQuery.data?.data?.data ?? []) : warehouses
   const serviceCentersQuery = useQuery({
     queryKey: ['service-centers-holding-units'],
     queryFn: () => getServiceCenters(),
@@ -500,38 +512,27 @@ export default function ReceiveStockModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watched.reason])
 
-  // A unit handed back by a customer lands in the receiver's own branch —
-  // stock.service.ts refuses a branch-scoped reasoned receipt anywhere else —
-  // so it's filled in (and the field locked) for them. Someone with no branch
-  // of their own (head office) picks it: there's no silent default any more,
-  // which used to be the first standalone warehouse, i.e. Negros (WH-07).
-  // A service-center return is left alone: it lands wherever the custodian
-  // receives it.
+  // A repossessed unit lands in the receiver's own branch — stock.service.ts
+  // refuses one anywhere else — so it's filled in for them. A repair intake
+  // can go to any branch and every receiver picks it: no default at all (the
+  // old silent one was Negros, WH-07). A service-center return is left
+  // alone: it lands wherever the custodian receives it.
   const ownBranchWarehouseId = actorBranchId
     ? warehouses.find((w) => w.branchId === actorBranchId)?.id
     : undefined
   useEffect(() => {
-    if (!isUnitReturn || fromServiceCenter) return
-    if (ownBranchWarehouseId) {
-      if (watched.warehouseId !== ownBranchWarehouseId)
-        setValue('warehouseId', ownBranchWarehouseId, { shouldValidate: false })
-      return
-    }
-    // Head office on a repair intake picks among branches, so a standalone
-    // warehouse carried over from another reason isn't kept.
-    if (watched.reason !== 'repair_return') return
-    const current = warehouses.find((w) => w.id === watched.warehouseId)
-    if (current && !current.branchId && !current.branch)
-      setValue('warehouseId', '', { shouldValidate: false })
+    if (!isRepo || !ownBranchWarehouseId) return
+    if (watched.warehouseId !== ownBranchWarehouseId)
+      setValue('warehouseId', ownBranchWarehouseId, { shouldValidate: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    isUnitReturn,
-    fromServiceCenter,
-    watched.reason,
-    watched.warehouseId,
-    ownBranchWarehouseId,
-    warehouses,
-  ])
+  }, [isRepo, watched.warehouseId, ownBranchWarehouseId])
+  // Switching to a repair intake starts the branch blank, so nothing carried
+  // over from another reason (a standalone warehouse, or the own branch a
+  // repossession fills in) passes for a default.
+  useEffect(() => {
+    if (repairIntake) setValue('warehouseId', '', { shouldValidate: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repairIntake])
 
   const outstandingNotPulled = useMemo(() => {
     if (!linkedPo) return []
@@ -1281,7 +1282,7 @@ export default function ReceiveStockModal({
         <RrDeliveryPanel
           control={control}
           errors={errors}
-          warehouses={warehouses}
+          warehouses={locationWarehouses}
           showErrors={showErrors}
           supplierId={watched.supplierId ?? ''}
           supplierName={supplierName}

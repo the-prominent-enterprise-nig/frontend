@@ -84,8 +84,8 @@ type Props = {
   onUnlinkPo: () => void
   /** Scenario 73 — Repair/Return's Origin; undefined reads as From Customer. */
   origin?: string
-  /** The receiver's own branch location, when they have one. A unit handed
-   * back by a customer lands there, so the field is locked to it. */
+  /** The receiver's own branch location, when they have one. A repossessed
+   * unit lands there, so the field is hidden for them. */
   ownBranchWarehouseId?: string
   /** Scenario 73 — the service centers (repair providers) holding units. */
   serviceCenterOptions: SearchableSelectOption[]
@@ -139,14 +139,13 @@ export function RrDeliveryPanel({
   // Repair Type, and the service center's own DR is worth a reference.
   const fromServiceCenter = reason === 'repair_return' && origin === 'service_center'
   // A customer's unit handed in for repair is received at a branch (WH-05):
-  // the field shows as Receiving branch, branches only, and is locked for a
-  // receiver who has a branch of their own.
+  // the field shows as Receiving branch, branches only — any branch, for
+  // every receiver.
   const repairIntake = reason === 'repair_return' && !fromServiceCenter
   // Where a unit from a customer lands. A repossession still hides the field
   // for a branch receiver (it's filled with their own branch); head office
   // sees it for every unit return and has to choose — there's no default.
   const showLocation = !isUnitReturn || fromServiceCenter || repairIntake || !ownBranchWarehouseId
-  const lockedToOwnBranch = isUnitReturn && !fromServiceCenter && !!ownBranchWarehouseId
   const branchOptions = locationOptions.filter((option) =>
     warehouses.some((w) => w.id === option.value && isBranchLocation(w))
   )
@@ -443,7 +442,6 @@ export function RrDeliveryPanel({
                   loadingLabel="Loading locations…"
                   chrome={showErrors && errors.warehouseId ? INVALID_CHROME : CONTROL_CHROME}
                   options={repairIntake ? branchOptions : locationOptions}
-                  disabled={lockedToOwnBranch}
                 />
               )}
             />
