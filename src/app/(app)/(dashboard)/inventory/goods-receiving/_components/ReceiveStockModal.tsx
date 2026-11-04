@@ -56,6 +56,8 @@ type Props = {
   onSubmit: (data: ReceiveStockFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
   warehouses: WarehouseOption[]
+  /** True while `warehouses` is being fetched — an empty list is not loading. */
+  warehousesLoading?: boolean
   items: ItemSummary[]
   /** The receiver's own branch — a repossession line drops the Location
    * field entirely and lands silently in this branch's own warehouse
@@ -177,6 +179,7 @@ export default function ReceiveStockModal({
   onSubmit,
   isSubmitting,
   warehouses,
+  warehousesLoading = false,
   items,
   actorBranchId,
   canViewCost,
@@ -527,8 +530,8 @@ export default function ReceiveStockModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRepo, watched.warehouseId, ownBranchWarehouseId])
   // Switching to a repair intake starts the branch blank, so nothing carried
-  // over from another reason (a standalone warehouse, or the own branch a
-  // repossession fills in) passes for a default.
+  // over from another reason (such as the own branch a repossession fills
+  // in) passes for a default.
   useEffect(() => {
     if (repairIntake) setValue('warehouseId', '', { shouldValidate: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1283,6 +1286,7 @@ export default function ReceiveStockModal({
           control={control}
           errors={errors}
           warehouses={locationWarehouses}
+          warehousesLoading={repairIntake ? allLocationsQuery.isLoading : warehousesLoading}
           showErrors={showErrors}
           supplierId={watched.supplierId ?? ''}
           supplierName={supplierName}
