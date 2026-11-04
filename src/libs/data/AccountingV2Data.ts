@@ -984,6 +984,19 @@ export interface AcknowledgementReceipt {
     turnoverAcknowledgedAt?: string | null
     acknowledgedByName?: string | null
   } | null
+  /** With `banked: 'true'` — the posted deposits that banked it, and how
+   * much of it each took. */
+  depositAllocations?: {
+    cashAmount: string | number
+    posDeposit: {
+      id: string
+      depositDate: string
+      lines: {
+        reference: string | null
+        bankAccount: { name: string; accountNumber: string | null } | null
+      }[]
+    }
+  }[]
   /** Real GL account this receipt credits — a Chart of Accounts pick,
    * matching the client's own reference tool. Null means it fell back to
    * the MISC_COLLECTIONS mapping. */
@@ -1098,8 +1111,15 @@ export interface UpdateAcknowledgementReceiptInput {
 export const AcknowledgementReceipts = {
   /** `unbanked: 'true'` asks for only what the branch still has to bank —
    * not cancelled, not already on a deposit (Scenario 70 G11). */
-  list: (params?: { branchId?: string; unbanked?: 'true' }) =>
-    api.get<AcknowledgementReceipt[]>('/accounting/acknowledgement-receipts', params as any),
+  list: (params?: {
+    branchId?: string
+    unbanked?: 'true'
+    /** Scenario 83 — banked by a posted deposit, with those deposits. */
+    banked?: 'true'
+    /** Payment date range, YYYY-MM-DD. */
+    from?: string
+    to?: string
+  }) => api.get<AcknowledgementReceipt[]>('/accounting/acknowledgement-receipts', params as any),
   get: (id: string) =>
     api.get<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`),
   /** The form's "+ Add as new customer" — a name is all a settlement needs, so

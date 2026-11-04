@@ -51,6 +51,8 @@ export interface LedgerLine {
   /** The part of a To-deposit session already deposited or turned over:
    * opens that deposit rather than ticking the session. */
   settled?: boolean
+  /** A banked receipt's line: the deposit it opens. */
+  openDepositId?: string
 }
 
 const TYPE_LABEL: Record<LineType, [string, string]> = {
@@ -163,9 +165,7 @@ function toDepositLine(row: LedgerRow): LedgerLine {
 /** What left the session: to a bank, another branch, or both. */
 function goneLine(row: LedgerRow, canManage: boolean): LedgerLine {
   const from = shortName(row.branchName)
-  const banks = row.bankSlips.map((s) =>
-    via(from, `${s.bankName}${s.accountLast4 ? ` ••${s.accountLast4}` : ''}`)
-  )
+  const banks = row.bankSlips.map((s) => via(from, bankLabel(s.bankName, s.accountLast4)))
   const turnedTo = row.turnovers.map((t) => via(from, t.toBranchName))
   const banked = row.bankSlips.length > 0 || row.turnovers.length === 0
   return {
@@ -199,10 +199,8 @@ function turnoverChips(row: LedgerRow): Chip[] {
  * at the receiving branch and is deposited with its day. */
 export function receiptLine(receipt: AcknowledgementReceipt, branchName: string): LedgerLine {
   const left = Number(receipt.amount ?? 0)
-  const partly = Number(receipt.depositedAmount ?? 0) > 0
-  const due: Chip = partly
-    ? { label: 'Partially deposited', tone: 'blue' }
-    : { label: 'For deposit', tone: 'gray' }
+  // The banked part is a line of its own (bankedReceiptLine).
+  const due: Chip = { label: 'For deposit', tone: 'gray' }
   const here = shortName(branchName)
   if (receipt.turnoverLine) {
     const sender = receipt.payerName.replace(/^Turnover from /, '')
@@ -228,6 +226,39 @@ export function receiptLine(receipt: AcknowledgementReceipt, branchName: string)
     slip: receipt.reference ?? null,
     amount: left,
     status: [due],
+  }
+}
+
+/** "BDO - Iznart ••8921". The last four only when they are digits — an
+ * account stored as "N/A" shows its name alone. */
+function bankLabel(name: string, accountTail: string | null | undefined): string {
+  const last4 = accountTail?.match(/\d{4}$/)?.[0]
+  return last4 ? `${name} ••${last4}` : name
+}
+
+/**
+ * Scenario 83 — a New Receipt (an acknowledged turnover among them) that
+ * posted deposits banked: one Deposited line, so it stays on the table once
+ * banked. No bank: which deposit "took" which part of it is the system's own
+ * oldest-first share-out, not where that cash actually went, so naming banks
+ * would claim something nobody knows.
+ */
+export function bankedReceiptLine(receipt: AcknowledgementReceipt, branchName: string): LedgerLine {
+  const here = shortName(branchName)
+  const sender = receipt.turnoverLine ? receipt.payerName.replace(/^Turnover from /, '') : null
+  const deposits = (receipt.depositAllocations ?? []).map((a) => a.posDeposit)
+  const dates = deposits.map((d) => d.depositDate).sort()
+  return {
+    key: `${receipt.id}:banked`,
+    date: dates[dates.length - 1] ?? receipt.paymentDate,
+    title: sender ? 'Turnover slip' : (receipt.number ?? 'New Receipt'),
+    detail: sender ? `Received from ${sender}` : receipt.payerName,
+    types: [sender ? 'turnover_in' : 'receipt'],
+    route: [sender ? via(sender, here) : via(here, null)],
+    slip: receipt.turnoverLine?.reference ?? receipt.reference ?? null,
+    amount: Number(receipt.depositedAmount ?? 0),
+    status: [{ label: 'Deposited', tone: 'green' }],
+    openDepositId: deposits[deposits.length - 1]?.id,
   }
 }
 
@@ -260,6 +291,7 @@ export function groupLines(
   const dated = [
     ...group.rows.flatMap((r) => sessionLines(r, canManage)),
     ...group.receipts.map((r) => receiptLine(r, group.branchName)),
+    ...group.bankedReceipts.map((r) => bankedReceiptLine(r, group.branchName)),
   ].sort((a, b) => b.date.localeCompare(a.date))
   const waiting = group.incoming
     .map((t) => incomingLine(t, canAcknowledge(t)))
@@ -281,9 +313,12 @@ function moneyOf(group: BranchGroup): { collected: number; deposited: number } {
     collected += r.status === 'to_deposit' ? r.amount + r.deposited : r.amount
     deposited += banked
   }
-  for (const r of group.receipts) {
+  // A receipt's part still to bank, and — on rows of their own — what posted
+  // deposits banked of it, so one partly banked is counted once.
+  for (const r of group.receipts) collected += Number(r.amount ?? 0)
+  for (const r of group.bankedReceipts) {
     const banked = Number(r.depositedAmount ?? 0)
-    collected += Number(r.amount ?? 0) + banked
+    collected += banked
     deposited += banked
   }
   return { collected, deposited }
@@ -522,7 +557,11 @@ function LineRow({
   const row = line.row
   // The still-to-deposit part ticks; the part already gone opens its deposit.
   const pickable = canManage && row?.status === 'to_deposit' && !line.settled
-  const opensId = row ? (row.status === 'to_deposit' ? row.bankedDepositId : row.depositId) : null
+  const opensId = row
+    ? row.status === 'to_deposit'
+      ? row.bankedDepositId
+      : row.depositId
+    : (line.openDepositId ?? null)
   const onClick =
     row && pickable
       ? () => selection.toggle(row)

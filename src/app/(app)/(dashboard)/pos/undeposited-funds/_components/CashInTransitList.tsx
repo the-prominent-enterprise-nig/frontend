@@ -237,7 +237,9 @@ function fromReceiptsDraft(d: PosDeposit): LedgerRow {
 }
 
 function fromDeposited(r: CashInTransitHistoryRow): LedgerRow {
-  const collected = amounts(r.amount, r.clearingAmount, r.newReceiptsAmount)
+  // A deposit's New Receipts are rows of their own (Scenario 83), so only the
+  // session's own take here.
+  const collected = amounts(r.amount, r.clearingAmount, 0)
   return {
     key: `${r.sessionId}:deposited`,
     sessionId: r.sessionId,
@@ -276,6 +278,9 @@ export interface BranchGroup {
   receipts: AcknowledgementReceipt[]
   /** Scenario 83 — turnovers sent to this branch, awaiting its acknowledgment. */
   incoming: PosTurnover[]
+  /** New Receipts (an acknowledged turnover among them) a posted deposit has
+   * banked, for the deposited view. */
+  bankedReceipts: AcknowledgementReceipt[]
   total: number
 }
 
@@ -318,7 +323,8 @@ function foldReceipts(
 function groupByBranch(
   allRows: LedgerRow[],
   allReceipts: AcknowledgementReceipt[],
-  incoming: PosTurnover[]
+  incoming: PosTurnover[],
+  bankedReceipts: AcknowledgementReceipt[] = []
 ): BranchGroup[] {
   const { rows, loose } = foldReceipts(allRows, allReceipts)
   const groups = new Map<string, BranchGroup>()
@@ -329,6 +335,7 @@ function groupByBranch(
       rows: [],
       receipts: [],
       incoming: [],
+      bankedReceipts: [],
       total: 0,
     }
     groups.set(id, group)
@@ -348,6 +355,11 @@ function groupByBranch(
     const group = groupOf(t.turnoverToBranch.id, t.turnoverToBranch.name)
     group.incoming.push(t)
     group.total += Number(t.amount)
+  }
+  for (const r of bankedReceipts) {
+    const group = groupOf(r.branchId ?? 'none', r.branch?.name ?? 'No branch')
+    group.bankedReceipts.push(r)
+    group.total += Number(r.depositedAmount ?? 0)
   }
   return [...groups.values()].sort((a, b) => b.total - a.total)
 }
@@ -433,7 +445,11 @@ export function CashInTransitList({
     filter === 'to_deposit' || filter === 'all'
       ? incoming.filter((t) => turnoverMatches(t, search))
       : []
-  const groups = groupByBranch(shown, shownReceipts, shownIncoming)
+  const shownBanked =
+    filter === 'deposited' || filter === 'all'
+      ? ledger.bankedReceipts.filter((r) => receiptMatches(r, search))
+      : []
+  const groups = groupByBranch(shown, shownReceipts, shownIncoming, shownBanked)
   const selection = useSingleBranchSelection(ledger.rows)
   // The sessions being deposited, and their branch — which is all there is
   // for a deposit of New Receipts alone.
@@ -608,6 +624,21 @@ function useLedger(
     queryKey: ['bank-accounts-list'],
     queryFn: () => BankAccounts.options(),
   })
+  // Scenario 83 — receipts a posted deposit banked, in the same date range,
+  // so an acknowledged turnover (or any New Receipt) stays on the table once
+  // deposited.
+  const bankedReceipts = useQuery({
+    queryKey: [NEW_RECEIPTS_KEY, 'banked', branchId, range],
+    queryFn: () =>
+      AcknowledgementReceipts.list({
+        branchId: branchId ?? undefined,
+        banked: 'true',
+        from: range.from,
+        to: range.to,
+      }),
+    enabled: wantsDeposited,
+    staleTime: 0,
+  })
   const sessionRows = (outstanding.data?.data ?? []).flatMap(fromOutstanding)
   // Drafts holding no session — New Receipts alone — get a row of their own.
   const onSessions = new Set(sessionRows.map((r) => r.depositId))
@@ -620,6 +651,7 @@ function useLedger(
   const banked = wantsDeposited ? (deposited.data?.data ?? []).map(fromDeposited) : []
   return {
     rows: [...open, ...banked],
+    bankedReceipts: wantsDeposited ? (bankedReceipts.data?.data ?? []) : [],
     accounts: accounts.data?.data ?? [],
     loading: outstanding.isLoading || (wantsDeposited && deposited.isLoading),
     capped: banked.length >= 500,
