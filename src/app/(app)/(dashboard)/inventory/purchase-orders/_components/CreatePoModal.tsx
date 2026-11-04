@@ -236,14 +236,14 @@ export function CreatePoModal({
       {/* Sticky action bar */}
       <div className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-5 border-b border-[#e4e4e9] bg-white px-5 py-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
             {breadcrumb}
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             <h2 className="text-[17px] font-semibold tracking-[-.01em]">{title}</h2>
             {code && (
               <span
-                className={`${MONO} rounded-[5px] border border-[#e4e4e9] bg-[#faf9fb] px-1.5 py-0.5 text-[11px] text-[#5b5b6b]`}
+                className={`${MONO} rounded-[5px] border border-[#e4e4e9] bg-[#faf9fb] px-1.5 py-0.5 text-[11px] text-[#4b4b5a]`}
               >
                 {code}
               </span>
@@ -258,7 +258,7 @@ export function CreatePoModal({
             type="button"
             onClick={() => (isDirty ? setConfirmDiscard(true) : onClose())}
             disabled={isBusy}
-            className="rounded-lg px-3 py-2 text-[13px] text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#17171c] disabled:opacity-50"
+            className="rounded-lg px-3 py-2 text-[13px] text-[#4b4b5a] hover:bg-[#f1f1f4] hover:text-[#17171c] disabled:opacity-50"
           >
             Discard
           </button>

@@ -122,7 +122,7 @@ export default function UdsDetailModal({ uds, isOpen, onClose, onEditProvider, n
                 {uds.reason === 'repair' && (
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-                      Repair Provider
+                      Service Center
                     </p>
                     <div className="mt-0.5 flex items-center gap-2">
                       <p className="text-zinc-800">

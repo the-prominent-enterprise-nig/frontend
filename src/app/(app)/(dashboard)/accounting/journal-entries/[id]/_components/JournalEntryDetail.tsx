@@ -19,6 +19,14 @@ function formatMoney(v: number | undefined | null) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(v)
 }
 
+/** "BDO Main (1234567890)" — a bank by its name and number, the bank's own name
+ * only when it adds something. */
+function bankLabel(b: { name: string; bankName: string; accountNumber: string }) {
+  return b.name === b.bankName
+    ? `${b.name} (${b.accountNumber})`
+    : `${b.name} — ${b.bankName} (${b.accountNumber})`
+}
+
 function formatDate(v: string | undefined | null) {
   if (!v) return '—'
   return new Date(v).toLocaleDateString('en-PH', {
@@ -95,6 +103,11 @@ export default function JournalEntryDetail({ id }: { id: string }) {
   // at all: an entry is accounts and amounts, and those belong to the document
   // it came from.
   const showItemColumn = transactions.some((t) => t.item != null)
+  // Every bank shares Cash and Cash Equivalents, so the line alone can't say
+  // which bank it moved — the Bank / Cash Account column does. Same rule as the
+  // Item column: only on an entry that has a cash line to name one for.
+  const showBankColumn = transactions.some((t) => t.bankAccount != null)
+  const extraColumns = (showItemColumn ? 1 : 0) + (showBankColumn ? 1 : 0)
   // A sale posts its revenue side and its stock side (Dr Cost of Sales / Cr
   // Inventory) in one entry, and an installment sale's down payment (Dr cash
   // or bank / Cr Accounts Receivable) is added to that same entry once it is
@@ -236,6 +249,7 @@ export default function JournalEntryDetail({ id }: { id: string }) {
               <thead className="text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500">
                 <tr>
                   <th className="py-2 pr-4">Account</th>
+                  {showBankColumn && <th className="py-2 pr-4">Bank / Cash Account</th>}
                   {showItemColumn && <th className="py-2 pr-4">Item</th>}
                   <th className="py-2 pr-4">Description</th>
                   <th className="py-2 pr-4 text-right">Debit</th>
@@ -248,7 +262,7 @@ export default function JournalEntryDetail({ id }: { id: string }) {
                     <tbody>
                       <tr>
                         <td
-                          colSpan={showItemColumn ? 5 : 4}
+                          colSpan={4 + extraColumns}
                           className="h-10 bg-gray-100 px-3 align-middle text-[11px] font-semibold uppercase tracking-wide text-gray-500"
                         >
                           {group.label}
@@ -262,6 +276,11 @@ export default function JournalEntryDetail({ id }: { id: string }) {
                         <td className="py-2 pr-4 text-gray-900">
                           {t.account ? `${t.account.number} — ${t.account.name}` : t.accountId}
                         </td>
+                        {showBankColumn && (
+                          <td className="py-2 pr-4 text-gray-900">
+                            {t.bankAccount ? bankLabel(t.bankAccount) : '—'}
+                          </td>
+                        )}
                         {showItemColumn && (
                           <td className="py-2 pr-4 text-gray-600">{t.item?.name ?? '—'}</td>
                         )}
@@ -280,7 +299,7 @@ export default function JournalEntryDetail({ id }: { id: string }) {
               <tfoot className="border-t border-gray-300">
                 <tr>
                   <td
-                    colSpan={showItemColumn ? 3 : 2}
+                    colSpan={2 + extraColumns}
                     className="py-2 pr-4 text-right font-semibold text-gray-600"
                   >
                     Total

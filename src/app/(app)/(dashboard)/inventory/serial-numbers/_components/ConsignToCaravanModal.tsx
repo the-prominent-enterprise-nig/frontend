@@ -86,7 +86,7 @@ function UnitList({ serials }: { serials: SerialNumberSummary[] }): React.JSX.El
           className="flex items-center justify-between gap-3 border-b border-[#f4f4f6] px-3 py-1.5 last:border-b-0"
         >
           <span className={`${MONO} text-[12px] text-[#17171c]`}>{s.serialNumber}</span>
-          <span className="truncate text-[12px] text-[#5b5b6b]">{s.item?.name ?? '—'}</span>
+          <span className="truncate text-[12px] text-[#4b4b5a]">{s.item?.name ?? '—'}</span>
         </div>
       ))}
     </div>
@@ -167,7 +167,7 @@ export default function ConsignToCaravanModal({
         <div className="flex items-start justify-between gap-4 border-b border-[#e4e4e9] px-6 py-4">
           <div className="min-w-0">
             <h2 className="text-[17px] font-semibold text-[#17171c]">Consign to Caravan</h2>
-            <p className="mt-0.5 text-[13px] text-[#5b5b6b]">
+            <p className="mt-0.5 text-[13px] text-[#4b4b5a]">
               {count} unit{count !== 1 ? 's' : ''} from {sourceLabel} — sent on a stock transfer to
               a new caravan.
             </p>
@@ -176,7 +176,7 @@ export default function ConsignToCaravanModal({
             type="button"
             onClick={onClose}
             aria-label="Close dialog"
-            className="rounded-lg p-2 text-[#5b5b6b] hover:bg-[#f1f1f4]"
+            className="rounded-lg p-2 text-[#4b4b5a] hover:bg-[#f1f1f4]"
           >
             <X className="h-5 w-5" />
           </button>
@@ -224,7 +224,7 @@ export default function ConsignToCaravanModal({
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#5b5b6b] hover:bg-[#f1f1f4] disabled:opacity-50"
+              className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#4b4b5a] hover:bg-[#f1f1f4] disabled:opacity-50"
             >
               Cancel
             </button>

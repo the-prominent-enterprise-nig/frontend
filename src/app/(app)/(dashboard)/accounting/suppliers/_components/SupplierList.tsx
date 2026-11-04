@@ -37,7 +37,7 @@ export default function SupplierList({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2.5">
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8b8b9b]" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f6f7f]" />
         <input
           type="search"
           value={query}
@@ -52,7 +52,7 @@ export default function SupplierList({
             onClick={() => onQueryChange('')}
             aria-label="Clear search"
             title="Clear search"
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-[#8b8b9b] hover:text-[#3d3d4a]"
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-[#6f6f7f] hover:text-[#3d3d4a]"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -61,13 +61,13 @@ export default function SupplierList({
 
       <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         {isLoading ? (
-          <p className="px-4 py-10 text-center text-sm text-[#8b8b9b]">Loading suppliers…</p>
+          <p className="px-4 py-10 text-center text-sm text-[#6f6f7f]">Loading suppliers…</p>
         ) : suppliers.length === 0 ? (
           <div className="px-5 py-12 text-center">
             <p className="text-sm font-medium text-[#3d3d4a]">
               {totalCount === 0 ? 'No suppliers yet' : 'Nothing matches'}
             </p>
-            <p className="mx-auto mt-1 max-w-[16rem] text-xs leading-relaxed text-[#5b5b6b]">
+            <p className="mx-auto mt-1 max-w-[16rem] text-xs leading-relaxed text-[#4b4b5a]">
               {totalCount === 0
                 ? 'Add the first one to start raising purchase orders against it.'
                 : query
@@ -116,10 +116,10 @@ export default function SupplierList({
                       >
                         {supplier.name}
                       </span>
-                      <span className={`${MONO} mt-1 block text-[10.5px] text-[#5b5b6b]`}>
+                      <span className={`${MONO} mt-1 block text-[10.5px] text-[#4b4b5a]`}>
                         {supplier.code}
                       </span>
-                      <span className="mt-0.5 block truncate text-[10.5px] text-[#5b5b6b]">
+                      <span className="mt-0.5 block truncate text-[10.5px] text-[#4b4b5a]">
                         {rowMeta(supplier)}
                       </span>
                     </span>

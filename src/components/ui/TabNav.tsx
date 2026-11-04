@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
+import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 
 export type NavTab = {
@@ -24,8 +25,11 @@ export type NavTab = {
  *
  * Must be rendered inside a <Suspense> boundary (provided by each hub's
  * page.tsx) because it reads searchParams.
+ *
+ * `actions` sits at the strip's right end — a hub-wide action that belongs to
+ * no single tab (Item Master's Add Item).
  */
-export function TabNav({ tabs }: { tabs: NavTab[] }) {
+export function TabNav({ tabs, actions }: { tabs: NavTab[]; actions?: ReactNode }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const activeTab = searchParams.get('tab') ?? tabs[0].id
@@ -39,8 +43,11 @@ export function TabNav({ tabs }: { tabs: NavTab[] }) {
     .sort((a, b) => b.length - a.length)[0]
 
   return (
-    <div className="sticky top-0 z-10 border-b border-zinc-200 bg-white">
-      <nav className="-mb-px flex overflow-x-auto px-4 md:px-6" aria-label="Module tabs">
+    <div className="sticky top-0 z-10 flex items-center border-b border-zinc-200 bg-white">
+      <nav
+        className="-mb-px flex min-w-0 flex-1 overflow-x-auto px-4 md:px-6"
+        aria-label="Module tabs"
+      >
         {tabs.map((tab) => {
           const isActive = tab.href ? tab.href === activeHref : activeTab === tab.id
           return (
@@ -61,6 +68,7 @@ export function TabNav({ tabs }: { tabs: NavTab[] }) {
           )
         })}
       </nav>
+      {actions && <div className="flex shrink-0 items-center gap-2 pr-4 md:pr-6">{actions}</div>}
     </div>
   )
 }

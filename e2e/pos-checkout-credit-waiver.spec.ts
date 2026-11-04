@@ -402,4 +402,45 @@ test.describe('POS Checkout — waiving the credit application (Scenario 71 Part
     await postWaivedSale(page, 'Plenty of limit')
     await expect(page.getByTestId('success-credit-warnings')).toHaveCount(0)
   })
+
+  // Scenario 80 — Oct 29 UAT, checkout layout and the TPF waiver reason.
+  test('S80 CA-02: the TPF reason is offered only while the credit application is waived', async ({
+    page,
+  }) => {
+    const customer = await createApplicant(page.request, 'S80CA')
+    await startInstallmentSale(page, customer.name)
+    await waiverCheckbox(page).check()
+
+    const section = exceptionSection(page)
+    await openCustomSelect(section.getByRole('combobox', { name: 'Pick a reason…' }))
+    const tpf = page
+      .getByRole('listbox')
+      .getByRole('option', { name: 'Third-Party Financing (TPF)' })
+    await expect(tpf).toBeVisible()
+    await tpf.click()
+
+    // Unticking the waiver drops the TPF reason it was picked for.
+    await waiverCheckbox(page).uncheck()
+    await expect(section).toHaveCount(0)
+    await waiverCheckbox(page).check()
+    await expect(section.getByRole('combobox', { name: 'Pick a reason…' })).toBeVisible()
+  })
+
+  test('S80 POS-09 / POS-06: Cash/Installment and Inhouse/TPF sit above the cart; the down payment tender sits below the plan', async ({
+    page,
+  }) => {
+    const customer = await createApplicant(page.request, 'S80LY')
+    await startInstallmentSale(page, customer.name)
+
+    const picker = page.getByTestId('payment-mode-picker')
+    await expect(picker.getByRole('button', { name: 'Inhouse Installment' })).toBeVisible()
+    await expect(picker.getByRole('button', { name: 'TPF Installment' })).toBeVisible()
+    const y = async (testId: string) => (await page.getByTestId(testId).first().boundingBox())!.y
+    expect(await y('payment-mode-picker')).toBeLessThan(await y('override-price'))
+
+    await openCustomSelect(page.getByRole('combobox', { name: 'Select a term…' }))
+    await page.getByRole('listbox').getByRole('option').first().click()
+    await expect(page.getByTestId('dp-payment-mode-toggle')).toBeVisible()
+    expect(await y('dp-payment-mode-toggle')).toBeGreaterThan(await y('installment-plan'))
+  })
 })

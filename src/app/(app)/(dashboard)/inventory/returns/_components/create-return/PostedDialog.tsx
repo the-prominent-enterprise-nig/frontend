@@ -53,17 +53,17 @@ export default function PostedDialog({ result, settlement, branchName, onClose }
 
         <div className="flex flex-col gap-1 rounded-[10px] border border-[#dcefe5] bg-white px-3.5 py-3">
           <span className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="text-[11.5px] text-[#5b5b6b]">Write this on their copy</span>
+            <span className="text-[11.5px] text-[#4b4b5a]">Write this on their copy</span>
             <span className={`${MONO} text-[15px] font-semibold text-[#17171c]`}>
               {result.receivingReportNumber}
             </span>
           </span>
           <span className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="text-[11.5px] text-[#5b5b6b]">Return</span>
+            <span className="text-[11.5px] text-[#4b4b5a]">Return</span>
             <span className={`${MONO} text-[11.5px] text-[#3d3d4a]`}>{result.returnNumber}</span>
           </span>
           <span className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="text-[11.5px] text-[#5b5b6b]">Credit memo</span>
+            <span className="text-[11.5px] text-[#4b4b5a]">Credit memo</span>
             <span className={`${MONO} text-[11.5px] text-[#3d3d4a]`}>
               {result.creditMemoNumber ?? '—'}
             </span>

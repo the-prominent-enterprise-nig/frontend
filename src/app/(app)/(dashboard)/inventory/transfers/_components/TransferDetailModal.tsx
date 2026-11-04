@@ -31,6 +31,7 @@ import {
   ExternalLink,
   Lock,
   Repeat,
+  Pencil,
 } from 'lucide-react'
 import {
   DispatchTransferFormSchema,
@@ -53,6 +54,7 @@ import { getTransferDocument } from '../_actions/get-transfer-document'
 import { printStockTransferDocument } from '@/src/libs/print/printInventoryDocument'
 import { QtyVarianceBadge } from '@/src/components/ui/QtyVarianceBadge'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
+import { ConfirmDialog, Modal } from '@/src/components/ui/Modal'
 import {
   ItemSearchCombobox,
   type ItemSearchMeta,
@@ -739,10 +741,10 @@ function Fact({
 }) {
   return (
     <div className="min-w-0">
-      <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>{label}</p>
+      <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#6f6f7f]`}>{label}</p>
       <p
         className={`mt-1 truncate text-[13px] font-medium ${mono ? MONO : ''} ${
-          value ? 'text-[#17171c]' : 'text-[#8b8b9b]'
+          value ? 'text-[#17171c]' : 'text-[#6f6f7f]'
         }`}
       >
         {value || 'Not set'}
@@ -783,6 +785,9 @@ type Props = {
   canManagerApprove: boolean
   canManagerReject: boolean
   currentUserBranchId?: string | null
+  // The dispatcher is never the receiver (WH-01) — compared against the
+  // transfer's dispatchedById to withhold Receive from whoever shipped it.
+  currentUserId?: string
   // The region of the caller's own warehouse branch — drives whether they can
   // act on a transfer touching a real standalone warehouse (branchId: null,
   // Scenario 27), which exact branch-ownership can never match. null/
@@ -846,6 +851,7 @@ export default function TransferDetailModal({
   canManagerApprove,
   canManagerReject,
   currentUserBranchId,
+  currentUserId,
   currentUserRegion,
   onAccept,
   onReject,
@@ -877,6 +883,9 @@ export default function TransferDetailModal({
   const [showRejectHqForm, setShowRejectHqForm] = useState(false)
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [showRejectManagerForm, setShowRejectManagerForm] = useState(false)
+  // The dispatch form only validates; the stock moves once the dispatcher
+  // confirms in the dispatch modal — a dispatch can't be undone.
+  const [pendingDispatch, setPendingDispatch] = useState<DispatchTransferFormValues | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [isPrinting, setIsPrinting] = useState(false)
 
@@ -1028,8 +1037,17 @@ export default function TransferDetailModal({
     inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
   const canDispatchThis =
     canDispatch && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
-  const canReceiveThis =
+  // Mirrors the backend's receive() refusal: whoever dispatched a transfer
+  // can't also confirm it arrived, even head office, which inScope lets
+  // through. A transfer dispatched before dispatchedById existed has none.
+  const dispatchedByMe = !!transfer?.dispatchedById && transfer.dispatchedById === currentUserId
+  const canReceiveInScope =
     canReceive && inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+  const canReceiveThis = canReceiveInScope && !dispatchedByMe
+  const receiveBlockedForDispatcher =
+    canReceiveInScope &&
+    dispatchedByMe &&
+    (status === 'in_transit' || status === 'partially_received')
   // Manager approval is scoped to the TO warehouse's branch too — it's the
   // requester's own branch manager signing off, same direction as receive.
   const canManagerApproveThis =
@@ -1120,6 +1138,12 @@ export default function TransferDetailModal({
   // here for one of those, even for a serial-tracked line.
   const isUdsLinked = (transfer?.linkedUds?.length ?? 0) > 0
 
+  // An inline form (dispatch, receive) takes over the drawer's actions — the
+  // footer and the header's Edit step aside while one is open. The cancel
+  // confirm and the reject reasons are modals over the drawer, so they
+  // aren't among these.
+  const inlineFormOpen = showDispatchForm || showReceiveForm
+
   // The modal starts from the list row, whose lines carry no `item` — so no
   // `isSerialTracked` — until the detail query lands. openDispatchForm builds
   // its serial slots once, from whatever it is handed at the click, so a click
@@ -1160,8 +1184,9 @@ export default function TransferDetailModal({
     setShowDispatchForm(true)
   }
 
-  async function handleDispatchSubmit(data: DispatchTransferFormValues) {
-    if (!transfer) return
+  async function handleDispatchConfirmed() {
+    if (!transfer || !pendingDispatch) return
+    const data = pendingDispatch
     const result = await onDispatch(transfer.id, {
       expectedArrival: data.expectedArrival,
       notes: data.notes || undefined,
@@ -1180,6 +1205,9 @@ export default function TransferDetailModal({
       vehiclePlate: data.vehiclePlate,
       carrierName: data.carrierName?.trim() || undefined,
     })
+    // Closed either way: on a refusal the toast says why and the form is
+    // still there to correct.
+    setPendingDispatch(null)
     if (result.success) {
       setShowDispatchForm(false)
       dispatchForm.reset()
@@ -1382,7 +1410,7 @@ export default function TransferDetailModal({
                 )}
               </div>
               {transfer && (
-                <p className="mt-1 truncate text-[12.5px] text-[#5b5b6b]">
+                <p className="mt-1 truncate text-[12.5px] text-[#4b4b5a]">
                   Requested {formatDateOnly(transfer.createdAt ?? transfer.transferDate)}
                   {transfer.requestedByName ? ` by ${transfer.requestedByName}` : ''}
                 </p>
@@ -1392,12 +1420,30 @@ export default function TransferDetailModal({
               type="button"
               onClick={onClose}
               aria-label="Close dialog"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#e4e4e9] text-[#5b5b6b] hover:bg-[#f7f7f8] hover:text-[#17171c]"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#e4e4e9] text-[#4b4b5a] hover:bg-[#f7f7f8] hover:text-[#17171c]"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
-          {transfer && <TransferStageTrail transfer={transfer} status={status} />}
+          {transfer && (
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <TransferStageTrail transfer={transfer} status={status} />
+              {/* Edit acts on the request itself, so it rides on its
+                  progress row — an outlined button, not a text link (WH-02).
+                  Cancel sits with the footer's actions. Hidden while an
+                  inline form is open, same as the footer. */}
+              {!inlineFormOpen && canEditThis && onEdit && (
+                <button
+                  type="button"
+                  onClick={() => onEdit(transfer)}
+                  className="ml-auto flex items-center gap-1.5 rounded-lg border border-[#ddd0f7] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-[#f5f0ff]"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit Request
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {isLoading || !transfer ? (
@@ -1413,15 +1459,15 @@ export default function TransferDetailModal({
                 <div className="min-w-0 flex-1">
                   {/* Scenario 56 — who asks whom: the destination requests,
                       the source supplies. */}
-                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>
+                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#6f6f7f]`}>
                     From · Supplying branch
                   </p>
                   <LocationName
                     wh={transfer.fromWarehouse}
                     className="mt-1 text-[16px] font-semibold"
-                    subtitleClassName="text-[12px] text-[#5b5b6b]"
+                    subtitleClassName="text-[12px] text-[#4b4b5a]"
                   />
-                  <p className="mt-0.5 truncate text-[11.5px] text-[#8b8b9b]">
+                  <p className="mt-0.5 truncate text-[11.5px] text-[#6f6f7f]">
                     Sends the stock · deducted on dispatch
                   </p>
                 </div>
@@ -1429,15 +1475,15 @@ export default function TransferDetailModal({
                   <ArrowRight className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 flex-1 text-right">
-                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#8b8b9b]`}>
+                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-[#6f6f7f]`}>
                     To · Requesting branch
                   </p>
                   <LocationName
                     wh={transfer.toWarehouse}
                     className="mt-1 text-[16px] font-semibold"
-                    subtitleClassName="text-[12px] text-[#5b5b6b]"
+                    subtitleClassName="text-[12px] text-[#4b4b5a]"
                   />
-                  <p className="mt-0.5 truncate text-[11.5px] text-[#8b8b9b]">
+                  <p className="mt-0.5 truncate text-[11.5px] text-[#6f6f7f]">
                     Asked for the stock · added on receipt
                   </p>
                 </div>
@@ -1594,7 +1640,7 @@ export default function TransferDetailModal({
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <p className="text-[13.5px] font-semibold">Items</p>
                   <span
-                    className={`${MONO} rounded-full bg-white px-2.5 py-1 text-[10.5px] uppercase tracking-[0.07em] text-[#5b5b6b] ring-1 ring-[#e4e4e9]`}
+                    className={`${MONO} rounded-full bg-white px-2.5 py-1 text-[10.5px] uppercase tracking-[0.07em] text-[#4b4b5a] ring-1 ring-[#e4e4e9]`}
                   >
                     {receivedUnits} of {totalUnits} units received
                   </span>
@@ -1604,25 +1650,25 @@ export default function TransferDetailModal({
                     <thead>
                       <tr className="border-b border-[#eeeef1] bg-[#fbfbfc]">
                         <th
-                          className={`${MONO} px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                          className={`${MONO} px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.09em] text-[#6f6f7f]`}
                         >
                           Item
                         </th>
                         {hasSerialLine && (
                           <th
-                            className={`${MONO} px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                            className={`${MONO} px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.09em] text-[#6f6f7f]`}
                           >
                             Serial
                           </th>
                         )}
                         <th
-                          className={`${MONO} px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                          className={`${MONO} px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.09em] text-[#6f6f7f]`}
                         >
                           Qty
                         </th>
                         {isReceivedStatus && (
                           <th
-                            className={`${MONO} px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.09em] text-[#8b8b9b]`}
+                            className={`${MONO} px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.09em] text-[#6f6f7f]`}
                           >
                             Received
                           </th>
@@ -1637,13 +1683,13 @@ export default function TransferDetailModal({
                               {line.item?.name ?? line.itemId ?? '—'}
                             </p>
                             {line.item?.sku && (
-                              <p className={`${MONO} mt-0.5 text-[10.5px] text-[#8b8b9b]`}>
+                              <p className={`${MONO} mt-0.5 text-[10.5px] text-[#6f6f7f]`}>
                                 {line.item.sku}
                               </p>
                             )}
                           </td>
                           {hasSerialLine && (
-                            <td className="px-3 py-2 font-mono text-[13px] text-[#17171c]">
+                            <td className="px-3 py-2 font-mono text-[13px] font-semibold text-[#0b0b0f]">
                               {awaitingDispatch &&
                               !line.serialNumber?.serialNumber &&
                               line.item?.isSerialTracked ? (
@@ -1997,7 +2043,7 @@ export default function TransferDetailModal({
             {/* Dispatch form (inline) */}
             {showDispatchForm && (
               <form
-                onSubmit={dispatchForm.handleSubmit(handleDispatchSubmit)}
+                onSubmit={dispatchForm.handleSubmit((data) => setPendingDispatch(data))}
                 className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 space-y-3"
               >
                 <p className="flex items-center gap-1.5 text-sm font-semibold text-blue-800">
@@ -2161,7 +2207,7 @@ export default function TransferDetailModal({
                     className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
                   >
                     {isDispatching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Confirm Dispatch
+                    Dispatch
                   </button>
                 </div>
               </form>
@@ -2461,369 +2507,250 @@ export default function TransferDetailModal({
                 </div>
               </form>
             )}
-
-            {/* Reject at HQ form (inline) */}
-            {showRejectHqForm && (
-              <form
-                onSubmit={rejectHqForm.handleSubmit(handleRejectHqSubmit)}
-                className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3"
-              >
-                <p className="text-sm font-medium text-red-800">Reject Request at HQ</p>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Reason <span className="text-red-500">*</span>
-                  </label>
-                  <Controller
-                    name="reason"
-                    control={rejectHqForm.control}
-                    render={({ field }) => (
-                      <textarea
-                        {...field}
-                        rows={3}
-                        placeholder="Why is this request being rejected?"
-                        className={`${fieldClass} resize-none bg-white`}
-                      />
-                    )}
-                  />
-                  {rejectHqForm.formState.errors.reason && (
-                    <p className="mt-1 text-xs text-red-600">
-                      {rejectHqForm.formState.errors.reason.message}
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowRejectHqForm(false)
-                      rejectHqForm.reset()
-                    }}
-                    className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isRejectingHq}
-                    className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-                  >
-                    {isRejectingHq && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Confirm Rejection
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* Reject (source branch) form (inline) */}
-            {showRejectForm && (
-              <form
-                onSubmit={rejectForm.handleSubmit(handleRejectSubmit)}
-                className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3"
-              >
-                <p className="text-sm font-medium text-red-800">Reject Incoming Request</p>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Reason <span className="text-red-500">*</span>
-                  </label>
-                  <Controller
-                    name="reason"
-                    control={rejectForm.control}
-                    render={({ field }) => (
-                      <textarea
-                        {...field}
-                        rows={3}
-                        placeholder="Why is this request being rejected?"
-                        className={`${fieldClass} resize-none bg-white`}
-                      />
-                    )}
-                  />
-                  {rejectForm.formState.errors.reason && (
-                    <p className="mt-1 text-xs text-red-600">
-                      {rejectForm.formState.errors.reason.message}
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowRejectForm(false)
-                      rejectForm.reset()
-                    }}
-                    className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isRejecting}
-                    className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-                  >
-                    {isRejecting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Confirm Rejection
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* Reject (branch manager) form (inline) */}
-            {showRejectManagerForm && (
-              <form
-                onSubmit={rejectManagerForm.handleSubmit(handleRejectManagerSubmit)}
-                className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3"
-              >
-                <p className="text-sm font-medium text-red-800">Reject Request</p>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-zinc-600">
-                    Reason <span className="text-red-500">*</span>
-                  </label>
-                  <Controller
-                    name="reason"
-                    control={rejectManagerForm.control}
-                    render={({ field }) => (
-                      <textarea
-                        {...field}
-                        rows={3}
-                        placeholder="Why is this request being rejected?"
-                        className={`${fieldClass} resize-none bg-white`}
-                      />
-                    )}
-                  />
-                  {rejectManagerForm.formState.errors.reason && (
-                    <p className="mt-1 text-xs text-red-600">
-                      {rejectManagerForm.formState.errors.reason.message}
-                    </p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowRejectManagerForm(false)
-                      rejectManagerForm.reset()
-                    }}
-                    className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isRejectingManager}
-                    className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-                  >
-                    {isRejectingManager && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Confirm Rejection
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* Cancel confirm */}
-            {confirmCancel && (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-                <p className="text-sm font-medium text-red-800">Cancel this transfer?</p>
-                <p className="mt-1 text-xs text-red-600">
-                  No stock movements will be recorded. This cannot be undone.
-                </p>
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setConfirmCancel(false)}
-                    className="rounded-lg px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100"
-                  >
-                    Back
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCancel}
-                    disabled={isCancelling}
-                    className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-                  >
-                    {isCancelling && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    Yes, Cancel Transfer
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
         {/* Footer actions */}
-        {transfer &&
-          !showDispatchForm &&
-          !showReceiveForm &&
-          !showRejectHqForm &&
-          !showRejectForm &&
-          !showRejectManagerForm &&
-          !confirmCancel && (
-            <div className="flex items-center justify-between gap-4 border-t border-[#e4e4e9] bg-white px-6 py-3.5">
-              <div className="min-w-0">
-                <p className="text-[11.5px] text-[#8b8b9b]">
-                  {totalUnits} {totalUnits === 1 ? 'unit' : 'units'} ·{' '}
-                  {(transfer.lines ?? []).length}{' '}
-                  {(transfer.lines ?? []).length === 1 ? 'line' : 'lines'}
+        {transfer && !inlineFormOpen && (
+          <div className="flex items-center justify-between gap-4 border-t border-[#e4e4e9] bg-white px-6 py-3.5">
+            <div className="min-w-0">
+              <p className="text-[11.5px] text-[#6f6f7f]">
+                {totalUnits} {totalUnits === 1 ? 'unit' : 'units'} · {(transfer.lines ?? []).length}{' '}
+                {(transfer.lines ?? []).length === 1 ? 'line' : 'lines'}
+              </p>
+              {receiveBlockedForDispatcher && (
+                <p className="mt-0.5 flex items-center gap-1 text-[12px] text-[#8a4b06]">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  You dispatched this transfer, so someone else at the receiving branch has to
+                  receive it.
                 </p>
-                <div className="mt-0.5 flex items-center gap-3">
-                  {canEditThis && onEdit && (
-                    <button
-                      type="button"
-                      onClick={() => onEdit(transfer)}
-                      className="text-[12.5px] font-medium text-[#5b21b6] hover:underline"
-                    >
-                      Edit Request
-                    </button>
-                  )}
-                  {canCancelThis && (
-                    <button
-                      type="button"
-                      onClick={() => setConfirmCancel(true)}
-                      className="text-[12.5px] font-medium text-[#b42318] hover:underline"
-                    >
-                      Cancel Transfer
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="flex gap-3">
-                {(status === 'in_transit' || isReceivedStatus) && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setIsPrinting(true)
-                      try {
-                        const res = await getTransferDocument(transfer.id)
-                        if (res.success && res.data) printStockTransferDocument(res.data)
-                      } finally {
-                        setIsPrinting(false)
-                      }
-                    }}
-                    disabled={isPrinting}
-                    className="flex items-center gap-1.5 rounded-lg border border-[#e4e4e9] px-3 py-2 text-[13px] font-medium text-[#5b5b6b] hover:bg-[#f7f7f8] disabled:opacity-60"
-                  >
-                    {isPrinting ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Printer className="h-3.5 w-3.5" />
-                    )}
-                    Print
-                  </button>
-                )}
+              )}
+            </div>
+            <div className="flex gap-3">
+              {canCancelThis && (
                 <button
                   type="button"
-                  onClick={onClose}
-                  className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#5b5b6b] hover:bg-[#f7f7f8]"
+                  onClick={() => setConfirmCancel(true)}
+                  className="flex items-center gap-1.5 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
                 >
-                  Close
+                  <XCircle className="h-4 w-4" />
+                  Cancel
                 </button>
-                {status === 'draft' && canDispatchThis && (
-                  <button
-                    type="button"
-                    onClick={openDispatchForm}
-                    disabled={!lineDetailReady}
-                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Truck className="h-4 w-4" />
-                    Dispatch
-                  </button>
-                )}
-                {status === 'in_transit' && canReceiveThis && (
-                  <button
-                    type="button"
-                    onClick={openReceiveForm}
-                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
-                  >
+              )}
+              {(status === 'in_transit' || isReceivedStatus) && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsPrinting(true)
+                    try {
+                      const res = await getTransferDocument(transfer.id)
+                      if (res.success && res.data) printStockTransferDocument(res.data)
+                    } finally {
+                      setIsPrinting(false)
+                    }
+                  }}
+                  disabled={isPrinting}
+                  className="flex items-center gap-1.5 rounded-lg border border-[#e4e4e9] px-3 py-2 text-[13px] font-medium text-[#4b4b5a] hover:bg-[#f7f7f8] disabled:opacity-60"
+                >
+                  {isPrinting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Printer className="h-3.5 w-3.5" />
+                  )}
+                  Print
+                </button>
+              )}
+              {status === 'draft' && canDispatchThis && (
+                <button
+                  type="button"
+                  onClick={openDispatchForm}
+                  disabled={!lineDetailReady}
+                  className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Truck className="h-4 w-4" />
+                  Dispatch
+                </button>
+              )}
+              {status === 'in_transit' && canReceiveThis && (
+                <button
+                  type="button"
+                  onClick={openReceiveForm}
+                  className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  Mark Received
+                </button>
+              )}
+              {status === 'partially_received' && canReceiveThis && (
+                <button
+                  type="button"
+                  onClick={openReceiveForm}
+                  className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  Receive Remaining
+                </button>
+              )}
+              {status === 'pending_manager_approval' && canManagerRejectThis && (
+                <button
+                  type="button"
+                  onClick={() => setShowRejectManagerForm(true)}
+                  className="flex items-center gap-2 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
+                >
+                  <Ban className="h-4 w-4" />
+                  Reject
+                </button>
+              )}
+              {status === 'pending_manager_approval' && canManagerApproveThis && (
+                <button
+                  type="button"
+                  onClick={handleApproveManager}
+                  disabled={isApprovingManager}
+                  className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:opacity-60"
+                >
+                  {isApprovingManager ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
                     <CheckCircle className="h-4 w-4" />
-                    Mark Received
-                  </button>
-                )}
-                {status === 'partially_received' && canReceiveThis && (
-                  <button
-                    type="button"
-                    onClick={openReceiveForm}
-                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
-                  >
-                    <AlertTriangle className="h-4 w-4" />
-                    Receive Remaining
-                  </button>
-                )}
-                {status === 'pending_manager_approval' && canManagerRejectThis && (
-                  <button
-                    type="button"
-                    onClick={() => setShowRejectManagerForm(true)}
-                    className="flex items-center gap-2 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
-                  >
-                    <Ban className="h-4 w-4" />
-                    Reject
-                  </button>
-                )}
-                {status === 'pending_manager_approval' && canManagerApproveThis && (
-                  <button
-                    type="button"
-                    onClick={handleApproveManager}
-                    disabled={isApprovingManager}
-                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:opacity-60"
-                  >
-                    {isApprovingManager ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <CheckCircle className="h-4 w-4" />
-                    )}
-                    Approve
-                  </button>
-                )}
-                {status === 'pending_hq_approval' && canHqReject && (
-                  <button
-                    type="button"
-                    onClick={() => setShowRejectHqForm(true)}
-                    className="flex items-center gap-2 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
-                  >
-                    <Ban className="h-4 w-4" />
-                    Reject
-                  </button>
-                )}
-                {status === 'pending_hq_approval' && canHqApprove && (
-                  <button
-                    type="button"
-                    onClick={handleApproveHq}
-                    disabled={isApprovingHq}
-                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:opacity-60"
-                  >
-                    {isApprovingHq ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <CheckCircle className="h-4 w-4" />
-                    )}
-                    Approve
-                  </button>
-                )}
-                {status === 'requested' && canRejectThis && (
-                  <button
-                    type="button"
-                    onClick={() => setShowRejectForm(true)}
-                    className="flex items-center gap-2 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
-                  >
-                    <Ban className="h-4 w-4" />
-                    Reject
-                  </button>
-                )}
-                {status === 'requested' && canAcceptThis && (
-                  <button
-                    type="button"
-                    onClick={handleAccept}
-                    disabled={isAccepting}
-                    className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:opacity-60"
-                  >
-                    {isAccepting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <CheckCircle className="h-4 w-4" />
-                    )}
-                    Accept
-                  </button>
-                )}
-              </div>
+                  )}
+                  Approve
+                </button>
+              )}
+              {status === 'pending_hq_approval' && canHqReject && (
+                <button
+                  type="button"
+                  onClick={() => setShowRejectHqForm(true)}
+                  className="flex items-center gap-2 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
+                >
+                  <Ban className="h-4 w-4" />
+                  Reject
+                </button>
+              )}
+              {status === 'pending_hq_approval' && canHqApprove && (
+                <button
+                  type="button"
+                  onClick={handleApproveHq}
+                  disabled={isApprovingHq}
+                  className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:opacity-60"
+                >
+                  {isApprovingHq ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4" />
+                  )}
+                  Approve
+                </button>
+              )}
+              {status === 'requested' && canRejectThis && (
+                <button
+                  type="button"
+                  onClick={() => setShowRejectForm(true)}
+                  className="flex items-center gap-2 rounded-lg border border-[#f3cfcc] px-4 py-2 text-[13px] font-semibold text-[#b42318] hover:bg-[#fdeceb]"
+                >
+                  <Ban className="h-4 w-4" />
+                  Reject
+                </button>
+              )}
+              {status === 'requested' && canAcceptThis && (
+                <button
+                  type="button"
+                  onClick={handleAccept}
+                  disabled={isAccepting}
+                  className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99] disabled:opacity-60"
+                >
+                  {isAccepting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4" />
+                  )}
+                  Accept
+                </button>
+              )}
             </div>
-          )}
+          </div>
+        )}
+
+        {/* Rendered inside the panel so a click on its backdrop stays in the
+            drawer instead of bubbling up and closing it. */}
+        <ConfirmDialog
+          open={!!pendingDispatch}
+          title="Dispatch this transfer?"
+          message={
+            <>
+              <p>
+                {totalUnits} {totalUnits === 1 ? 'unit leaves' : 'units leave'}{' '}
+                <span className="font-medium text-zinc-800">
+                  {branchLabel(transfer?.fromWarehouse, 'the source branch')}
+                </span>{' '}
+                for{' '}
+                <span className="font-medium text-zinc-800">
+                  {branchLabel(transfer?.toWarehouse, 'the destination branch')}
+                </span>
+                .
+              </p>
+              <p>
+                Stock is deducted from the source now and the transfer goes in transit. This cannot
+                be undone.
+              </p>
+            </>
+          }
+          confirmLabel="Yes, dispatch"
+          cancelLabel="Back"
+          confirmColorClassName="bg-[#5b21b6] hover:bg-[#4c1a99]"
+          loading={isDispatching}
+          onConfirm={handleDispatchConfirmed}
+          onCancel={() => setPendingDispatch(null)}
+        />
+        <ConfirmDialog
+          open={confirmCancel}
+          title="Cancel this transfer?"
+          message="No stock movements will be recorded. This cannot be undone."
+          confirmLabel="Yes, cancel"
+          cancelLabel="Back"
+          loading={isCancelling}
+          destructive
+          onConfirm={handleCancel}
+          onCancel={() => setConfirmCancel(false)}
+        />
+        <RejectReasonModal
+          open={showRejectHqForm}
+          title="Reject request at HQ"
+          formId="reject-hq-transfer"
+          control={rejectHqForm.control}
+          error={rejectHqForm.formState.errors.reason?.message}
+          submitting={isRejectingHq}
+          onSubmit={rejectHqForm.handleSubmit(handleRejectHqSubmit)}
+          onClose={() => {
+            setShowRejectHqForm(false)
+            rejectHqForm.reset()
+          }}
+        />
+        <RejectReasonModal
+          open={showRejectForm}
+          title="Reject incoming request"
+          formId="reject-transfer"
+          control={rejectForm.control}
+          error={rejectForm.formState.errors.reason?.message}
+          submitting={isRejecting}
+          onSubmit={rejectForm.handleSubmit(handleRejectSubmit)}
+          onClose={() => {
+            setShowRejectForm(false)
+            rejectForm.reset()
+          }}
+        />
+        <RejectReasonModal
+          open={showRejectManagerForm}
+          title="Reject request"
+          formId="reject-manager-transfer"
+          control={rejectManagerForm.control}
+          error={rejectManagerForm.formState.errors.reason?.message}
+          submitting={isRejectingManager}
+          onSubmit={rejectManagerForm.handleSubmit(handleRejectManagerSubmit)}
+          onClose={() => {
+            setShowRejectManagerForm(false)
+            rejectManagerForm.reset()
+          }}
+        />
       </div>
     </div>
   )
@@ -2834,6 +2761,85 @@ export default function TransferDetailModal({
 // Rejected/cancelled transfers skip the trail entirely: forcing a stopped
 // request into 4 forward-moving dots would misrepresent what happened, and
 // the actual reason is already surfaced as its own red banner + log entry.
+/** The three rejections (HQ, source branch, the requester's manager) all
+ * ask for the same thing — a required reason — so they share one modal over
+ * the drawer. The submit button sits in the modal's footer, outside the
+ * <form>, and reaches it through `form={formId}`. */
+function RejectReasonModal({
+  open,
+  title,
+  formId,
+  control,
+  error,
+  submitting,
+  onSubmit,
+  onClose,
+}: {
+  open: boolean
+  title: string
+  formId: string
+  control: Control<{ reason: string }>
+  error?: string
+  submitting: boolean
+  onSubmit: React.FormEventHandler<HTMLFormElement>
+  onClose: () => void
+}): React.JSX.Element {
+  return (
+    <Modal
+      open={open}
+      title={title}
+      description="The requester sees this reason on the transfer."
+      onClose={onClose}
+      size="sm"
+      footer={
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Back
+          </button>
+          <button
+            type="submit"
+            form={formId}
+            disabled={submitting}
+            className="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Confirm Rejection
+          </button>
+        </div>
+      }
+    >
+      <form id={formId} onSubmit={onSubmit}>
+        <label
+          htmlFor={`${formId}-reason`}
+          className="mb-1 block text-xs font-medium text-zinc-600"
+        >
+          Reason <span className="text-red-500">*</span>
+        </label>
+        <Controller
+          name="reason"
+          control={control}
+          render={({ field }) => (
+            <textarea
+              {...field}
+              id={`${formId}-reason`}
+              rows={3}
+              autoFocus
+              placeholder="Why is this request being rejected?"
+              className="w-full resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+            />
+          )}
+        />
+        {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      </form>
+    </Modal>
+  )
+}
+
 function TransferStageTrail({ transfer, status }: { transfer: TransferSummary; status: string }) {
   if (status === 'rejected' || status === 'cancelled') return null
 
@@ -2886,7 +2892,7 @@ function TransferStageTrail({ transfer, status }: { transfer: TransferSummary; s
   ]
 
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
       {steps.map((step, i) => {
         const done = i < stageOf
         const active = i === stageOf
@@ -2905,12 +2911,12 @@ function TransferStageTrail({ transfer, status }: { transfer: TransferSummary; s
               <div className="leading-tight">
                 <p
                   className={`text-[11.5px] font-semibold ${
-                    done ? 'text-[#0b6644]' : active ? 'text-[#3f1490]' : 'text-[#8b8b9b]'
+                    done ? 'text-[#0b6644]' : active ? 'text-[#3f1490]' : 'text-[#6f6f7f]'
                   }`}
                 >
                   {step.label}
                 </p>
-                <p className="text-[10.5px] text-[#8b8b9b]">{step.meta}</p>
+                <p className="text-[10.5px] text-[#6f6f7f]">{step.meta}</p>
               </div>
             </div>
             {i < steps.length - 1 && (
@@ -2943,7 +2949,7 @@ function LedgerEvent({
       </span>
       <div>
         <p className="text-[12.5px] font-medium text-[#17171c]">{label}</p>
-        <p className="text-[11px] text-[#8b8b9b]">{formatDate(timestamp)}</p>
+        <p className="text-[11px] text-[#6f6f7f]">{formatDate(timestamp)}</p>
       </div>
     </li>
   )

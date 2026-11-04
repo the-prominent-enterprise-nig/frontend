@@ -311,7 +311,7 @@ export default function ReturnList({ session }: { session: SessionUser }) {
             {/* Says "in" explicitly because the Debit Memos tab next door
                 moves stock the opposite way, and the two labels can't tell
                 them apart on their own. */}
-            <p className="text-[13px] text-[#5b5b6b]">
+            <p className="text-[13px] text-[#4b4b5a]">
               Customer stock coming <strong>back in</strong> to inventory. Sellable stock is
               immediately available; damaged stock goes to on-hand only.
             </p>

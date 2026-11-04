@@ -160,7 +160,7 @@ export const DrSubmitSchema = DrFormSchema.superRefine((v, ctx) => {
   }
   if (v.purpose === 'return_to_supplier' && !v.supplierId) issue('supplierId', 'Pick the supplier')
   if (v.purpose === 'to_service_center' && !v.supplierId) {
-    issue('supplierId', 'Pick the repair provider')
+    issue('supplierId', 'Pick the service center')
   }
   if (isCustomerUnitPurpose(v.purpose) && !v.udsId && !v.customerId) {
     issue('customerId', 'Pick the customer from CRM')

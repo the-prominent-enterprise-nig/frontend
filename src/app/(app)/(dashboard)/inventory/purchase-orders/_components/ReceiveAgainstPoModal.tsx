@@ -450,7 +450,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
       <div className="flex shrink-0 flex-col gap-3 border-b border-[#e4e4e9] bg-white px-4 py-3.5 lg:px-5">
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
-            <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+            <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
               Purchase Orders › {po.code} › Receive
             </div>
             <h2 className="text-[21px] font-semibold tracking-[-.02em]">
@@ -465,7 +465,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
                 </span>
                 <span className="text-[12.5px] font-medium">{po.supplier.name}</span>
                 {po.supplier.taxId && (
-                  <span className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>
+                  <span className={`${MONO} text-[10.5px] text-[#6f6f7f]`}>
                     TIN {po.supplier.taxId}
                   </span>
                 )}
@@ -492,7 +492,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#6f6f7f] hover:bg-[#f1f1f4] hover:text-[#17171c]"
             >
               <X className="h-4.5 w-4.5" />
             </button>
@@ -538,7 +538,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-3.5">
               <div className="flex items-center gap-2.5">
                 <span className="text-[13.5px] font-semibold">Line items</span>
-                <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+                <span className={`${MONO} text-[11px] text-[#6f6f7f]`}>
                   {totals.lines} of {openLineCount} open lines · {totals.units} units
                 </span>
               </div>
@@ -553,7 +553,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
                 <button
                   type="button"
                   onClick={clearAllQuantities}
-                  className="rounded-[7px] border border-[#d3d3db] bg-white px-2.5 py-1.5 text-[12.5px] text-[#5b5b6b] hover:border-[#a3a3b2] hover:text-[#17171c]"
+                  className="rounded-[7px] border border-[#d3d3db] bg-white px-2.5 py-1.5 text-[12.5px] text-[#4b4b5a] hover:border-[#a3a3b2] hover:text-[#17171c]"
                 >
                   Clear quantities
                 </button>
@@ -563,7 +563,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
             {poLines.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 text-center">
                 <PackageCheck className="mb-2 h-8 w-8 text-[#d3d3db]" />
-                <p className="text-[13px] text-[#a3a3b2]">No line items on this PO</p>
+                <p className="text-[13px] text-[#8e8e9d]">No line items on this PO</p>
               </div>
             ) : (
               <>
@@ -607,7 +607,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
             )}
 
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[#e4e4e9] bg-[#fbfbfc] px-4.5 py-3">
-              <span className="text-[11.5px] text-[#8b8b9b]">
+              <span className="text-[11.5px] text-[#6f6f7f]">
                 Quantities are capped at the PO remainder. Short deliveries stay open for the next
                 receipt. Serial-tracked lines receive only the serials entered.
               </span>
@@ -642,7 +642,7 @@ function nowLocalInputValue() {
 function LineTableHead() {
   return (
     <div
-      className={`${MONO} ${LINE_GRID} hidden items-end border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] lg:grid`}
+      className={`${MONO} ${LINE_GRID} hidden items-end border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#6f6f7f] lg:grid`}
     >
       <span />
       <span>Item / SKU</span>

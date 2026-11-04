@@ -28,7 +28,7 @@ export const STATUS_META: Record<PoStatus, { label: string; badge: string }> = {
   sent: { label: 'Sent', badge: 'bg-[#eaf0fb] text-[#1f4b99]' },
   partially_received: { label: 'Partial', badge: 'bg-[#fdf3e7] text-[#8a4b06]' },
   fully_received: { label: 'Received', badge: 'bg-[#e7f5ef] text-[#0b6644]' },
-  closed: { label: 'Closed', badge: 'bg-[#f6f6f8] text-[#5b5b6b]' },
+  closed: { label: 'Closed', badge: 'bg-[#f6f6f8] text-[#4b4b5a]' },
   cancelled: { label: 'Cancelled', badge: 'bg-[#fdeceb] text-[#b42318]' },
 }
 

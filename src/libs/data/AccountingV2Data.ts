@@ -1109,35 +1109,37 @@ export const AcknowledgementReceipts = {
   /** Bulk upload, step 1 — reads the CSV and reports what each row would do.
    * Writes nothing. Multipart, so it goes through a server action rather than
    * the JSON api client. */
-  importPreview: (file: File) => {
+  importPreview: (file: File, paidBy: string) => {
     const body = new FormData()
     body.append('file', file)
+    body.append('paidBy', paidBy)
     return previewAcknowledgementReceiptImport(body)
   },
   /** Bulk upload, step 2 — posts every row (all or none). A row whose uploaded
    * Net differs from the calculated one is only a warning; it posts with the
    * calculated Net. */
-  importCommit: (file: File) => {
+  importCommit: (file: File, paidBy: string) => {
     const body = new FormData()
     body.append('file', file)
+    body.append('paidBy', paidBy)
     return commitAcknowledgementReceiptImport(body)
   },
   /** The review screen's re-check — the same preview as `importPreview`, but
    * for rows the user has edited on screen instead of a file. Plain JSON, so
    * it goes through the normal api client. Writes nothing; 500 rows at most. */
-  importPreviewRows: async (rows: AcknowledgementImportRowInput[]) => {
+  importPreviewRows: async (rows: AcknowledgementImportRowInput[], paidBy: string) => {
     const res = await api.post<AcknowledgementImportPreview>(
       '/accounting/acknowledgement-receipts/import/rows/preview',
-      { rows }
+      { rows, paidBy }
     )
     return res.success ? res : { ...res, message: humanizeAcknowledgementImportError(res.message) }
   },
   /** The real import for edited rows — all or none, same errors as the file
    * commit. */
-  importCommitRows: async (rows: AcknowledgementImportRowInput[]) => {
+  importCommitRows: async (rows: AcknowledgementImportRowInput[], paidBy: string) => {
     const res = await api.post<AcknowledgementImportResult>(
       '/accounting/acknowledgement-receipts/import/rows',
-      { rows }
+      { rows, paidBy }
     )
     return res.success ? res : { ...res, message: humanizeAcknowledgementImportError(res.message) }
   },

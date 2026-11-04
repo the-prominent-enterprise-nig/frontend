@@ -503,12 +503,17 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
             <CalendarClock className="h-4 w-4 text-zinc-400" />
             Override current date
           </label>
+          {/* Oct 29 UAT DC-02 — never a future date: past days only. */}
           <input
             type="date"
+            data-testid="collections-override-date"
+            max={todayIso()}
             value={overrideDateIso ?? todayIso()}
-            onChange={(e) =>
-              setOverrideDateIso(e.target.value === todayIso() ? null : e.target.value)
-            }
+            onChange={(e) => {
+              const v = e.target.value
+              if (!v || v >= todayIso()) setOverrideDateIso(null)
+              else setOverrideDateIso(v)
+            }}
             className={`${fieldClass} w-auto`}
           />
           {overrideDateIso && (
@@ -1069,20 +1074,10 @@ function PaymentPanel({
     0
   )
 
-  // Without an override the field is capped at real today, so "not today"
-  // there can only mean a prior day; an override can also push it forward.
+  // The field is capped at real today (the override can't go forward either —
+  // Oct 29 UAT DC-02), so "not today" can only mean a prior day.
   const isBackdated = form.paymentDate.slice(0, 10) < todayIso()
-  // The override is simulating a future "today", so this collection would be
-  // recorded for a date that hasn't happened. A receipt dated forward is
-  // invisible to the daily collection report (it windows on
-  // CollectionReceipt.paymentDate) — say so, rather than letting it surprise.
-  const isForwardDated = form.paymentDate.slice(0, 10) > todayIso()
-  // The Payment date field's ceiling: real today, unless an override is
-  // simulating a later day.
-  const maxPaymentDate =
-    initialPaymentDateIso.slice(0, 10) > todayIso()
-      ? initialPaymentDateIso.slice(0, 10)
-      : todayIso()
+  const maxPaymentDate = todayIso()
   // Informational only, not blocking — the backend only rejects a repeat
   // same-date payment once the invoice is already fully paid (isFullyPaid,
   // handled separately above). A due that's still open can be topped up
@@ -1163,12 +1158,10 @@ function PaymentPanel({
           ? { label: TILE_OPTION_LABEL[r.tile]!, chosen: !!r.optionId }
           : null,
     })),
-    cr: form.reference,
   })
   const shownIssues = showIssues ? issues : []
   const invalidFieldsOf = (row: number): ReadonlySet<CollectionIssueField> =>
     new Set(shownIssues.filter((i) => i.row === row).map((i) => i.field))
-  const crInvalid = shownIssues.some((i) => i.field === 'cr')
 
   // The first payment describes the collection as a single method always did;
   // several are sent as `tenders` on top of it.
@@ -1418,14 +1411,6 @@ function PaymentPanel({
               that&apos;s intentional (e.g. entering a collection from a prior day).
             </div>
           )}
-          {isForwardDated && (
-            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[12px] text-amber-800">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              The date override is simulating {fmtDate(form.paymentDate)}, so this payment will be
-              recorded for that date, not today, and its Status, Rebate and Penalty are assessed as
-              of it. It will not appear on today&apos;s daily collection report.
-            </div>
-          )}
 
           {/* Reference only — the cashier may not end up giving the
               rebate at all, so this shows both outcomes per due up
@@ -1582,9 +1567,8 @@ function PaymentPanel({
                 // Capped at real today — cash is recognized on the day it
                 // was received, and a forward-dated receipt would be
                 // invisible to the daily collection report (it windows on
-                // CollectionReceipt.paymentDate). The one exception is an
-                // active date override, which lifts the cap to the date it
-                // is simulating so a late penalty can be exercised.
+                // CollectionReceipt.paymentDate). No exception since the
+                // Oct 29 UAT (DC-02): the override can't go forward either.
                 max={maxPaymentDate}
                 value={form.paymentDate}
                 onChange={(e) => setForm({ ...form, paymentDate: e.target.value })}
@@ -1685,22 +1669,19 @@ function PaymentPanel({
 
           <div>
             <label className="mb-1 block text-sm font-medium text-zinc-700">
-              CR number <span className="text-red-500">*</span>
+              CR number <span className="font-normal text-zinc-400">(optional)</span>
             </label>
             <input
-              required
               data-testid="collection-cr-number"
               value={form.reference}
               onChange={(e) => setForm({ ...form, reference: e.target.value })}
               placeholder="CR number"
-              className={
-                crInvalid ? fieldClass.replace('border-zinc-200', 'border-red-400') : fieldClass
-              }
+              className={fieldClass}
             />
             <p className="mt-1 text-[12px] text-zinc-400">
               {several
-                ? 'Required — one CR number for the whole collection; every payment’s receipt carries it.'
-                : 'Required — the CR number on the collection receipt issued for this payment.'}
+                ? 'One CR number for the whole collection, if a CR was issued — every payment’s receipt carries it.'
+                : 'The CR number on the collection receipt issued for this payment, if one was issued.'}
             </p>
           </div>
 

@@ -327,14 +327,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
       // Tax Codes, Tax Reports and Tax Closing are hidden from the nav (not on main yet).
       // Their routes still load: /accounting/tax-codes, /accounting/tax-reports,
       // /accounting/tax-closing.
-      // Scenario 62 — raw data from every module, read-only. Business Owner
-      // only; exact permission so the Accountant's accounting:* can't reach.
-      {
-        label: 'Data Query Center',
-        href: '/accounting/query-center',
-        icon: Database,
-        exactPermission: ACCOUNTING_PERMISSIONS.QUERY_CENTER_READ,
-      },
+      // The Data Query Center lives in My Workspace (WORKSPACE_ITEMS), not here.
     ],
     bottom: [],
   },
@@ -887,6 +880,17 @@ const WORKSPACE_ITEMS: NavItem[] = [
     // behind it requires admin:audit-logs:read and nothing else, so an
     // admin-tier role without that row would land on a page that can't load.
     requiredPermission: 'admin:audit-logs:read',
+  },
+  {
+    // Scenario 62 — raw data from every module, read-only. Business Owner
+    // only; exact permission so the Accountant's accounting:* can't reach.
+    // The page stays at /accounting/query-center, so inside it the Accounting
+    // items show above this group, which opens itself on this route.
+    section: 'My Workspace',
+    label: 'Data Query Center',
+    href: '/accounting/query-center',
+    icon: Database,
+    exactPermission: ACCOUNTING_PERMISSIONS.QUERY_CENTER_READ,
   },
 ]
 

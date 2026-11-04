@@ -57,7 +57,7 @@ export function DeliveryDetailsPanel({
             {drEmpty ? 'Needs DR number' : 'Confirmed'}
           </span>
         </div>
-        <span className="min-w-0 truncate text-[11.5px] text-[#8b8b9b]">{recap}</span>
+        <span className="min-w-0 truncate text-[11.5px] text-[#6f6f7f]">{recap}</span>
       </div>
 
       <div className="grid grid-cols-1 gap-x-4 gap-y-3.5 px-4.5 pb-4 pt-3.5 sm:grid-cols-2">
@@ -70,7 +70,7 @@ export function DeliveryDetailsPanel({
                 <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#3d3d4a]">
                   {locationLabel(po.warehouse)}
                 </span>
-                <Lock className="h-3.5 w-3.5 shrink-0 text-[#8b8b9b]" />
+                <Lock className="h-3.5 w-3.5 shrink-0 text-[#6f6f7f]" />
               </div>
             </Tooltip>
           </Field>
@@ -85,7 +85,7 @@ export function DeliveryDetailsPanel({
                 <span className="min-w-0 flex-1 whitespace-pre-line text-[13px] text-[#3d3d4a]">
                   {po.deliveryInstructions?.trim() || '—'}
                 </span>
-                <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#8b8b9b]" />
+                <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#6f6f7f]" />
               </div>
             </Field>
           </div>
@@ -183,7 +183,7 @@ function Field({
       <span className="text-[12px] font-medium text-[#3d3d4a]">
         {label}
         {required && <span className="text-[#b42318]"> *</span>}
-        {hint && <span className="ml-1 font-normal text-[#8b8b9b]">{hint}</span>}
+        {hint && <span className="ml-1 font-normal text-[#6f6f7f]">{hint}</span>}
       </span>
       {children}
     </label>

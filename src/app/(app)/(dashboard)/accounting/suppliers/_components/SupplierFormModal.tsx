@@ -50,8 +50,8 @@ const fieldClass =
 const badFieldClass =
   'w-full rounded-lg border border-[#b42318] bg-[#fdeceb] px-3 py-2 text-sm text-[#17171c] outline-none focus:border-[#b42318]'
 const sectionHeadClass = 'text-[13.5px] font-semibold text-[#17171c]'
-const sectionNoteClass = 'text-[11.5px] leading-relaxed text-[#5b5b6b]'
-const hintClass = 'text-[11px] text-[#5b5b6b]'
+const sectionNoteClass = 'text-[11.5px] leading-relaxed text-[#4b4b5a]'
+const hintClass = 'text-[11px] text-[#4b4b5a]'
 const errorClass = 'text-[11px] font-medium text-[#b42318]'
 
 const EMPTY_DEFAULTS: CreateSupplierFormValues = {
@@ -218,7 +218,7 @@ export function SupplierFormModal({
                 </span>
               )}
             </div>
-            <p className="mt-1 text-xs text-[#5b5b6b]">
+            <p className="mt-1 text-xs text-[#4b4b5a]">
               A code and a name are all that is required — everything else can follow.
             </p>
           </div>
@@ -735,7 +735,7 @@ export function SupplierFormModal({
               </div>
 
               {fields.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-[#d3d3db] px-4 py-6 text-center text-[12.5px] text-[#5b5b6b]">
+                <p className="rounded-lg border border-dashed border-[#d3d3db] px-4 py-6 text-center text-[12.5px] text-[#4b4b5a]">
                   None yet. Payments cannot be released without one, but it can be added later.
                 </p>
               ) : (
@@ -926,7 +926,7 @@ export function SupplierFormModal({
                     {blocking.length} {blocking.length === 1 ? 'thing' : 'things'} to fix before
                     this can be saved
                   </p>
-                  <p className="truncate text-[11.5px] text-[#5b5b6b]">{blocking[0]}</p>
+                  <p className="truncate text-[11.5px] text-[#4b4b5a]">{blocking[0]}</p>
                 </>
               ) : (
                 <p className="text-[11.5px] font-medium text-[#0b6644]">Ready to save</p>
@@ -937,7 +937,7 @@ export function SupplierFormModal({
                 type="button"
                 onClick={onClose}
                 disabled={isSubmitting}
-                className="rounded-lg px-4 py-2.5 text-sm font-medium text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#17171c] disabled:opacity-50"
+                className="rounded-lg px-4 py-2.5 text-sm font-medium text-[#4b4b5a] hover:bg-[#f1f1f4] hover:text-[#17171c] disabled:opacity-50"
               >
                 Cancel
               </button>

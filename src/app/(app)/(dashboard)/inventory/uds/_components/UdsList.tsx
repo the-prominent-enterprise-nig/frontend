@@ -184,9 +184,11 @@ export default function UdsList({ session }: { session: SessionUser }) {
     statusCounts,
     statusFilter,
     reasonFilter,
+    warehouseFilter,
     providerFilter,
     setStatusFilter,
     setReasonFilter,
+    setWarehouseFilter,
     setProviderFilter,
     resetFilters,
     page,
@@ -246,7 +248,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
     [router, canCreateDr]
   )
 
-  const hasFilters = !!statusFilter || !!reasonFilter || !!providerFilter
+  const hasFilters = !!statusFilter || !!reasonFilter || !!warehouseFilter || !!providerFilter
 
   async function handleUpdateStatus(data: UpdateUdsStatusFormValues) {
     if (!selectedStep) return { success: false, error: 'No UDS selected', message: '' }
@@ -281,7 +283,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
             <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Unit Document Sheets</h1>
-            <p className="text-[13px] text-[#5b5b6b]">
+            <p className="text-[13px] text-[#4b4b5a]">
               Track units leaving the branch for repair, pull-out, maintenance, or loan.
             </p>
           </div>
@@ -314,6 +316,20 @@ export default function UdsList({ session }: { session: SessionUser }) {
               </option>
             ))}
           </select>
+
+          {/* Oct 29 UAT WH-05 — the repair tickets at one branch. Each branch
+              has one warehouse, so it's labelled by the branch. */}
+          <SearchableSelect
+            value={warehouseFilter ?? ''}
+            onChange={(v) => setWarehouseFilter(v || undefined)}
+            options={warehouseOptions.map((w) => ({
+              value: w.id,
+              label: w.branch?.name ?? w.name,
+            }))}
+            placeholder="All branches"
+            ariaLabel="Branch"
+            className="w-56"
+          />
 
           {/* Scenario 73 — the tickets one service center has, or had. */}
           <SearchableSelect
@@ -376,7 +392,9 @@ export default function UdsList({ session }: { session: SessionUser }) {
                   <tr className="border-b border-[#eeeef1] bg-[#fbfbfc]">
                     <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Document</th>
                     <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Status</th>
-                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Units / Provider</th>
+                    <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>
+                      Units / Service Center
+                    </th>
                     <th className={`px-4 py-3 text-left ${STOCK_TABLE_HEAD}`}>Route</th>
                     <th className={`hidden px-4 py-3 text-left md:table-cell ${STOCK_TABLE_HEAD}`}>
                       Latest document

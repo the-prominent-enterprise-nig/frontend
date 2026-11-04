@@ -38,6 +38,11 @@ export function useReceiptsImport() {
   const [preview, setPreview] = useState<AcknowledgementImportPreview | null>(null)
   const [result, setResult] = useState<AcknowledgementImportResult | null>(null)
   const [phase, setPhase] = useState<ImportPhase>('choose')
+  // Who paid the rows that carry no Paid by of their own: 'Customer' or a
+  // financing partner's name. Empty until the user picks — nothing is ever
+  // assumed to be customer-paid — and cleared with every new file so one
+  // file's answer never carries to the next.
+  const [paidBy, setPaidByState] = useState('')
   // The user's tick on "post these rows using the calculated Net". Reset with
   // every new file so a tick given to one file never carries to the next.
   // True from an edit until the server has answered for the rows as they now
@@ -50,6 +55,7 @@ export function useReceiptsImport() {
   // The debounced re-check reads the rows from here, not from a closure, so it
   // always sends what is on screen now.
   const rowsRef = useRef<EditableImportRow[]>([])
+  const paidByRef = useRef('')
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Bumped by every edit and every new check; an answer for an older one is
   // dropped.
@@ -76,7 +82,8 @@ export function useReceiptsImport() {
     }
     const mine = ++seqRef.current
     const res = await AcknowledgementReceipts.importPreviewRows(
-      current.map(({ rowNumber, cells }) => ({ rowNumber, cells }))
+      current.map(({ rowNumber, cells }) => ({ rowNumber, cells })),
+      paidByRef.current
     )
     if (mine !== seqRef.current) return // a newer edit or check superseded this one
     setChecking(false)
@@ -94,10 +101,16 @@ export function useReceiptsImport() {
     timerRef.current = setTimeout(() => void runCheck(), RECHECK_DELAY_MS)
   }, [runCheck])
 
-  function reset(): void {
+  /** Back to choosing a file. Who paid is asked again too, unless the file was
+   * only unreadable (`keepPaidBy`). */
+  function reset(options?: { keepPaidBy?: boolean }): void {
     clearTimer()
     seqRef.current += 1
     rowsRef.current = []
+    if (!options?.keepPaidBy) {
+      paidByRef.current = ''
+      setPaidByState('')
+    }
     setFile(null)
     setRows([])
     setPreview(null)
@@ -107,7 +120,15 @@ export function useReceiptsImport() {
     setPhase('choose')
   }
 
+  /** Who paid. Changing it re-checks the rows already on screen. */
+  function setPaidBy(value: string): void {
+    paidByRef.current = value
+    setPaidByState(value)
+    if (rowsRef.current.length > 0) scheduleCheck()
+  }
+
   async function choose(csv: File): Promise<void> {
+    if (!paidByRef.current) return // the page asks who paid before it takes a file
     clearTimer()
     seqRef.current += 1
     setFile(csv)
@@ -115,10 +136,10 @@ export function useReceiptsImport() {
     setResult(null)
     setChecking(false)
     setPhase('previewing')
-    const res = await AcknowledgementReceipts.importPreview(csv)
+    const res = await AcknowledgementReceipts.importPreview(csv, paidByRef.current)
     if (!res.success || !res.data) {
       showToast({ title: 'Could not read file', description: res.message, status: 'error' })
-      reset()
+      reset({ keepPaidBy: true })
       return
     }
     storeRows(
@@ -173,7 +194,8 @@ export function useReceiptsImport() {
     if (rowsRef.current.length === 0) return
     setPhase('applying')
     const res = await AcknowledgementReceipts.importCommitRows(
-      rowsRef.current.map(({ rowNumber, cells }) => ({ rowNumber, cells }))
+      rowsRef.current.map(({ rowNumber, cells }) => ({ rowNumber, cells })),
+      paidByRef.current
     )
     if (!res.success || !res.data) {
       showToast({ title: 'Import failed', description: res.message, status: 'error' })
@@ -190,6 +212,8 @@ export function useReceiptsImport() {
     preview,
     result,
     phase,
+    paidBy,
+    setPaidBy,
     checking,
     expanded,
     choose,

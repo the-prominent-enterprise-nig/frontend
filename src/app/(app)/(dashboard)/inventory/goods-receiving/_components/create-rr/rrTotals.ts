@@ -19,6 +19,13 @@ const round2 = (n: number): number => Math.round(n * 100) / 100
 export type RrLine = ReceiveStockFormValues['lines'][number]
 export type Discount = NonNullable<RrLine['discounts']>[number]
 
+/** The invoice a returned unit's line belongs to — the installment account
+ * for a repossession, the sale for a repair/return. Matches a ReturnBlock's
+ * accountId either way. */
+export function invoiceKeyOf(line: RrLine | undefined): string | undefined {
+  return line?.installmentAccountId || line?.salesTransactionId
+}
+
 /** Unit cost as the supplier's own pricing produces it: SRP walked through the
  * discount chain, in order. A freebie is zero however it was priced — the
  * server forces that too, so showing anything else here would be a lie the

@@ -21,13 +21,13 @@ export function AllListsUploadPageView() {
         <div>
           <Link
             href="/pos/catalog/price-lists"
-            className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#5b5b6b] hover:text-[#3f1490]"
+            className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#4b4b5a] hover:text-[#3f1490]"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to price lists
           </Link>
           <h1 className="text-2xl font-bold text-prominent-purple-900 md:text-3xl">Bulk upload</h1>
-          <p className="mt-1.5 text-sm text-[#5b5b6b]">
+          <p className="mt-1.5 text-sm text-[#4b4b5a]">
             Upload the whole price sheet in one go — WIP, CR-BR, SSC, Zero Interest, Credit Card,
             Tonik, Skyro and the rest. No need to pick a price use: each row is added to, or
             updates, the price list for its own PRICE USE.

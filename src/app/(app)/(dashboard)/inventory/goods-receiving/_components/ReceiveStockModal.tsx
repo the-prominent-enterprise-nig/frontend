@@ -22,6 +22,7 @@ import type { RepossessedSerialMeta } from '@/src/components/inventory/Repossess
 import type { InstallmentAccountMeta } from '@/src/components/inventory/InstallmentAccountSearchCombobox'
 import { uploadRrAttachment } from '../_actions/upload-rr-attachment'
 import { getServiceCenters } from '../_actions/service-center-units'
+import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 import type { ServiceCenterUnit } from '@/src/schema/inventory/goods-receiving/service-center-units'
 import {
@@ -45,7 +46,8 @@ import { RrDeliveryPanel, type WarehouseOption } from './create-rr/RrDeliveryPan
 import { RrLineRow } from './create-rr/RrLineRow'
 import { requiredAttachmentKinds, type RrAttachmentKind } from './create-rr/rrAttachments'
 import { collectRrBlockers, rrLineIssues, toIssueLines } from './create-rr/rrChecks'
-import { costFromPricing, rrTotals, type RrLine } from './create-rr/rrTotals'
+import { costFromPricing, invoiceKeyOf, rrTotals, type RrLine } from './create-rr/rrTotals'
+import type { RepairIntakeSale } from '../_actions/get-repair-intake-sales'
 import { PANEL, RR_LINE_GRID } from './create-rr/rrTokens'
 
 type Props = {
@@ -54,6 +56,8 @@ type Props = {
   onSubmit: (data: ReceiveStockFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
   warehouses: WarehouseOption[]
+  /** True while `warehouses` is being fetched — an empty list is not loading. */
+  warehousesLoading?: boolean
   items: ItemSummary[]
   /** The receiver's own branch — a repossession line drops the Location
    * field entirely and lands silently in this branch's own warehouse
@@ -175,6 +179,7 @@ export default function ReceiveStockModal({
   onSubmit,
   isSubmitting,
   warehouses,
+  warehousesLoading = false,
   items,
   actorBranchId,
   canViewCost,
@@ -214,7 +219,7 @@ export default function ReceiveStockModal({
   const [otherLineTrackSerial, setOtherLineTrackSerial] = useState<Record<string, boolean>>({})
   // Repossession and Repair/Return share one panel: a list of invoices the
   // units are coming back from. What's checked under each is the receipt's
-  // lines (linked by installmentAccountId), so this holds display state only.
+  // lines (linked through invoiceKeyOf), so this holds display state only.
   const [returnBlocks, setReturnBlocks] = useState<ReturnBlock[]>(() => [newReturnBlock()])
   // Scenario 73 — From Service Center: the units ticked (each one a line) and
   // their actual repair cost, by serialNumberId.
@@ -284,6 +289,17 @@ export default function ReceiveStockModal({
   // than handed in by a customer: no invoice, no Repair Type, no UDS/RFS.
   const fromServiceCenter =
     watched.reason === 'repair_return' && watched.origin === 'service_center'
+  // A customer's unit handed in for repair can be received at any branch, by
+  // anyone — the receiver's own location list is branch-scoped, so a repair
+  // intake fetches every location instead.
+  const repairIntake = watched.reason === 'repair_return' && !fromServiceCenter
+  const allLocationsQuery = useQuery({
+    queryKey: ['inventory-warehouses-lookup', 'all-branches'],
+    queryFn: () => getWarehouses({ limit: 200, status: 'active', allBranches: true }),
+    staleTime: 5 * 60_000,
+    enabled: isOpen && repairIntake,
+  })
+  const locationWarehouses = repairIntake ? (allLocationsQuery.data?.data?.data ?? []) : warehouses
   const serviceCentersQuery = useQuery({
     queryKey: ['service-centers-holding-units'],
     queryFn: () => getServiceCenters(),
@@ -499,22 +515,27 @@ export default function ReceiveStockModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watched.reason])
 
-  // Repossession drops Location from the form entirely (developer-confirmed
-  // 2026-09-28) — the destination still has to be a real warehouseId
-  // server-side (receiveStock() requires one unconditionally), so it's set
-  // here instead: the receiver's own branch warehouse, same one
-  // stock.service.ts already forces a branch-scoped reasoned receipt into
-  // regardless of what's submitted. Never overwrites an already-set value —
-  // a PO link, or a Location picked before switching Reason on, both stay.
+  // A repossessed unit lands in the receiver's own branch — stock.service.ts
+  // refuses one anywhere else — so it's filled in for them. A repair intake
+  // can go to any branch and every receiver picks it: no default at all (the
+  // old silent one was Negros, WH-07). A service-center return is left
+  // alone: it lands wherever the custodian receives it.
+  const ownBranchWarehouseId = actorBranchId
+    ? warehouses.find((w) => w.branchId === actorBranchId)?.id
+    : undefined
   useEffect(() => {
-    if (!isUnitReturn || watched.warehouseId) return
-    const ownBranch = actorBranchId
-      ? warehouses.find((w) => w.branchId === actorBranchId)
-      : undefined
-    const target = ownBranch ?? warehouses.find((w) => !w.branchId)
-    if (target) setValue('warehouseId', target.id, { shouldValidate: false })
+    if (!isRepo || !ownBranchWarehouseId) return
+    if (watched.warehouseId !== ownBranchWarehouseId)
+      setValue('warehouseId', ownBranchWarehouseId, { shouldValidate: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isUnitReturn, watched.warehouseId, actorBranchId, warehouses])
+  }, [isRepo, watched.warehouseId, ownBranchWarehouseId])
+  // Switching to a repair intake starts the branch blank, so nothing carried
+  // over from another reason (such as the own branch a repossession fills
+  // in) passes for a default.
+  useEffect(() => {
+    if (repairIntake) setValue('warehouseId', '', { shouldValidate: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repairIntake])
 
   const outstandingNotPulled = useMemo(() => {
     if (!linkedPo) return []
@@ -536,15 +557,35 @@ export default function ReceiveStockModal({
     setReturnBlocks([newReturnBlock()])
     setStagedFiles({ UDS: [], RFS: [] })
     if (isUnitReturn) {
-      replace(lines.filter((l) => !!l.installmentAccountId))
+      replace(lines.filter((l) => !!invoiceKeyOf(l)))
       return
     }
-    const keep = lines.filter((l) => !l.installmentAccountId && !l.existingSerialNumberIds?.length)
+    const keep = lines.filter((l) => !invoiceKeyOf(l) && !l.existingSerialNumberIds?.length)
     replace(
       keep.length > 0 ? keep : [{ quantityReceived: 1, taxCode: 'VAT', withholdingClass: 'goods' }]
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUnitReturn])
+
+  // Repossession searches installment accounts and Repair/Return searches
+  // sales, so an invoice picked under one means nothing under the other —
+  // switching straight between the two starts the panel over. Moving into or
+  // out of a unit return at all is the effect above's job.
+  const prevReason = useRef(watched.reason)
+  useEffect(() => {
+    const prev = prevReason.current
+    prevReason.current = watched.reason
+    const unitReturnReasons = ['repossession', 'repair_return']
+    if (prev === watched.reason) return
+    if (
+      !unitReturnReasons.includes(prev ?? '') ||
+      !unitReturnReasons.includes(watched.reason ?? '')
+    )
+      return
+    setReturnBlocks([newReturnBlock()])
+    replace(lines.filter((l) => !invoiceKeyOf(l)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watched.reason])
 
   // Repossession → Repair/Return (or back) while units are checked: a repo cost
   // only applies to a repossession.
@@ -552,7 +593,7 @@ export default function ReceiveStockModal({
     if (!isUnitReturn) return
     const units = returnBlocksRef.current.flatMap((b) => b.units ?? [])
     lines.forEach((line, index) => {
-      if (!line.installmentAccountId) return
+      if (!invoiceKeyOf(line)) return
       const unit = units.find((u) => u.serialNumberId === line.existingSerialNumberIds?.[0])
       const next = !isRepo ? undefined : unit && unit.repoCost > 0 ? unit.repoCost : line.unitCost
       if (next === line.unitCost) return
@@ -655,7 +696,9 @@ export default function ReceiveStockModal({
       quantityReceived: 1,
       itemId: unit.itemId,
       existingSerialNumberIds: [unit.serialNumberId],
-      installmentAccountId: accountId,
+      // A repossession's invoice is the installment account; a
+      // repair/return's is the sale itself.
+      ...(isRepo ? { installmentAccountId: accountId } : { salesTransactionId: accountId }),
       unitCost: costForUnit(unit),
     })
   }
@@ -677,7 +720,7 @@ export default function ReceiveStockModal({
     }
     // A different invoice replaces the old one — its checked units go with it.
     if (block.accountId && block.accountId !== id) {
-      replace(lines.filter((l) => l.installmentAccountId !== block.accountId))
+      replace(lines.filter((l) => invoiceKeyOf(l) !== block.accountId))
     }
     patchBlock(key, {
       accountId: id,
@@ -715,6 +758,37 @@ export default function ReceiveStockModal({
     })()
   }
 
+  /** Repair/return: the picked sale already carries its customer and units,
+   * so Returned by, Customer ID and the unit list fill in at once. A sale
+   * with one unit out is pre-checked, same as an installment invoice. */
+  function pickSale(key: string, sale: RepairIntakeSale): void {
+    if (returnBlocks.some((b) => b.key !== key && b.accountId === sale.id)) {
+      showToast({ title: 'That invoice is already on this receipt', status: 'error' })
+      return
+    }
+    const block = returnBlocks.find((b) => b.key === key)
+    if (block?.accountId && block.accountId !== sale.id) {
+      replace(lines.filter((l) => invoiceKeyOf(l) !== block.accountId))
+    }
+    const available = sale.unitItems.filter((u) => u.serialNumberId && u.serialStatus === 'sold')
+    patchBlock(key, {
+      accountId: sale.id,
+      invoiceLabel: sale.siNumber,
+      units: available,
+      exhausted: available.length === 0,
+      loading: false,
+      fallbackSerialLabel: '',
+      ...(sale.customer
+        ? {
+            customerId: sale.customer.id,
+            customerLabel: sale.customer.name,
+            customerCode: sale.customer.customerCode,
+          }
+        : {}),
+    })
+    if (available.length === 1) addUnitLine(sale.id, available[0])
+  }
+
   function pickCustomer(key: string, id: string, label?: string): void {
     patchBlock(key, { customerId: id, customerLabel: label ?? '', customerCode: undefined })
   }
@@ -730,7 +804,7 @@ export default function ReceiveStockModal({
       lines.filter(
         (l) =>
           !(
-            l.installmentAccountId === block.accountId &&
+            invoiceKeyOf(l) === block.accountId &&
             l.existingSerialNumberIds?.[0] === unit.serialNumberId
           )
       )
@@ -739,7 +813,7 @@ export default function ReceiveStockModal({
 
   function removeBlock(key: string): void {
     const block = returnBlocks.find((b) => b.key === key)
-    if (block?.accountId) replace(lines.filter((l) => l.installmentAccountId !== block.accountId))
+    if (block?.accountId) replace(lines.filter((l) => invoiceKeyOf(l) !== block.accountId))
     setReturnBlocks((prev) => prev.filter((b) => b.key !== key))
   }
 
@@ -748,7 +822,7 @@ export default function ReceiveStockModal({
   function manualLineIndex(accountId: string, serialNumberId?: string): number {
     return lines.findIndex(
       (l) =>
-        l.installmentAccountId === accountId &&
+        invoiceKeyOf(l) === accountId &&
         (!serialNumberId || l.existingSerialNumberIds?.[0] === serialNumberId)
     )
   }
@@ -1141,6 +1215,9 @@ export default function ReceiveStockModal({
         // reason so a stale pick from switching reasons mid-form can't ride
         // along.
         installmentAccountId: unitReturn ? line.installmentAccountId || undefined : undefined,
+        // The sale a repair/return unit was sold on — repair/return only.
+        salesTransactionId:
+          reason === 'repair_return' ? line.salesTransactionId || undefined : undefined,
       })),
       confirmWarehouseMismatch: warehouseMismatchWarning !== null,
     })
@@ -1172,19 +1249,19 @@ export default function ReceiveStockModal({
     >
       <div className="flex shrink-0 flex-wrap items-start justify-between gap-5 border-b border-[#e4e4e9] bg-white px-4 py-3.5 lg:px-5">
         <div className="flex min-w-0 flex-col gap-1">
-          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
             Inventory › Receiving › New
           </div>
           <h2 className="text-[21px] font-semibold tracking-[-.02em]">{title}</h2>
-          <p className="text-[12.5px] text-[#5b5b6b]">{subtitle}</p>
+          <p className="text-[12.5px] text-[#4b4b5a]">{subtitle}</p>
         </div>
 
         <div className="flex items-start gap-4">
           <div className="flex flex-col items-end gap-0.5">
-            <span className="text-[11px] text-[#5b5b6b]">Receiving</span>
+            <span className="text-[11px] text-[#4b4b5a]">Receiving</span>
             <span
               className={`${MONO} text-[18px] font-semibold tracking-[-.02em] ${
-                totals.units > 0 ? 'text-[#17171c]' : 'text-[#a3a3b2]'
+                totals.units > 0 ? 'text-[#17171c]' : 'text-[#8e8e9d]'
               }`}
             >
               {totals.units} {totals.units === 1 ? 'unit' : 'units'} · {totals.lines}{' '}
@@ -1196,7 +1273,7 @@ export default function ReceiveStockModal({
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#6f6f7f] hover:bg-[#f1f1f4] hover:text-[#17171c]"
             >
               <X className="h-4.5 w-4.5" />
             </button>
@@ -1208,7 +1285,8 @@ export default function ReceiveStockModal({
         <RrDeliveryPanel
           control={control}
           errors={errors}
-          warehouses={warehouses}
+          warehouses={locationWarehouses}
+          warehousesLoading={repairIntake ? allLocationsQuery.isLoading : warehousesLoading}
           showErrors={showErrors}
           supplierId={watched.supplierId ?? ''}
           supplierName={supplierName}
@@ -1223,6 +1301,7 @@ export default function ReceiveStockModal({
           onBrowsePo={() => setPoPickerOpen(true)}
           onUnlinkPo={unlinkPo}
           origin={watched.origin}
+          ownBranchWarehouseId={ownBranchWarehouseId}
           serviceCenterOptions={serviceCenterOptions}
           serviceCentersLoading={serviceCentersQuery.isLoading || suppliersQuery.isLoading}
         />
@@ -1250,6 +1329,7 @@ export default function ReceiveStockModal({
               showErrors={showErrors}
               itemNameFor={(itemId) => (itemId ? metaFor(itemId)?.name : undefined)}
               onPickInvoice={pickInvoice}
+              onPickSale={pickSale}
               onPickCustomer={pickCustomer}
               onToggleUnit={toggleUnit}
               onFallbackItem={fallbackItem}
@@ -1275,11 +1355,11 @@ export default function ReceiveStockModal({
                   <span className="text-[13.5px] font-semibold">
                     Items received <span className="text-[#b42318]">*</span>
                   </span>
-                  <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+                  <span className={`${MONO} text-[11px] text-[#6f6f7f]`}>
                     {fields.length} {fields.length === 1 ? 'line' : 'lines'} · {totals.units} units
                   </span>
                 </div>
-                <span className="text-[11.5px] text-[#8b8b9b]">
+                <span className="text-[11.5px] text-[#6f6f7f]">
                   Pick a catalog item, or mark it &ldquo;Non-catalog items&rdquo; for anything not
                   in the catalog.
                 </span>
@@ -1311,12 +1391,12 @@ export default function ReceiveStockModal({
               ManualRrForm.tsx's own Defaults bar exactly: applied to every
               new line going forward, not retroactively. */}
             <div className="flex flex-wrap items-center gap-2 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2">
-              <span className="text-[11px] text-[#8b8b9b]">Input tax type</span>
+              <span className="text-[11px] text-[#6f6f7f]">Input tax type</span>
               <select
                 value={defaultTaxCode}
                 onChange={(e) => setDefaultTaxCode(e.target.value)}
                 aria-label="Default tax code"
-                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#4b4b5a] outline-none focus:border-[#5b21b6]"
               >
                 {MANUAL_RR_TAX_CODES.map((code) => (
                   <option key={code.value} value={code.value}>
@@ -1324,12 +1404,12 @@ export default function ReceiveStockModal({
                   </option>
                 ))}
               </select>
-              <span className="ml-2 text-[11px] text-[#8b8b9b]">Withholding tax</span>
+              <span className="ml-2 text-[11px] text-[#6f6f7f]">Withholding tax</span>
               <select
                 value={defaultWithholdingClass}
                 onChange={(e) => setDefaultWithholdingClass(e.target.value)}
                 aria-label="Default withholding"
-                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#4b4b5a] outline-none focus:border-[#5b21b6]"
               >
                 {withholdingClassOptions(ewt.rateFor).map((cls) => (
                   <option key={cls.value} value={cls.value}>
@@ -1343,7 +1423,7 @@ export default function ReceiveStockModal({
               <div className="flex flex-col items-center gap-2 px-5.5 py-10 text-center">
                 <PackagePlus className="h-7 w-7 text-[#d3d3db]" />
                 <span className="text-[13.5px] font-semibold">No items added yet.</span>
-                <span className="max-w-[430px] text-[12px] leading-[1.55] text-[#5b5b6b]">
+                <span className="max-w-[430px] text-[12px] leading-[1.55] text-[#4b4b5a]">
                   {linkedPo
                     ? `Add a line, or pull the lines ${linkedPo.code} is still waiting on.`
                     : 'Add a line, then pick a catalog item or name what arrived.'}
@@ -1359,7 +1439,7 @@ export default function ReceiveStockModal({
             ) : (
               <>
                 <div
-                  className={`${MONO} ${RR_LINE_GRID} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] lg:grid`}
+                  className={`${MONO} ${RR_LINE_GRID} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#6f6f7f] lg:grid`}
                 >
                   <span>Item / SKU</span>
                   <span className="text-right">Qty</span>
@@ -1422,7 +1502,7 @@ export default function ReceiveStockModal({
                 })}
 
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[#e4e4e9] bg-[#fbfbfc] px-4.5 py-3">
-                  <span className="text-[11.5px] text-[#8b8b9b]">
+                  <span className="text-[11.5px] text-[#6f6f7f]">
                     Held lines land in quarantine, not as sellable stock. Freebies are received at
                     zero cost.
                   </span>
@@ -1439,7 +1519,7 @@ export default function ReceiveStockModal({
         )}
         <div className={`${PANEL} flex flex-col gap-2 px-4.5 py-3.5`}>
           <label className="text-[12px] font-medium text-[#3d3d4a]">
-            Notes <span className="font-normal text-[#8b8b9b]">optional</span>
+            Notes <span className="font-normal text-[#6f6f7f]">optional</span>
           </label>
           <Controller
             name="notes"

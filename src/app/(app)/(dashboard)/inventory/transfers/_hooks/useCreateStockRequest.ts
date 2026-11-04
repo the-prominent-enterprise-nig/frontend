@@ -5,6 +5,7 @@ import { showToast } from '@/src/components/ui/toast'
 import { createTransfer } from '../_actions/create-transfer'
 import { createCaravan } from '../_actions/create-caravan'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
+import { getBranches, type BranchLookup } from '../_actions/get-branches'
 import type {
   CreateTransferFormValues,
   NewCaravanFormValues,
@@ -14,7 +15,12 @@ import type { ApiResponse } from '@/src/libs/api/client'
 
 type CreateStockRequest = {
   warehouseOptions: WarehouseSummary[]
-  createTransfer: (data: CreateTransferFormValues) => Promise<ApiResponse<unknown>>
+  /** Branch lookup — gives a warehouse branch's region, which is how its
+   * staff are matched to the standalone warehouse their stock sits in. */
+  branchOptions: BranchLookup[]
+  createTransfer: (
+    data: CreateTransferFormValues
+  ) => Promise<ApiResponse<{ id: string; transferNumber?: string }>>
   isCreating: boolean
   createCaravan: (data: NewCaravanFormValues) => Promise<ApiResponse<{ warehouseId: string }>>
   isCreatingCaravan: boolean
@@ -38,6 +44,13 @@ export function useCreateStockRequest(): CreateStockRequest {
     // for callers cleared for cross-branch work (see
     // warehouses.controller.ts), silently ignoring it otherwise.
     queryFn: () => getWarehouses({ limit: 200, status: 'active', allBranches: true }),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // Same key as useTransferManager's, so the two share one request.
+  const branchesQuery = useQuery({
+    queryKey: ['inventory-branches-lookup'],
+    queryFn: () => getBranches(),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -82,6 +95,7 @@ export function useCreateStockRequest(): CreateStockRequest {
 
   return {
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
+    branchOptions: branchesQuery.data?.data?.data ?? [],
     createTransfer: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
     createCaravan: createCaravanMutation.mutateAsync,

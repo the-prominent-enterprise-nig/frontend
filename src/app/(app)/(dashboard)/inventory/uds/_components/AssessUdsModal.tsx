@@ -28,7 +28,7 @@ const fieldClass =
 const ASSESSMENT_META = {
   repairable: {
     icon: Wrench,
-    description: 'Send to the repair provider — posts the estimated cost as a debit',
+    description: 'Send to the service center — posts the estimated cost as a debit',
     color: 'bg-green-100 text-green-700',
     ring: 'border-green-500 ring-green-500',
   },
@@ -201,7 +201,7 @@ export default function AssessUdsModal({
             {assessment === 'repairable' && !uds.repairProvider && (
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Repair Provider <span className="text-red-500">*</span>
+                  Service Center <span className="text-red-500">*</span>
                 </label>
                 <Controller
                   name="repairProviderId"
@@ -211,7 +211,7 @@ export default function AssessUdsModal({
                     <SearchableSelect
                       value={field.value ?? ''}
                       onChange={(v) => field.onChange(v)}
-                      placeholder="Search repair provider…"
+                      placeholder="Search service center…"
                       portal
                       options={providerOptions}
                     />

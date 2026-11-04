@@ -167,7 +167,7 @@ export default function CreateUdsModal({
           <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#17171c]">
             Issue Unit Document Sheet
           </h2>
-          <p className="mt-0.5 text-[13px] text-[#5b5b6b]">
+          <p className="mt-0.5 text-[13px] text-[#4b4b5a]">
             Track units leaving the branch for repair, pull-out, or maintenance.
           </p>
         </div>
@@ -258,7 +258,7 @@ export default function CreateUdsModal({
             <div className="grid gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Repair Provider
+                  Service Center
                   <span className="ml-1 text-xs font-normal text-zinc-400">(optional)</span>
                 </label>
                 <Controller
@@ -270,7 +270,7 @@ export default function CreateUdsModal({
                       onChange={field.onChange}
                       clearable
                       portal
-                      placeholder="Search repair provider…"
+                      placeholder="Search service center…"
                       options={providerOptions}
                     />
                   )}

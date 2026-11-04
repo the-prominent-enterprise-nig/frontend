@@ -102,9 +102,9 @@ function stageMeta(
 function InfoRow({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
   return (
     <div className="min-w-0">
-      <p className={`${MONO} text-[10px] uppercase tracking-[.09em] text-[#a3a3b2]`}>{label}</p>
+      <p className={`${MONO} text-[10px] uppercase tracking-[.09em] text-[#8e8e9d]`}>{label}</p>
       <p
-        className={`mt-[3px] text-[13px] font-medium ${muted ? 'text-[#8b8b9b]' : 'text-[#17171c]'}`}
+        className={`mt-[3px] text-[13px] font-medium ${muted ? 'text-[#6f6f7f]' : 'text-[#17171c]'}`}
       >
         {value}
       </p>
@@ -246,7 +246,7 @@ export function PoDetailModal({
       {/* Header */}
       <div className="sticky top-0 z-40 flex flex-wrap items-start justify-between gap-4 border-b border-[#e4e4e9] bg-white px-5 py-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
             Purchase Order
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
@@ -258,7 +258,7 @@ export function PoDetailModal({
               </span>
             )}
           </div>
-          <p className="text-[11.5px] text-[#8b8b9b]">
+          <p className="text-[11.5px] text-[#6f6f7f]">
             Created {fmtDate(po.createdAt)}
             {po.fromPr && ` · from ${po.fromPr.code}`}
             {po.preparedByName && ` · ${po.preparedByName}`}
@@ -271,7 +271,7 @@ export function PoDetailModal({
             disabled={isDownloading}
             title="Download PDF"
             aria-label="Download PDF"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#e4e4e9] bg-white text-[#5b5b6b] transition-colors hover:border-[#d3d3db] hover:bg-[#f6f6f8] disabled:opacity-50"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#e4e4e9] bg-white text-[#4b4b5a] transition-colors hover:border-[#d3d3db] hover:bg-[#f6f6f8] disabled:opacity-50"
           >
             {isDownloading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -284,7 +284,7 @@ export function PoDetailModal({
             onClick={onClose}
             title="Close"
             aria-label="Close"
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-[#4b4b5a] hover:bg-[#f1f1f4] hover:text-[#17171c]"
           >
             <X className="h-4.5 w-4.5" />
           </button>
@@ -317,7 +317,7 @@ export function PoDetailModal({
                   done || complete ? 'bg-[#0f7b52]' : active ? 'bg-[#5b21b6]' : 'bg-[#d3d3db]'
                 const ring = active && !complete ? 'shadow-[0_0_0_3px_#f0e9fc]' : ''
                 const labelColor =
-                  done || complete ? 'text-[#0b6644]' : active ? 'text-[#3f1490]' : 'text-[#8b8b9b]'
+                  done || complete ? 'text-[#0b6644]' : active ? 'text-[#3f1490]' : 'text-[#6f6f7f]'
                 return (
                   <div key={stage.key} className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
@@ -330,7 +330,7 @@ export function PoDetailModal({
                         >
                           {stage.label}
                         </span>
-                        <span className="text-[11px] text-[#8b8b9b]">
+                        <span className="text-[11px] text-[#6f6f7f]">
                           {stageMeta(i, po, stageIndex, received, ordered)}
                         </span>
                       </div>
@@ -358,7 +358,7 @@ export function PoDetailModal({
         {/* Supplier + facts */}
         <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[1fr_1.15fr]">
           <div className="rounded-xl border border-[#e4e4e9] bg-white p-4">
-            <p className={`${MONO} text-[10px] uppercase tracking-[.09em] text-[#a3a3b2]`}>
+            <p className={`${MONO} text-[10px] uppercase tracking-[.09em] text-[#8e8e9d]`}>
               Supplier
             </p>
             <div className="mt-2.5 flex items-start gap-3">
@@ -366,13 +366,13 @@ export function PoDetailModal({
               <div className="min-w-0">
                 <p className="text-[15px] font-semibold tracking-[-.005em]">{po.supplier.name}</p>
                 {po.supplier.address && (
-                  <p className="mt-0.5 text-[12px] leading-[1.45] text-[#5b5b6b]">
+                  <p className="mt-0.5 text-[12px] leading-[1.45] text-[#4b4b5a]">
                     {po.supplier.address}
                   </p>
                 )}
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
                   {po.supplier.taxId && (
-                    <span className={`${MONO} text-[10.5px] text-[#5b5b6b]`}>
+                    <span className={`${MONO} text-[10.5px] text-[#4b4b5a]`}>
                       TIN {po.supplier.taxId}
                     </span>
                   )}
@@ -440,7 +440,7 @@ export function PoDetailModal({
           <div className="flex items-center justify-between gap-3 border-b border-[#eeeef1] px-4 py-3">
             <div className="flex items-center gap-2">
               <span className="text-[13.5px] font-semibold">Line Items</span>
-              <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+              <span className={`${MONO} text-[11px] text-[#6f6f7f]`}>
                 {po.lines.length} {po.lines.length === 1 ? 'line' : 'lines'} · {ordered} units
               </span>
             </div>
@@ -451,7 +451,7 @@ export function PoDetailModal({
                     ? 'bg-[#e7f5ef] text-[#0b6644]'
                     : pct > 0
                       ? 'bg-[#fdf3e7] text-[#8a4b06]'
-                      : 'bg-[#f1f1f4] text-[#5b5b6b]'
+                      : 'bg-[#f1f1f4] text-[#4b4b5a]'
                 }`}
               >
                 {received} of {ordered} received · {pct}%
@@ -463,7 +463,7 @@ export function PoDetailModal({
             <table className="w-full min-w-[720px] text-sm">
               <thead>
                 <tr
-                  className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+                  className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[10px] uppercase tracking-[.09em] text-[#6f6f7f]`}
                 >
                   <th className="px-4 py-2.5 text-left">Item / SKU</th>
                   <th className="px-3 py-2.5 text-right">Ordered</th>
@@ -493,10 +493,10 @@ export function PoDetailModal({
                             </span>
                           )}
                         </div>
-                        <p className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>{line.item.sku}</p>
+                        <p className={`${MONO} text-[10.5px] text-[#6f6f7f]`}>{line.item.sku}</p>
                         {line.description && (
-                          <p className="mt-0.5 text-[11.5px] text-[#5b5b6b]">
-                            <span className="mr-1 text-[#a3a3b2]">Internal:</span>
+                          <p className="mt-0.5 text-[11.5px] text-[#4b4b5a]">
+                            <span className="mr-1 text-[#8e8e9d]">Internal:</span>
                             {line.description}
                           </p>
                         )}
@@ -506,14 +506,14 @@ export function PoDetailModal({
                               than being restated here, where a tweak on one
                               screen would silently make the four disagree. */}
                         {discountChainLabel(line, fmtPeso) && (
-                          <p className="mt-0.5 text-[11.5px] text-[#5b5b6b]">
+                          <p className="mt-0.5 text-[11.5px] text-[#4b4b5a]">
                             {discountChainLabel(line, fmtPeso)}
                           </p>
                         )}
                         {(serialsByLine[line.id] ?? []).length > 0 && (
                           <div className="mt-1.5">
                             <p
-                              className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#a3a3b2]`}
+                              className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8e8e9d]`}
                             >
                               Serial Numbers ({serialsByLine[line.id].length})
                             </p>
@@ -539,7 +539,7 @@ export function PoDetailModal({
                             ? 'font-semibold text-[#0b6644]'
                             : lineReceived > 0
                               ? 'font-semibold text-[#8a4b06]'
-                              : 'text-[#a3a3b2]'
+                              : 'text-[#8e8e9d]'
                         }`}
                       >
                         {lineReceived}
@@ -577,7 +577,7 @@ export function PoDetailModal({
           <div className="flex justify-end border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-3.5">
             <div className="w-full max-w-[260px] space-y-1.5">
               <div className="flex items-center justify-between text-[12.5px]">
-                <span className="text-[#5b5b6b]">Subtotal</span>
+                <span className="text-[#4b4b5a]">Subtotal</span>
                 <span className={`${MONO} text-[#3d3d4a]`}>{fmtPeso(subtotal)}</span>
               </div>
               <div className="flex items-baseline justify-between border-t border-[#e4e4e9] pt-1.5">
@@ -596,7 +596,7 @@ export function PoDetailModal({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+          className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#4b4b5a] hover:bg-[#f1f1f4] hover:text-[#17171c]"
         >
           Close
         </button>

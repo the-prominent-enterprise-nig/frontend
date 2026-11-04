@@ -71,7 +71,7 @@ function SummaryBody({
   }
   if (!loaded) {
     return (
-      <p className="px-4 py-3 text-[12.5px] text-[#5b5b6b]">
+      <p className="px-4 py-3 text-[12.5px] text-[#4b4b5a]">
         Unable to load the session&apos;s figures. Close without them and the variance is still
         computed by the backend — but count carefully, this screen cannot check it for you.
       </p>
@@ -166,7 +166,7 @@ function TotalSales({
               />
             )}
           </span>
-          <span className="text-[10.5px] text-[#5b5b6b]">
+          <span className="text-[10.5px] text-[#4b4b5a]">
             {totalRefunds ? `net of ₱${peso(totalRefunds)} refunded` : 'completed sales'}
             {rows.length > 0 && !open ? ' · see how it was paid' : ''}
           </span>
@@ -180,7 +180,7 @@ function TotalSales({
               key={row.key}
               className="grid grid-cols-[minmax(0,1fr)_96px] items-baseline gap-2.5 py-1 pl-8 pr-4"
             >
-              <span className="min-w-0 text-[11.5px] leading-[1.4] text-[#5b5b6b]">
+              <span className="min-w-0 text-[11.5px] leading-[1.4] text-[#4b4b5a]">
                 {row.label}
               </span>
               <span className="text-right text-[11.5px] tabular-nums text-[#3d3d4a]">
@@ -200,7 +200,7 @@ function InvoiceList({ numbers }: { numbers: string[] }): React.JSX.Element {
     <div className="border-t border-[#f4f4f6] px-4 py-2.5">
       <div className="flex items-baseline justify-between gap-4">
         <span className="text-[12.5px]">Invoice numbers</span>
-        <span className="text-[11px] text-[#5b5b6b]">
+        <span className="text-[11px] text-[#4b4b5a]">
           {numbers.length} invoice{numbers.length === 1 ? '' : 's'}
         </span>
       </div>
@@ -216,7 +216,7 @@ function InvoiceList({ numbers }: { numbers: string[] }): React.JSX.Element {
           ))}
         </ul>
       ) : (
-        <p className="mt-0.5 text-[10.5px] text-[#5b5b6b]">
+        <p className="mt-0.5 text-[10.5px] text-[#4b4b5a]">
           No invoice numbers recorded this session.
         </p>
       )}
@@ -250,14 +250,14 @@ function Row({
     >
       <div className="flex min-w-0 flex-col">
         <span className={strong ? 'text-[13px] font-semibold' : 'text-[12.5px]'}>{label}</span>
-        <span className="text-[10.5px] text-[#5b5b6b]">{note}</span>
+        <span className="text-[10.5px] text-[#4b4b5a]">{note}</span>
       </div>
       <span
         className={`shrink-0 tabular-nums ${
           strong
             ? 'text-[17px] font-semibold tracking-[-.01em]'
             : `text-[12.5px] font-medium ${
-                signed && amount === 0 ? 'text-[#5b5b6b]' : amount < 0 ? 'text-[#8a4b06]' : ''
+                signed && amount === 0 ? 'text-[#4b4b5a]' : amount < 0 ? 'text-[#8a4b06]' : ''
               }`
         }`}
       >

@@ -61,12 +61,12 @@ export function ServiceCenterUnitsPanel(props: Props): React.ReactElement {
             Units back from {serviceCenterName || 'the service center'}{' '}
             <span className="text-[#b42318]">*</span>
           </span>
-          <span className="text-[11px] text-[#8b8b9b]">
+          <span className="text-[11px] text-[#6f6f7f]">
             {picked.length} {picked.length === 1 ? 'unit' : 'units'} checked
           </span>
         </div>
         <span
-          className={`text-[11.5px] ${showErrors && noneChecked ? 'text-[#b42318]' : 'text-[#8b8b9b]'}`}
+          className={`text-[11.5px] ${showErrors && noneChecked ? 'text-[#b42318]' : 'text-[#6f6f7f]'}`}
         >
           {showErrors && noneChecked
             ? 'Check at least one unit.'
@@ -78,7 +78,7 @@ export function ServiceCenterUnitsPanel(props: Props): React.ReactElement {
         {!serviceCenterId ? (
           <Empty text="Pick the service center above to list the units out there." />
         ) : unitsQuery.isLoading ? (
-          <div className="flex items-center gap-2 text-[11.5px] text-[#8b8b9b]">
+          <div className="flex items-center gap-2 text-[11.5px] text-[#6f6f7f]">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading the units out there…
           </div>
         ) : listed.length === 0 ? (
@@ -156,14 +156,14 @@ function UnitSummary({ unit }: { unit: ServiceCenterUnit }): React.ReactElement 
     <span className="flex min-w-0 flex-1 flex-col gap-0.5">
       <span className="flex min-w-0 flex-wrap items-center gap-x-2.5">
         <span className={`${MONO} text-[12.5px] text-[#17171c]`}>{unit.serialNumber}</span>
-        <span className="text-[#c4c4cf]">–</span>
+        <span className="text-[#a9a9b6]">–</span>
         <span className="min-w-0 truncate text-[12.5px] text-[#17171c]">
           {unit.item.modelNumber || unit.item.name}
         </span>
-        <span className="text-[#c4c4cf]">–</span>
-        <span className="text-[12.5px] text-[#5b5b6b]">{unit.item.brand || '—'}</span>
+        <span className="text-[#a9a9b6]">–</span>
+        <span className="text-[12.5px] text-[#4b4b5a]">{unit.item.brand || '—'}</span>
       </span>
-      <span className="truncate text-[11px] text-[#8b8b9b]">
+      <span className="truncate text-[11px] text-[#6f6f7f]">
         {facts.length > 0 ? facts.join(' · ') : KIND_LABEL[unit.kind]}
         {unit.kind !== 'at_provider' && facts.length > 0 && ` · ${KIND_LABEL[unit.kind]}`}
       </span>
@@ -186,7 +186,7 @@ function CostInput({
   const bad = showErrors && value !== undefined && value < 0
   return (
     <div className="flex flex-wrap items-center gap-1.5 bg-[#faf7ff] px-3 pb-2.5 pl-10">
-      <span className="text-[10.5px] text-[#5b5b6b]">Actual repair cost</span>
+      <span className="text-[10.5px] text-[#4b4b5a]">Actual repair cost</span>
       <input
         type="number"
         step="0.01"
@@ -199,7 +199,7 @@ function CostInput({
           bad ? 'border-[#b42318]' : 'border-[#d3d3db]'
         } bg-white px-2 text-[12px] outline-none focus:border-[#5b21b6]`}
       />
-      <span className="text-[10.5px] text-[#8b8b9b]">
+      <span className="text-[10.5px] text-[#6f6f7f]">
         {estimate != null
           ? `Estimate ${fmtPeso(estimate)} — leave as is if the bill is not in yet.`
           : 'No estimate on the ticket — blank posts nothing yet.'}
@@ -251,9 +251,9 @@ function SerialSearch({ serviceCenterId, picked, onToggle }: Props): React.React
       {q.length >= 3 && (
         <div className="mt-2 flex flex-col gap-1.5">
           {search.isLoading ? (
-            <span className="text-[11px] text-[#8b8b9b]">Searching…</span>
+            <span className="text-[11px] text-[#6f6f7f]">Searching…</span>
           ) : results.length === 0 ? (
-            <span className="text-[11px] text-[#8b8b9b]">
+            <span className="text-[11px] text-[#6f6f7f]">
               Nothing found that could have come back from this service center. A unit out at
               another service center, or already back, is never offered.
             </span>
@@ -283,7 +283,7 @@ function SerialSearch({ serviceCenterId, picked, onToggle }: Props): React.React
 
 function Empty({ text }: { text: string }): React.ReactElement {
   return (
-    <div className="rounded-[9px] border border-dashed border-[#d3d3db] px-4 py-5 text-center text-[11.5px] leading-relaxed text-[#8b8b9b]">
+    <div className="rounded-[9px] border border-dashed border-[#d3d3db] px-4 py-5 text-center text-[11.5px] leading-relaxed text-[#6f6f7f]">
       {text}
     </div>
   )
