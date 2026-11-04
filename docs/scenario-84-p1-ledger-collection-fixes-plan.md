@@ -118,6 +118,29 @@ overrides it.
 **Tests:** `e2e/scenario-84-part-4-pr-cost-prefill.spec.ts` (cost price with no supplier; blank with no cost;
 supplier price over cost; read-only, fixtures looked up through the API). No backend change, so no backend e2e.
 
+### Part 5 — UI refinements (Kian, 2026-11-04)
+
+Found screenshotting Parts 1–4 on the isolated pair; Kian added the POS Overview date filter. Frontend only.
+
+- **POS Overview period (S80 POS-02/03 follow-up):** "user shouldn't be able to type what month, just pick". Kian
+  chose the month stepper only (not presets, not a single date). The native `type="month"` box is replaced by
+  `pos/_components/MonthStepper.tsx`: ‹ › a month at a time, the month's name opens a 12-month grid with year ‹ ›;
+  nothing after this month. The range's two date boxes stay native but are pick-only (`PICK_ONLY`: click / Enter /
+  Space open `showPicker()`, other keys and paste are ignored, Tab still moves on).
+- **Supplier picked after the lines (Part 4 gap):** each catalog-added item records where its price started and its
+  cost price (`priceStarts`). When the supplier changes, a line still on that starting price (not typed over, no
+  SRP, not a freebie) moves to the new supplier's price, or back to cost when the supplier has none or is cleared.
+- **Unit price formatting (Part 4):** the PO form's own `MoneyInput` shows `29,520.00` (the `peso()` used for Line
+  total) when not focused, and the bare number while typed in. Its only other use, **Supplier SRP** (both layouts), reads the
+  same way, so the two price boxes on a line match.
+- **Negative Tot. Amt. Due (Part 3):** `LedgerHero` figures take `negative`; the plan ledger's Tot. Amt. Due sets it,
+  so an advance is red like the Due column.
+
+**Tests:** `e2e/scenario-84-part-5-ui-refinements.spec.ts` (month stepper and grid; range boxes ignore typing; grouped
+Unit price; supplier re-price; red Tot. Amt. Due). `scenario-80-part-4-filters.spec.ts` updated: POS-03 reads the
+stepper, and the mode button is matched exactly (the stepper's "Previous month" would otherwise also match "Month").
+`scenario-84-part-4-pr-cost-prefill.spec.ts` expects the grouped Unit price.
+
 ## Found along the way, not fixed (pre-existing)
 
 - **A cancelled collection still counts.** `cancelPayment` writes `ARPayment.cancelledAt` only; the receipt's own

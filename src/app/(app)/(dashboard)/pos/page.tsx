@@ -19,6 +19,7 @@ import { Skeleton } from '@/src/components/ui/Skeleton'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { type SessionUser } from '@/src/libs/guards/permission'
 import { TransactionDetail } from './_components/TransactionDetail'
+import { MonthStepper } from './_components/MonthStepper'
 import type { PosTransaction } from '@/src/schema/pos'
 import {
   ShoppingCart,
@@ -96,6 +97,21 @@ function periodLabel(p: OverviewPeriod): string {
   }
   const [a, b] = [p.from, p.to].sort()
   return a === b ? fmt(a) : `${fmt(a)} – ${fmt(b)}`
+}
+
+/**
+ * Scenario 84 Part 5 — a date box that is picked, not typed: a click (or
+ * Enter / Space) opens the browser's calendar, and keys that would type a
+ * date are ignored. Tab still moves on.
+ */
+const PICK_ONLY = {
+  onClick: (e: React.MouseEvent<HTMLInputElement>) => e.currentTarget.showPicker?.(),
+  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Tab') return
+    e.preventDefault()
+    if (e.key === 'Enter' || e.key === ' ') e.currentTarget.showPicker?.()
+  },
+  onPaste: (e: React.ClipboardEvent<HTMLInputElement>) => e.preventDefault(),
 }
 
 function formatCurrency(n: number) {
@@ -357,15 +373,10 @@ export default function PosOverviewPage() {
             ))}
           </div>
           {period.mode === 'month' ? (
-            <input
-              type="month"
-              aria-label="Month"
+            <MonthStepper
               value={period.month}
               max={todayIso.slice(0, 7)}
-              onChange={(e) =>
-                e.target.value && setPeriod({ mode: 'month', month: e.target.value })
-              }
-              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800"
+              onChange={(month) => setPeriod({ mode: 'month', month })}
             />
           ) : (
             <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -374,8 +385,9 @@ export default function PosOverviewPage() {
                 aria-label="From"
                 value={period.from}
                 max={todayIso}
+                {...PICK_ONLY}
                 onChange={(e) => e.target.value && setPeriod({ ...period, from: e.target.value })}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800"
+                className="cursor-pointer rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800"
               />
               to
               <input
@@ -383,8 +395,9 @@ export default function PosOverviewPage() {
                 aria-label="To"
                 value={period.to}
                 max={todayIso}
+                {...PICK_ONLY}
                 onChange={(e) => e.target.value && setPeriod({ ...period, to: e.target.value })}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800"
+                className="cursor-pointer rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800"
               />
             </div>
           )}

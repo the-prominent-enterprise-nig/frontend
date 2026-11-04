@@ -10,9 +10,8 @@ test.describe('Scenario 80 Part 4 — filters', () => {
     await gotoReady(page, '/pos')
     const thisMonth = new Date().toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
     await expect(page.getByTestId('overview-period-label')).toHaveText(`Showing ${thisMonth}`)
-    await expect(page.getByLabel('Month')).toHaveValue(
-      `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
-    )
+    // Scenario 84 Part 5 — the month is a stepper now, not a typed month box.
+    await expect(page.getByTestId('overview-month')).toHaveText(thisMonth)
   })
 
   test('POS-02: a date range narrows Total Sales and the transactions request to it', async ({
@@ -34,7 +33,7 @@ test.describe('Scenario 80 Part 4 — filters', () => {
     await expect(page.getByTestId('overview-period-label')).toContainText('–')
     await expect(page.getByText('Total Sales')).toBeVisible()
 
-    await period.getByRole('button', { name: 'Month' }).click()
+    await period.getByRole('button', { name: 'Month', exact: true }).click()
     await expect(page.getByLabel('From', { exact: true })).toHaveCount(0)
   })
 

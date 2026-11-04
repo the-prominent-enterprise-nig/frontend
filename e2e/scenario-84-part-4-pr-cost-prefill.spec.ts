@@ -22,8 +22,10 @@ const list = async <T>(request: APIRequestContext, url: string): Promise<T[]> =>
 
 type Item = { id: string; name: string; sku: string; costPrice: number | string | null }
 
-/** How the Unit price input shows a peso amount (a plain number, no padding). */
-const shown = (n: number) => String(Number(n.toFixed(2)))
+/** How the Unit price input shows a peso amount while not being typed into:
+ * grouped with two decimals, like the Line total (Scenario 84 Part 5). */
+const shown = (n: number) =>
+  n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 async function openNewRequest(page: Page) {
   await gotoReady(page, '/inventory/purchase-orders?tab=requests')
