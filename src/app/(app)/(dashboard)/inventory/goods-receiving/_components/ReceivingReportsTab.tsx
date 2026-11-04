@@ -906,6 +906,7 @@ export default function ReceivingReportsTab({
           onSubmit={receiveMutation.mutateAsync}
           isSubmitting={receiveMutation.isPending}
           warehouses={destinationWarehousesQuery.data?.data?.data ?? []}
+          warehousesLoading={destinationWarehousesQuery.isLoading}
           items={createItemsQuery.data?.data?.data ?? []}
           actorBranchId={me?.branchId}
           canViewCost={canViewCost}
