@@ -162,7 +162,12 @@ function creditLines(report: DailyCollectionReport, opening: number): FormLine[]
     const balance = Math.abs(running) < 0.005 ? 0 : running
     if (!c.bankName) return creditLine('UNDEPOSITED', c.label, c.amount, balance)
     const bank = `${c.bankName} ${formatFormDate(c.depositedAt ?? '')}`
-    return creditLine('DEPOSIT', [c.label, bank].filter(Boolean).join(' · '), c.amount, balance)
+    return creditLine(
+      creditLabelOf(c.bankName),
+      [c.label, bank].filter(Boolean).join(' · '),
+      c.amount,
+      balance
+    )
   })
 }
 
@@ -173,10 +178,16 @@ function legacyCreditLines(report: DailyCollectionReport, opening: number): Form
   const lines = report.deposits.map((d) => {
     running -= d.amount
     const text = `${d.bankName} ${formatFormDate(d.depositedAt)}`
-    return creditLine('DEPOSIT', text, d.amount, running)
+    return creditLine(creditLabelOf(d.bankName), text, d.amount, running)
   })
   if (running > 0.005) lines.push(creditLine('UNDEPOSITED', 'UNDEPOSITED FUNDS', running, 0))
   return lines
+}
+
+/** Scenario 83 — cash handed to another branch leaves the balance like a
+ * deposit, but it is a TURNOVER, not a trip to the bank. */
+function creditLabelOf(bankName: string): string {
+  return bankName.startsWith('Turnover →') ? 'TURNOVER' : 'DEPOSIT'
 }
 
 function creditLine(label: string, text: string, credit: number, balance: number): FormLine {

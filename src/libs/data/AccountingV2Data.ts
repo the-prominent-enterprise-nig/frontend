@@ -976,6 +976,14 @@ export interface AcknowledgementReceipt {
   /** System-generated ACK-YYYYMMDD-NNNN, set once at creation. */
   number: string | null
   payerName: string
+  /** Scenario 83 — set when this receipt acknowledges another branch's cash
+   * turnover; `reference` is the turnover slip number. */
+  turnoverLine?: {
+    id: string
+    reference: string | null
+    turnoverAcknowledgedAt?: string | null
+    acknowledgedByName?: string | null
+  } | null
   /** Real GL account this receipt credits — a Chart of Accounts pick,
    * matching the client's own reference tool. Null means it fell back to
    * the MISC_COLLECTIONS mapping. */

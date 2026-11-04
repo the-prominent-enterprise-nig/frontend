@@ -67,7 +67,7 @@ function SlipRow({
   removeDisabled?: boolean
 }): React.JSX.Element {
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_8rem_1fr_10rem_9.5rem_auto]">
+    <div className={`grid grid-cols-1 gap-2 ${SLIP_COLUMNS}`}>
       <SearchableSelect
         value={slip.bankAccountId}
         onChange={(value) => onChange({ bankAccountId: value })}
@@ -120,6 +120,25 @@ function SlipRow({
           <X className="h-4 w-4" />
         </button>
       </Tooltip>
+    </div>
+  )
+}
+
+/** One grid for the column headers and every slip row, so they line up. */
+const SLIP_COLUMNS = 'sm:grid-cols-[1fr_8rem_1fr_10rem_9.5rem_auto]'
+
+/** Names each field once, above the rows: a pre-filled slip — on a
+ * correction — shows values, not placeholders, so without these the
+ * reference number reads as a stray figure. */
+function SlipColumnHeaders(): React.JSX.Element {
+  return (
+    <div className={`hidden gap-2 px-0.5 text-xs text-gray-500 sm:grid ${SLIP_COLUMNS}`}>
+      <span>Bank account</span>
+      <span className="text-right">Amount</span>
+      <span>Deposit from</span>
+      <span>Reference no. *</span>
+      <span>Date</span>
+      <span className="w-8" />
     </div>
   )
 }
@@ -254,11 +273,15 @@ export function toLineInputs(slips: Slip[]): PosDepositLineInput[] {
   }))
 }
 
+/** A slip to a bank, not a cash turnover to a branch (Scenario 83). */
+export const isBankLine = (l: PosDepositLine): boolean => !l.turnoverToBranch
+
 /** A recorded deposit's slips, back in the editor's shape. A slip with no date
  * of its own takes the deposit's. */
 export function slipsFromLines(lines: PosDepositLine[], depositDate: string): Slip[] {
-  return lines.map((l) => ({
-    bankAccountId: l.bankAccount.id,
+  // Scenario 83 — a cash turnover is not a bank slip; see turnoversFromLines.
+  return lines.filter(isBankLine).map((l) => ({
+    bankAccountId: l.bankAccount?.id ?? '',
     amount: String(Number(l.amount)),
     // A slip recorded against 1-01-010 itself, before only its funds could
     // be picked, opens with Deposit from blank for accounting to choose.
@@ -314,6 +337,7 @@ export function SlipEditor({
         </button>
       </div>
       <div className="space-y-3 p-3">
+        {slips.length > 0 && <SlipColumnHeaders />}
         {slips.map((slip, i) => (
           <SlipRow
             key={i}
