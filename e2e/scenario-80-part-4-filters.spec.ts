@@ -26,10 +26,23 @@ test.describe('Scenario 80 Part 4 — filters', () => {
     )
     await expect(page.getByLabel('To', { exact: true })).toBeVisible()
 
+    // Scenario 84 Part 5 — the range ends are picked from a calendar now.
     const yesterday = new Date(Date.now() - 86_400_000)
-    const iso = (d: Date) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    await page.getByLabel('From', { exact: true }).fill(iso(yesterday))
+    await page.getByLabel('From', { exact: true }).click()
+    const calendar = page.getByRole('dialog', { name: 'Pick the from date' })
+    if (yesterday.getMonth() !== new Date().getMonth()) {
+      await calendar.getByRole('button', { name: 'Previous month' }).click()
+    }
+    await calendar
+      .getByRole('button', {
+        name: yesterday.toLocaleDateString('en-PH', {
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric',
+        }),
+        exact: true,
+      })
+      .click()
     await expect(page.getByTestId('overview-period-label')).toContainText('–')
     await expect(page.getByText('Total Sales')).toBeVisible()
 

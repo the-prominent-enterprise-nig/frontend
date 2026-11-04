@@ -122,11 +122,14 @@ supplier price over cost; read-only, fixtures looked up through the API). No bac
 
 Found screenshotting Parts 1–4 on the isolated pair; Kian added the POS Overview date filter. Frontend only.
 
-- **POS Overview period (S80 POS-02/03 follow-up):** "user shouldn't be able to type what month, just pick". Kian
-  chose the month stepper only (not presets, not a single date). The native `type="month"` box is replaced by
-  `pos/_components/MonthStepper.tsx`: ‹ › a month at a time, the month's name opens a 12-month grid with year ‹ ›;
-  nothing after this month. The range's two date boxes stay native but are pick-only (`PICK_ONLY`: click / Enter /
-  Space open `showPicker()`, other keys and paste are ignored, Tab still moves on).
+- **POS Overview period (S80 POS-02/03 follow-up):** "user shouldn't be able to type what month, just pick". The
+  native `type="month"` box is `pos/_components/MonthStepper.tsx`: ‹ › a month at a time, never past this month, no
+  dropdown (Kian tried a 12-month grid and dropped it). The range's two native date boxes are
+  `pos/_components/DatePickerButton.tsx`, a calendar dropdown in the app's purple style (Kian: the browser's
+  calendar "looks native", greyed future days "tacky"). It shows the whole month; a day outside `min`..`max` is
+  faint and not a button, and its month arrows hide at those limits. **From's `max` is To, To's `min` is From**, so
+  a range can't be made backwards (Kian: "I can choose like nov 1 - october 15"; before, `periodBounds` silently
+  sorted the two ends while the boxes still read backwards). Its "Today" shortcut shows only when today is pickable.
 - **Supplier picked after the lines (Part 4 gap):** each catalog-added item records where its price started and its
   cost price (`priceStarts`). When the supplier changes, a line still on that starting price (not typed over, no
   SRP, not a freebie) moves to the new supplier's price, or back to cost when the supplier has none or is cleared.
@@ -136,8 +139,10 @@ Found screenshotting Parts 1–4 on the isolated pair; Kian added the POS Overvi
 - **Negative Tot. Amt. Due (Part 3):** `LedgerHero` figures take `negative`; the plan ledger's Tot. Amt. Due sets it,
   so an advance is red like the Due column.
 
-**Tests:** `e2e/scenario-84-part-5-ui-refinements.spec.ts` (month stepper and grid; range boxes ignore typing; grouped
-Unit price; supplier re-price; red Tot. Amt. Due). `scenario-80-part-4-filters.spec.ts` updated: POS-03 reads the
+**Tests:** `e2e/scenario-84-part-5-ui-refinements.spec.ts` (month stepper; range picked from the calendar; grouped
+Unit price; supplier re-price; red Tot. Amt. Due). The date filter's edge cases (From after To / To before From
+refused, a range across the new year, a one-day range, Month→Date range starts fresh, the month across the new
+year) were run once and passed but are left out of the suite (Kian, 2026-11-04); they're manual steps 5.9a–5.9g. `scenario-80-part-4-filters.spec.ts` updated: POS-03 reads the
 stepper, and the mode button is matched exactly (the stepper's "Previous month" would otherwise also match "Month").
 `scenario-84-part-4-pr-cost-prefill.spec.ts` expects the grouped Unit price.
 

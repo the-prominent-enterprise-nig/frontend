@@ -20,6 +20,7 @@ import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { type SessionUser } from '@/src/libs/guards/permission'
 import { TransactionDetail } from './_components/TransactionDetail'
 import { MonthStepper } from './_components/MonthStepper'
+import { DatePickerButton } from './_components/DatePickerButton'
 import type { PosTransaction } from '@/src/schema/pos'
 import {
   ShoppingCart,
@@ -97,21 +98,6 @@ function periodLabel(p: OverviewPeriod): string {
   }
   const [a, b] = [p.from, p.to].sort()
   return a === b ? fmt(a) : `${fmt(a)} – ${fmt(b)}`
-}
-
-/**
- * Scenario 84 Part 5 — a date box that is picked, not typed: a click (or
- * Enter / Space) opens the browser's calendar, and keys that would type a
- * date are ignored. Tab still moves on.
- */
-const PICK_ONLY = {
-  onClick: (e: React.MouseEvent<HTMLInputElement>) => e.currentTarget.showPicker?.(),
-  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Tab') return
-    e.preventDefault()
-    if (e.key === 'Enter' || e.key === ' ') e.currentTarget.showPicker?.()
-  },
-  onPaste: (e: React.ClipboardEvent<HTMLInputElement>) => e.preventDefault(),
 }
 
 function formatCurrency(n: number) {
@@ -380,24 +366,26 @@ export default function PosOverviewPage() {
             />
           ) : (
             <div className="flex items-center gap-2 text-sm text-gray-600">
-              <input
-                type="date"
-                aria-label="From"
+              {/* From can't pass To, nor To come before From. */}
+              <DatePickerButton
+                label="From"
                 value={period.from}
-                max={todayIso}
-                {...PICK_ONLY}
-                onChange={(e) => e.target.value && setPeriod({ ...period, from: e.target.value })}
-                className="cursor-pointer rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800"
+                max={period.to}
+                today={todayIso}
+                rangeFrom={period.from}
+                rangeTo={period.to}
+                onChange={(from) => setPeriod({ ...period, from })}
               />
               to
-              <input
-                type="date"
-                aria-label="To"
+              <DatePickerButton
+                label="To"
                 value={period.to}
+                min={period.from}
                 max={todayIso}
-                {...PICK_ONLY}
-                onChange={(e) => e.target.value && setPeriod({ ...period, to: e.target.value })}
-                className="cursor-pointer rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800"
+                today={todayIso}
+                rangeFrom={period.from}
+                rangeTo={period.to}
+                onChange={(to) => setPeriod({ ...period, to })}
               />
             </div>
           )}

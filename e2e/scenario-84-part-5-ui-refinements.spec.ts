@@ -3,8 +3,8 @@ import { clickStable, fillStable, gotoReady } from './utils'
 
 // Scenario 84 Part 5 — UI refinements found reviewing Parts 1–4 on the live
 // screens (Kian, 2026-11-04):
-//   - the POS Overview's month is picked with ‹ › or a month grid, never typed;
-//     its date range boxes open the calendar and ignore typing
+//   - the POS Overview's month is stepped with ‹ ›, never typed; its date
+//     range's two ends are picked from a calendar, From never after To
 //   - a Purchase Request line's Unit price reads "29,520.00", like Line total
 //   - a supplier picked AFTER the lines re-prices the untouched ones
 //   - a negative Tot. Amt. Due (an advance) is red, like the Due column
@@ -25,15 +25,16 @@ const shown = (n: number) =>
   n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 test.describe('Scenario 84 Part 5 — POS Overview month and dates are picked, not typed', () => {
-  test('S84-FE-5.1: ‹ › step the month, the next month past this one is off, and the grid picks one', async ({
+  test('S84-FE-5.1: ‹ › step the month, and the next month past this one is off', async ({
     page,
   }) => {
     await gotoReady(page, '/pos')
     const month = page.getByTestId('overview-month')
     const now = new Date()
     await expect(month).toHaveText(monthLabel(now))
-    // No future month.
+    // No future month, and no typeable month box.
     await expect(page.getByRole('button', { name: 'Next month' })).toBeDisabled()
+    await expect(page.locator('input[type="month"]')).toHaveCount(0)
 
     const last = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     // Not clickStable: a retried click would step back a second month. Only
@@ -47,34 +48,42 @@ test.describe('Scenario 84 Part 5 — POS Overview month and dates are picked, n
     await expect(page.getByTestId('overview-period-label')).toHaveText(
       `Showing ${monthLabel(last)}`
     )
-    await expect(page.getByRole('button', { name: 'Next month' })).toBeEnabled()
-
-    // The grid: this year's months after this one can't be picked.
-    await month.click()
-    const grid = page.getByRole('dialog', { name: 'Pick a month' })
-    await expect(grid).toBeVisible()
-    if (now.getMonth() < 11) {
-      const next = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-      await expect(
-        grid.getByRole('button', { name: next.toLocaleDateString('en-US', { month: 'short' }) })
-      ).toBeDisabled()
-    }
-    await grid
-      .getByRole('button', { name: now.toLocaleDateString('en-US', { month: 'short' }) })
-      .click()
-    await expect(grid).toHaveCount(0)
+    await page.getByRole('button', { name: 'Next month' }).click()
     await expect(month).toHaveText(monthLabel(now))
   })
 
-  test('S84-FE-5.2: the date range boxes ignore typing', async ({ page }) => {
+  test('S84-FE-5.2: the date range is picked from a calendar, with no day after today offered', async ({
+    page,
+  }) => {
     await gotoReady(page, '/pos')
     const period = page.getByTestId('overview-period')
-    const from = page.getByLabel('From', { exact: true })
+    const from = page.getByRole('button', { name: 'From', exact: true })
     await clickStable(period.getByRole('button', { name: 'Date range' }), from)
-    const before = await from.inputValue()
-    await from.focus()
-    await page.keyboard.type('01012020')
-    await expect(from).toHaveValue(before)
+    // No browser date boxes to type into.
+    await expect(period.locator('input[type="date"]')).toHaveCount(0)
+
+    await from.click()
+    const calendar = page.getByRole('dialog', { name: 'Pick the from date' })
+    await expect(calendar).toBeVisible()
+    const now = new Date()
+    const long = (d: Date) =>
+      d.toLocaleDateString('en-PH', { month: 'long', day: 'numeric', year: 'numeric' })
+    // Tomorrow (if still this month) shows, faint, but isn't a button.
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+    await expect(calendar.getByRole('button', { name: long(tomorrow), exact: true })).toHaveCount(0)
+    await expect(calendar.getByRole('button', { name: 'Next month' })).toBeHidden()
+
+    const first = new Date(now.getFullYear(), now.getMonth(), 1)
+    await calendar.getByRole('button', { name: long(first), exact: true }).click()
+    await expect(calendar).toHaveCount(0)
+    const short = (d: Date) =>
+      d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+    await expect(from).toHaveText(short(first))
+    if (now.getDate() > 1) {
+      await expect(page.getByTestId('overview-period-label')).toHaveText(
+        `Showing ${short(first)} – ${short(now)}`
+      )
+    }
   })
 })
 
