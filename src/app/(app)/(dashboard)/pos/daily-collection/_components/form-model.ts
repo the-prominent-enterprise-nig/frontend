@@ -119,6 +119,28 @@ function collectionLines(report: DailyCollectionReport): {
       sourceCounter: r.sourceCounter ?? undefined,
     }
   })
+  // Scenario 83 — another branch's cash, acknowledged here: not a sale of
+  // this branch's, so its own line, but held here now, so it adds up.
+  for (const t of report.turnoversIn ?? []) {
+    running += t.amount
+    lines.push({
+      type: 'collection',
+      creditLabel: '',
+      si: '',
+      customer: `Turnover in from ${t.fromName}`,
+      desc: 'TURNOVER',
+      office: t.reference ?? '',
+      field: '',
+      others: '',
+      cashInvoice: '',
+      ppd: 0,
+      penalty: 0,
+      debit: t.amount,
+      credit: null,
+      balance: running,
+      span: 1,
+    })
+  }
   return { lines, running }
 }
 
@@ -187,7 +209,7 @@ function legacyCreditLines(report: DailyCollectionReport, opening: number): Form
 /** Scenario 83 — cash handed to another branch leaves the balance like a
  * deposit, but it is a TURNOVER, not a trip to the bank. */
 function creditLabelOf(bankName: string): string {
-  return bankName.startsWith('Turnover →') ? 'TURNOVER' : 'DEPOSIT'
+  return bankName.startsWith('Turnover to ') ? 'TURNOVER' : 'DEPOSIT'
 }
 
 function creditLine(label: string, text: string, credit: number, balance: number): FormLine {
@@ -294,9 +316,20 @@ export function buildCollectionRecapLines(report: DailyCollectionReport): Footer
       note: othersNote(kind('DC'), kind('OTHERS')),
       group: 'cash',
     }),
+    // Scenario 83 — another branch's cash, acknowledged here, mirroring the
+    // backend form sheet: its own line, and in this branch's total.
+    // Only on a day that has one: the client's own form has no such row.
+    ...((report.turnoverInTotal ?? 0) > 0.005
+      ? [
+          line('TURNOVER IN', report.turnoverInTotal, {
+            note: 'Cash turned over by another branch',
+            group: 'cash',
+          }),
+        ]
+      : []),
     line(
       'TOTAL COLLECTION',
-      [...totals.values()].reduce((sum, v) => sum + v, 0),
+      [...totals.values()].reduce((sum, v) => sum + v, 0) + (report.turnoverInTotal ?? 0),
       {
         emphasis: true,
         highlight: true,
@@ -402,13 +435,20 @@ export interface CashPosition {
   balanced: boolean
 }
 
+/** What the denomination count has to come to: the closed sessions' cash
+ * and (Scenario 83) any turnover from another branch acknowledged that day,
+ * which is in the same cash on hand. Mirrors the backend's expectedCount. */
+export function expectedCount(report: DailyCollectionReport): number {
+  return report.settledCashCollection + (report.turnoverInTotal ?? 0)
+}
+
 export function cashPosition(
   report: DailyCollectionReport,
   counts: Record<string, number> = report.denominations ?? {}
 ): CashPosition {
   const denominationTotal = sumDenominations(counts)
   const cashCollected = denominationTotal - report.openingFloat
-  const variance = cashCollected - report.settledCashCollection
+  const variance = cashCollected - expectedCount(report)
 
   return {
     denominationTotal,

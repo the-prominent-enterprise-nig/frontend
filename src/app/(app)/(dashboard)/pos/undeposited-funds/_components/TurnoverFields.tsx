@@ -261,7 +261,7 @@ export function TurnoverStatusChip({
 export function TurnoverLineLabel({ line }: { line: PosDepositLine }): React.JSX.Element {
   return (
     <span className="flex flex-col gap-0.5">
-      <span>Turnover → {line.turnoverToBranch?.name ?? 'branch'}</span>
+      <span>Turnover to {line.turnoverToBranch?.name ?? 'branch'}</span>
       {line.turnoverReceivedBy && (
         <span className="text-xs text-gray-500">Received by {line.turnoverReceivedBy}</span>
       )}

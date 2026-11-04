@@ -495,19 +495,8 @@ export function CashInTransitList({
           >
             <Download className="w-4 h-4" /> Export to Excel
           </button>
-          {/* In the header, not the filter row: a wider filter row (the date
-              range under Deposited / All) used to wrap it onto a new line. */}
-          {canManage && (
-            <button
-              onClick={depositSelection}
-              disabled={selection.rows.length === 0}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800 disabled:opacity-50"
-            >
-              <Landmark className="w-4 h-4" /> Record Deposit
-              {selection.rows.length > 0 &&
-                ` · ${selection.rows[0].branchName} (${selection.rows.length})`}
-            </button>
-          )}
+          {/* Record deposit lives in the bar that appears once sessions are
+              ticked, which stays in view however far the list scrolls. */}
         </div>
       </div>
 
