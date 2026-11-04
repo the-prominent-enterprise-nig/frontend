@@ -270,7 +270,7 @@ export const CREDIT_COLLECTIONS_HUB: PosHub = {
       label: 'Collections',
       href: '/pos/collections',
       icon: Coins,
-      permissions: [POS_PERMISSIONS.COLLECTIONS_MANAGE],
+      permissions: [POS_PERMISSIONS.COLLECTIONS_MANAGE, POS_PERMISSIONS.CUSTOMERS_READ],
       exactActive: true,
     },
     {

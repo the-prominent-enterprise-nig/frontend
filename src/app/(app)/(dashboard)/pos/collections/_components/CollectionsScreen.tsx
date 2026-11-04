@@ -384,7 +384,10 @@ function CustomerListSkeleton() {
   )
 }
 
-export default function CollectionsScreen() {
+export default function CollectionsScreen({ canCollect = true }: { canCollect?: boolean }) {
+  // A View Only role (pos:customers:read, not pos:collections:manage) sees who
+  // owes and which dues are open, but not the controls that record a payment:
+  // the backend would refuse them, so they aren't offered.
   const router = useRouter()
   const searchParams = useSearchParams()
   const deepLinkHandled = useRef(false)
@@ -720,7 +723,7 @@ export default function CollectionsScreen() {
                                     className="flex items-center justify-between gap-3 px-5 py-3"
                                   >
                                     <div className="flex min-w-0 items-center gap-3">
-                                      {isEligible && (
+                                      {isEligible && canCollect && (
                                         <input
                                           type="checkbox"
                                           checked={isSelected}
@@ -773,29 +776,39 @@ export default function CollectionsScreen() {
                 </div>
               </div>
 
-              <div className="lg:sticky lg:top-6">
-                <PaymentPanel
-                  // Remounts fresh whenever the checked dues change — a
-                  // stale error/overpayment result or a form field typed for
-                  // the previous selection should never carry over, same as
-                  // the old "Pay Selected" opened a brand-new modal each
-                  // time (see the component's own doc comment).
-                  key={Array.from(selectedLineIds).sort().join(',')}
-                  lines={selectedPayableLines}
-                  payrollOnly={
-                    openSchedules.length > 0 &&
-                    openSchedules.every((sc) => sc.lines[0]?.arInvoice.isEmployeeApplianceLoan)
-                  }
-                  customerName={customer?.name}
-                  defaultBranchId={branchId || undefined}
-                  initialPaymentDateIso={effectivePaymentDateIso}
-                  onClearSelection={() => setSelectedLineIds(new Set())}
-                  onCollected={async () => {
-                    await Promise.all([schedulesQuery.refetch(), customersQuery.refetch()])
-                    setSelectedLineIds(new Set())
-                  }}
-                />
-              </div>
+              {canCollect ? (
+                <div className="lg:sticky lg:top-6">
+                  <PaymentPanel
+                    // Remounts fresh whenever the checked dues change — a
+                    // stale error/overpayment result or a form field typed for
+                    // the previous selection should never carry over, same as
+                    // the old "Pay Selected" opened a brand-new modal each
+                    // time (see the component's own doc comment).
+                    key={Array.from(selectedLineIds).sort().join(',')}
+                    lines={selectedPayableLines}
+                    payrollOnly={
+                      openSchedules.length > 0 &&
+                      openSchedules.every((sc) => sc.lines[0]?.arInvoice.isEmployeeApplianceLoan)
+                    }
+                    customerName={customer?.name}
+                    defaultBranchId={branchId || undefined}
+                    initialPaymentDateIso={effectivePaymentDateIso}
+                    onClearSelection={() => setSelectedLineIds(new Set())}
+                    onCollected={async () => {
+                      await Promise.all([schedulesQuery.refetch(), customersQuery.refetch()])
+                      setSelectedLineIds(new Set())
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="rounded-xl border border-zinc-200 bg-white p-5 text-[13px] text-zinc-600 lg:sticky lg:top-6">
+                  <p className="font-semibold text-zinc-800">View only</p>
+                  <p className="mt-1">
+                    You can see what this customer owes and which dues are open. Recording a payment
+                    needs the Collect Payments permission.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )}
