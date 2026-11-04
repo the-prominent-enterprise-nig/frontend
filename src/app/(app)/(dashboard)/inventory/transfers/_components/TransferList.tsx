@@ -59,7 +59,7 @@ function TransferSerials({ lines }: { lines: TransferSummary['lines'] }) {
   return (
     <p
       title={serials.join(', ')}
-      className={`${MONO} mt-1 truncate text-[12px] font-medium text-[#17171c]`}
+      className={`${MONO} mt-1 truncate text-[12px] font-semibold text-[#0b0b0f]`}
     >
       {shown}
       {more > 0 && <span className="text-[#4b4b5a]"> +{more} more</span>}

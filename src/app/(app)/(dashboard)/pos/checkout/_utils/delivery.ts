@@ -17,8 +17,8 @@ export type DeliveryFeeMethod = 'cash' | 'card' | 'bank_transfer' | 'qr'
 /**
  * Paid with — the same five choices as the sale's Cash payment mode (PR #201
  * review), each with the same details: a check number for Check, the bank
- * (and "verified at register") for Bank Transfer, the gateway for QR, and the
- * card acquirer with Straight / Installment for a card.
+ * for Bank Transfer, the gateway for QR, and the card acquirer with
+ * Straight / Installment for a card.
  */
 export const DELIVERY_FEE_TENDERS = [
   'cash_on_hand',
@@ -101,8 +101,6 @@ export interface DeliveryState {
   checkNumber: string
   /** The bank, gateway or card acquirer — cleared whenever the tender changes. */
   optionId: string | undefined
-  /** Bank Transfer only. */
-  bankVerified: boolean
   /** Card only. */
   cardTxnMode: PosCardTxnMode
   /** Card installment only. */
@@ -124,7 +122,6 @@ export const EMPTY_DELIVERY: DeliveryState = {
   feeCr: '',
   checkNumber: '',
   optionId: undefined,
-  bankVerified: false,
   cardTxnMode: 'straight',
   cardTerm: undefined,
 }
@@ -176,17 +173,21 @@ export function deliveryFeeReceiptTenderLabel(receipt: DeliveryFeeReceiptTender)
     receipt.method === 'QR' && optionName
       ? qrOptionGroup(optionName)
       : RECEIPT_METHOD_TENDER[receipt.method]
-  return deliveryFeeTenderLabel(
+  const label = deliveryFeeTenderLabel(
     {
       ...EMPTY_DELIVERY,
       tender,
       checkNumber: receipt.checkNumber ?? '',
-      bankVerified: !!receipt.bankTransferVerifiedAtRegister,
       cardTxnMode: receipt.cardTxnMode ?? 'straight',
       cardTerm: receipt.cardInstallmentTerm ?? undefined,
     },
     optionName
   )
+  // The checkbox is gone, but a fee taken while it existed was posted
+  // straight to Cash in Bank, so its receipt still says so.
+  return tender === 'bank_transfer' && receipt.bankTransferVerifiedAtRegister
+    ? `${label} (verified at register)`
+    : label
 }
 
 /** A QR payment's tender as a receipt prints it — "GCash — GCash Send Money",
@@ -198,17 +199,13 @@ export function qrTenderLabel(optionName?: string | null): string {
 }
 
 /** How the fee was paid, for the success screen: "Check #0012",
- * "Bank Transfer — BDO (verified at register)", "Debit/Credit Card — BPI ·
- * Installment, 6 months". */
+ * "Bank Transfer — BDO", "Debit/Credit Card — BPI · Installment, 6 months". */
 export function deliveryFeeTenderLabel(state: DeliveryState, optionName?: string | null): string {
   const parts = [DELIVERY_FEE_TENDER_LABELS[state.tender]]
   if (state.tender === 'check' && state.checkNumber.trim()) {
     parts[0] += ` #${state.checkNumber.trim()}`
   }
   if (optionName) parts[0] += ` — ${optionName}`
-  if (state.tender === 'bank_transfer' && state.bankVerified) {
-    parts[0] += ' (verified at register)'
-  }
   if (state.tender === 'card') {
     parts.push(
       state.cardTxnMode === 'installment' && state.cardTerm
@@ -309,7 +306,6 @@ export function deliveryPayload(
   deliveryFeeReferenceNumber?: string
   deliveryFeeCheckNumber?: string
   deliveryFeePaymentMethodOptionId?: string
-  deliveryFeeBankTransferVerifiedAtRegister?: boolean
   deliveryFeeCardTxnMode?: PosCardTxnMode
   deliveryFeeCardInstallmentTerm?: number
 } {
@@ -333,9 +329,6 @@ export function deliveryPayload(
     ...(tender === 'check' ? { deliveryFeeCheckNumber: state.checkNumber.trim() } : {}),
     ...(TENDERS_WITH_OPTIONS.includes(tender) && state.optionId
       ? { deliveryFeePaymentMethodOptionId: state.optionId }
-      : {}),
-    ...(tender === 'bank_transfer' && state.bankVerified
-      ? { deliveryFeeBankTransferVerifiedAtRegister: true }
       : {}),
     ...(tender === 'card' ? { deliveryFeeCardTxnMode: state.cardTxnMode } : {}),
     ...(isInstallment && state.cardTerm ? { deliveryFeeCardInstallmentTerm: state.cardTerm } : {}),

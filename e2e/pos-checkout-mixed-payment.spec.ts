@@ -224,10 +224,20 @@ const amount = (page: Page, i: number) => page.getByTestId(`payment-amount-${i}`
 const reference = (page: Page, i: number) => page.getByTestId(`payment-reference-${i}`)
 
 /** The second payment's panel, switched to GCash (a QR tender: its CR is required). */
+// Scenario 80 (UAT POS-07/13) — GCash, card and bank transfer ask for no
+// reference; a plain QR payment still does, so it stands in for "a payment
+// that needs a reference" below.
 async function payAnotherWithGcash(page: Page, i = 1) {
   await page
     .getByTestId(`payment-panel-${i}`)
     .getByRole('button', { name: 'GCash', exact: true })
+    .click()
+}
+
+async function payAnotherWithQr(page: Page, i = 1) {
+  await page
+    .getByTestId(`payment-panel-${i}`)
+    .getByRole('button', { name: 'QR', exact: true })
     .click()
 }
 
@@ -344,14 +354,13 @@ test.describe('POS Checkout — Mixed payment', () => {
     const amount0Y = await y('payment-amount-0')
     const panel1Y = await y('payment-panel-1')
     const amount1Y = await y('payment-amount-1')
-    const cr1Y = await y('payment-reference-1')
-    // Panel above its own amount, block after block; Payment 2 (opened on card)
-    // asks for its own reference under its amount, Payment 1 (cash) for none.
+    // Panel above its own amount, block after block. Neither Payment 1 (cash)
+    // nor Payment 2 (opened on card — Scenario 80 POS-13) asks for a reference.
     await expect(page.getByTestId('payment-reference-0')).toHaveCount(0)
+    await expect(page.getByTestId('payment-reference-1')).toHaveCount(0)
     expect(panel0Y).toBeLessThan(amount0Y)
     expect(amount0Y).toBeLessThan(panel1Y)
     expect(panel1Y).toBeLessThan(amount1Y)
-    expect(amount1Y).toBeLessThan(cr1Y)
     await expect(amount(page, 1)).toHaveValue('5000')
     await expect(page.getByTestId('payment-paid-so-far')).toHaveText('₱8,000.00')
     await expect(page.getByTestId('payment-remaining')).toHaveText('₱0.00')
@@ -367,14 +376,14 @@ test.describe('POS Checkout — Mixed payment', () => {
     await readyCashSale(page, 'F03', salesInvoiceNumber)
     await fillStable(page.getByLabel('Amount received'), '3000')
     await addAnother(page).click()
-    await payAnotherWithGcash(page)
-    // GCash needs its CR; nothing typed.
+    await payAnotherWithQr(page)
+    // QR needs its reference; nothing typed.
     await expect(confirm(page)).toBeEnabled()
     await confirm(page).click()
 
     const issues = page.getByTestId('payment-issues')
     await expect(issues).toContainText("You're missing:")
-    await expect(issues).toContainText('Payment 2 — GCash reference')
+    await expect(issues).toContainText('Payment 2 — QR reference')
     await expect(reference(page, 1)).toHaveClass(/border-red-400/)
 
     // Filling the gap clears it live.
@@ -399,7 +408,7 @@ test.describe('POS Checkout — Mixed payment', () => {
     await expect(page.getByTestId('payment-remaining')).toHaveText('₱5,000.00')
   })
 
-  test('MP-F05: cash and GCash record as two payments — GCash with its own reference, cash with none', async ({
+  test('MP-F05: cash and GCash record as two payments — neither with a reference (Scenario 80 POS-07)', async ({
     page,
   }) => {
     const salesInvoiceNumber = `SI-MPF05-${Date.now()}`
@@ -410,7 +419,7 @@ test.describe('POS Checkout — Mixed payment', () => {
     )
     await addAnother(page).click()
     await payAnotherWithGcash(page)
-    await fillStable(reference(page, 1), 'GCASH-MPF05-B')
+    await expect(reference(page, 1)).toHaveCount(0)
     await confirm(page).click()
 
     await expect(page.getByText('Sale Complete').or(page.getByText(/Sale completed/i))).toBeVisible(
@@ -421,7 +430,7 @@ test.describe('POS Checkout — Mixed payment', () => {
     expect(payments).toEqual(
       expect.arrayContaining([
         { method: 'cash', amount: 3000, reference: null },
-        { method: 'qr', amount: 5000, reference: 'GCASH-MPF05-B' },
+        { method: 'qr', amount: 5000, reference: null },
       ])
     )
   })
@@ -435,7 +444,6 @@ test.describe('POS Checkout — Mixed payment', () => {
     await addAnother(page).click()
     await payAnotherWithGcash(page)
     await fillStable(amount(page, 1), '5000')
-    await fillStable(reference(page, 1), 'GCASH-MPF06')
     await expect(page.getByText('Change', { exact: true })).toBeVisible()
     await confirm(page).click()
 
@@ -444,7 +452,7 @@ test.describe('POS Checkout — Mixed payment', () => {
     expect(payments).toEqual(
       expect.arrayContaining([
         { method: 'cash', amount: 3000, reference: null },
-        { method: 'qr', amount: 5000, reference: 'GCASH-MPF06' },
+        { method: 'qr', amount: 5000, reference: null },
       ])
     )
   })
@@ -458,7 +466,6 @@ test.describe('POS Checkout — Mixed payment', () => {
     await addAnother(page).click()
     await payAnotherWithGcash(page)
     await fillStable(amount(page, 1), '9000')
-    await fillStable(reference(page, 1), 'GCASH-MPF07')
     await confirm(page).click()
 
     await expect(page.getByTestId('payment-issues')).toContainText(
@@ -484,7 +491,7 @@ test.describe('POS Checkout — Mixed payment', () => {
     await expect(page.getByTestId('payment-summary')).toHaveCount(0)
   })
 
-  test("MP-F09: the added panel follows the same rules as the first — Check asks for a number, Bank Transfer for 'verified', and a missing Check Number is listed", async ({
+  test("MP-F09: the added panel follows the same rules as the first — Check asks for a number, Bank Transfer has no 'verified' box, and a missing Check Number is listed", async ({
     page,
   }) => {
     await readyCashSale(page, 'F09', `SI-MPF09-${Date.now()}`)
@@ -493,39 +500,43 @@ test.describe('POS Checkout — Mixed payment', () => {
     const panel = page.getByTestId('payment-panel-1')
 
     await panel.getByRole('button', { name: 'Bank Transfer', exact: true }).click()
-    await expect(panel.getByText('Verified at register', { exact: false })).toBeVisible()
+    await expect(panel.getByText('Verified at register', { exact: false })).toHaveCount(0)
 
     await panel.getByRole('button', { name: 'Check', exact: true }).click()
     await expect(page.getByTestId('payment-check-1')).toBeVisible()
-    await expect(panel.getByText('Verified at register', { exact: false })).toHaveCount(0)
 
     await confirm(page).click()
     await expect(page.getByTestId('payment-issues')).toContainText('Payment 2 — Check Number')
     await expect(page.getByTestId('payment-check-1')).toHaveClass(/border-red-400/)
   })
 
-  test('MP-F10: a sale without a down payment has no CR Number — cash asks for no reference; GCash, card and bank transfer ask for their own', async ({
+  test('MP-F10: a sale without a down payment has no CR Number — cash, GCash, card and bank transfer ask for no reference; QR asks for its own (Scenario 80 POS-07/13)', async ({
     page,
   }) => {
     const salesInvoiceNumber = `SI-MPF10-${Date.now()}`
     await readyCashSale(page, 'F10', salesInvoiceNumber)
     const crBox = page.getByRole('textbox', { name: /^CR Number/ })
+    const toggle = page.getByTestId('cash-sub-mode-toggle')
 
     // Cash: nothing to enter besides the amount.
     await expect(crBox).toHaveCount(0)
     await expect(page.getByLabel(/reference$/)).toHaveCount(0)
 
-    // GCash (a QR tender): its own reference appears, and is required — it is a
-    // reference number, not a CR.
-    await page
-      .getByTestId('cash-sub-mode-toggle')
-      .getByRole('button', { name: 'GCash', exact: true })
-      .click()
-    await expect(page.getByLabel('GCash reference')).toBeVisible()
+    // GCash, bank transfer and card: no reference either.
+    for (const name of ['GCash', 'Bank Transfer']) {
+      await toggle.getByRole('button', { name, exact: true }).click()
+      await expect(page.getByLabel(/reference$/)).toHaveCount(0)
+      await expect(crBox).toHaveCount(0)
+    }
+
+    // QR: its own reference appears, and is required — it is a reference
+    // number, not a CR.
+    await toggle.getByRole('button', { name: 'QR', exact: true }).click()
+    await expect(page.getByLabel('QR reference')).toBeVisible()
     await expect(crBox).toHaveCount(0)
     await fillStable(page.getByLabel('Amount received'), '8000')
     await confirm(page).click()
-    await expect(page.getByText('GCash reference is required.')).toBeVisible()
+    await expect(page.getByText('QR reference is required.')).toBeVisible()
     expect(await salesBySalesInvoice(page.request, salesInvoiceNumber)).toHaveLength(0)
 
     // Back to cash: no field, and the sale goes through with no reference at all.
@@ -593,12 +604,9 @@ test.describe('POS Checkout — Mixed payment', () => {
     await expect(page.getByTestId('payment-reference-0')).toHaveCount(0)
     await expect(page.getByTestId('payment-reference-1')).toHaveCount(0)
 
-    // Missing CR: one entry in the list, on the one field. (On an installment
-    // cart the button reads "Create Installment Plan".)
-    await page.getByRole('button', { name: /Create Installment Plan/ }).click()
-    await expect(page.getByTestId('payment-issues')).toContainText('CR Number')
-    await expect(page.getByTestId('sale-cr-number')).toHaveClass(/border-red-400/)
-
+    // The CR is optional (Scenario 80, Oct 29 UAT POS-14) — no asterisk —
+    // but when it's given, every payment carries it.
+    await expect(page.getByText('CR Number', { exact: true })).toBeVisible()
     await fillStable(page.getByTestId('sale-cr-number'), 'CR-MPF11')
     await page.getByRole('button', { name: /Create Installment Plan/ }).click()
     await expect(page.getByText('Installment Plan Created', { exact: true })).toBeVisible({
@@ -622,7 +630,6 @@ test.describe('POS Checkout — Mixed payment', () => {
     await payAnotherWithGcash(page)
     await page.getByLabel('Payment 2 Gateway').click()
     await page.getByRole('option', { name: 'GCash Send Money' }).click()
-    await fillStable(reference(page, 1), 'GCASH-MPF13')
     await confirm(page).click()
     await expect(page.getByText('Sale Complete').or(page.getByText(/Sale completed/i))).toBeVisible(
       { timeout: 30_000 }
@@ -644,9 +651,10 @@ test.describe('POS Checkout — Mixed payment', () => {
       'Payment (Cash)',
       'Payment (GCash — GCash Send Money)',
     ])
-    // The cash payment has no reference of its own, so it shows the invoice no.
+    // Neither payment has a reference of its own (GCash takes none since
+    // Scenario 80 POS-07), so both show the invoice no.
     expect(rows[1].ref).toBe(salesInvoiceNumber)
-    expect(rows[2].ref).toBe('GCASH-MPF13')
+    expect(rows[2].ref).toBe(salesInvoiceNumber)
     expect(rows.reduce((sum, r) => sum + r.credit, 0)).toBe(rows[0].debit)
   })
 })

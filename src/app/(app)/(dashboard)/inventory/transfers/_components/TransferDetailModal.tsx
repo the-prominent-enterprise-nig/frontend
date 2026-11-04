@@ -1689,7 +1689,7 @@ export default function TransferDetailModal({
                             )}
                           </td>
                           {hasSerialLine && (
-                            <td className="px-3 py-2 font-mono text-[13px] text-[#17171c]">
+                            <td className="px-3 py-2 font-mono text-[13px] font-semibold text-[#0b0b0f]">
                               {awaitingDispatch &&
                               !line.serialNumber?.serialNumber &&
                               line.item?.isSerialTracked ? (

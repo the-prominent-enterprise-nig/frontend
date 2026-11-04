@@ -643,7 +643,6 @@ export interface CreateTransactionInput {
    * with a check number) — the same ones addPayment takes for the sale. */
   deliveryFeeCheckNumber?: string
   deliveryFeePaymentMethodOptionId?: string
-  deliveryFeeBankTransferVerifiedAtRegister?: boolean
   deliveryFeeCardTxnMode?: PosCardTxnMode
   deliveryFeeCardInstallmentTerm?: number
   /** Scenario 68 — an X-Deal's down payment (the part paid at the register;
@@ -652,7 +651,6 @@ export interface CreateTransactionInput {
   xDealDownPaymentReferenceNumber?: string
   xDealDownPaymentCheckNumber?: string
   xDealDownPaymentMethodOptionId?: string
-  xDealDownPaymentVerifiedAtRegister?: boolean
   /** The sale's output VAT class (Scenario 69 Part F): VAT-OUT-12 when left
    * out, or VAT-OUT-0ZR / VAT-OUT-EXEMPT, which need taxExemptionRef and a
    * manager's approval (managerOverride + managerUserId). */
@@ -876,10 +874,6 @@ export interface AddPaymentInput {
   cardTxnMode?: PosCardTxnMode
   /** Months (3/6/9/12/18/24) — required when cardTxnMode is 'installment'. */
   cardInstallmentTerm?: number
-  /** Scenario 38 Gap 7 — bank_transfer only. The cashier confirmed the
-   * credit already landed at the register, so this posts straight to Cash
-   * in Bank instead of the usual clearing account. */
-  bankTransferVerifiedAtRegister?: boolean
   currency?: string
   fxRate?: number
   notes?: string
