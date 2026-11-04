@@ -37,19 +37,29 @@ async function endOnAdvance(page: Page, url: RegExp) {
   })
 }
 
-const dueCellOfLastRow = (page: Page) => page.locator('table tbody tr').last().locator('td').nth(6)
+// The ledger's own table (a page can carry others, e.g. the items bought).
+const dueCellOfLastRow = (page: Page) =>
+  page
+    .locator('table', { has: page.getByRole('columnheader', { name: 'Outstanding' }) })
+    .locator('tbody tr')
+    .last()
+    .locator('td')
+    .nth(6)
 
 test.describe('Scenario 83 Part 3 — an advance shows as a negative Due', () => {
   let accountId: string
   let customerId: string
 
   test.beforeAll(async ({ request }) => {
-    const res = await request.get('/api/crm/installment-accounts?limit=50&status=active')
+    const res = await request.get('/api/crm/installment-accounts?limit=20&status=active')
     expect(res.ok()).toBeTruthy()
     const body = await res.json()
-    const rows: { id: string; customerId: string; installmentScheduleId: string | null }[] =
-      Array.isArray(body) ? body : (body.data ?? [])
-    const plan = rows.find((r) => r.installmentScheduleId)
+    // The list flattens the schedule away; only a POS plan carries the item
+    // names off its sale.
+    const rows: { id: string; customerId: string; itemNames?: string[] }[] = Array.isArray(body)
+      ? body
+      : (body.data ?? [])
+    const plan = rows.find((r) => (r.itemNames ?? []).length > 0)
     test.skip(!plan, 'No active POS installment plan on this database')
     accountId = plan!.id
     customerId = plan!.customerId
@@ -69,14 +79,18 @@ test.describe('Scenario 83 Part 3 — an advance shows as a negative Due', () =>
     await expect(due).toHaveClass(/text-red-600/)
   })
 
-  test('S83-FE-3.2: the customer ledger (View ledger) shows the advance, in red, on its last row', async ({
+  test('S83-FE-3.2: View ledger (the customer ledger narrowed to the plan) shows it in Tot. Amt. Due and, in red, on its last row', async ({
     page,
   }) => {
-    await endOnAdvance(page, /\/api\/crm\/customers\/[^/]+\/ledger(\?|$)/)
+    // Narrowed to one plan, the customer ledger renders that plan's own ledger
+    // (InstallmentLedgerBody, off the plan ledger endpoint).
+    await endOnAdvance(page, /\/api\/crm\/installment-accounts\/[^/]+\/ledger(\?|$)/)
     await gotoReady(page, `/crm/customers/${customerId}/ledger?transactionId=acct:${accountId}`)
 
+    const figure = page.getByText('Tot. Amt. Due', { exact: true }).locator('..')
+    await expect(figure).toContainText(SHOWN, { timeout: 15_000 })
     const due = dueCellOfLastRow(page)
-    await expect(due).toHaveText(SHOWN, { timeout: 15_000 })
+    await expect(due).toHaveText(SHOWN)
     await expect(due).toHaveClass(/text-red-600/)
   })
 })

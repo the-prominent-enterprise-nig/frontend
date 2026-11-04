@@ -28,12 +28,14 @@ const shown = (n: number) => String(Number(n.toFixed(2)))
 async function openNewRequest(page: Page) {
   await gotoReady(page, '/inventory/purchase-orders?tab=requests')
   await page.getByRole('button', { name: 'New Purchase Request' }).click()
-  await expect(page.getByPlaceholder('Search item by name or SKU to add a line…')).toBeVisible({
-    timeout: 15_000,
-  })
+  await expect(
+    page.getByRole('button', { name: 'Search item by name or SKU to add a line…' })
+  ).toBeVisible({ timeout: 15_000 })
 }
 
+/** A SearchCombobox is a button until opened; the search input appears then. */
 async function pickFrom(page: Page, placeholder: string, text: string) {
+  await page.getByRole('button', { name: placeholder }).click()
   await fillStable(page.getByPlaceholder(placeholder), text)
   const option = page.locator('div.fixed.z-100 button').filter({ hasText: text }).first()
   await expect(option).toBeVisible({ timeout: 15_000 })

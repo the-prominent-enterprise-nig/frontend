@@ -157,7 +157,21 @@ a time, with every remaining failure confirmed identical on untouched developmen
 
 - **None of the four manual tests** (`NIG/Scenario-83-Manual-Test.md`) has been run. Kian moved on from each part
   without running them, 2026-11-04.
-- **None of the Playwright specs** (`e2e/scenario-83-part-{1,3,4}-*.spec.ts`) has been run; they need the servers.
+- ~~None of the Playwright specs has been run~~ — run 2026-11-04 on an isolated pair (frontend :3010, backend :3011,
+  test DB; the shared :3000/:3001 left alone): part 1 3/3, part 3 2/2, part 4 3/3. Parts 1 and 4 shown to fail
+  with their fix reverted (part 3 has no screen change to revert). Part 1/3 need a live customer with an open POS plan;
+  the test DB had none, so a throwaway one was seeded for the run and deleted after. Three spec fixes came out of the
+  run: the accounts list caps `limit` at 20, the list flattens the schedule (a POS plan is the row with item names),
+  the narrowed customer ledger renders the plan ledger, and a SearchCombobox is a button until opened.
+- **Playwright regression, all failing before S83's code is reached** (S83 changes four frontend source files:
+  `CollectionsScreen.tsx`, `PurchaseOrderFormFields.tsx`, `libs/api/crm.ts`, `schema/crm/installment-account.ts`):
+  `pos-collections-multiple-payments` 5/6 (POS checkout never reaches "Installment Plan Created"),
+  `pos-collections-rebate`, `installment-account-customer-ledger`, `customer360-installment-plan-detail`,
+  `purchase-order-edit-workflow` (no fixture item on the test DB), `pos-collections-same-day-guard` (the Bago
+  terminal already has an open session), `scenario-56-ledger` ("New adjustment" gone),
+  `purchase-request-submit-navigates-to-orders` (supplier picker driven as an input; it is a button until opened),
+  `purchase-order-discount` / `-freebie` / `-pdf` ("New Purchase Order" gone; creating drafts a PR).
+  `closing-session-denominations` passes 2/2.
 - `next build` was not run.
 
 **Worth flagging:**
