@@ -74,17 +74,15 @@ test.describe('POS checkout — one installment plan for the whole cart', () => 
     await expect(page.getByTestId('dp-payment-mode-toggle')).toContainText('₱1,000.00')
   })
 
-  test('PLAN-03: an in-house down payment can be 0, and never more than the items cost', async ({
+  // Scenario 80 (Oct 29 UAT POS-11) — an in-house down payment is never 0.
+  test('PLAN-03: an in-house down payment is never 0, and never more than the items cost', async ({
     page,
   }) => {
     await twoItems(page, AULA)
     await pickTerm(page, 12)
 
     await fillStable(dpInput(page), '0')
-    await expect(dpError(page)).toHaveCount(0)
-    // Nothing is paid at the register, so there is nothing to tender.
-    await expect(page.getByText('Nothing to collect for the items at checkout')).toBeVisible()
-    await expect(page.getByTestId('dp-payment-mode-toggle')).toHaveCount(0)
+    await expect(dpError(page)).toContainText('not 0')
 
     await fillStable(dpInput(page), '99999999')
     await expect(dpError(page)).toContainText('these items cost')

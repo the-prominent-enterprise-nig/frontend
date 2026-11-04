@@ -12,6 +12,7 @@ import type {
 import type { ImportLookups } from '../_hooks/useImportLookups'
 import {
   CLEARED_LABELS,
+  PAID_BY_CUSTOMER,
   RECEIPT_TYPE_LABELS,
   clearedLabel,
   dateToInput,
@@ -85,6 +86,7 @@ export default function RowEditPanel({
   row,
   cells,
   lookups,
+  paidBy,
   disabled,
   onChange,
   onClose,
@@ -93,6 +95,9 @@ export default function RowEditPanel({
   row: AcknowledgementImportRow
   cells: AcknowledgementImportCells
   lookups: ImportLookups
+  /** The page's "Who paid these receipts?" choice — what this row takes when
+   * its own Paid by is left empty. */
+  paidBy: string
   disabled?: boolean
   onChange: (patch: AcknowledgementImportCells) => void
   onClose: () => void
@@ -122,9 +127,15 @@ export default function RowEditPanel({
     })),
     cell('receivedIn')
   )
-  const partnerOptions = withCurrent(
-    lookups.financingPartnerNames.map((n) => ({ value: n, label: n })),
-    cell('financingPartner')
+  // The file may spell a partner in another case ("Tonik" for "TONIK"); the
+  // server matches either way, so the picker shows the name it matched.
+  const paidByNames = [PAID_BY_CUSTOMER, ...lookups.financingPartnerNames]
+  const paidByCell = cell('financingPartner').trim()
+  const paidByValue =
+    paidByNames.find((n) => n.toLowerCase() === paidByCell.toLowerCase()) ?? paidByCell
+  const paidByOptions = withCurrent(
+    paidByNames.map((n) => ({ value: n, label: n })),
+    paidByValue
   )
   const subsidyOptions = withCurrentAccount(lookups.accountOptions, cell('subsidyAccount'))
   const withholdingOptions = withCurrentAccount(lookups.accountOptions, cell('withholdingAccount'))
@@ -208,17 +219,17 @@ export default function RowEditPanel({
         </Field>
         <Field label="Sales Invoice No.">{text('invoiceNo')}</Field>
         <Field
-          label="Financing Partner"
-          hint="Fill in when the partner paid it — the credit goes to their receivable, not the customer's. Left blank, a Description that names a partner counts."
+          label="Paid by"
+          hint="Leave it as the file's choice, or pick Customer or a financing partner for this row. A partner's payment clears that partner's receivable, not the customer's."
           className="@min-[640px]:col-span-2"
         >
           <SearchableSelect
             portal
             clearable
-            value={cell('financingPartner').trim()}
+            value={paidByValue}
             onChange={(value) => onChange({ financingPartner: value })}
-            options={partnerOptions}
-            placeholder="— Paid by the customer —"
+            options={paidByOptions}
+            placeholder={`Same as the file (${paidBy || '—'})`}
             disabled={disabled}
           />
         </Field>

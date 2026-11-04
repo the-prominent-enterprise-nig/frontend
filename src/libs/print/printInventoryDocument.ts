@@ -983,7 +983,7 @@ export function printPurchaseOrderDocument(
  *      (two cells wide without the commission, one with) / FMI
  *   4. LCP / Down / Amt. Financed / Inst. Diff.
  *   5. Scheme (the paper form's "WIP") / MI / Term / Branch
- *   6. PN / IC / Total Price
+ *   6. PN / IC / Total Price / Phone (Oct 29 UAT CL-01)
  *   7. Total Payments / Total Penalty / Penalty Balance (column 1)
  *   8. Total Rebates / Total Billing / Required DP (column 2)
  *   9. DP Balance / Tot. Amt. Due / Tot. Amt. Out (column 3)
@@ -1152,7 +1152,11 @@ export function buildCustomerLedgerHtml(
       <tr>
         ${cell('PN', fmt(account.pnv))}
         ${cell('IC', fmt(account.insuranceCharge ?? 0))}
-        ${cell('Total Price', fmt(account.totalPrice), 2)}
+        ${cell('Total Price', fmt(account.totalPrice))}
+        ${
+          // Oct 29 UAT CL-01 — the customer's phone on the printed ledger.
+          cell('Phone', account.customer?.phone || '—')
+        }
       </tr>
     </table>
 
@@ -1297,6 +1301,12 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
       <div class="totals-col">${totalLineHtml('Total Paid', fmt(totals.totalPaid))}</div>
       <div class="totals-col">${totalLineHtml('Total Rebates', fmt(totals.totalRebates))}</div>
       <div class="totals-col">${totalLineHtml('Outstanding', fmt(totals.outstanding))}</div>
+      ${
+        // Oct 29 UAT CL-03 — Total Amount Due on this printout too.
+        totals.totalDue != null
+          ? `<div class="totals-col">${totalLineHtml('Total Amount Due', fmt(totals.totalDue))}</div>`
+          : ''
+      }
     </div>
 
     ${

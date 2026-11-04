@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
-import type { SessionUser } from '@/src/libs/guards/permission'
+import { hasRole, type SessionUser } from '@/src/libs/guards/permission'
 import type { CreateTransferFormValues } from '@/src/schema/inventory/transfers'
 import { useCreateStockRequest } from '../_hooks/useCreateStockRequest'
 import CreateTransferModal from './CreateTransferModal'
@@ -17,8 +17,19 @@ const TRANSFERS_TAB = '/inventory/stock-transaction?tab=transfers'
 export default function StockRequestTab({ session }: { session: SessionUser }): React.JSX.Element {
   const router = useRouter()
   const [formKey, setFormKey] = useState(0)
-  const { warehouseOptions, createTransfer, isCreating, createCaravan, isCreatingCaravan } =
-    useCreateStockRequest()
+  const {
+    warehouseOptions,
+    branchOptions,
+    createTransfer,
+    isCreating,
+    createCaravan,
+    isCreatingCaravan,
+  } = useCreateStockRequest()
+  // A warehouse branch's staff (Negros / Panay Warehouse) own the standalone
+  // warehouse of their region rather than a warehouse of their own branch —
+  // same rule TransferList and the backend apply.
+  const ownBranch = branchOptions.find((b) => b.id === session.branchId)
+  const currentUserRegion = ownBranch?.type === 'warehouse' ? (ownBranch.region ?? null) : null
 
   async function submit(data: CreateTransferFormValues): ReturnType<typeof createTransfer> {
     const result = await createTransfer(data)
@@ -44,6 +55,8 @@ export default function StockRequestTab({ session }: { session: SessionUser }): 
       canCreateCaravan={hasPermission(session, INVENTORY_PERMISSIONS.CARAVAN_MANAGE)}
       warehouses={warehouseOptions}
       currentUserBranchId={session.branchId}
+      currentUserRegion={currentUserRegion}
+      canPickAnyDestination={hasRole(session, 'Warehouse Custodian')}
       canSkipApproval={hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_DIRECT)}
     />
   )

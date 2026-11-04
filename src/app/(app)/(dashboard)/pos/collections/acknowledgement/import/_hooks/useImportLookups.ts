@@ -63,7 +63,11 @@ export function useImportLookups(): ImportLookups {
   useEffect(() => {
     BankAccounts.options().then((res) => setBankAccounts(res.data ?? []))
     ClearingSettlements.activeTpfProviders().then((res) =>
-      setFinancingPartnerNames((res.data ?? []).map((p) => p.name))
+      // Each name once — the list is not narrowed to the tenant, so stale rows
+      // under an old tenant id would otherwise show a partner twice.
+      setFinancingPartnerNames([
+        ...new Map((res.data ?? []).map((p) => [p.name.trim().toLowerCase(), p.name])).values(),
+      ])
     )
     getAccountOptions().then((res) => {
       const list = ((res.data as any)?.items ?? res.data ?? []) as Account[]

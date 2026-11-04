@@ -27,7 +27,7 @@ const pillClass = (active: boolean, activeClass = 'bg-purple-200 text-purple-700
 /**
  * One more payment method, drawn exactly as the Cash panel above it: the same
  * pills, and for the chosen one the same follow-up (bank or gateway, check
- * number, "verified at register", card acquirer with Straight / Installment).
+ * number, card acquirer with Straight / Installment).
  * Added by "Add another payment method"; the first payment keeps using the
  * panel that Payment Mode already draws.
  */
@@ -118,18 +118,6 @@ export default function TenderPanel({
             value={row.checkNumber ?? ''}
             onChange={(e) => onChange({ checkNumber: e.target.value })}
           />
-        )}
-
-        {tender === 'bank_transfer' && (
-          <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
-            <input
-              type="checkbox"
-              checked={!!row.bankVerified}
-              onChange={(e) => onChange({ bankVerified: e.target.checked })}
-              className="h-3.5 w-3.5 rounded border-gray-300"
-            />
-            Verified at register — the credit already landed, post straight to Cash in Bank
-          </label>
         )}
       </div>
 

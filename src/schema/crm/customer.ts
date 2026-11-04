@@ -98,7 +98,8 @@ export const createCustomerSchema = z.object({
   isTaxExempt: z.boolean().optional(),
   taxExemptionRef: z.string().max(100).optional().or(z.literal('')),
   email: z.string().email('Invalid email').max(255).optional().or(z.literal('')),
-  phone: z.string().min(1, 'Phone number is required').max(50),
+  // Oct 29 UAT POS-04 — optional when creating a customer.
+  phone: z.string().max(50).optional().or(z.literal('')),
   // The CURRENT address — see the Customer type for why it kept these
   // column names rather than being renamed.
   address: z.string().max(1000).optional().or(z.literal('')),

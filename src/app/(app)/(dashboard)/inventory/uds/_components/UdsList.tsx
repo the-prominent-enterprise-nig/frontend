@@ -184,9 +184,11 @@ export default function UdsList({ session }: { session: SessionUser }) {
     statusCounts,
     statusFilter,
     reasonFilter,
+    warehouseFilter,
     providerFilter,
     setStatusFilter,
     setReasonFilter,
+    setWarehouseFilter,
     setProviderFilter,
     resetFilters,
     page,
@@ -246,7 +248,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
     [router, canCreateDr]
   )
 
-  const hasFilters = !!statusFilter || !!reasonFilter || !!providerFilter
+  const hasFilters = !!statusFilter || !!reasonFilter || !!warehouseFilter || !!providerFilter
 
   async function handleUpdateStatus(data: UpdateUdsStatusFormValues) {
     if (!selectedStep) return { success: false, error: 'No UDS selected', message: '' }
@@ -314,6 +316,20 @@ export default function UdsList({ session }: { session: SessionUser }) {
               </option>
             ))}
           </select>
+
+          {/* Oct 29 UAT WH-05 — the repair tickets at one branch. Each branch
+              has one warehouse, so it's labelled by the branch. */}
+          <SearchableSelect
+            value={warehouseFilter ?? ''}
+            onChange={(v) => setWarehouseFilter(v || undefined)}
+            options={warehouseOptions.map((w) => ({
+              value: w.id,
+              label: w.branch?.name ?? w.name,
+            }))}
+            placeholder="All branches"
+            ariaLabel="Branch"
+            className="w-56"
+          />
 
           {/* Scenario 73 — the tickets one service center has, or had. */}
           <SearchableSelect
