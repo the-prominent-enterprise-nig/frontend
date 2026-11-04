@@ -11,7 +11,7 @@ export const RECEIPT_IMPORT_HEADERS = [
   'Clear Date',
   'Customer Name',
   'Sales Invoice No.',
-  'Financing Partner',
+  'Paid by',
   'Received in',
   'Received in Account',
   'Description',
@@ -24,8 +24,10 @@ export const RECEIPT_IMPORT_HEADERS = [
 ]
 
 // Net Amount = Gross − Subsidy + Withholding Tax on every example row, so a
-// file started from the template passes the Net check as it stands. Delete
-// these before uploading — a customer name that matches nobody is created.
+// file started from the template passes the Net check as it stands. Paid by is
+// optional: a partner's name or Customer for that row, blank to take the
+// page's "Who paid these receipts?" choice. Delete these before uploading — a
+// customer name that matches nobody is created.
 const EXAMPLE_ROWS: (string | number)[][] = [
   [
     'Acknowledgement',
@@ -56,7 +58,7 @@ const EXAMPLE_ROWS: (string | number)[][] = [
     '2026-10-20',
     'Maria Santos',
     'SI-10497',
-    'Salmon',
+    '',
     'UnionBank - Iloilo',
     '',
     'SALMON SETTLEMENT',
@@ -66,6 +68,26 @@ const EXAMPLE_ROWS: (string | number)[][] = [
     '0.00',
     '',
     '10000.00',
+  ],
+  [
+    'Acknowledgement',
+    'Ajuy',
+    '2026-10-21',
+    '',
+    'Same date',
+    '',
+    'Pedro Reyes',
+    'SI-10511',
+    'Customer',
+    '',
+    '',
+    'Payment at the branch',
+    '5000.00',
+    '0.00',
+    '',
+    '0.00',
+    '',
+    '5000.00',
   ],
 ]
 

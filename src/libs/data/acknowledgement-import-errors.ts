@@ -22,6 +22,7 @@ export function humanizeAcknowledgementImportError(message?: string): string | u
     return `The column headers weren't recognized (${detail}). Use the template's headers.`
   }
   if (code === 'too_many_rows') return `This file has too many rows — ${detail}.`
+  if (code === 'paid_by_not_found') return detail
   if (code === 'row_failed') {
     return `A row could not be saved${detail ? ` — ${detail}` : ''}. Nothing was imported.`
   }

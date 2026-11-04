@@ -1064,14 +1064,18 @@ export default function CreateTransferModal({
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#4b4b5a] hover:bg-[#f1f1f4] disabled:opacity-50"
-            >
-              {isPage ? 'Clear' : 'Cancel'}
-            </button>
+            {/* Inline on the Stock Request tab there's nothing to close, and a
+                one-click wipe of the whole request did more harm than good. */}
+            {!isPage && (
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#4b4b5a] hover:bg-[#f1f1f4] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            )}
             <button
               type="submit"
               disabled={isSubmitting || isCreatingCaravan || arrivalBeforeTransfer}
