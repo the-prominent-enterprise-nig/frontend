@@ -97,7 +97,7 @@ export function CustomerRollupTable({
                   <td className="px-3 py-2" />
                   <td className="px-3 py-2 text-right">
                     <Link
-                      href={`/reports?tab=customer-statement&customerId=${g.customerId}`}
+                      href={`/accounting/reports?tab=customer-statement&customerId=${g.customerId}`}
                       prefetch={false}
                       className="text-xs font-medium text-purple-700 hover:underline"
                     >
