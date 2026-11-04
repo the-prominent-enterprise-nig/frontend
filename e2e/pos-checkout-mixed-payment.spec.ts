@@ -491,7 +491,7 @@ test.describe('POS Checkout — Mixed payment', () => {
     await expect(page.getByTestId('payment-summary')).toHaveCount(0)
   })
 
-  test("MP-F09: the added panel follows the same rules as the first — Check asks for a number, Bank Transfer for 'verified', and a missing Check Number is listed", async ({
+  test("MP-F09: the added panel follows the same rules as the first — Check asks for a number, Bank Transfer has no 'verified' box, and a missing Check Number is listed", async ({
     page,
   }) => {
     await readyCashSale(page, 'F09', `SI-MPF09-${Date.now()}`)
@@ -500,11 +500,10 @@ test.describe('POS Checkout — Mixed payment', () => {
     const panel = page.getByTestId('payment-panel-1')
 
     await panel.getByRole('button', { name: 'Bank Transfer', exact: true }).click()
-    await expect(panel.getByText('Verified at register', { exact: false })).toBeVisible()
+    await expect(panel.getByText('Verified at register', { exact: false })).toHaveCount(0)
 
     await panel.getByRole('button', { name: 'Check', exact: true }).click()
     await expect(page.getByTestId('payment-check-1')).toBeVisible()
-    await expect(panel.getByText('Verified at register', { exact: false })).toHaveCount(0)
 
     await confirm(page).click()
     await expect(page.getByTestId('payment-issues')).toContainText('Payment 2 — Check Number')

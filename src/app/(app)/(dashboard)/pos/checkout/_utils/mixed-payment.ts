@@ -35,8 +35,6 @@ export interface PaymentRow {
   optionName?: string
   /** Check only. */
   checkNumber?: string
-  /** Bank Transfer only. */
-  bankVerified?: boolean
   /** Card only. */
   cardTxnMode?: PosCardTxnMode
   /** Card installment only. */
@@ -98,7 +96,6 @@ export function rowForTender(
     tender,
     optionName: undefined,
     checkNumber: '',
-    bankVerified: false,
     cardTxnMode: 'straight',
     cardTerm: undefined,
   }

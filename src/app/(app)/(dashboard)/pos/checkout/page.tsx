@@ -972,12 +972,9 @@ export default function CheckoutPage() {
   // The check's own number, captured once for the transaction while the Check
   // sub-mode is chosen.
   const [checkNumber, setCheckNumber] = useState('')
-  // Scenario 38 Gap 7 — the cashier confirms the transfer already landed at
-  // the register (e.g. checked the business's own banking app in real
-  // time), so it posts straight to Cash in Bank instead of the usual
-  // clearing account. Same transaction-scoped treatment as cardTxnMode/
-  // cashSubMode above; only meaningful while cashSubMode is bank_transfer.
-  const [bankTransferVerifiedAtRegister, setBankTransferVerifiedAtRegister] = useState(false)
+  // No "verified at register" for a bank transfer: the client wants every one
+  // to post to the bank-transfer account, never straight to Cash in Bank
+  // (Scenario 80 review, Nov 4).
 
   // Down payment now shares the cash/card state above (see hasCashLine/
   // hasCreditCardLine below) and the same `payments` pool — paymentMode
@@ -4422,7 +4419,6 @@ export default function CheckoutPage() {
     xDealDownPaymentReferenceNumber?: string
     xDealDownPaymentCheckNumber?: string
     xDealDownPaymentMethodOptionId?: string
-    xDealDownPaymentVerifiedAtRegister?: boolean
   } {
     if (!xDealActive || xDealDownPaymentTotal <= 0) return {}
     const method = (preferredPaymentMethodKey() ?? 'cash') as
@@ -4449,9 +4445,6 @@ export default function CheckoutPage() {
         : (method === 'bank_transfer' || method === 'qr') && cashPaymentOptionId
           ? { xDealDownPaymentMethodOptionId: cashPaymentOptionId }
           : {}),
-      ...(method === 'bank_transfer' && bankTransferVerifiedAtRegister
-        ? { xDealDownPaymentVerifiedAtRegister: true }
-        : {}),
     }
   }
 
@@ -5340,12 +5333,6 @@ export default function CheckoutPage() {
               row.method === 'card' ? (row.tender ? row.cardTxnMode : cardTxnMode) : undefined,
             cardInstallmentTerm:
               row.method === 'card' ? (row.tender ? row.cardTerm : cardInstallmentTerm) : undefined,
-            bankTransferVerifiedAtRegister:
-              row.method === 'bank_transfer'
-                ? row.tender
-                  ? row.bankVerified
-                  : bankTransferVerifiedAtRegister
-                : undefined,
             installmentScheduleId,
           })
           if (!payRes.success) {
@@ -5856,7 +5843,6 @@ export default function CheckoutPage() {
                 onClick={() => {
                   setCashSubMode(mode)
                   setCashPaymentOptionId(undefined)
-                  if (mode !== 'bank_transfer') setBankTransferVerifiedAtRegister(false)
                 }}
                 className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
                   cashSubMode === mode
@@ -5925,17 +5911,6 @@ export default function CheckoutPage() {
               value={checkNumber}
               onChange={(e) => setCheckNumber(e.target.value)}
             />
-          )}
-          {cashSubMode === 'bank_transfer' && (
-            <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
-              <input
-                type="checkbox"
-                checked={bankTransferVerifiedAtRegister}
-                onChange={(e) => setBankTransferVerifiedAtRegister(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-gray-300"
-              />
-              Verified at register — the credit already landed, post straight to Cash in Bank
-            </label>
           )}
         </div>
       )}

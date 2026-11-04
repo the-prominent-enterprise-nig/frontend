@@ -831,12 +831,13 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     await fillStable(feeInput(page), '150')
     const paidWith = page.getByTestId('delivery-fee-method')
 
+    // No "Verified at register" on a bank transfer: every one posts to the
+    // bank-transfer account (Scenario 80 review).
     await paidWith.getByRole('button', { name: 'Bank Transfer', exact: true }).click()
-    await expect(paidWith.getByText('Verified at register')).toBeVisible()
+    await expect(paidWith.getByText('Verified at register')).toHaveCount(0)
     await expect(page.getByLabel('Delivery fee check number')).toHaveCount(0)
 
     await paidWith.getByRole('button', { name: 'Debit/Credit Card', exact: true }).click()
-    await expect(paidWith.getByText('Verified at register')).toHaveCount(0)
     await paidWith.getByRole('button', { name: 'Installment', exact: true }).click()
     await expect(page.getByLabel('Delivery fee card term')).toBeVisible()
 
