@@ -32,8 +32,8 @@ type Persona = {
 
 const PERSONAS: Persona[] = [
   {
-    role: 'Receptionist',
-    email: 'technova.b1.al-receptionist@test.com',
+    role: 'Branch Receptionist',
+    email: 'technova.b1.al-branch-receptionist@test.com',
     expensesTabs: ['Expenses'],
     forbidden: ['/accounting/expenses/recurring', '/accounting/special-accounts'],
     opens: ['/accounting/expenses'],
@@ -60,8 +60,8 @@ const PERSONAS: Persona[] = [
     opens: ['/accounting/employee-cash-loans'],
   },
   {
-    role: 'Inventory Manager',
-    email: 'technova.al-inventory-manager@test.com',
+    role: 'Inventory OIC',
+    email: 'technova.al-inventory-oic@test.com',
     expensesTabs: [],
     forbidden: ['/accounting/expenses', '/pos/sessions'],
     opens: ['/pos/catalog'],
@@ -112,10 +112,8 @@ test.describe('Access Levels roles — the UI matches what each role may do', ()
     })
   }
 
-  test('the Inventory Manager sees Product Catalog and nothing else under POS', async ({
-    page,
-  }) => {
-    await loginAs(page, 'technova.al-inventory-manager@test.com', PASSWORD)
+  test('the Inventory OIC sees Product Catalog and nothing else under POS', async ({ page }) => {
+    await loginAs(page, 'technova.al-inventory-oic@test.com', PASSWORD)
     await gotoReady(page, '/pos/catalog')
     await expect(sidebar(page).getByRole('link', { name: 'Product Catalog' })).toBeVisible({
       timeout: 15_000,

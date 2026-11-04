@@ -3,12 +3,12 @@ import { gotoReady, loginAs } from './utils'
 
 // Scenario 74 review, ownership answers B, C and F: a page opens on the
 // permission of the module that owns it. The Finance Head holds Accounting
-// only (no Inventory supplier or driver rights), and the Inventory Manager
+// only (no Inventory supplier or driver rights), and the Inventory OIC
 // holds Inventory only (no Accounting debit memo rights).
 
 const PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
 const FINANCE_HEAD = 'technova.al-finance-head@test.com'
-const INVENTORY_MANAGER = 'technova.al-inventory-manager@test.com'
+const INVENTORY_OIC = 'technova.al-inventory-oic@test.com'
 
 test.describe('Pages open on the owning module’s permission', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
@@ -29,8 +29,8 @@ test.describe('Pages open on the owning module’s permission', () => {
     await expect(page.getByRole('link', { name: /Add Driver/ })).toBeVisible()
   })
 
-  test('F: the Inventory Manager opens Inventory Debit Memos', async ({ page }) => {
-    await loginAs(page, INVENTORY_MANAGER, PASSWORD)
+  test('F: the Inventory OIC opens Inventory Debit Memos', async ({ page }) => {
+    await loginAs(page, INVENTORY_OIC, PASSWORD)
     const res = await page.request.get('/api/inventory-debit-memos')
     expect(res.status()).toBe(200)
     await gotoReady(page, '/accounting/debit-memos')

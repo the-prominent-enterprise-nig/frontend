@@ -18,15 +18,15 @@ test.describe('Roles & Access — module map', () => {
       row(/^Expense Clerk/).getByText(/^Accounting: Partial \(\d+ of \d+ features\)$/)
     ).toBeVisible()
     // Protected steps kept out: Cashier's POS for branch staff, the Business
-    // Owner's stock-adjustment steps for the Inventory Manager.
+    // Owner's stock-adjustment steps for the Inventory OIC.
     await expect(
       row(/^Collector/).getByText('Point of Sale: All access *', { exact: true })
     ).toBeVisible()
     await expect(
-      row(/^Inventory Manager/).getByText('Inventory: All access *', { exact: true })
+      row(/^Inventory OIC/).getByText('Inventory: All access *', { exact: true })
     ).toBeVisible()
-    // Inventory Manager's catalog access doesn't make POS "All access".
-    await expect(row(/^Inventory Manager/).getByText(/^Point of Sale: Partial/)).toBeVisible()
+    // Inventory OIC's catalog access doesn't make POS "All access".
+    await expect(row(/^Inventory OIC/).getByText(/^Point of Sale: Partial/)).toBeVisible()
     await expect(page.getByText(/: Mixed$/)).toHaveCount(0)
   })
 

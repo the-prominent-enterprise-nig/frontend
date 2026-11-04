@@ -18,17 +18,17 @@ The sheet's 254 rows group into 21 distinct permission sets. Each set is one rol
 | Bank Clerk          | 1      |
 | Payables Clerk      | 2      |
 | Treasury Clerk      | 2      |
-| Inventory Manager   | 4      |
-| Stock Clerk         | 5      |
-| Sales Admin         | 6      |
+| Inventory OIC       | 4      |
+| Inventory Clerk     | 5      |
+| Sales Admin Clerk   | 6      |
 | AR Supervisor       | 2      |
 | Sales Support       | 21     |
 | Branch Support      | 8      |
-| Aircon Staff        | 6      |
+| Aircool Staff       | 6      |
 | Aircon Clerk        | 1      |
-| HR Officer          | 2      |
+| HR Staff            | 2      |
 | Repair In-Charge    | 2      |
-| Receptionist        | 4      |
+| Branch Receptionist | 4      |
 | Custodian           | 3      |
 | Collector           | 9      |
 | Warehouse Custodian | 2      |
@@ -39,11 +39,11 @@ Branch Manager and Cashier keep their existing roles **unchanged**. See "Conflic
 
 Three sheet features had no permission of their own, so the sheet couldn't be followed without adding one:
 
-| Permission                                                  | Used to be gated by              | Why split                                                                                                             |
-| ----------------------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `accounting:recurring-expenses:{read,create,update,delete}` | `accounting:expense:*`           | Branch staff and Aircon Clerk get Expenses without Recurring                                                          |
-| `accounting:special-accounts:{read,create}`                 | `accounting:expense:read/create` | Bank Clerk and HR Officer get Special Accounts without Expenses; Deposit Clerk gets Expenses without Special Accounts |
-| `pos:catalog:read`                                          | `pos:transactions:read`          | Inventory roles get Product Catalog without the rest of POS                                                           |
+| Permission                                                  | Used to be gated by              | Why split                                                                                                           |
+| ----------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `accounting:recurring-expenses:{read,create,update,delete}` | `accounting:expense:*`           | Branch staff and Aircon Clerk get Expenses without Recurring                                                        |
+| `accounting:special-accounts:{read,create}`                 | `accounting:expense:read/create` | Bank Clerk and HR Staff get Special Accounts without Expenses; Deposit Clerk gets Expenses without Special Accounts |
+| `pos:catalog:read`                                          | `pos:transactions:read`          | Inventory roles get Product Catalog without the rest of POS                                                         |
 
 No existing role loses access:
 
@@ -56,12 +56,12 @@ No existing role loses access:
 ### Decisions made here (please confirm)
 
 1. **"POS ALL" is `pos:*:*`.** The client's rulings hold without an exclusion: approving a credit application is checked by role name, Business Owner only (2026-09-18), and depositing cash is gated on `accounting:cash-in-transit:manage` (Scenario 53), which no `pos:` permission reaches.
-2. **Branch staff get POS the way Cashier does.** Receptionist, Custodian and Collector don't get `pos:transaction:override` (approving another cashier's override, refund or cancellation) or `pos:reports:read` (the cost-bearing sales reports). **Exclusion kept, please confirm:** it means they hold concrete POS rows, not the wildcard, so a POS permission added later doesn't reach them.
+2. **Branch staff get POS the way Cashier does.** Branch Receptionist, Custodian and Collector don't get `pos:transaction:override` (approving another cashier's override, refund or cancellation) or `pos:reports:read` (the cost-bearing sales reports). **Exclusion kept, please confirm:** it means they hold concrete POS rows, not the wildcard, so a POS permission added later doesn't reach them.
 3. **"Stock Transaction ALL" doesn't include approval steps** for Employee-tier roles. That covers stock-adjustment confirm, investigate and approve; PO approve; DR approve and void; transfer manager/HQ approve and direct; and supplier-return approve, finalize and void. This is the same line Stock Controller is drawn with.
-4. **Inventory Manager** gets all of Inventory except `inventory:stock-adjustment:investigate`, `inventory:stock-adjustment:approve` (Business Owner only, Scenario 19) and `inventory:manual-rr:create` (owner only by default). It **does** approve Delivery Receipts, per the Approvals tab. **Exclusion kept, please confirm:** it means concrete inventory rows, not `inventory:*:*`.
+4. **Inventory OIC** gets all of Inventory except `inventory:stock-adjustment:investigate`, `inventory:stock-adjustment:approve` (Business Owner only, Scenario 19) and `inventory:manual-rr:create` (owner only by default). It **does** approve Delivery Receipts, per the Approvals tab. **Exclusion kept, please confirm:** it means concrete inventory rows, not `inventory:*:*`.
 5. **Where the sheet says ALL, the role holds the module wildcard** (`accounting:*:*`, `pos:*:*`, `crm:*:*`, `inventory:*:*`), like Accountant, so a permission added to the module later reaches it. The two exclusions above are the only ALL modules held as concrete rows, because a wildcard can't carry an exclusion.
 6. **Lookups and attachments come with the feature**, not role by role. See "Modules and Sharing Plan" below: a feature's screens get the pick lists they use (customers, suppliers, items, warehouses…) and Files with attach rights automatically. Every account picker outside the Chart of Accounts (Expense, Recurring, the Expenses filter, Bill form, Record Payment, deposit slip, New Special Account, debit memo lines, acknowledgement receipts, supplier, item and category accounts, POS settings) picks from `GET /accounts/options`, which each of those features' permissions open, because `GET /accounts` carries every posted transaction.
-7. **"Paid from".** Bank accounts don't come with a feature (they carry live balances, and Part 2 limits which ones a role may use). Receptionist and Aircon Clerk get `accounting:bank-accounts:read` directly, so until Part 2 they see every bank and cash account there, not just their petty cash.
+7. **"Paid from".** Bank accounts don't come with a feature (they carry live balances, and Part 2 limits which ones a role may use). Branch Receptionist and Aircon Clerk get `accounting:bank-accounts:read` directly, so until Part 2 they see every bank and cash account there, not just their petty cash.
 
 ## Modules and Sharing Plan (Chloe's plan, Steps 0–6)
 
@@ -162,7 +162,7 @@ The rule: a page is opened by the permission of the module that owns it. The pic
 | C   | Drivers                  | Accounting owns the page          | New `accounting:drivers:{read,create,update,delete}` (migration `20261028100000_access_level_ownership`), mirrored to every role holding `inventory:drivers:*` except the 21 sheet roles, as in the first migration (locally: Branch Manager, Stock Controller). Driver and vehicle routes, pages, tabs and actions accept either; dispatch keeps `inventory:transfers:read` |
 | D   | Manual Receiving Reports | Owned by both                     | Map only: Payables and Receiving read "Manual Receiving Reports owned by: Accounting, Inventory". Routes already took either                                                                                                                                                                                                                                                 |
 | E   | Cash-in-transit          | Leave as is                       | Nothing removed. Correction: `pos:cash-in-transit:read` is **not** retired; it is how a cashier sees their own branch's cash. Only `pos:cash-in-transit:manage` is checked nowhere, for a later cleanup                                                                                                                                                                      |
-| F   | Inventory Debit Memos    | Owned by both                     | New `inventory:debit-memos:{read,create,update,approve,void}` (same migration). Every route, the memo page, the Debit Memos hub, the Inventory list's "open" link and the Delivery Receipt link accept either. Business Owner gets all 9; the backfill gives them to the Inventory Manager (Inventory ALL)                                                                   |
+| F   | Inventory Debit Memos    | Owned by both                     | New `inventory:debit-memos:{read,create,update,approve,void}` (same migration). Every route, the memo page, the Debit Memos hub, the Inventory list's "open" link and the Delivery Receipt link accept either. Business Owner gets all 9; the backfill gives them to the Inventory OIC (Inventory ALL)                                                                       |
 
 ### Not checked by any backend route
 
@@ -173,7 +173,7 @@ The rule: a page is opened by the permission of the module that owns it. The pic
 
 ## Questions for the client
 
-- The Approvals tab says department heads can approve Delivery Receipts. The aircon department head shares the Aircon Staff permission set. Should they get a separate role that can approve DRs?
+- The Approvals tab says department heads can approve Delivery Receipts. The aircon department head shares the Aircool Staff permission set. Should they get a separate role that can approve DRs?
 - "CRM ALL" includes CRM approvals: collection incentives, category graduation and legal escalation. Is that intended for branch collectors, receptionists and custodians?
 - Branch roles have "ALL" as the CRM restriction, while POS says "Limited to their Branch". Does CRM span all branches?
 - Stock Ledger says "ALL, No item cost", while Stock Transaction says "Limited to their Branch". Is that difference intended?
@@ -192,13 +192,13 @@ The rule: a page is opened by the permission of the module that owns it. The pic
 
 Several sheet restrictions are allow-lists that a permission string can't express:
 
-| Restriction                    | Roles                                                                                                                                                                                                      |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Bank accounts                  | Expense Clerk: Revolving Fund Panay and Construction Panay only. Liquidation Clerk: Palawan (BDO) and GCash (Corporate) only                                                                               |
-| Special Accounts by GL code    | Liquidation Clerk: 1-01-320, 1-01-321, 1-01-323 · Bank Clerk: 1-01-321, 1-01-323 · Payables Clerk: 1-03-010, 1-03-020, 1-03-021, 1-03-022, 1-03-030, 1-03-040, 1-03-060 · HR Officer: 1-01-320 to 1-01-323 |
-| Expense "Paid From" petty cash | Receptionist and branch staff: their own branch's petty cash · Aircon Clerk: Petty Cash - Aircool. Until this lands they see every account in "Paid from"                                                  |
-| Acknowledgment receipt only    | Treasury Clerk on POS › New Receipts                                                                                                                                                                       |
-| No item cost                   | Branch roles, Warehouse Custodian, and Repair In-Charge on Stock Ledger                                                                                                                                    |
+| Restriction                    | Roles                                                                                                                                                                                                    |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bank accounts                  | Expense Clerk: Revolving Fund Panay and Construction Panay only. Liquidation Clerk: Palawan (BDO) and GCash (Corporate) only                                                                             |
+| Special Accounts by GL code    | Liquidation Clerk: 1-01-320, 1-01-321, 1-01-323 · Bank Clerk: 1-01-321, 1-01-323 · Payables Clerk: 1-03-010, 1-03-020, 1-03-021, 1-03-022, 1-03-030, 1-03-040, 1-03-060 · HR Staff: 1-01-320 to 1-01-323 |
+| Expense "Paid From" petty cash | Branch Receptionist and branch staff: their own branch's petty cash · Aircon Clerk: Petty Cash - Aircool. Until this lands they see every account in "Paid from"                                         |
+| Acknowledgment receipt only    | Treasury Clerk on POS › New Receipts                                                                                                                                                                     |
+| No item cost                   | Branch roles, Warehouse Custodian, and Repair In-Charge on Stock Ledger                                                                                                                                  |
 
 **Proposal:**
 

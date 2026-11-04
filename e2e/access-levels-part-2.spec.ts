@@ -30,10 +30,10 @@ test.describe('Access Levels Part 2', () => {
     await expect(page.getByRole('button', { name: 'Collection', exact: true })).toHaveCount(0)
   })
 
-  test('Receptionist: no Cash & Banking; "Paid from" is their branch petty cash', async ({
+  test('Branch Receptionist: no Cash & Banking; "Paid from" is their branch petty cash', async ({
     page,
   }) => {
-    await loginAs(page, branchEmail('receptionist'), PASSWORD)
+    await loginAs(page, branchEmail('branch-receptionist'), PASSWORD)
     await gotoReady(page, '/accounting/expenses')
     expect(await sidebarHrefs(page)).not.toContain('/accounting/cash-banking')
     const res = await page.request.get('/api/bank-accounts/options?purpose=expense-fund')
