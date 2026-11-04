@@ -15,6 +15,7 @@ import {
 } from '@/src/schema/inventory/items'
 import type { ApiResponse } from '@/src/libs/api/client'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import { getAttributes } from '../../attributes/_actions/get-attributes'
 import { getItemAttributes } from '../_actions/get-item-attributes'
@@ -373,17 +374,18 @@ export default function EditItemModal({
                 name="baseUnitId"
                 control={control}
                 render={({ field }) => (
-                  <select
-                    {...field}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="">Select unit…</option>
-                    {uomOptions.map((uom) => (
-                      <option key={uom.id} value={uom.id}>
-                        {uom.code} – {uom.name}
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    portal
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    options={uomOptions.map((uom) => ({
+                      value: uom.id,
+                      label: `${uom.code} – ${uom.name}`,
+                    }))}
+                    placeholder="Select unit…"
+                    loading={uomOptions.length === 0}
+                    loadingLabel="Loading units…"
+                  />
                 )}
               />
               {errors.baseUnitId && (
@@ -439,19 +441,14 @@ export default function EditItemModal({
                 name="brandId"
                 control={control}
                 render={({ field }) => (
-                  <select
-                    {...field}
+                  <SearchableSelect
+                    portal
                     value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value || undefined)}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="">— None —</option>
-                    {brandOptions.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => field.onChange(value || undefined)}
+                    options={brandOptions.map((b) => ({ value: b.id, label: b.name }))}
+                    placeholder="Select brand…"
+                    clearable
+                  />
                 )}
               />
             </div>
@@ -463,19 +460,17 @@ export default function EditItemModal({
                 name="typeId"
                 control={control}
                 render={({ field }) => (
-                  <select
-                    {...field}
+                  <SearchableSelect
+                    portal
                     value={field.value ?? ''}
-                    onChange={(e) => field.onChange(e.target.value || undefined)}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="">— None —</option>
-                    {typeOptions.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {formatClassificationLabel(t.name)}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => field.onChange(value || undefined)}
+                    options={typeOptions.map((t) => ({
+                      value: t.id,
+                      label: formatClassificationLabel(t.name),
+                    }))}
+                    placeholder="Select item type…"
+                    clearable
+                  />
                 )}
               />
             </div>
@@ -685,20 +680,16 @@ export default function EditItemModal({
                       className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-500"
                     />
                   ) : def.dataType === 'dropdown' && def.options?.length ? (
-                    <select
+                    <SearchableSelect
+                      portal
                       value={attrValues[def.attributeKey] ?? ''}
-                      onChange={(e) =>
-                        setAttrValues((prev) => ({ ...prev, [def.attributeKey]: e.target.value }))
+                      onChange={(value) =>
+                        setAttrValues((prev) => ({ ...prev, [def.attributeKey]: value }))
                       }
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                    >
-                      <option value="">Select…</option>
-                      {def.options.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
+                      options={def.options.map((opt) => ({ value: opt, label: opt }))}
+                      placeholder="Select…"
+                      clearable={!def.isRequired}
+                    />
                   ) : def.dataType === 'multi_select' && def.options?.length ? (
                     <div className="space-y-1">
                       {def.options.map((opt) => {
