@@ -650,6 +650,7 @@ export default function SerialNumberList({
                         <th className="px-4 py-[9px] text-left">Serial #</th>
                         <th className="px-4 py-[9px] text-left hidden lg:table-cell">Brand</th>
                         <th className="px-4 py-[9px] text-left hidden lg:table-cell">Model</th>
+                        {/* UAT 2026-10-29 §6: Origin before Location. */}
                         <th className="px-4 py-[9px] text-left hidden lg:table-cell">
                           Origin / REF# / Date
                         </th>
