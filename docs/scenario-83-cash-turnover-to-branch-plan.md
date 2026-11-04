@@ -190,3 +190,23 @@ separate tab).
   reversed and reposted; the turnover stays pending, now at the corrected branch.
 - Once acknowledged, the deposit is final (backend 400; the Correct button is hidden).
 - e2e S83-08.
+
+### Following the client's journal entry mockup (developer, 2026-11-04)
+
+Replaces the earlier "one branch per entry, 1-01-047" approach.
+
+- **Branch per journal line:** `Transaction.branchId` (migration
+  `20261104130000_transaction_line_branch`) is null on every existing line, which follows its
+  entry. A turnover's Inter-branch Receivable debit is tagged to the **receiving branch**; the COH
+  credit follows the entry (the sender). Branch-filtered GL reports (`reports.service.ts`) read
+  the line's branch when it is set. Reversals keep the line branch.
+- **Account 1-01-170 Inter-branch Receivable**, under 1-01-000. It's seeded on top of the
+  client's chart (`coa-seed/inter-branch-account.ts`; the generated chart file is untouched) and
+  created and mapped on first use where the chart predates it. `INTER_BRANCH_TURNOVER` points
+  at it.
+- Per branch: the receiver's Inter-branch Receivable is +X on turnover and −X on
+  acknowledgment, so it nets to 0; the sender's COH is −X.
+- **Auto-post, no manual encoding:** entry 1 posts on save; entry 2 posts on acknowledgment.
+- **Journal entry preview** in Record deposit (Turn over to branch), laid out as in the mockup.
+- **Pending turnover** on both branches' reports: the sender's "Turnover to X (pending
+  acknowledgment)"; the receiver's "PENDING TURNOVER IN · not counted" (in no total or balance).

@@ -290,6 +290,11 @@ function othersNote(deliveryCharges: number, newReceipts: number): string | unde
  * The non-cash providers are not itemised here: the ledger's CREDIT column
  * already names each bank they were banked to.
  */
+/** Scenario 83 — turnovers sent to the branch that day, still pending. */
+function pendingTurnoverIn(report: DailyCollectionReport): number {
+  return (report.pendingTurnoversIn ?? []).reduce((sum, t) => sum + t.amount, 0)
+}
+
 export function buildCollectionRecapLines(report: DailyCollectionReport): FooterLine[] {
   const totals = kindTotals(report)
   const kind = (k: CollectionKind): number => totals.get(k) ?? 0
@@ -336,6 +341,17 @@ export function buildCollectionRecapLines(report: DailyCollectionReport): Footer
         group: 'cash',
       }
     ),
+    // Scenario 83 — sent to this branch, not acknowledged yet: shown so the
+    // branch knows it is coming, in no total until it confirms the cash.
+    ...(pendingTurnoverIn(report) > 0.005
+      ? [
+          line('PENDING TURNOVER IN', pendingTurnoverIn(report), {
+            sub: 'not counted',
+            note: 'Sent by another branch, awaiting your acknowledgment',
+            group: 'cash',
+          }),
+        ]
+      : []),
     // Mirrors the backend form sheet's own line (daily-collection.form-sheet.ts)
     // — this recap and that one must never print different figures for the
     // same day. Only drawn while a session is still open, so a final form is

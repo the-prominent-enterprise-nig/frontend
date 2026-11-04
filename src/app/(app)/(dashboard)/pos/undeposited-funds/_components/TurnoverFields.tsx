@@ -271,3 +271,101 @@ export function TurnoverLineLabel({ line }: { line: PosDepositLine }): React.JSX
     </span>
   )
 }
+
+/** "Dumalag Caravan — caravan of Roxas" reads as the caravan. */
+const shortBranch = (name: string): string => name.split(' — ')[0]
+
+/**
+ * Scenario 83 — the two entries a turnover posts, as the client's mockup lays
+ * them out. Both post on their own — the first when this is saved, the second
+ * when the receiving branch acknowledges — nobody encodes them. Each line
+ * carries its own branch: the receivable is the receiving branch's.
+ */
+export function TurnoverJournalPreview({
+  turnover,
+  senderName,
+}: {
+  turnover: Turnover
+  senderName: string
+}): React.JSX.Element {
+  const branches = useQuery({
+    queryKey: ['turnover-branches'],
+    queryFn: () => listTurnoverBranches(),
+    staleTime: 5 * 60 * 1000,
+  })
+  const receiver =
+    (branches.data?.data?.data ?? []).find((b) => b.id === turnover.toBranchId)?.name ??
+    'Receiving branch'
+  const sender = shortBranch(senderName)
+  const amount = turnoverAmount(turnover)
+  const date = turnover.date
+    ? new Date(`${turnover.date}T00:00:00`).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : ''
+  return (
+    <div className="rounded-lg border border-gray-200 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-sm font-semibold text-gray-900">Journal entry preview</p>
+        <span className="rounded-full bg-purple-50 px-2.5 py-0.5 text-xs font-medium text-purple-700">
+          Auto-posts on save
+        </span>
+      </div>
+      <JournalBlock
+        title={`1 · On turnover (${sender})${date ? ` · ${date}` : ''}`}
+        rows={[
+          ['Inter-branch Receivable', receiver, amount, null],
+          ['COH-Branch Collection', sender, null, amount],
+        ]}
+      />
+      <JournalBlock
+        title={`2 · On acknowledgment (${receiver})`}
+        rows={[
+          ['COH-Branch Collection', receiver, amount, null],
+          ['Inter-branch Receivable', receiver, null, amount],
+        ]}
+      />
+      <p className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-xs leading-relaxed text-blue-900">
+        Entry 2 posts only after <strong>{receiver}</strong> acknowledges receipt. Entry 2 clears
+        the Inter-branch Receivable balance back to zero. Until then the amount shows as{' '}
+        <strong>Pending turnover</strong> on both branches&apos; collection reports.
+      </p>
+    </div>
+  )
+}
+
+type JournalRow = [account: string, branch: string, debit: number | null, credit: number | null]
+
+function JournalBlock({ title, rows }: { title: string; rows: JournalRow[] }): React.JSX.Element {
+  const money = (n: number | null): string =>
+    n === null
+      ? ''
+      : n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return (
+    <div className="mb-3">
+      <p className="mb-1 text-xs font-semibold text-gray-800">{title}</p>
+      <table className="w-full text-xs">
+        <thead className="text-gray-500">
+          <tr className="border-b border-gray-200">
+            <th className="py-1 text-left font-medium">Account</th>
+            <th className="py-1 text-left font-medium">Branch</th>
+            <th className="py-1 text-right font-medium">Dr</th>
+            <th className="py-1 text-right font-medium">Cr</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {rows.map(([account, branch, debit, credit]) => (
+            <tr key={`${account}-${branch}-${debit ?? ''}`}>
+              <td className="py-1.5 text-gray-800">{account}</td>
+              <td className="py-1.5 text-gray-600">{branch}</td>
+              <td className="py-1.5 text-right tabular-nums">{money(debit)}</td>
+              <td className="py-1.5 text-right tabular-nums">{money(credit)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
