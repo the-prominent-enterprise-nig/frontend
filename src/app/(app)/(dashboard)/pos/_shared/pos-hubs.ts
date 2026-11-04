@@ -460,10 +460,10 @@ export const OPERATIONS_ADMIN_HUB: PosHub = {
       permissions: [POS_PERMISSIONS.CASHIER_PIN_VERIFY],
     },
     {
-      // Business Owner or Branch Manager only — the layout's guard is
-      // role-based (canManagePosSettings), not permission-based, and Cashier
-      // holds pos:config:manage too, so a permission here would show them a
-      // tab that redirects to /403. `configOnly` is that role check. Every
+      // Whoever may change POS settings (canManagePosSettings: the owner, the
+      // Branch Manager, any role given one of the POS "manage" toggles). The
+      // check is one of several permissions rather than a single one, which is
+      // why the tab lists none and `configOnly` carries it. Every
       // /pos/settings/* page shows the strip, over its own left-rail tabs.
       id: 'settings',
       label: 'Settings',

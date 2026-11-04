@@ -29,19 +29,13 @@ export default async function RootPage() {
   }
 
   // Non-admins: redirect to the first module their role allows access to.
-  // Uses canAccessModule (respects ROLE_MODULE_ACCESS allowlists) so a cashier
-  // with inventory:items:read doesn't get sent to /inventory, on the roles' own
-  // rows so Aircool Staff's CRM doesn't send them to an /accounting with nothing
-  // of theirs in it (403 right after login).
+  // Uses the roles' own rows, so a role that only reaches a module through what
+  // its features bring (Aircool Staff's CRM brings Accounting reads) isn't sent to
+  // an /accounting with nothing of theirs in it (403 right after login).
   for (const mod of MODULES) {
     if (canNavigateModule(session, mod.key)) {
       redirect(mod.href)
     }
-  }
-
-  // Branch managers land on the main dashboard (same as owner)
-  if (session.primaryRole === 'Branch Manager') {
-    redirect('/dashboard')
   }
 
   redirect('/403')

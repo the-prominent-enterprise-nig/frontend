@@ -1,5 +1,5 @@
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { can, isAdmin } from '@/src/libs/guards/permission'
+import { can, isAdmin, managesOwnBranch } from '@/src/libs/guards/permission'
 import { redirect, notFound } from 'next/navigation'
 import { getBranch } from '../../_actions/get-branch'
 import { getBranchSummary } from '../../_actions/get-branch-summary'
@@ -20,7 +20,7 @@ export default async function BranchDetailPage({ params }: { params: Promise<{ i
   const session = await getSessionOrNull()
   if (!session) redirect('/login')
 
-  const isBranchManager = session.primaryRole === 'Branch Manager'
+  const isBranchManager = managesOwnBranch(session)
   if (!isAdmin(session) && !isBranchManager) redirect('/403')
   if (isBranchManager && session.branchId !== id) redirect('/403')
 

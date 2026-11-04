@@ -1,4 +1,4 @@
-import { adminManageCovers, fixedModuleAccess } from '@/src/libs/guards/permission'
+import { adminManageCovers } from '@/src/libs/guards/permission'
 
 interface SessionUser {
   id: string
@@ -112,23 +112,13 @@ export function usePermission(session: SessionUser | null, permission: string): 
 }
 
 /**
- * Check if a user can see a top-level module tab.
- * When every one of the user's roles has an explicit allowlist (pos → pos
- * only), the allowlist decides, so stray permissions don't open other modules.
- * Otherwise the user's permissions do.
+ * Check if a user can see a top-level module tab. Decided by what the user's
+ * roles grant; a role's name never limits it (see canAccessModule).
  */
 export function hasModuleAccess(session: SessionUser | null, moduleKey: string): boolean {
   if (!session) return false
   if (session.primaryRole === 'Business Owner' || session.roles.includes('Business Owner'))
     return true
-
-  // The same allowlists the page guard uses (src/libs/guards/permission.ts),
-  // so the sidebar and the guard can't disagree.
-  const fixed = fixedModuleAccess(
-    [...(session.primaryRole ? [session.primaryRole] : []), ...session.roles],
-    moduleKey
-  )
-  if (fixed !== null) return fixed
 
   // Trust the backend-computed moduleAccess list when present — it correctly handles
   // cross-module permission mappings (e.g. hr:payslips:read → payroll nav tab).

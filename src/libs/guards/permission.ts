@@ -77,11 +77,19 @@ export interface SessionUser {
   lastLoginAt?: string | null
 }
 
+/** What the permission checks read from a session. A narrower view of
+ * SessionUser, so the sidebar's trimmed session type can use the same rules as
+ * the pages instead of keeping its own copy. */
+export type PermissionHolder = Pick<
+  SessionUser,
+  'roles' | 'permissions' | 'primaryRole' | 'isSuperAdmin' | 'branchId'
+>
+
 export function isSuperAdmin(user: SessionUser): boolean {
   return user.isSuperAdmin === true || user.primaryRole === 'super-admin'
 }
 
-export function hasPrivilegedRole(user: SessionUser): boolean {
+export function hasPrivilegedRole(user: PermissionHolder): boolean {
   return user.primaryRole === 'Business Owner' || user.roles.includes('Business Owner')
 }
 
@@ -129,42 +137,22 @@ function matchesPermission(userPermission: string, requiredPermission: string): 
   return true
 }
 
-export function can(user: SessionUser, permission: Permission): boolean {
+export function can(user: PermissionHolder, permission: Permission): boolean {
   if (hasPrivilegedRole(user)) return true
   return user.permissions.some((p) => matchesPermission(p, permission))
 }
 
-const ROLE_MODULE_ACCESS: Record<string, string[]> = {
-  // Cashier is not here: the client's Access Levels sheet gives the Branch
-  // Cashier Expenses, CRM and Stock Transaction as well as POS, so the
-  // Cashier's modules come from its permissions like any other role's. It
-  // replaces the POS-only entry from the 2026-09-19 review request.
-  'pos-manager': ['pos'],
-  pos: ['pos'],
-}
-
 /**
- * The fixed allowlists' answer for `module`, or null when the permissions
- * decide. A list decides only when every one of the user's roles has one, so
- * stray permissions on those roles don't open other modules. A user who also
- * holds a role without a list gets that role's modules from its permissions:
- * one role's list never takes away what another role gives (UAT review
- * 2026-11-04, a Payables Clerk who is also a Cashier).
+ * Whether a user's permissions reach a module. Decided by what the user's roles
+ * grant and nothing else: there used to be a fixed list of modules for roles
+ * named cashier, pos-manager and pos, which answered from that list alone and
+ * ignored every other role the user held, so a Payables Clerk who was also a
+ * Cashier was sent to /403 on Accounting. It also meant a role an owner happened
+ * to name "POS" was locked to POS. Both are gone: a role name never decides
+ * access.
  */
-export function fixedModuleAccess(roles: string[], module: string): boolean | null {
-  const names = roles.map((r) => r.toLowerCase())
-  if (names.length === 0 || names.some((r) => !(r in ROLE_MODULE_ACCESS))) return null
-  return names.some((r) => ROLE_MODULE_ACCESS[r].includes(module))
-}
-
 export function canAccessModule(user: SessionUser, module: string): boolean {
   if (hasPrivilegedRole(user)) return true
-
-  const fixed = fixedModuleAccess(
-    [...(user.primaryRole ? [user.primaryRole] : []), ...user.roles],
-    module
-  )
-  if (fixed !== null) return fixed
 
   if (user.moduleAccess?.includes(module)) return true
   return user.permissions.some((p) => p === `${module}:*` || p.startsWith(`${module}:`))
@@ -203,19 +191,42 @@ export function canNavigateModule(user: SessionUser, module: string): boolean {
 const ADMIN_ROLE_PERMISSIONS = ['admin:roles:manage', 'admin:permissions:manage'] as const
 
 // Check if user is an admin (assigned the admin role)
-export function isAdmin(user: SessionUser): boolean {
+export function isAdmin(user: PermissionHolder): boolean {
   if (hasPrivilegedRole(user)) return true
   return ADMIN_ROLE_PERMISSIONS.some((p) => can(user, p))
 }
 
+/** The rows that let someone change POS-wide settings: configuration and
+ * payment methods, terminals, financing terms, TPF providers, the loyalty
+ * program. Branch staff no longer hold them (2026-11-05). */
+export const POS_SETTINGS_PERMISSIONS = [
+  'pos:config:manage',
+  'pos:terminals:manage',
+  'pos:financing-terms:manage',
+  'pos:tpf-providers:manage',
+  'pos:loyalty-program:manage',
+]
+
 /**
- * Business Owner or Branch Manager only — the two roles allowed to configure
- * POS-wide settings (GL mapping, discount/stock thresholds, financing terms,
- * etc). Deliberately narrower than `can(user, 'pos:*')`, which loosely
- * matches any single pos:x:y permission a Cashier also happens to hold.
+ * Whether the user may change POS-wide settings (GL mapping, discount/stock
+ * thresholds, financing terms, etc). Decided by the permission rows the user's
+ * roles hold, so a custom role with the toggle gets the Settings area and one
+ * without it does not; no role name is consulted. Deliberately narrower than
+ * `can(user, 'pos:*')`, which loosely matches any single pos:x:y permission a
+ * Cashier also happens to hold.
  */
-export function canManagePosSettings(user: SessionUser): boolean {
+export function canManagePosSettings(user: PermissionHolder): boolean {
   if (isAdmin(user)) return true
-  const allRoles = [user.primaryRole ?? '', ...user.roles]
-  return allRoles.some((r) => r === 'Branch Manager' || r === 'pos-manager')
+  return POS_SETTINGS_PERMISSIONS.some((p) => can(user, p))
+}
+
+/**
+ * A branch-assigned user who changes POS settings without being an admin: the
+ * Branch Manager's position, and any custom role given the same toggle. Their
+ * settings reach their own branch only ("My Branch", branch receipt branding,
+ * the till's branch). The test is the permission and the branch, never a role
+ * name.
+ */
+export function managesOwnBranch(user: PermissionHolder): boolean {
+  return !isAdmin(user) && !!user.branchId && can(user, 'pos:config:manage')
 }
