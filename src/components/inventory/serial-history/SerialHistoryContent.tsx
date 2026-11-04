@@ -37,6 +37,7 @@ const TYPE_ICONS: Record<SerialMovementType, typeof Package> = {
   debit_memo: SlidersHorizontal,
   service: Wrench,
   uds: Wrench,
+  delivery_receipt: ArrowUpRight,
 }
 
 const TYPE_COLORS: Record<SerialMovementType, string> = {
@@ -49,6 +50,7 @@ const TYPE_COLORS: Record<SerialMovementType, string> = {
   debit_memo: 'bg-[#fdf3e7] text-[#8a4b06]',
   service: 'bg-[#eeecfb] text-[#4c3fa6]',
   uds: 'bg-[#fdf3e7] text-[#8a4b06]',
+  delivery_receipt: 'bg-[#eef0fb] text-[#3b3f99]',
 }
 
 // A date-only value is midnight UTC; reading it in UTC keeps its calendar
@@ -105,7 +107,7 @@ function Header({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p
-            className={`${MONO} text-[11px] font-semibold tracking-[.08em] text-[#6f6f7f] uppercase`}
+            className={`${MONO} text-[11px] font-semibold tracking-[.08em] text-ink-muted uppercase`}
           >
             Serial history
           </p>
@@ -149,7 +151,7 @@ function Header({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="shrink-0 rounded-lg p-1.5 text-[#6f6f7f] hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
+            className="shrink-0 rounded-lg p-1.5 text-ink-muted hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
           >
             <X className="h-4 w-4" />
           </button>
@@ -174,11 +176,11 @@ function TimelineEntry({ entry, isLast }: { entry: SerialMovementEntry; isLast: 
       <div className="min-w-0 flex-1 pt-1">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3">
           <p className="text-[13.5px] font-semibold text-[#17171c]">{entry.label}</p>
-          <p className="text-[11.5px] text-[#6f6f7f]">{formatWhen(entry)}</p>
+          <p className="text-[11.5px] text-ink-muted">{formatWhen(entry)}</p>
         </div>
         <p className="mt-0.5 text-[13px] text-[#4b4b5a]">{entry.description}</p>
         {(entry.referenceCode || entry.invoiceNumber) && (
-          <p className={`${MONO} mt-1 text-[11.5px] text-[#6f6f7f]`}>
+          <p className={`${MONO} mt-1 text-[11.5px] text-ink-muted`}>
             {[entry.referenceCode, entry.invoiceNumber && `Invoice ${entry.invoiceNumber}`]
               .filter(Boolean)
               .join(' · ')}
@@ -193,7 +195,7 @@ function Timeline({ entries }: { entries: SerialMovementEntry[] }) {
   if (entries.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <History className="mb-3 h-10 w-10 text-[#b0b0bc]" />
+        <History className="mb-3 h-10 w-10 text-ink-faint" />
         <p className="text-[13px] font-medium text-[#4b4b5a]">No movements recorded yet</p>
       </div>
     )
@@ -249,7 +251,7 @@ export default function SerialHistoryContent({
             type="button"
             onClick={onClose}
             aria-label="Close movements"
-            className="rounded p-1 text-[#6f6f7f] hover:bg-zinc-100 hover:text-zinc-700"
+            className="rounded p-1 text-ink-muted hover:bg-zinc-100 hover:text-zinc-700"
           >
             <X className="h-4 w-4" />
           </button>
