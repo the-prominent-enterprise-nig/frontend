@@ -316,7 +316,7 @@ export function TurnoverJournalPreview({
       <JournalBlock
         title={`1 · On turnover (${sender})${date ? ` · ${date}` : ''}`}
         rows={[
-          ['Inter-branch Receivable', receiver, amount, null],
+          ['Fund Transfers in Transit', receiver, amount, null],
           ['COH-Branch Collection', sender, null, amount],
         ]}
       />
@@ -324,12 +324,12 @@ export function TurnoverJournalPreview({
         title={`2 · On acknowledgment (${receiver})`}
         rows={[
           ['COH-Branch Collection', receiver, amount, null],
-          ['Inter-branch Receivable', receiver, null, amount],
+          ['Fund Transfers in Transit', receiver, null, amount],
         ]}
       />
       <p className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-xs leading-relaxed text-blue-900">
         Entry 2 posts only after <strong>{receiver}</strong> acknowledges receipt. Entry 2 clears
-        the Inter-branch Receivable balance back to zero. Until then the amount shows as{' '}
+        the Fund Transfers in Transit balance back to zero. Until then the amount shows as{' '}
         <strong>Pending turnover</strong> on both branches&apos; collection reports.
       </p>
     </div>
