@@ -549,8 +549,6 @@ export function CashInTransitList({
               className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800 disabled:opacity-50"
             >
               <Landmark className="w-4 h-4" /> Record Deposit
-              {selection.rows.length > 0 &&
-                ` · ${selection.rows[0].branchName} (${selection.rows.length})`}
             </button>
           )}
         </div>
