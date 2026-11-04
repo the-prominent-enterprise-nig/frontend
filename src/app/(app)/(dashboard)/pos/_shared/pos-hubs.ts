@@ -149,7 +149,7 @@ export const SALES_COUNTER_HUB: PosHub = {
       href: '/pos/reservations',
       icon: BookmarkCheck,
       // The page and its routes take POS's or Inventory's reservation
-      // permission; a role with neither (Deposit Clerk, Inventory Clerk) used to
+      // permission; a role with neither (Accounting Clerk - Deposits, Inventory Clerk) used to
       // see the tab and land on /403.
       permissions: RESERVATION_ACCESS.READ,
       branchSwitcher: true,
@@ -451,7 +451,7 @@ export const OPERATIONS_ADMIN_HUB: PosHub = {
     {
       // Every role that rings up or approves a sale holds cashier-pin:verify,
       // which the page and its API require. A role with only a corner of POS
-      // (Deposit Clerk's Daily Collection, Inventory Clerk's catalog) doesn't, and
+      // (Accounting Clerk - Deposits's Daily Collection, Inventory Clerk's catalog) doesn't, and
       // used to see the tab and land on /403.
       id: 'pos-pin',
       label: 'POS PIN',

@@ -149,7 +149,7 @@ export function can(user: PermissionHolder, permission: Permission): boolean {
  * Whether a user's permissions reach a module. Decided by what the user's roles
  * grant and nothing else: there used to be a fixed list of modules for roles
  * named cashier, pos-manager and pos, which answered from that list alone and
- * ignored every other role the user held, so a Payables Clerk who was also a
+ * ignored every other role the user held, so a Finance Clerk - Payables who was also a
  * Cashier was sent to /403 on Accounting. It also meant a role an owner happened
  * to name "POS" was locked to POS. Both are gone: a role name never decides
  * access.

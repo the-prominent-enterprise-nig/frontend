@@ -41,7 +41,7 @@ test.describe('Access Levels UAT fixes', () => {
   }
 
   test('aircon-clerk still has Expenses', async ({ page }) => {
-    await loginAs(page, email('aircon-clerk'), PASSWORD)
+    await loginAs(page, email('aircool-staff-expenses'), PASSWORD)
     await gotoReady(page, '/accounting/expenses')
     expect(await sidebarHrefs(page)).toContain('/accounting/expenses-hub')
   })
@@ -59,7 +59,7 @@ test.describe('Access Levels UAT fixes', () => {
   }
 
   test('finance-head still starts a reconciliation', async ({ page }) => {
-    await loginAs(page, email('finance-head'), PASSWORD)
+    await loginAs(page, email('accounting-and-finance-oic'), PASSWORD)
     await gotoReady(page, '/accounting/bank-reconciliation')
     await expect(page.getByRole('link', { name: /New Reconciliation/ })).toBeVisible()
   })
@@ -68,7 +68,10 @@ test.describe('Access Levels UAT fixes', () => {
 // 6. The row menu floats over the table, so a one-row search result doesn't
 // clip it.
 test('Users: the ⋯ menu on a single search result is fully clickable', async ({ page }) => {
-  await gotoReady(page, '/settings/users?status=active&search=technova.al-finance-head')
+  await gotoReady(
+    page,
+    '/settings/users?status=active&search=technova.al-accounting-and-finance-oic'
+  )
   const menu = page.getByRole('button', { name: 'More actions' }).first()
   await menu.waitFor()
   await menu.click()

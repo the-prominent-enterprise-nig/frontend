@@ -10,13 +10,13 @@ const PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026
 
 const ROLES: [string, string][] = [
   ['Aircool Staff', 'technova.al-aircool-staff@test.com'],
-  ['Sales Support', 'technova.al-sales-support@test.com'],
+  ['AR Clerks', 'technova.al-ar-clerks@test.com'],
   ['Sales Admin Clerk', 'technova.al-sales-admin-clerk@test.com'],
   ['Repair In-Charge', 'technova.al-repair-in-charge@test.com'],
   ['HR Staff', 'technova.al-hr-staff@test.com'],
-  ['Collector', 'technova.b1.al-collector@test.com'],
-  ['Custodian', 'technova.b1.al-custodian@test.com'],
-  ['Aircon Clerk', 'technova.al-aircon-clerk@test.com'],
+  ['Collector', 'technova.b1.al-branch-collector@test.com'],
+  ['Custodian', 'technova.b1.al-branch-custodian@test.com'],
+  ['Aircool Staff - Expenses', 'technova.al-aircool-staff-expenses@test.com'],
 ]
 
 test.describe('Landing after login', () => {

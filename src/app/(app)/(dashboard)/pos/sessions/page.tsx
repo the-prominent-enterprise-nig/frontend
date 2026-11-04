@@ -403,7 +403,7 @@ function OpenSessionModal({
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
       setSearching(true)
-      const res = await searchUsers(search.trim(), effectiveBranchId, 'Cashier')
+      const res = await searchUsers(search.trim(), effectiveBranchId, 'Branch Cashier')
       if (res.success && Array.isArray(res.data)) {
         setFiltered(res.data)
         setUsersError('')
@@ -2023,7 +2023,7 @@ function HandoverModal({
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
       setSearching(true)
-      const res = await searchUsers(search.trim(), branchId ?? undefined, 'Cashier')
+      const res = await searchUsers(search.trim(), branchId ?? undefined, 'Branch Cashier')
       if (res.success && Array.isArray(res.data)) {
         setFiltered(res.data)
         setUsersError('')

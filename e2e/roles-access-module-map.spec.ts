@@ -15,7 +15,9 @@ test.describe('Roles & Access — module map', () => {
       row(/^Accountant/).getByText('Accounting: All access', { exact: true })
     ).toBeVisible()
     await expect(
-      row(/^Expense Clerk/).getByText(/^Accounting: Partial \(\d+ of \d+ features\)$/)
+      row(/^Accounting Clerk - Expenses & Loans/).getByText(
+        /^Accounting: Partial \(\d+ of \d+ features\)$/
+      )
     ).toBeVisible()
     // Protected steps kept out: Cashier's POS for branch staff, the Business
     // Owner's stock-adjustment steps for the Inventory OIC.
@@ -32,7 +34,7 @@ test.describe('Roles & Access — module map', () => {
 
   test('role editor groups resources by feature with Shared with notes', async ({ page }) => {
     await gotoReady(page, '/settings/roles')
-    const row = page.getByRole('row', { name: /^Expense Clerk/ })
+    const row = page.getByRole('row', { name: /^Accounting Clerk - Expenses & Loans/ })
     await row.getByRole('button').last().click()
     await clickStable(
       page.getByRole('link', { name: 'Manage Access' }),
@@ -73,7 +75,7 @@ test.describe('Roles & Access — module map', () => {
     // Read back only; Send Invite is never pressed, so nothing is created.
     await page
       .getByRole('paragraph')
-      .filter({ hasText: /^Finance Head$/ })
+      .filter({ hasText: /^Accounting and Finance OIC$/ })
       .click()
     const readback = page.locator('[data-role-readback]')
     await expect(readback).toContainText('Accounting: All access')
