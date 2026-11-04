@@ -1,12 +1,8 @@
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { isAdmin, canNavigateModule } from '@/src/libs/guards/permission'
 import { MODULES } from '@/src/libs/guards/modules'
+import { landingModuleForHome } from '@/src/libs/guards/home-module'
 import { redirect } from 'next/navigation'
-
-/** Primary role (lowercase) → the module it lands in after login. */
-const HOME_MODULE: Record<string, string> = {
-  cashier: 'pos',
-}
 
 export default async function RootPage() {
   const session = await getSessionOrNull()
@@ -19,10 +15,11 @@ export default async function RootPage() {
     redirect('/dashboard')
   }
 
-  // A role whose work is one module lands there, whatever else it holds: the
-  // Cashier works the till, so POS, not Accounting (which sorts first) now
-  // that the sheet gives them Expenses, CRM and Inventory too.
-  const home = HOME_MODULE[session.primaryRole?.toLowerCase() ?? '']
+  // A role whose work is one module lands there, whatever else it holds: its
+  // home page setting (Roles & Access). The Cashier works the till, so POS, not
+  // Accounting (which sorts first) now that the sheet gives them Expenses, CRM
+  // and Inventory too.
+  const home = landingModuleForHome(session.homeModule)
   const homeModule = home && MODULES.find((m) => m.key === home)
   if (homeModule && canNavigateModule(session, homeModule.key)) {
     redirect(homeModule.href)

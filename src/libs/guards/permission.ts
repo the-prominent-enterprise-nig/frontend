@@ -70,6 +70,9 @@ export interface SessionUser {
    * never adds a sidebar item or hub tab. Absent on older sessions. */
   rolePermissions?: Permission[]
   primaryRole?: string
+  /** The home page of the highest-priority role that sets one (landing page,
+   * default menu, dashboard). See libs/guards/home-module.ts. */
+  homeModule?: string | null
   hierarchyLevel?: number
   moduleAccess?: string[]
   createdAt: string

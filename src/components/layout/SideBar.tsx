@@ -13,6 +13,7 @@ import {
 } from '@/src/hooks/usePermission'
 import { MODULES } from '@/src/libs/guards/modules'
 import { canManagePosSettings, managesOwnBranch } from '@/src/libs/guards/permission'
+import { sidebarSegmentForHome } from '@/src/libs/guards/home-module'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import { REMINDERS_ENABLED } from '@/src/libs/features'
 import {
@@ -142,6 +143,7 @@ interface SessionUser {
   roles: string[]
   permissions: string[]
   primaryRole?: string
+  homeModule?: string | null
   moduleAccess?: string[]
   branchId?: string | null
 }
@@ -1012,30 +1014,17 @@ function buildSearchEntries(args: {
 }
 
 function resolvePrimarySidebarSegment(session: SessionUser | null): string {
-  switch (session?.primaryRole) {
-    case 'Business Owner':
-      return 'Business Owner'
-    case 'Branch Manager':
-      return 'Business Owner'
-    case 'accounting':
-      return 'accounting'
-    case 'Stock Controller':
-      return 'inventory'
-    case 'Cashier':
-    case 'pos':
-      return 'pos'
-    case 'Marketing Manager':
-      return 'crm'
-    default:
-      break
-  }
-
+  // The Business Owner is always the owner's menu, whatever the roles say.
+  if (session?.primaryRole === 'Business Owner') return 'Business Owner'
   if (session?.roles.includes('Business Owner')) return 'Business Owner'
 
-  // A role's name decides the default menu only through primaryRole above.
-  // Another role the user also holds (an old Cashier role next to a new
-  // Accounting one) must not pull it back, so everything else follows what
-  // they can actually open.
+  // The home page set on the user's highest-priority role (Roles & Access).
+  const home = sidebarSegmentForHome(session?.homeModule)
+  if (home) return home
+
+  // No home page set: follow what the person can actually open, so another role
+  // they also hold (an old Cashier role next to a new Accounting one) can't pull
+  // the menu back to a module that isn't theirs.
   if (session?.permissions.some((p) => p.startsWith('inventory:'))) return 'inventory'
   if (session?.permissions.some((p) => p.startsWith('accounting:'))) return 'accounting'
   if (session?.permissions.some((p) => p.startsWith('pos:'))) return 'pos'

@@ -27,6 +27,9 @@ export const RoleSchema = z.object({
   name: z.string(),
   description: z.string().nullable().optional(),
   isActive: z.boolean(),
+  /** Where people with this role land, and the menu and dashboard they open
+   * with (libs/guards/home-module.ts). Empty = automatic. */
+  homeModule: z.string().nullable().optional(),
   permissions: z.array(RolePermissionSchema),
 })
 

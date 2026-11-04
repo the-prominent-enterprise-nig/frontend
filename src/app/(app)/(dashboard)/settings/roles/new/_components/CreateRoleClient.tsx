@@ -9,6 +9,7 @@ import ModuleAccessList from '@/src/components/settings/ModuleAccessList'
 import { type AccessMap } from '@/src/components/settings/module-map'
 import AdvancedPermissionsSection from '@/src/components/settings/AdvancedPermissionsSection'
 import UnsavedChangesModal from '@/src/components/settings/UnsavedChangesModal'
+import HomePageField from '@/src/components/settings/HomePageField'
 import { showToast } from '@/src/components/ui/toast'
 import { useUnsavedChangesGuard } from '@/src/hooks/useUnsavedChangesGuard'
 
@@ -25,6 +26,7 @@ export default function CreateRoleClient({
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [homeModule, setHomeModule] = useState<string | null>(null)
   const [nameError, setNameError] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [isSaving, setIsSaving] = useState(false)
@@ -33,8 +35,12 @@ export default function CreateRoleClient({
   // started, one capability ticked) counts as work that would be lost,
   // unlike Manage Access where "unsaved" means "differs from what's stored."
   const hasUnsavedChanges = useMemo(
-    () => name.trim().length > 0 || description.trim().length > 0 || selected.size > 0,
-    [name, description, selected]
+    () =>
+      name.trim().length > 0 ||
+      description.trim().length > 0 ||
+      homeModule !== null ||
+      selected.size > 0,
+    [name, description, homeModule, selected]
   )
 
   const { showLeaveConfirm, setShowLeaveConfirm, handleLeave, confirmLeave } =
@@ -56,6 +62,7 @@ export default function CreateRoleClient({
       const result = await createRole({
         name: name.trim(),
         description: description.trim() || undefined,
+        homeModule,
         permissionIds: Array.from(selected),
       })
 
@@ -153,6 +160,11 @@ export default function CreateRoleClient({
                 className="w-full resize-none rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none transition focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100"
               />
               <p className="mt-1 text-right text-xs text-zinc-400">{description.length}/255</p>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-zinc-700">Home page</label>
+              <HomePageField value={homeModule} onChange={setHomeModule} />
             </div>
           </div>
         </div>
