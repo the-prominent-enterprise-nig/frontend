@@ -57,7 +57,38 @@ points should work with AR payments needs its own decision.
 
 ### Part 3 — advance payment shows as negative (CL-07)
 
-The ledger's Due column, Total Amount Due and imported accounts stop flooring at zero.
+**Cause:** two things kept Due at zero. `buildLedgerRows` floored it (Chloe, 2026-09-08), and it also left a due
+settled early out of "not yet due", so the payment and the due cancelled out and an advance never reached the
+negative side. Removing the floor alone would have shown a 2 ms artefact (−4,000 on the client's Oct 11 sale) rather
+than the real ₱620 advance.
+
+**Change:** a due counts as demandable once its date arrives or a Bill row bills it, and stays that way. Settling it
+early no longer hides it, and Due is no longer floored. So Due is "billed − paid", and an advance reads below zero by
+exactly the amount paid ahead. On the Oct 11 sale: −350 / −620 / 3,030 / 30 / −240, ending on the ₱240 that spilled
+into due 3.
+
+- **Imported accounts:** the sheet's negative Total Due (an advance) is no longer floored. The sheet's figures apply
+  from the first unpaid due, or, for an account ahead of its sheet, from its last OR, which created the advance.
+- **Unknown history keeps the floor** (`LedgerEvent.floorDue`): every row of a hand-entered account (no due
+  dates at all), and an imported account's rows before the sheet's figures apply. There, every earlier payment would
+  read as paid ahead.
+- **The ledger page's Tot. Amt. Due** (`withLedgerAdvance`) shows the ledger's advance when it ends on one; otherwise
+  the account's own figure is unchanged.
+- **Ledger only (Kian):** `live-balances.util`, the account screen, the Installment Accounts list, AR aging and the
+  Collections / collector due figures still never go below zero. The customer (unified) ledger uses the same rows, so
+  it shows advances too.
+- **Frontend:** no code change. Both ledger views and the print already show a negative Due as "-₱620.00", red in the
+  table. `e2e/scenario-83-part-3-advance-negative.spec.ts` pins that.
+- **Reverses Chloe's 2026-09-08 design** (18c4efc, "you are owed a negative amount is not a thing a collector can
+  act on"), because the client asked. Flag for her review.
+- **Merging with Scenario 80:** S80's CL-03 `ledgerDueAsOf` shares this calculator and floors too. When S80 lands,
+  it should follow this rule.
+
+**Tests:** `customer-ledger-rows.spec.ts` (the Oct 11 sale and a due paid ahead now pin the advance;
+`withLedgerAdvance`), `installment-account.service.spec.ts` (imported: a negative sheet Total Due, a collection beyond
+Total Due, an account ahead of its sheet; hand-entered rows stay floored); e2e
+`test/scenario-83-part-3-advance-negative.e2e-spec.ts`. In `installment-account-customer-ledger`, the two tests
+that pinned "never negative" now pin the advance.
 
 ### Part 4 — Purchase Request cost (PR-01)
 
@@ -76,5 +107,6 @@ Adding an item leaves Unit Price at 0, though the item's cost is already loaded.
 - **`installment-account-customer-ledger` e2e:** 2 fail on untouched development (same-day date-picker ordering;
   a collected penalty shown once). A third that failed there now passes, with Part 2's direct seeding.
 - **`installment-account-auto-close` e2e:** the 2 POS-originated cases fail on untouched development.
+- **`customer-ledger-unified` e2e:** 2 fail on untouched development (a Due of 50 where 0 is expected).
 - **Staging data:** accounts paid through the old CRM endpoint before 2026-10-28 may still show a stale Total Due.
   The dev DB has none (0 `installment_payment_records`); staging can't be checked from here.
