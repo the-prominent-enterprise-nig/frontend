@@ -7,6 +7,12 @@ export const PermissionSchema = z.object({
   resource: z.string(),
   action: z.string(),
   description: z.string().nullable().optional(),
+  // Which button hands this out (backend src/auth/permission-tiers.ts): view =
+  // View Only, edit = Edit, full = Full Access only. Absent on a role's own
+  // permission objects; only the full permission list carries it.
+  tier: z.enum(['view', 'edit', 'full']).optional(),
+  // Withheld from View and Edit on purpose (shown as "Sensitive" under Advanced).
+  sensitive: z.boolean().optional(),
 })
 
 // Role Permission Schema (join table)
