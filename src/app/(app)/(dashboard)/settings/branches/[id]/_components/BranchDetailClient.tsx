@@ -66,7 +66,9 @@ function formatCurrency(amount: number) {
 type Props = {
   branch: BranchFull
   summary: BranchSummary | null
-  canManageManagers?: boolean
+  /** admin:branches:manage: editing, deactivating and its managers. A Branch
+   * Manager can view their own branch here but not change it. */
+  canManageBranch?: boolean
   isBranchManager?: boolean
   initialPaymentMethods?: BranchPaymentMethod[]
 }
@@ -99,7 +101,7 @@ function StatCard({
 export default function BranchDetailClient({
   branch,
   summary,
-  canManageManagers = false,
+  canManageBranch = false,
   isBranchManager = false,
   initialPaymentMethods = [],
 }: Props) {
@@ -201,13 +203,13 @@ export default function BranchDetailClient({
 
   const addressDisplay = [branch.addressLine1, branch.city].filter(Boolean).join(', ')
 
-  const showPaymentMethods = canManageManagers || isBranchManager
+  const showPaymentMethods = canManageBranch || isBranchManager
 
   return (
     <div className="min-h-full bg-zinc-50 px-6 py-6">
       <div className="mx-auto max-w-5xl space-y-6">
         {/* Back */}
-        {canManageManagers && (
+        {canManageBranch && (
           <Link
             href="/settings/branches"
             className="inline-flex items-center gap-1.5 text-sm text-zinc-500 transition hover:text-zinc-800"
@@ -348,7 +350,7 @@ export default function BranchDetailClient({
                 </>
               ) : (
                 <div className="flex items-center gap-2">
-                  {canManageManagers && (
+                  {canManageBranch && (
                     <button
                       type="button"
                       onClick={() => setConfirmStatusChange(true)}
@@ -362,14 +364,16 @@ export default function BranchDetailClient({
                       {branch.isActive ? 'Deactivate' : 'Reactivate'}
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setEditing(true)}
-                    className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
-                  >
-                    <Pencil className="h-4 w-4" />
-                    Edit
-                  </button>
+                  {canManageBranch && (
+                    <button
+                      type="button"
+                      onClick={() => setEditing(true)}
+                      className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50"
+                    >
+                      <Pencil className="h-4 w-4" />
+                      Edit
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -483,7 +487,7 @@ export default function BranchDetailClient({
                   </span>
                 )}
               </div>
-              {canManageManagers && (
+              {canManageBranch && (
                 <button
                   type="button"
                   onClick={() => setManagerModalOpen(true)}
@@ -526,7 +530,7 @@ export default function BranchDetailClient({
                         </div>
                         {m.email && <p className="truncate text-xs text-zinc-500">{m.email}</p>}
                       </div>
-                      {canManageManagers && (
+                      {canManageBranch && (
                         <button
                           type="button"
                           onClick={() => setConfirmRemoveId(m.id)}
@@ -618,7 +622,7 @@ export default function BranchDetailClient({
       )}
 
       {/* Add manager modal */}
-      {canManageManagers && (
+      {canManageBranch && (
         <AssignManagerModal
           isOpen={managerModalOpen}
           currentManagerIds={managerIds}
@@ -629,7 +633,7 @@ export default function BranchDetailClient({
       )}
 
       {/* Remove confirmation */}
-      {canManageManagers &&
+      {canManageBranch &&
         confirmRemoveId &&
         (() => {
           const target = managers.find((m) => m.id === confirmRemoveId)

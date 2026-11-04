@@ -6,6 +6,8 @@ import { Loader2, Paperclip, Trash2, Upload } from 'lucide-react'
 import { FileAttachments } from '@/src/libs/data/AccountingV2Data'
 import { showToast } from '@/src/components/ui/toast'
 import { uploadFundTransferAttachment } from '../_actions/upload-fund-transfer-attachment'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
 
 // FileAttachment is polymorphic on (entityType, entityId), so attaching to a
 // new record type needs no schema change — just a stable string here. Matches
@@ -43,6 +45,8 @@ export default function FundTransferAttachmentsPanel({
   staged = [],
   onStagedChange,
 }: Props) {
+  const { data: me } = useMe()
+  const canDetach = !!me && can(me, 'files:attachments:delete')
   const [uploading, setUploading] = useState(false)
   // The attachment awaiting its inline "Remove?" answer.
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
@@ -121,6 +125,7 @@ export default function FundTransferAttachmentsPanel({
         id: null as string | null,
         name: file.name,
         onRemove: () => onStagedChange?.(staged.filter((_, j) => j !== i)),
+        removable: true,
         href: undefined as string | undefined,
       }))
     : attachments.map((a) => ({
@@ -128,6 +133,8 @@ export default function FundTransferAttachmentsPanel({
         id: a.id as string | null,
         name: a.file.originalName,
         onRemove: () => setConfirmingId(a.id),
+        // Removing a saved attachment takes files:attachments:delete.
+        removable: canDetach,
         href: `/api/files/${a.file.id}/download` as string | undefined,
       }))
 
@@ -203,6 +210,7 @@ export default function FundTransferAttachmentsPanel({
                 </span>
               )}
               {!readOnly &&
+                row.removable &&
                 (row.id && confirmingId === row.id ? (
                   <span className="flex items-center gap-2 text-xs">
                     <span className="text-gray-600">Remove this attachment?</span>

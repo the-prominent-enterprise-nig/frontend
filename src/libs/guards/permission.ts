@@ -85,6 +85,24 @@ export function hasPrivilegedRole(user: SessionUser): boolean {
   return user.primaryRole === 'Business Owner' || user.roles.includes('Business Owner')
 }
 
+/**
+ * Settings' "manage" permissions (admin:roles:manage, admin:users:manage, …)
+ * stand for create, read, update and delete of their resource, the same rule
+ * the backend's matchesPermission applies, so a page that lets a "manage" role
+ * in and the route it calls agree. Admin module only: elsewhere "manage" is one
+ * specific step (pos:collections:manage).
+ */
+const MANAGE_COVERS = new Set(['create', 'read', 'update', 'delete'])
+
+export function adminManageCovers(userParts: string[], requiredParts: string[]): boolean {
+  return (
+    userParts.length === 3 &&
+    userParts[0] === 'admin' &&
+    userParts[2] === 'manage' &&
+    MANAGE_COVERS.has(requiredParts[2])
+  )
+}
+
 function matchesPermission(userPermission: string, requiredPermission: string): boolean {
   if (userPermission === requiredPermission) return true
 
@@ -105,7 +123,7 @@ function matchesPermission(userPermission: string, requiredPermission: string): 
 
     if (requiredPart === undefined) return userPart === '*'
     if (userPart === '*' || requiredPart === '*') continue
-    if (userPart !== requiredPart) return false
+    if (userPart !== requiredPart) return index === 2 && adminManageCovers(userParts, requiredParts)
   }
 
   return true
@@ -125,20 +143,28 @@ const ROLE_MODULE_ACCESS: Record<string, string[]> = {
   pos: ['pos'],
 }
 
+/**
+ * The fixed allowlists' answer for `module`, or null when the permissions
+ * decide. A list decides only when every one of the user's roles has one, so
+ * stray permissions on those roles don't open other modules. A user who also
+ * holds a role without a list gets that role's modules from its permissions:
+ * one role's list never takes away what another role gives (UAT review
+ * 2026-11-04, a Payables Clerk who is also a Cashier).
+ */
+export function fixedModuleAccess(roles: string[], module: string): boolean | null {
+  const names = roles.map((r) => r.toLowerCase())
+  if (names.length === 0 || names.some((r) => !(r in ROLE_MODULE_ACCESS))) return null
+  return names.some((r) => ROLE_MODULE_ACCESS[r].includes(module))
+}
+
 export function canAccessModule(user: SessionUser, module: string): boolean {
   if (hasPrivilegedRole(user)) return true
 
-  const allRoles = [...(user.primaryRole ? [user.primaryRole] : []), ...user.roles].map((r) =>
-    r.toLowerCase()
+  const fixed = fixedModuleAccess(
+    [...(user.primaryRole ? [user.primaryRole] : []), ...user.roles],
+    module
   )
-
-  // Roles with a fixed allowlist take precedence over moduleAccess — checked first
-  // so stray permissions (e.g. inventory:items:read on a cashier) don't bleed into
-  // modules the role isn't meant to access.
-  const restrictedRoles = allRoles.filter((r) => r in ROLE_MODULE_ACCESS)
-  if (restrictedRoles.length > 0) {
-    return restrictedRoles.some((r) => ROLE_MODULE_ACCESS[r]?.includes(module))
-  }
+  if (fixed !== null) return fixed
 
   if (user.moduleAccess?.includes(module)) return true
   return user.permissions.some((p) => p === `${module}:*` || p.startsWith(`${module}:`))

@@ -16,6 +16,8 @@ import {
   type BankReconciliationLineSourceType,
   type BankLedgerWindow,
 } from '@/src/libs/data/AccountingV2Data'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
 
 const SOURCE_LABELS: Record<BankReconciliationLineSourceType, string> = {
   AR_PAYMENT: 'AR Collection',
@@ -33,6 +35,9 @@ const SOURCE_LABELS: Record<BankReconciliationLineSourceType, string> = {
 // the real bank statement PATCHes it immediately (persisted per-line, not
 // batched at Complete) so progress survives a refresh mid-session.
 export default function ReconciliationWorksheet({ id }: { id: string }) {
+  // Shown only to those the backend lets through (UAT review 2026-11-04).
+  const { data: me } = useMe()
+  const canDelete = !!me && can(me, 'accounting:bank-accounts:reconcile')
   const router = useRouter()
   const [rec, setRec] = useState<BankReconciliation | null>(null)
   const [loading, setLoading] = useState(true)
@@ -263,13 +268,15 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
               <Pencil className="w-4 h-4" /> Edit
             </button>
           )}
-          <button
-            onClick={remove}
-            disabled={deleting}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50"
-          >
-            <Trash2 className="w-4 h-4" /> {deleting ? 'Deleting...' : 'Delete'}
-          </button>
+          {canDelete && (
+            <button
+              onClick={remove}
+              disabled={deleting}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" /> {deleting ? 'Deleting...' : 'Delete'}
+            </button>
+          )}
         </div>
       </div>
 

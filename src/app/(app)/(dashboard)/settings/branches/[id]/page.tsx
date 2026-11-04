@@ -1,5 +1,5 @@
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { isAdmin } from '@/src/libs/guards/permission'
+import { can, isAdmin } from '@/src/libs/guards/permission'
 import { redirect, notFound } from 'next/navigation'
 import { getBranch } from '../../_actions/get-branch'
 import { getBranchSummary } from '../../_actions/get-branch-summary'
@@ -36,7 +36,7 @@ export default async function BranchDetailPage({ params }: { params: Promise<{ i
     <BranchDetailClient
       branch={branchResult.data}
       summary={summaryResult.data ?? null}
-      canManageManagers={isAdmin(session)}
+      canManageBranch={can(session, 'admin:branches:manage')}
       isBranchManager={isBranchManager}
       initialPaymentMethods={paymentMethodsResult.data?.data ?? []}
     />
