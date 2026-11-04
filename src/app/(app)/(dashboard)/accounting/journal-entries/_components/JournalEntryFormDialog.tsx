@@ -10,6 +10,12 @@ import {
   type JournalEntryInput,
   type Account,
 } from '@/src/libs/data/AccountingData'
+import { BankAccounts, type BankAccountOption } from '@/src/libs/data/AccountingV2Data'
+import CategorySelect from '@/src/components/ui/CategorySelect'
+
+// The one GL account every bank / cash fund posts to. A line on it has to name
+// the bank it moves, since the account alone can't say.
+const CASH_CONTROL_ACCOUNT_NUMBER = '1-01-010'
 
 const JOURNAL_TYPES = [
   'GeneralJournal',
@@ -22,6 +28,8 @@ const JOURNAL_TYPES = [
 
 interface TxLine {
   accountId: string
+  /** The bank / cash fund — only for a Cash and Cash Equivalents line. */
+  bankAccountId: string
   item: string
   description: string
   // Not shown or editable — a journal entry is accounts and amounts. Kept only
@@ -62,6 +70,7 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
     if (initial?.transactions?.length) {
       return initial.transactions.map((t) => ({
         accountId: t.accountId,
+        bankAccountId: t.bankAccountId ?? '',
         // Now a relation, not a free-text string — read its name so editing an
         // auto-posted entry doesn't drop "[object Object]" into the box.
         item: (t as any).item?.name ?? '',
@@ -75,6 +84,7 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
     return [
       {
         accountId: '',
+        bankAccountId: '',
         item: '',
         description: '',
         quantity: '',
@@ -84,6 +94,7 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
       },
       {
         accountId: '',
+        bankAccountId: '',
         item: '',
         description: '',
         quantity: '',
@@ -95,6 +106,7 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
   })
 
   const [accounts, setAccounts] = useState<Account[]>([])
+  const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -105,7 +117,35 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
         setAccounts(d?.items ?? d ?? [])
       }
     })
+    BankAccounts.options().then((res) => setBankAccounts(res.data ?? []))
   }, [])
+
+  const cashAccountIds = useMemo(
+    () =>
+      new Set(
+        accounts
+          .filter((a) => (a.number ?? a.code) === CASH_CONTROL_ACCOUNT_NUMBER)
+          .map((a) => a.id)
+      ),
+    [accounts]
+  )
+  const isCashLine = (l: TxLine) => cashAccountIds.has(l.accountId)
+
+  // An inactive bank is not offered for a new pick, but a draft that already
+  // names one keeps it so editing doesn't blank the field.
+  const bankOptions = useMemo(() => {
+    const picked = new Set(lines.map((l) => l.bankAccountId).filter(Boolean))
+    return bankAccounts
+      .filter((b) => b.isActive || picked.has(b.id))
+      .map((b) => ({
+        id: b.id,
+        name:
+          b.name === b.bankName
+            ? `${b.name} (${b.accountNumber})`
+            : `${b.name} — ${b.bankName} (${b.accountNumber})`,
+        depth: 0,
+      }))
+  }, [bankAccounts, lines])
 
   const totalDebit = useMemo(() => lines.reduce((s, l) => s + (Number(l.debit) || 0), 0), [lines])
   const totalCredit = useMemo(() => lines.reduce((s, l) => s + (Number(l.credit) || 0), 0), [lines])
@@ -119,6 +159,7 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
       ...prev,
       {
         accountId: '',
+        bankAccountId: '',
         item: '',
         description: '',
         quantity: '',
@@ -140,6 +181,11 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
       return
     }
 
+    if (cleanLines.some((l) => isCashLine(l) && !l.bankAccountId)) {
+      setError('Pick the Bank / Cash Account for each Cash and Cash Equivalents line.')
+      return
+    }
+
     setSaving(true)
     const payload: JournalEntryInput = {
       reference: reference || undefined,
@@ -149,6 +195,7 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
       payee: payee || undefined,
       transactions: cleanLines.map((l) => ({
         accountId: l.accountId,
+        bankAccountId: isCashLine(l) ? l.bankAccountId : null,
         item: l.item || undefined,
         quantity: l.quantity !== '' ? Number(l.quantity) : undefined,
         unitPrice: l.unitPrice !== '' ? Number(l.unitPrice) : undefined,
@@ -251,10 +298,11 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
                 </button>
               </div>
               <div className="border border-gray-200 rounded-lg overflow-hidden overflow-x-auto">
-                <table className="w-full text-sm min-w-[700px]">
+                <table className="w-full text-sm min-w-[900px]">
                   <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
                     <tr>
                       <th className="px-2 py-2 text-left min-w-[160px]">Account</th>
+                      <th className="px-2 py-2 text-left min-w-[200px]">Bank / Cash Account</th>
                       <th className="px-2 py-2 text-left min-w-[120px]">Item</th>
                       <th className="px-2 py-2 text-left min-w-[110px]">Description</th>
                       <th className="px-2 py-2 text-right w-28">Debit</th>
@@ -268,7 +316,15 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
                         <td className="px-1 py-1">
                           <select
                             value={line.accountId}
-                            onChange={(e) => updateLine(i, { accountId: e.target.value })}
+                            onChange={(e) =>
+                              updateLine(i, {
+                                accountId: e.target.value,
+                                // A bank belongs only on Cash and Cash Equivalents.
+                                bankAccountId: cashAccountIds.has(e.target.value)
+                                  ? line.bankAccountId
+                                  : '',
+                              })
+                            }
                             className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:ring-1 focus:ring-purple-500 outline-none"
                           >
                             <option value="">— Select —</option>
@@ -278,6 +334,21 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
                               </option>
                             ))}
                           </select>
+                        </td>
+                        <td className="px-1 py-1">
+                          {isCashLine(line) ? (
+                            <CategorySelect
+                              compact
+                              aria-label={`Bank / Cash Account for line ${i + 1}`}
+                              noun="bank accounts"
+                              value={line.bankAccountId || undefined}
+                              onChange={(id) => updateLine(i, { bankAccountId: id ?? '' })}
+                              options={bankOptions}
+                              placeholder="— Select —"
+                            />
+                          ) : (
+                            <span className="px-2 text-gray-300">—</span>
+                          )}
                         </td>
                         <td className="px-1 py-1">
                           <input
@@ -343,7 +414,7 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
                   <tfoot className="bg-gray-50 border-t border-gray-200">
                     <tr>
                       <td
-                        colSpan={3}
+                        colSpan={4}
                         className="px-2 py-2 text-right text-xs font-semibold text-gray-600"
                       >
                         Total
