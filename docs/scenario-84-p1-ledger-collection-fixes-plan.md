@@ -86,8 +86,9 @@ into due 3.
   table. `e2e/scenario-84-part-3-advance-negative.spec.ts` pins that.
 - **Reverses Chloe's 2026-09-08 design** (18c4efc, "you are owed a negative amount is not a thing a collector can
   act on"), because the client asked. Flag for her review.
-- **Merging with Scenario 80:** S80's CL-03 `ledgerDueAsOf` shares this calculator and floors too. When S80 lands,
-  it should follow this rule.
+- **Merged with Scenario 80 (2026-11-04):** S80's CL-03 `ledgerDueAsOf` shares this calculator (`dueCalculators`)
+  and now follows this rule: the customer ledger's Total Amount Due goes below zero on an advance like the Due
+  column, floored only where the last event by then is `floorDue`.
 
 **Tests:** `customer-ledger-rows.spec.ts` (the Oct 11 sale and a due paid ahead now pin the advance;
 `withLedgerAdvance`), `installment-account.service.spec.ts` (imported: a negative sheet Total Due, a collection beyond
@@ -181,6 +182,14 @@ a time, with every remaining failure confirmed identical on untouched developmen
   cash (Part 1) and his PR/PO line pricing (Part 4, SRP rule kept).
 - On-time points and reminder auto-close on payment have no writer since the CRM endpoint was retired (dormant since
   Scenario 79); needs its own decision.
-- Merging with Scenario 80: its DC-02 (no future override date) meets Part 1's Collections change, and its CL-03
-  `ledgerDueAsOf` must follow Part 3's rule. Part 1's manual test uses a future override date, which DC-02 will block.
+- **Renumbered 83 → 84 (2026-11-04):** 83 is the cash-turnover PRs (FE #280 / BE #259). Branch, files, test IDs and
+  comments moved; older commit subjects keep "Scenario 83". The worktree folders keep `-scenario-83` (Windows
+  refused the move while they were open).
+- **Merged `origin/development` (2026-11-04)**, Scenario 80 included. Frontend clean; backend conflicted only in the
+  ledger's Due (`installment-account.service.ts`, `customer-ledger-rows.spec.ts`), resolved as above. Its DC-02 (no
+  future override date) sits alongside Part 1's Collections change without conflict; the Part 1 Playwright spec
+  only uses past dates. After the merge: backend `tsc` clean, unit 157 suites / 2,527 tests pass. Not re-run since:
+  backend e2e, Playwright.
+- Part 1's manual penalty steps (1B–1D) used a future override date, which DC-02 now blocks, and no dev-DB due is
+  15+ days late before Dec 4. The manual test says so; the backend e2e covers those figures.
 - AC-01 is out of this scenario (needs client answers; conflicts with Renz's BE #246).
