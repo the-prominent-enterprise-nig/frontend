@@ -47,7 +47,6 @@ import {
 import {
   SettleAsToggle,
   TurnoverBlock,
-  TurnoverJournalPreview,
   emptyTurnover,
   toTurnoverLine,
   turnoverAmount,
@@ -1049,9 +1048,6 @@ function DepositForm({
                 senderId={branchId}
                 onChange={(patch) => setTurnover((t) => (t ? { ...t, ...patch } : t))}
               />
-            )}
-            {activeTurnover && (
-              <TurnoverJournalPreview turnover={activeTurnover} senderName={branchName} />
             )}
 
             {mode === 'turnover' && !withSlips ? (
