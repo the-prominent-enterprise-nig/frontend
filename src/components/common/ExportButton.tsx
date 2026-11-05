@@ -5,7 +5,7 @@ import { Download, Loader2 } from 'lucide-react'
 import { downloadXlsx } from '@/src/libs/export/downloadXlsx'
 
 interface Props {
-  /** Backend path of the report's `/export` sibling, e.g. `/pos/reports/sales-by-branch/export` */
+  /** Backend path of the report's `/export` sibling, e.g. `/pos/reports/sales/lines/export` */
   endpoint: string
   /** Same query params the on-screen report was loaded with — that's what keeps
    * the file and the screen in agreement. */

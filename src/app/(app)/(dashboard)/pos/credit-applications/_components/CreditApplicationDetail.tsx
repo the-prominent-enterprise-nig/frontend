@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowLeft, FileText, Loader2, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-react'
+import { ArrowLeft, FileText, Loader2, Pencil, Trash2, Upload, X } from 'lucide-react'
 import { useCreditApplication } from '../_hooks/useCreditApplication'
 import { uploadCreditApplicationFile } from '../_actions/upload-document-file'
 import { CreditApplicationItemFields } from './CreditApplicationItemFields'
@@ -99,8 +99,6 @@ export default function CreditApplicationDetail({
 
   const {
     application,
-    refetch: refetchApplication,
-    isRefetching: isRefetchingApplication,
     isLoading,
     update,
     isUpdating,
@@ -134,11 +132,7 @@ export default function CreditApplicationDetail({
   // with the other hooks: the component returns early when the application
   // has not loaded, and a hook below that runs on some renders and not
   // others.
-  const {
-    data: openSessionsData,
-    refetch: refetchSessions,
-    isFetching: isRefetchingSessions,
-  } = useSessions({ status: 'open' })
+  const { data: openSessionsData } = useSessions({ status: 'open' })
   const openSessions = openSessionsData?.data ?? []
   // ANY open till enables the button — the rule as asked: no session open, no
   // button. Deliberately not "a session I opened myself": a branch commonly
@@ -478,29 +472,6 @@ export default function CreditApplicationDetail({
           >
             <ArrowLeft className="h-4 w-4" /> Back to applications
           </button>
-
-          {/* Scenario 64 item 28 — a cashier sits on this page while the owner
-              approves in their own session. The page does poll every 10s, but
-              waiting out a poll (or reloading) to find out whether the answer
-              has come is not something anyone should have to do. This asks
-              now, and re-checks the open tills at the same time, so the
-              approval and the Continue to sale button appear together. */}
-          <button
-            type="button"
-            onClick={() => {
-              void refetchApplication()
-              void refetchSessions()
-            }}
-            disabled={isRefetchingApplication || isRefetchingSessions}
-            className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-          >
-            <RefreshCw
-              className={`h-3.5 w-3.5 ${
-                isRefetchingApplication || isRefetchingSessions ? 'animate-spin' : ''
-              }`}
-            />
-            {isRefetchingApplication || isRefetchingSessions ? 'Refreshing…' : 'Refresh'}
-          </button>
         </div>
 
         {/* Scenario 64 item 28 — at the top of the page so it is in view the
@@ -513,7 +484,7 @@ export default function CreditApplicationDetail({
               <p className="mt-0.5 text-sm text-prominent-purple-700">
                 {hasOpenSession
                   ? 'Opens the till with this customer, these items and this application already selected.'
-                  : 'No till is open. Open a POS session at a terminal, then Refresh — this cannot open one for you.'}
+                  : 'No till is open. Open a POS session at a terminal — this cannot open one for you.'}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -580,6 +551,8 @@ export default function CreditApplicationDetail({
                     with it. Incompleteness is surfaced instead — an approved
                     application with no applicant_id is badged "Approved — ID
                     pending" here and in the queue. */}
+              {/* UAT 2026-10-29 §9 CA-01: no approval workflow. Submitting
+                  approves the application and all its items. */}
               {canUpdate && (
                 <button
                   type="button"
@@ -588,7 +561,7 @@ export default function CreditApplicationDetail({
                   className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
                 >
                   {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Submit for Investigation
+                  Submit and Approve
                 </button>
               )}
               {canCancel && (
@@ -1310,6 +1283,24 @@ export default function CreditApplicationDetail({
                 ? `Some items were approved and some were declined. This application has already been used for sale ${application.posTransaction ? saleDocNo(application.posTransaction) : application.posTransactionId}.`
                 : "Some items were approved and some were declined — see each item's status above. Checkout will only accept the approved items."}
             </p>
+          </div>
+        )}
+
+        {/* The same "Continue to sale" as the banner at the top, repeated at
+            the very end. The banner stays where it is; this is for the seller
+            who has just scrolled through the documents and the approval notice
+            and is looking for what to do next. Same condition, same handler,
+            same disabled state — it is the one action, offered twice. */}
+        {canSell && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={continueToSale}
+              disabled={!hasOpenSession}
+              className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {hasOpenSession ? 'Continue to sale' : 'No open POS session'}
+            </button>
           </div>
         )}
       </div>

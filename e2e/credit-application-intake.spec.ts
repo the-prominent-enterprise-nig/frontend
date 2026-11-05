@@ -5,13 +5,14 @@ import { gotoReady, loginAs, clickStable, fillPhoneStable, openCustomSelect } fr
 // financing application. Backend CRUD/documents/submit workflow itself is
 // covered by backend/test/credit-application*.e2e-spec.ts; this spec
 // exercises the actual UI: applicant and co-maker selection, the required
-// purchase/paper-record block, document upload, and submitting it on.
+// purchase/paper-record block, document upload, and submitting it, which
+// approves it (UAT 2026-10-29 §9 CA-01: no approval workflow).
 //
 // Rewritten for the Simplified Credit Application v2 (Scenario 64 item 27):
 // the co-maker is the first Related People row (picked from the customer's
 // co-makers on file), Price Use / term / LCP / PPD / paper record are
 // required, and saving lands on the application's own page. The document gate
-// on "Submit for Investigation" is gone (Scenario 64 item 20 — an application
+// on submitting is gone (Scenario 64 item 20 — an application
 // can go forward without an ID and is flagged instead), so the old "disabled
 // until a document is attached" assertion now asserts the opposite.
 //
@@ -47,7 +48,7 @@ test.describe('Credit Applications — Cashier intake', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
   test.describe.configure({ timeout: 150_000 })
 
-  test('raises an application, attaches a document, and submits it for investigation', async ({
+  test('raises an application, attaches a document, and submitting approves it', async ({
     page,
   }) => {
     await loginAs(page, CASHIER_EMAIL, DEV_PASSWORD)
@@ -137,7 +138,7 @@ test.describe('Credit Applications — Cashier intake', () => {
     await expect(page.getByText('Draft', { exact: true }).first()).toBeVisible({ timeout: 15_000 })
 
     // No document gate any more: it can go forward without one.
-    const submitButton = page.getByRole('button', { name: 'Submit for Investigation' })
+    const submitButton = page.getByRole('button', { name: 'Submit and Approve' })
     await expect(submitButton).toBeEnabled({ timeout: 10_000 })
 
     // Attaching one still works.
@@ -149,8 +150,9 @@ test.describe('Credit Applications — Cashier intake', () => {
     await page.getByRole('button', { name: 'Attach' }).click()
     await expect(page.getByText('applicant-id.txt')).toBeVisible({ timeout: 10_000 })
 
+    // Submitting approves it at once: no investigation or approval step.
     await submitButton.click()
-    await expect(page.getByText('Submitted', { exact: true }).first()).toBeVisible({
+    await expect(page.getByText('Approved', { exact: true }).first()).toBeVisible({
       timeout: 15_000,
     })
   })

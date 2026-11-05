@@ -33,6 +33,6 @@ export async function submitCreditApplication(id: string): Promise<ApiResponse<C
   return {
     success: true,
     data: result.data,
-    message: 'Credit application submitted for investigation',
+    message: 'Credit application approved',
   }
 }
