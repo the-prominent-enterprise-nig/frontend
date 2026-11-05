@@ -1,77 +1,80 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import {
-  getBranches,
-  type BranchDetail,
-} from '@/src/app/(app)/(dashboard)/settings/_actions/get-branches'
-import { getBrands } from '@/src/app/(app)/(dashboard)/inventory/brands/_actions/get-brands'
-import SearchableSelect from '@/src/components/ui/SearchableSelect'
-import { branchDisplayName } from '@/src/libs/format/locationLabel'
-import type { ItemClassification } from '@/src/schema/inventory/classification'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import ExportButton from '@/src/components/common/ExportButton'
-import ReportDateRange from '@/src/components/common/ReportDateRange'
-import TablePagination from '@/src/components/common/TablePagination'
-import { SUMMARY_KEY_HEADERS } from '@/src/schema/pos/reports'
-import { useSalesReports, type SalesReportTab } from '../_hooks/useSalesReports'
+import { getSalesFilterOptions, getSalesSummary } from '../_actions/get-sales-reports'
+import { useSalesReportFilters, type SalesReportsTab } from '../_hooks/useSalesReportFilters'
+import SalesReportFilters from './SalesReportFilters'
+import SalesReportTab from './SalesReportTab'
+import SalesStatCards from './SalesStatCards'
 
-const TABS: { key: SalesReportTab; label: string; blurb: string }[] = [
-  {
-    key: 'branch',
-    label: 'Sales per Branch',
-    blurb: 'Branch, then brand, category and model of unit.',
-  },
-  {
-    key: 'brand',
-    label: 'Sales per Brand',
-    blurb: 'Brand, then category, model of unit and branch.',
-  },
+/**
+ * Scenario 85 — Sales Reports: "Units and sales by model and brand, month by
+ * month." One filter bar and one row of stat cards shared by three tabs.
+ * Each tab's body arrives in its own part of the scenario (Sales Report in
+ * Part 2, Dashboard in Part 3, Sales per Branch in Parts 5–6), and so does
+ * the per-tab Export to Excel (Part 7).
+ */
+
+const TABS: { key: SalesReportsTab; label: string }[] = [
+  { key: 'dashboard', label: 'Dashboard' },
+  { key: 'branch', label: 'Sales per Branch' },
+  { key: 'report', label: 'Sales Report' },
 ]
 
-function money(n: number): string {
-  return n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
 export default function SalesReportsView(): React.JSX.Element {
-  const report = useSalesReports()
-  const [branches, setBranches] = useState<BranchDetail[]>([])
-  const [brands, setBrands] = useState<ItemClassification[]>([])
+  const report = useSalesReportFilters()
 
-  useEffect(() => {
-    getBranches().then((r) => setBranches(r.success && r.data ? r.data : []))
-    getBrands().then((r) => setBrands(r.success && r.data ? r.data : []))
-  }, [])
+  const options = useQuery({
+    queryKey: ['pos-sales-report-filters'],
+    queryFn: async () => {
+      const res = await getSalesFilterOptions()
+      return res.success ? res.data : undefined
+    },
+    staleTime: 5 * 60_000,
+  })
 
-  const totals = report.data?.meta.totals
-  const keyHeaders = SUMMARY_KEY_HEADERS[report.data?.meta.groupBy ?? report.tab]
+  const summary = useQuery({
+    queryKey: ['pos-sales-report-summary', report.apiParams],
+    queryFn: async () => {
+      const res = await getSalesSummary(report.apiParams)
+      if (!res.success || !res.data) throw new Error(res.error ?? 'Could not load sales')
+      return res.data
+    },
+    placeholderData: keepPreviousData,
+  })
 
   return (
-    <div className="px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
-      <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
+    <div className="flex flex-col gap-4 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+      <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Sales Reports</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            {TABS.find((t) => t.key === report.tab)?.blurb}
+          <h1 className="text-2xl font-semibold text-zinc-900">Sales Reports</h1>
+          <p className="mt-1 text-sm text-zinc-500">
+            Units and sales by model and brand, month by month.
           </p>
         </div>
-        <ExportButton
-          endpoint={report.exportEndpoint}
-          params={report.exportParams}
-          disabled={!report.data || report.data.rows.length === 0}
-        />
+        {/* Sales Report tab only until Part 7 gives every tab its own export. */}
+        {report.filters.tab === 'report' && (
+          <ExportButton
+            endpoint="/pos/reports/sales/lines/export"
+            params={report.apiParams}
+            disabled={!summary.data?.lineCount}
+          />
+        )}
       </header>
 
-      <div className="mb-4 flex gap-2" role="tablist">
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Sales report views">
         {TABS.map((t) => (
           <button
             key={t.key}
+            type="button"
             role="tab"
-            aria-selected={report.tab === t.key}
+            aria-selected={report.filters.tab === t.key}
             onClick={() => report.setTab(t.key)}
-            className={`rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
-              report.tab === t.key
-                ? 'bg-prominent-purple-700 text-white'
-                : 'bg-white text-gray-600 hover:bg-gray-50'
+            className={`rounded-xl border px-4 py-2 text-sm font-semibold transition-colors ${
+              report.filters.tab === t.key
+                ? 'border-prominent-purple-700 bg-prominent-purple-700 text-white'
+                : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50'
             }`}
           >
             {t.label}
@@ -79,140 +82,36 @@ export default function SalesReportsView(): React.JSX.Element {
         ))}
       </div>
 
-      <div className="mb-4 flex flex-wrap items-end gap-4 rounded-xl border border-gray-200 bg-white px-4 py-3">
-        <ReportDateRange value={report.range} onChange={report.setRange} />
+      <SalesReportFilters
+        filters={report.filters}
+        options={options.data}
+        loading={options.isLoading}
+        onRange={report.setRange}
+        onFilter={report.setFilter}
+        onRegion={report.setRegion}
+        onClear={report.clearFilters}
+        hasFilters={report.hasFilters}
+      />
 
-        {/* Scenario 57 — both were native <select>s, which is unusable at
-            this catalogue's size: 41 branches and 127 brands, scrolled
-            blind with no way to type. SearchableSelect gives type-ahead and
-            a styleable popup, and is what the rest of the app already uses.
-            Clearable so "All branches"/"All brands" is reachable from a
-            chosen value without hunting for it at the top of the list.
-            Portalled because this filter bar is a bordered box that would
-            otherwise clip the popup. */}
-        <label className="flex w-48 flex-col gap-1 text-xs text-gray-600">
-          Branch
-          <SearchableSelect
-            value={report.branchId}
-            onChange={report.setBranchId}
-            options={branches.map((b) => ({ value: b.id, label: branchDisplayName(b) }))}
-            placeholder="All branches"
-            clearable
-            portal
-          />
-        </label>
-
-        <label className="flex w-48 flex-col gap-1 text-xs text-gray-600">
-          Brand
-          <SearchableSelect
-            value={report.brandId}
-            onChange={report.setBrandId}
-            options={brands.map((b) => ({ value: b.id, label: b.name }))}
-            placeholder="All brands"
-            clearable
-            portal
-          />
-        </label>
-      </div>
-
-      {totals && (
-        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <Stat label="Net Sales" value={money(totals.net)} />
-          <Stat label="Gross" value={money(totals.gross)} />
-          <Stat label="Discounts" value={money(totals.discount)} />
-          <Stat label="Margin" value={money(totals.margin)} />
-          <Stat label="Refunds" value={money(totals.refunds)} />
-          <Stat label="Units" value={String(totals.units)} />
-        </div>
-      )}
-
-      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-            <tr>
-              {keyHeaders.map((h) => (
-                <th key={h} className="px-4 py-3 font-semibold">
-                  {h}
-                </th>
-              ))}
-              <th className="px-4 py-3 text-right font-semibold">Units</th>
-              <th className="px-4 py-3 text-right font-semibold">Gross</th>
-              <th className="px-4 py-3 text-right font-semibold">Discount</th>
-              <th className="px-4 py-3 text-right font-semibold">Net Sales</th>
-              {/* Scenario 57 — no per-sale Margin column (client request,
-                  2026-09-21). The Margin TOTAL stays in the stat row above:
-                  the ask was "margin per sale removed", and the summary
-                  figure is what a Branch Manager actually reads the report
-                  for. Unit cost never reaches the row either way, so this
-                  removes the only place a single sale's profit was legible. */}
-              <th className="px-4 py-3 text-right font-semibold">Refunds</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {report.isLoading && (
-              <tr>
-                <td colSpan={keyHeaders.length + 5} className="px-4 py-8 text-center text-gray-500">
-                  Loading…
-                </td>
-              </tr>
-            )}
-            {!report.isLoading && report.totalRows === 0 && (
-              <tr>
-                <td colSpan={keyHeaders.length + 5} className="px-4 py-8 text-center text-gray-500">
-                  No sales in this date range.
-                </td>
-              </tr>
-            )}
-            {report.pageRows.map((row) => (
-              <tr key={row.keys.join('|')} className="hover:bg-gray-50">
-                {row.keys.map((k, i) => (
-                  <td key={i} className="px-4 py-3 text-gray-900">
-                    {k}
-                  </td>
-                ))}
-                <td className="px-4 py-3 text-right tabular-nums">{row.units}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{money(row.gross)}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{money(row.discount)}</td>
-                <td className="px-4 py-3 text-right font-semibold tabular-nums">
-                  {money(row.net)}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums">{money(row.refunds)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {report.totalRows > 0 && (
-        <TablePagination
-          page={report.page}
-          pageCount={report.pageCount}
-          onPageChange={report.setPage}
-          pageStart={report.pageStart}
-          pageSize={report.pageRows.length}
-          totalItems={report.totalRows}
-          noun="group"
-        />
-      )}
-
-      {report.data && (
-        <p className="mt-3 text-xs text-gray-500">
-          {report.data.meta.rowCount} detail row(s) behind this summary. The totals above and the
-          Excel export cover the whole result, not just this page — paging only affects what is
-          displayed.
-          {report.data.meta.deliveryFees > 0 &&
-            ` Delivery fees of ${money(report.data.meta.deliveryFees)} are charged per transaction and are not part of the per-item figures above.`}
+      {summary.isError && (
+        <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Could not load sales for these filters. Try again, or widen the date range.
         </p>
       )}
-    </div>
-  )
-}
 
-function Stat({ label, value }: { label: string; value: string }): React.JSX.Element {
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className="mt-0.5 text-lg font-semibold text-gray-900 tabular-nums">{value}</div>
+      <SalesStatCards summary={summary.data} loading={summary.isLoading} />
+
+      {report.filters.tab === 'report' ? (
+        <SalesReportTab params={report.apiParams} />
+      ) : (
+        <section
+          role="tabpanel"
+          className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-12 text-center text-sm text-zinc-500"
+        >
+          {TABS.find((t) => t.key === report.filters.tab)?.label} is being rebuilt to the new
+          layout.
+        </section>
+      )}
     </div>
   )
 }

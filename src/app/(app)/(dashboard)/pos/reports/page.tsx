@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
@@ -6,7 +7,7 @@ import SalesReportsView from './_components/SalesReportsView'
 
 export const metadata = {
   title: 'Sales Reports | NIG Central',
-  description: 'Sales per branch and per brand, with Excel export',
+  description: 'Units and sales by model and brand, month by month',
 }
 
 export default async function PosReportsPage() {
@@ -22,9 +23,12 @@ export default async function PosReportsPage() {
     redirect('/403')
   }
 
+  // Suspense: the view reads its tab and filters from the URL (useSearchParams).
   return (
     <div className="min-h-screen bg-zinc-50">
-      <SalesReportsView />
+      <Suspense>
+        <SalesReportsView />
+      </Suspense>
     </div>
   )
 }
