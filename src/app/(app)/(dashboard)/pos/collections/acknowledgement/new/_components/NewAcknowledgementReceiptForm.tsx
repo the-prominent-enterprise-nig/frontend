@@ -110,7 +110,7 @@ export default function NewAcknowledgementReceiptForm({
    * non-branch-assigned caller (e.g. Business Owner), who picks one below.
    * Same idiom as financing-terms' own restrictedBranchId. */
   restrictedBranchId: string | null
-  /** The caller may record acknowledgment receipts only (Treasury Clerk,
+  /** The caller may record acknowledgment receipts only (Finance Clerk - Receipts,
    * Access Levels Part 2): the type picker offers just that one. */
   acknowledgementOnly?: boolean
 }) {

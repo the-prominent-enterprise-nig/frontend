@@ -12,6 +12,8 @@ import {
   hasPermission,
 } from '@/src/hooks/usePermission'
 import { MODULES } from '@/src/libs/guards/modules'
+import { canManagePosSettings, managesOwnBranch } from '@/src/libs/guards/permission'
+import { sidebarSegmentForHome } from '@/src/libs/guards/home-module'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import { REMINDERS_ENABLED } from '@/src/libs/features'
 import {
@@ -76,7 +78,7 @@ import {
   REPORTS_HUB,
   SALES_COUNTER_HUB,
   posHubActiveHrefs,
-  posTabPermissions,
+  posHubNavPermissions,
   type PosHub,
 } from '@/src/app/(app)/(dashboard)/pos/_shared/pos-hubs'
 import SidebarSearch, { type SearchEntry } from './SidebarSearch'
@@ -139,6 +141,7 @@ interface SessionUser {
   roles: string[]
   permissions: string[]
   primaryRole?: string
+  homeModule?: string | null
   moduleAccess?: string[]
   branchId?: string | null
 }
@@ -193,15 +196,11 @@ function hubNavItem(hub: Hub, label: string, icon: LucideIcon): NavItem {
  * page — and lit on the hub's routes.
  */
 function posHubNavItem(hub: PosHub, label: string, icon: LucideIcon): NavItem {
-  // A configOnly tab (Settings) lists no permission because its check is the
-  // role (canManagePosSettings), not because anyone may open it. It doesn't
-  // make the hub ungated: the roles that pass that check hold the hub's other
-  // tabs anyway.
-  const tabs = hub.tabs.filter((tab) => !tab.configOnly)
-  const ungated = !hub.permission && tabs.some((tab) => posTabPermissions(tab).length === 0)
-  const permissions = ungated
-    ? []
-    : (hub.permission ?? tabs.flatMap((tab) => posTabPermissions(tab)))
+  // A configOnly tab (Settings) lists no permission of its own: its check is any
+  // of several POS "manage" rows (canManagePosSettings). posHubNavPermissions
+  // adds those rows to the hub's, so a role that holds only a settings toggle
+  // (Terminals, say) still gets the row; it doesn't make the hub ungated.
+  const permissions = posHubNavPermissions(hub)
   const { exact, prefix } = posHubActiveHrefs(hub)
   return {
     label,
@@ -784,7 +783,7 @@ const DASHBOARD_ITEM: NavItem = { label: 'Dashboard', href: '/dashboard', icon: 
 const ADMIN_TIER = ['admin:roles:manage', 'admin:permissions:manage']
 
 // Confirmed intended, not an oversight (#168 review, 2026-09-14): both of these
-// are in access-levels.ts's PRESET_EXCLUDED_PERMISSIONS, so the Admin module's
+// are "sensitive" in the backend's permission tiers (src/auth/permission-tiers.ts), so the Admin module's
 // "Manage / Edit" button never grants either — that IS the fix from #168 (a role
 // built via that button could otherwise mint a new role and grant it *:*). One
 // consequence: a role assembled purely from module-level presets, with Admin set
@@ -1012,34 +1011,17 @@ function buildSearchEntries(args: {
 }
 
 function resolvePrimarySidebarSegment(session: SessionUser | null): string {
-  switch (session?.primaryRole) {
-    case 'Business Owner':
-      return 'Business Owner'
-    case 'Branch Manager':
-      return 'Business Owner'
-    case 'accounting':
-      return 'accounting'
-    case 'Stock Controller':
-      return 'inventory'
-    case 'Cashier':
-    case 'pos':
-      return 'pos'
-    case 'Marketing Manager':
-      return 'crm'
-    default:
-      break
-  }
-
+  // The Business Owner is always the owner's menu, whatever the roles say.
+  if (session?.primaryRole === 'Business Owner') return 'Business Owner'
   if (session?.roles.includes('Business Owner')) return 'Business Owner'
 
-  const allRoles = [
-    ...(session?.primaryRole ? [session.primaryRole] : []),
-    ...(session?.roles ?? []),
-  ].map((r) => r.toLowerCase())
+  // The home page set on the user's highest-priority role (Roles & Access).
+  const home = sidebarSegmentForHome(session?.homeModule)
+  if (home) return home
 
-  if (allRoles.some((r) => r === 'cashier' || r === 'pos-manager' || r === 'pos')) return 'pos'
-  if (allRoles.some((r) => r === 'stock controller' || r === 'stock-controller')) return 'inventory'
-
+  // No home page set: follow what the person can actually open, so another role
+  // they also hold (an old Cashier role next to a new Accounting one) can't pull
+  // the menu back to a module that isn't theirs.
   if (session?.permissions.some((p) => p.startsWith('inventory:'))) return 'inventory'
   if (session?.permissions.some((p) => p.startsWith('accounting:'))) return 'accounting'
   if (session?.permissions.some((p) => p.startsWith('pos:'))) return 'pos'
@@ -1107,9 +1089,9 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   const config = navItemsBySegment[resolvedSegment] ?? { main: [], bottom: [] }
 
   // "My Branch" mirrors what /settings/branches/[id] itself admits:
-  // isAdmin(session), or primaryRole === 'Branch Manager' viewing their own
-  // branch. The role check is not laziness — that page is still role-gated, and
-  // the nav must not claim access the page will refuse.
+  // isAdmin(session), or someone who manages POS settings for their own branch
+  // (managesOwnBranch) viewing it. The same test sits in the nav as on the
+  // page, so the nav never claims access the page will refuse.
   //
   // The branchId alone is NOT a sufficient test: session.branchId is derived
   // from the EMPLOYEE record (users.service.ts: user.employee?.branchId), so
@@ -1117,7 +1099,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   // included. Gating on it alone handed them a My Workspace block whose only
   // link redirected to /403.
   const bmWorkspaceItems =
-    session?.primaryRole === 'Branch Manager' ? branchManagerWorkspaceItems(session?.branchId) : []
+    session && managesOwnBranch(session) ? branchManagerWorkspaceItems(session.branchId) : []
   const allWorkspaceItems = [...workspaceItems, ...bmWorkspaceItems]
 
   // The roles' own rows: a pick list a feature brings never adds an item.
@@ -1222,11 +1204,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   const scrollingItems = main.slice(1)
 
   // Same rule PosNav applies to the owner-only POS tabs (canManagePosSettings).
-  const canConfigurePos =
-    ADMIN_TIER.some((p) => hasPermission(session, p)) ||
-    [session?.primaryRole ?? '', ...(session?.roles ?? [])].some(
-      (r) => r === 'Branch Manager' || r === 'pos-manager'
-    )
+  const canConfigurePos = session ? canManagePosSettings(session) : false
   const searchEntries = buildSearchEntries({
     session,
     filterItem,

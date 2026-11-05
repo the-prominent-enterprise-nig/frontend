@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { canManagePosSettings } from '@/src/libs/guards/permission'
 import { PosSettingsTabs } from './_components/PosSettingsTabs'
+import { visiblePosSettingsHrefs } from '../_shared/pos-hubs'
 import { PosBranchSwitcher } from '../_components/PosBranchSwitcher'
 
 export default async function PosSettingsLayout({ children }: { children: React.ReactNode }) {
@@ -21,7 +22,7 @@ export default async function PosSettingsLayout({ children }: { children: React.
         <PosBranchSwitcher />
       </div>
       <div className="flex flex-col md:flex-row">
-        <PosSettingsTabs />
+        <PosSettingsTabs visibleHrefs={visiblePosSettingsHrefs(session)} />
         <div className="flex-1 min-w-0">{children}</div>
       </div>
     </div>

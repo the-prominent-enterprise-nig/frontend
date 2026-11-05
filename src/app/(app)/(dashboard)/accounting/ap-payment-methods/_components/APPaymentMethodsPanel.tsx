@@ -4,11 +4,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { Plus, RefreshCw, Trash2, CreditCard } from 'lucide-react'
 import { APPaymentMethods, type APPaymentMethodConfig } from '@/src/libs/data/AccountingV2Data'
 import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
 
 // Scenario 10 (Purchasing & AP) Part 3 — configures how suppliers get paid
 // (method) and which GL account each maps to. Distinct from the POS-side
 // tender-config system (PosPaymentMethodConfig) — this is AP-only.
 export default function APPaymentMethodsPanel() {
+  // Shown only to those the backend lets through (UAT review 2026-11-04).
+  const { data: me } = useMe()
+  const canDelete = !!me && can(me, 'accounting:ap-payment-methods:delete')
   const [methods, setMethods] = useState<APPaymentMethodConfig[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
@@ -207,7 +212,7 @@ export default function APPaymentMethodsPanel() {
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right">
-                    {m.isEnabled && (
+                    {m.isEnabled && canDelete && (
                       <button
                         onClick={() => remove(m.id)}
                         className="p-1.5 text-red-600 hover:bg-red-50 rounded"

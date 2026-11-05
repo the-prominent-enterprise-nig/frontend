@@ -3,9 +3,17 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Search, Pencil, Trash2, X } from 'lucide-react'
 import { BankAccounts, type BankAccount, fmtMoney } from '@/src/libs/data/AccountingV2Data'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
 
 export default function BankAccountsList() {
   const router = useRouter()
+  // Add, Edit and Delete show only to those the backend lets through (UAT
+  // review 2026-11-04: shown to everyone who could open the page).
+  const { data: me } = useMe()
+  const canCreate = !!me && can(me, 'accounting:bank-accounts:create')
+  const canUpdate = !!me && can(me, 'accounting:bank-accounts:update')
+  const canDelete = !!me && can(me, 'accounting:bank-accounts:delete')
   const [items, setItems] = useState<BankAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<BankAccount | null>(null)
@@ -45,12 +53,14 @@ export default function BankAccountsList() {
           <p className="text-sm text-gray-500">Operating, payroll, and savings accounts.</p>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => setCreating(true)}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
-          >
-            <Plus className="w-4 h-4" /> Add
-          </button>
+          {canCreate && (
+            <button
+              onClick={() => setCreating(true)}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-lg hover:bg-purple-800"
+            >
+              <Plus className="w-4 h-4" /> Add
+            </button>
+          )}
         </div>
       </div>
       <div className="relative mb-4">
@@ -118,24 +128,30 @@ export default function BankAccountsList() {
                   </td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex justify-end gap-1">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setEditing(a)
-                        }}
-                        className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          del(a.id)
-                        }}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canUpdate && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setEditing(a)
+                          }}
+                          aria-label="Edit"
+                          className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            del(a.id)
+                          }}
+                          aria-label="Delete"
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

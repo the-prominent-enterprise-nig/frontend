@@ -171,6 +171,7 @@ export const ACCOUNTING_PERMISSIONS = {
   /** Scenario 67 — issue or void an X-Deal (barter) credit memo. Deliberately
    * not covered by Branch Manager's accounting:credit-memos:*. */
   X_DEAL_MEMOS_ISSUE: 'accounting:x-deal-memos:issue',
+  PENALTY_WAIVERS_ISSUE: 'accounting:penalty-waivers:issue',
 
   DEBIT_MEMOS_READ: 'accounting:debit-memos:read',
   DEBIT_MEMOS_CREATE: 'accounting:debit-memos:create',
@@ -344,6 +345,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:credit-memos:void': 'Void a credit memo',
   'accounting:x-deal-memos:issue':
     "Issue or void an X-Deal credit memo, clearing a barter sale's whole balance",
+  'accounting:penalty-waivers:issue':
+    "Waive an installment account's pending penalties, and void a waiver",
   'accounting:debit-memos:read': 'View debit memos',
   'accounting:debit-memos:create': 'Issue a debit memo against an invoice',
   'accounting:debit-memos:void': 'Void a debit memo',

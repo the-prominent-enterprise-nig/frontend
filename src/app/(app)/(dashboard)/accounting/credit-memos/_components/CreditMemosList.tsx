@@ -8,6 +8,7 @@ import {
   CreditMemos,
   XDealMemos,
   EarlySettlementMemos,
+  PenaltyWaiverMemos,
   type CreditMemo,
   type CreditMemoType,
   fmtMoney,
@@ -29,6 +30,7 @@ const TYPE_LABELS: Record<CreditMemoType, string> = {
   billing_adjustment: 'Billing Adjustment',
   goodwill: 'Goodwill',
   x_deal: 'X-Deal',
+  penalty_waiver: 'Penalty Waiver',
   early_settlement: 'Early Settlement',
 }
 
@@ -44,6 +46,10 @@ export default function CreditMemosList({ session }: { session: SessionUser }) {
   // Scenario 79 — an early settlement memo is voided on the permission that
   // settles, not credit-memos:void (its void reopens the account).
   const canSettle = hasPermission(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_EARLY_PAYOFF)
+  // Each memo type voids on the permission its backend route checks (UAT
+  // review 2026-11-04: an ordinary memo's Void showed to everyone).
+  const canVoid = hasPermission(session, ACCOUNTING_PERMISSIONS.CREDIT_MEMOS_VOID)
+  const canWaive = hasPermission(session, ACCOUNTING_PERMISSIONS.PENALTY_WAIVERS_ISSUE)
   const [search, setSearch] = useState('')
   const [voiding, setVoiding] = useState<string | null>(null)
   const [confirmingVoid, setConfirmingVoid] = useState<CreditMemo | null>(null)
@@ -64,7 +70,9 @@ export default function CreditMemosList({ session }: { session: SessionUser }) {
         ? await XDealMemos.void(id)
         : memo.type === 'early_settlement'
           ? await EarlySettlementMemos.void(id)
-          : await CreditMemos.void(id)
+          : memo.type === 'penalty_waiver'
+            ? await PenaltyWaiverMemos.void(id)
+            : await CreditMemos.void(id)
     setVoiding(null)
     setConfirmingVoid(null)
     if (!res.success) {
@@ -208,7 +216,9 @@ export default function CreditMemosList({ session }: { session: SessionUser }) {
             ? canXDeal
             : memo.type === 'early_settlement'
               ? canSettle
-              : true) ? (
+              : memo.type === 'penalty_waiver'
+                ? canWaive
+                : canVoid) ? (
             <Tooltip label="Void credit memo">
               <button
                 type="button"

@@ -10,10 +10,15 @@ import {
   fmtMoney,
 } from '@/src/libs/data/AccountingV2Data'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
 
 const CURRENT_YEAR = new Date().getFullYear()
 
 export default function BudgetsList() {
+  // Shown only to those the backend lets through (UAT review 2026-11-04).
+  const { data: me } = useMe()
+  const canDelete = !!me && can(me, 'accounting:budget:delete')
   const [tab, setTab] = useState<'list' | 'variance'>('list')
   const [year, setYear] = useState(CURRENT_YEAR)
   const [items, setItems] = useState<Budget[]>([])
@@ -141,12 +146,14 @@ export default function BudgetsList() {
                     <td className="px-3 py-2 text-xs">{b.alertThresholdPercent ?? '—'}%</td>
                     <td className="px-3 py-2 text-xs text-gray-600">{b.ownerEmail ?? '—'}</td>
                     <td className="px-3 py-2 text-right">
-                      <button
-                        onClick={() => del(b.id)}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canDelete && (
+                        <button
+                          onClick={() => del(b.id)}
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))

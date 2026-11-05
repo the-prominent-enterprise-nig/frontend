@@ -186,8 +186,8 @@ export function TransactionDetail({
                 the transaction but not whether it became an installment
                 account, a charge invoice or neither. */}
               {/* Scenario 59 — this hardcoded /crm/ and so bounced a Cashier
-                off /403: they are confined to the `pos` module by
-                ROLE_MODULE_ACCESS, even though the ledger DATA is readable
+                off /403 for a role that can't open the `crm` module,
+                even though the ledger DATA is readable
                 to them (crm:customers:read). POS has had its own read-only
                 /pos/customers/:id/ledger since the customer-view parity
                 work; this link never got pointed at it.
