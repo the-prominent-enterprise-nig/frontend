@@ -9,12 +9,16 @@ import { useUIShell } from '@/src/stores/ui-shell.store'
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
 
-// "Group/Subgroup" classification lives on the category's own parent —
-// primaryCategory is the leaf (subgroup) when it has a parent, in which case
-// the parent is the main category to show here (matches OverviewTab).
-function mainCategoryName(item: ItemSummary): string | undefined {
+// Type / Category = the sheet's TYPE / GROUP / SUBGROUP: Type is
+// the item type; Category/Subgroup is the category tree — primaryCategory is the Subgroup when it has a parent, else the Group.
+function groupName(item: ItemSummary): string | undefined {
   const name = item.primaryCategory?.parentCategory?.name ?? item.primaryCategory?.name
   return displayClassificationLabel(name)
+}
+
+function subgroupName(item: ItemSummary): string | undefined {
+  if (!item.primaryCategory?.parentCategory) return undefined
+  return displayClassificationLabel(item.primaryCategory.name)
 }
 
 function brandModelLabel(item: ItemSummary): string {
@@ -203,6 +207,9 @@ export default function ItemMasterTable({
                 Item
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Type
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Category
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
@@ -259,7 +266,15 @@ export default function ItemMasterTable({
                     )}
                   </div>
                 </td>
-                <td className="px-4 py-3 text-zinc-500">{mainCategoryName(item) ?? '—'}</td>
+                <td className="px-4 py-3 text-zinc-500">
+                  {displayClassificationLabel(item.type?.name) ?? '—'}
+                </td>
+                <td className="px-4 py-3 text-zinc-500">
+                  <div>{groupName(item) ?? '—'}</div>
+                  {subgroupName(item) && (
+                    <div className="text-xs text-ink-subtle">{subgroupName(item)}</div>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-zinc-500">{brandModelLabel(item)}</td>
                 <td className="px-4 py-3 text-right text-zinc-700">
                   {item.sellingPrice != null ? formatCurrency(item.sellingPrice) : '—'}

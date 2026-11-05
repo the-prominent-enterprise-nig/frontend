@@ -519,7 +519,11 @@ export default function InventoryPage() {
                     href: '/inventory/stock-transaction?tab=receiving',
                     icon: Package,
                   },
-                  { label: 'Stock Counts', href: '/inventory/counting', icon: Layers },
+                  {
+                    label: 'Physical Inventory',
+                    href: '/inventory/reports?tab=physical-inventory',
+                    icon: Layers,
+                  },
                   {
                     label: 'Stock Adjustments',
                     href: '/inventory/counting?tab=adjustments',
@@ -1178,7 +1182,7 @@ export default function InventoryPage() {
                   Adjustments Pending Investigation
                 </h3>
                 <Link
-                  href="/inventory/counting"
+                  href="/inventory/counting?tab=adjustments"
                   className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
                 >
                   View all <ArrowUpRight className="h-3 w-3" />

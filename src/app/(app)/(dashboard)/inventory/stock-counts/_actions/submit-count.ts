@@ -43,6 +43,7 @@ export async function submitCount(id: string, input: unknown): Promise<ApiRespon
   }
 
   revalidatePath('/inventory/counting')
+  revalidatePath('/inventory/reports')
 
   return { success: true, data: result.data, message: 'Count submitted and variances reconciled' }
 }

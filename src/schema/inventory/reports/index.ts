@@ -107,11 +107,27 @@ export const SERIAL_AGING_BUCKET_LABELS: Record<SerialAgingBucket, string> = {
   '15_plus': '15 months and up',
 }
 
+/** The client's Classification of a unit: how it last came into stock
+ * (SerialNumber.receivedAs, set by Receive Stock from the receipt's reason). */
+export const UnitClassificationSchema = z.enum(['brand_new', 'repair_return', 'repo'])
+export type UnitClassification = z.infer<typeof UnitClassificationSchema>
+
+export const UNIT_CLASSIFICATION_LABELS: Record<UnitClassification, string> = {
+  brand_new: 'Brand New',
+  repair_return: 'Repair/Return',
+  repo: 'Repo',
+}
+
 export const AgingReportItemSchema = z.object({
   serialNumberId: z.string(),
   serialNumber: z.string(),
   brandName: z.string().nullable().optional(),
+  /** Item type: the report's "Type". */
   typeName: z.string().nullable().optional(),
+  /** Root category: the report's "Category". */
+  categoryName: z.string().nullable().optional(),
+  subgroupName: z.string().nullable().optional(),
+  classification: UnitClassificationSchema.optional(),
   modelNumber: z.string().nullable().optional(),
   rrNumber: z.string().nullable().optional(),
   origin: z.string().nullable().optional(),

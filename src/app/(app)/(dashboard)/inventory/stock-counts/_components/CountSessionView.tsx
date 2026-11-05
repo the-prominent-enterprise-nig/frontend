@@ -1,25 +1,25 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { useForm, useFieldArray, Controller } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2, Plus, AlertTriangle } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { X, Loader2, Plus, AlertTriangle, Check } from 'lucide-react'
 import type {
   CountSummary,
   CountLineSnapshot,
   SubmitCountFormValues,
-  CreateAdjustmentFormValues,
+  UpdateCountLineValues,
 } from '@/src/schema/inventory/stock-counts'
-import {
-  ADJUSTMENT_REASON_LABELS,
-  AdjustmentReasonCodeSchema,
-  CreateAdjustmentFormSchema,
-} from '@/src/schema/inventory/stock-counts'
+import { COUNT_REMARK_TAG_LABELS } from '@/src/schema/inventory/stock-counts'
 import type { ApiResponse } from '@/src/libs/api/client'
-import type { ItemSummary } from '@/src/schema/inventory/items'
-import type { BatchSummary } from '@/src/schema/inventory/batches'
 import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
-import AdjustmentLineRow from './AdjustmentLineRow'
+import { ConfirmDialog } from '@/src/components/ui/Modal'
+import ScanToTick from './ScanToTick'
+import PrintPhysicalInventoryButton from './PrintPhysicalInventoryButton'
+import { useCountAutosave, type AutosaveStatus } from '../_hooks/useCountAutosave'
+import { addCountLine } from '../_actions/add-count-line'
+import { removeCountLine } from '../_actions/remove-count-line'
+import Tooltip from '@/src/components/ui/Tooltip'
+import CountSheetTable, { isUnaccounted, type CountSheetLine } from './CountSheetTable'
+import { tagFor } from './RemarksInput'
 
 type Props = {
   count: CountSummary | null
@@ -27,35 +27,141 @@ type Props = {
   onStart: (id: string) => Promise<ApiResponse<unknown>>
   onSubmit: (args: { id: string; data: SubmitCountFormValues }) => Promise<ApiResponse<unknown>>
   onCancel: (id: string) => Promise<ApiResponse<unknown>>
-  onAdjust: (data: CreateAdjustmentFormValues) => Promise<ApiResponse<unknown>>
   isStarting: boolean
   isSubmitting: boolean
   isCancelling: boolean
-  isAdjusting: boolean
-  items: ItemSummary[]
-  batches: BatchSummary[]
-  serials: SerialNumberSummary[]
-  canAdjust: boolean
   countLines: CountLineSnapshot[]
   isCountLinesLoading: boolean
 }
 
-type CountSheetLine = {
-  itemId: string
-  itemLabel: string
-  batchId?: string
-  locationId?: string
-  // Scenario 19 Part 5 — present (even as '') for a serial-level line, so
-  // rendering can tell "aggregate line" apart from "one unit, checkbox
-  // instead of a quantity". '' means a found-serial row whose serial
-  // hasn't been picked from the dropdown yet.
-  serialNumberId?: string
-  serialLabel?: string
-  systemQty: number | null // null = not in the system snapshot (a genuine find)
-  countedQty: number | ''
+/** A sheet change as the server's line update takes it: the tick/quantity,
+ * and the remark split into its preset tag and the whole text. */
+function toSavedPatch(patch: Partial<CountSheetLine>): UpdateCountLineValues {
+  return {
+    ...(typeof patch.countedQty === 'number' && { countedQty: patch.countedQty }),
+    ...(patch.remarks !== undefined && {
+      remarkTag: tagFor(patch.remarks) ?? null,
+      remarks: patch.remarks.trim() || null,
+    }),
+  }
 }
 
-const reasonCodes = AdjustmentReasonCodeSchema.options
+/** What a found unit puts on its row. */
+function foundFields(serial: SerialNumberSummary): Partial<CountSheetLine> {
+  return {
+    itemId: serial.item?.id ?? '',
+    itemName: serial.item?.name ?? '',
+    brandName: serial.item?.brand?.name ?? '',
+    modelNumber: serial.item?.modelNumber ?? '',
+    serialNumberId: serial.id,
+    serialLabel: serial.serialNumber,
+  }
+}
+
+/** Saving… / Saved / Couldn't save — retry, beside the footer buttons. */
+function SaveStatus({ status, onRetry }: { status: AutosaveStatus; onRetry: () => void }) {
+  if (status === 'idle') return null
+  if (status === 'error') {
+    return (
+      <button
+        type="button"
+        onClick={onRetry}
+        className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:underline"
+      >
+        <AlertTriangle className="h-3.5 w-3.5" /> Couldn&apos;t save — retry
+      </button>
+    )
+  }
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-ink-muted">
+      {status === 'saving' ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <Check className="h-3.5 w-3.5 text-green-600" />
+      )}
+      {status === 'saving' ? 'Saving…' : 'Saved'}
+    </span>
+  )
+}
+
+/** Submit Count, off until the sheet differs from how it loaded. */
+function SubmitCountButton({
+  disabled,
+  noChanges,
+  isSubmitting,
+  onClick,
+}: {
+  disabled: boolean
+  noChanges: boolean
+  isSubmitting: boolean
+  onClick: () => void
+}) {
+  const button = (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+      {isSubmitting ? 'Submitting…' : 'Submit Count'}
+    </button>
+  )
+  if (!noChanges) return button
+  return (
+    <Tooltip label="Tick a unit, add a remark or a found item first" align="end">
+      {button}
+    </Tooltip>
+  )
+}
+
+/** What the counter can change on a line, as one string per sheet: equal
+ * strings mean nothing was changed (or every change was undone). */
+function sheetSignature(lines: CountSheetLine[]): string {
+  return (
+    lines
+      // A found row still waiting for its unit isn't sent, so isn't a change.
+      .filter((l) => l.itemId && l.serialNumberId !== '')
+      .map((l) => `${l.serialNumberId ?? l.itemId}:${l.countedQty}:${l.remarks.trim()}`)
+      .join('|')
+  )
+}
+
+/** What Submit Count is about to send, so the counter can catch a slip. */
+function SubmitSummary({ lines }: { lines: CountSheetLine[] }) {
+  const units = lines.filter((l) => l.serialNumberId)
+  const inStore = units.filter((l) => l.countedQty === 1).length
+  const notInStore = units.length - inStore
+  const unaccounted = lines.filter(isUnaccounted).length
+  return (
+    <>
+      <p>
+        <strong className="text-zinc-900">{inStore}</strong> in store ·{' '}
+        <strong className="text-zinc-900">{notInStore}</strong> not in store
+      </p>
+      {unaccounted > 0 && (
+        <p>
+          <strong className="text-amber-700">{unaccounted}</strong> units not in store have no
+          remark saying where they are. They&apos;ll be reported as unaccounted for.
+        </p>
+      )}
+      <p>
+        Anything that doesn&apos;t match the system goes into one stock adjustment for review. You
+        can&apos;t edit this count after you submit it.
+      </p>
+    </>
+  )
+}
+
+/** A row for something the snapshot didn't list, before it's picked. */
+const EMPTY_FIND: Omit<CountSheetLine, 'countedQty'> = {
+  itemId: '',
+  itemName: '',
+  brandName: '',
+  modelNumber: '',
+  systemQty: null,
+  remarks: '',
+}
 
 export default function CountSessionView({
   count,
@@ -63,21 +169,19 @@ export default function CountSessionView({
   onStart,
   onSubmit,
   onCancel,
-  onAdjust,
   isStarting,
   isSubmitting,
   isCancelling,
-  isAdjusting,
-  items,
-  batches,
-  serials,
-  canAdjust,
   countLines,
   isCountLinesLoading,
 }: Props) {
-  const [tab, setTab] = useState<'count' | 'adjust'>('count')
+  const [confirming, setConfirming] = useState<'submit' | 'cancel' | null>(null)
   const [lines, setLines] = useState<CountSheetLine[]>([])
+  // The scan/search box's text, which also filters the sheet.
+  const [sheetQuery, setSheetQuery] = useState('')
   const seededCountId = useRef<string | null>(null)
+  // The sheet as it loaded, so Submit Count stays off until something changes.
+  const [seededSignature, setSeededSignature] = useState('')
 
   // Seed the count sheet from the server-side snapshot taken at start() —
   // expected quantity is never something the counter types in themselves.
@@ -93,38 +197,112 @@ export default function CountSessionView({
     if (seededCountId.current === count.id) return
     seededCountId.current = count.id
     // Most recently added line first — reverse of snapshot/creation order.
-    setLines(
-      [...countLines].reverse().map((l) => ({
-        itemId: l.itemId,
-        itemLabel: `${l.item.sku} — ${l.item.name}`,
-        batchId: l.batchId ?? undefined,
-        locationId: l.locationId ?? undefined,
-        serialNumberId: l.serialNumberId ?? undefined,
-        serialLabel: l.serialNumber?.serialNumber,
-        systemQty: Number(l.systemQty),
-        countedQty: l.countedQty ?? '',
-      }))
+    const seeded: CountSheetLine[] = [...countLines].reverse().map((l) => ({
+      itemId: l.itemId,
+      itemName: l.item.name,
+      brandName: l.item.brand?.name ?? '',
+      modelNumber: l.item.modelNumber ?? '',
+      batchId: l.batchId ?? undefined,
+      locationId: l.locationId ?? undefined,
+      lineId: l.id,
+      serialNumberId: l.serialNumberId ?? undefined,
+      serialLabel: l.serialNumber?.serialNumber,
+      systemQty: Number(l.systemQty),
+      // A unit is "not in store" until ticked (Scenario 87 In Store?).
+      countedQty: l.countedQty ?? (l.serialNumberId ? 0 : ''),
+      remarks: l.remarks ?? (l.remarkTag ? COUNT_REMARK_TAG_LABELS[l.remarkTag] : ''),
+    }))
+    setLines(seeded)
+    // "Changed" is measured against the sheet as start() made it — so a count
+    // resumed with saved ticks, remarks or finds can be submitted straight away.
+    setSeededSignature(
+      sheetSignature(
+        seeded
+          .filter((l) => l.systemQty !== 0)
+          .map((l) => ({ ...l, countedQty: l.serialNumberId ? 0 : '', remarks: '' }))
+      )
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count?.id, countLines])
 
-  const adjustForm = useForm<CreateAdjustmentFormValues>({
-    resolver: zodResolver(CreateAdjustmentFormSchema),
-    defaultValues: {
-      warehouseId: count?.warehouse?.id ?? '',
-      adjustmentDate: new Date().toISOString().slice(0, 10),
-      reasonCode: 'miscounted',
-      notes: '',
-      lines: [],
-    },
-  })
-  const adjustLines = useFieldArray({ control: adjustForm.control, name: 'lines' })
+  const autosave = useCountAutosave(count?.id)
+  // The latest sheet, for the stable callbacks below to read a line's server id.
+  const linesRef = useRef(lines)
+  linesRef.current = lines
 
-  useEffect(() => {
-    if (count?.warehouse?.id) {
-      adjustForm.setValue('warehouseId', count.warehouse.id)
-    }
-  }, [count, adjustForm])
+  // Stable across keystrokes, so a large sheet (a warehouse can hold ~9,000
+  // units) only redraws the row being edited — see CountSheetTable's memo.
+  // A saved line's tick / remark is queued to the server as it changes.
+  const updateLine = useCallback(
+    (index: number, patch: Partial<CountSheetLine>) => {
+      setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)))
+      const lineId = linesRef.current[index]?.lineId
+      if (lineId) autosave.queue(lineId, toSavedPatch(patch))
+    },
+    [autosave]
+  )
+
+  const removeLine = useCallback(
+    (index: number) => {
+      const line = linesRef.current[index]
+      setLines((prev) => prev.filter((_, i) => i !== index))
+      if (line?.lineId && count) void removeCountLine(count.id, line.lineId)
+    },
+    [count]
+  )
+
+  /** Puts a found unit on the server as a count line, ticked, and gives the
+   * row its id — so a find survives a refresh like everything else. */
+  const persistFound = useCallback(
+    async (serial: SerialNumberSummary) => {
+      if (!count || !serial.item) return
+      const res = await addCountLine(count.id, {
+        itemId: serial.item.id,
+        serialNumberId: serial.id,
+      })
+      if (!res.success || !res.data) return
+      const lineId = res.data.id
+      setLines((prev) => prev.map((l) => (l.serialNumberId === serial.id ? { ...l, lineId } : l)))
+      autosave.queue(lineId, { countedQty: 1 })
+    },
+    [count, autosave]
+  )
+
+  // Add Found Item (Scenario 87): the picked unit fills the row.
+  const pickFoundUnit = useCallback(
+    (index: number, serial: SerialNumberSummary) => {
+      setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...foundFields(serial) } : l)))
+      void persistFound(serial)
+    },
+    [persistFound]
+  )
+
+  // Scan to tick: a scanned unit the sheet doesn't list comes in as found.
+  const scanFoundUnit = useCallback(
+    (serial: SerialNumberSummary) => {
+      setLines((prev) => [{ ...EMPTY_FIND, ...foundFields(serial), countedQty: 1 }, ...prev])
+      void persistFound(serial)
+    },
+    [persistFound]
+  )
+
+  const tickLine = useCallback(
+    (index: number) => updateLine(index, { countedQty: 1 }),
+    [updateLine]
+  )
+
+  const hasChanges = useMemo(
+    () => sheetSignature(lines) !== seededSignature,
+    [lines, seededSignature]
+  )
+
+  // Units already on the sheet can't be added again. Keyed on the serial ids
+  // alone, so ticking or typing doesn't rebuild it.
+  const usedSerialKey = lines.map((l) => l.serialNumberId ?? '').join('|')
+  const usedSerialIds = useMemo(
+    () => new Set(usedSerialKey.split('|').filter(Boolean)),
+    [usedSerialKey]
+  )
 
   if (!count) return null
 
@@ -133,100 +311,45 @@ export default function CountSessionView({
   const isCompleted = count.status === 'completed'
   const isCancelled = count.status === 'cancelled'
 
-  function addFoundLine() {
-    // A genuine find — an item the system snapshot has no balance for.
-    // Prepended so the sheet stays most-recent-first as lines get added.
-    setLines((prev) => [{ itemId: '', itemLabel: '', systemQty: null, countedQty: '' }, ...prev])
-  }
-
-  function addFoundSerialLine() {
-    // Scenario 19 Part 5 — a serial the snapshot didn't expect present at
-    // this warehouse. serialNumberId starts as '' until picked below; that
-    // empty-but-present key is what tells the row to render a serial
-    // picker instead of an item dropdown.
-    setLines((prev) => [
-      { itemId: '', itemLabel: '', serialNumberId: '', systemQty: null, countedQty: '' },
-      ...prev,
-    ])
-  }
-
-  function updateLineItem(index: number, itemId: string) {
-    const item = items.find((i) => i.id === itemId)
-    setLines((prev) =>
-      prev.map((l, i) =>
-        i === index ? { ...l, itemId, itemLabel: item ? `${item.sku} — ${item.name}` : '' } : l
-      )
-    )
-  }
-
-  function updateLineSerial(index: number, serialId: string) {
-    const serial = serials.find((s) => s.id === serialId)
-    if (!serial?.item) return
-    setLines((prev) =>
-      prev.map((l, i) =>
-        i === index
-          ? {
-              ...l,
-              itemId: serial.item!.id,
-              itemLabel: `${serial.item!.sku} — ${serial.item!.name}`,
-              serialNumberId: serial.id,
-              serialLabel: serial.serialNumber,
-            }
-          : l
-      )
-    )
-  }
-
-  function updateLineCounted(index: number, value: string) {
-    // A counted quantity can't be negative or fractional — reject anything
-    // that isn't plain digits (no '-', '+', '.', 'e' scientific notation,
-    // all of which a native number input otherwise lets through).
-    if (value !== '' && !/^\d+$/.test(value)) return
-    setLines((prev) =>
-      prev.map((l, i) =>
-        i === index ? { ...l, countedQty: value === '' ? '' : Number(value) } : l
-      )
-    )
-  }
-
-  function removeLine(index: number) {
-    setLines((prev) => prev.filter((_, i) => i !== index))
+  function addFoundItem() {
+    // A unit the snapshot didn't list (every NIG item is serialized). Its
+    // serial is searched in the new row; prepended so the sheet stays
+    // most-recent-first. Found means in store, so it starts ticked.
+    setLines((prev) => [{ ...EMPTY_FIND, serialNumberId: '', countedQty: 1 }, ...prev])
   }
 
   async function handleSubmitCount() {
     if (!count) return
+    // Every serial line goes up, ticked (1) or not (0), with its Remarks; an
+    // unticked one with no remark is allowed and reads as unaccounted.
     const validLines = lines
-      .filter((l) => l.itemId && l.countedQty !== '')
+      .filter((l) => l.itemId && l.serialNumberId !== '' && l.countedQty !== '')
       .map((l) => ({
         itemId: l.itemId,
         batchId: l.batchId,
         locationId: l.locationId,
         serialNumberId: l.serialNumberId,
         countedQty: Number(l.countedQty),
+        // The preset it starts with is its tag; the whole text is kept.
+        remarkTag: tagFor(l.remarks),
+        remarks: l.remarks.trim() || undefined,
       }))
 
     if (validLines.length === 0) return
 
+    // The submit carries the whole sheet; queued saves would only be refused.
+    autosave.discard()
     await onSubmit({ id: count.id, data: { lines: validLines } })
   }
 
   const variantLines = lines.filter(
     (l) => l.countedQty !== '' && l.countedQty !== (l.systemQty ?? 0)
   )
-
-  // Scenario 19 Part 5 — serials already expected or already added as a
-  // found line shouldn't show up again in the "add found serial" picker.
-  const usedSerialIds = new Set(
-    lines.map((l) => l.serialNumberId).filter((v): v is string => Boolean(v))
-  )
-  const availableSerials = serials.filter((s) => !usedSerialIds.has(s.id))
-
-  const fieldClass =
-    'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500'
+  const unaccountedCount = lines.filter(isUnaccounted).length
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center px-4">
-      <div className="flex w-full max-w-3xl max-h-[90vh] flex-col rounded-t-2xl md:rounded-2xl bg-white shadow-xl">
+      <div className="flex w-full max-w-6xl max-h-[92vh] flex-col rounded-t-2xl md:rounded-2xl bg-white shadow-xl">
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-zinc-900">Count Session</h2>
@@ -247,14 +370,16 @@ export default function CountSessionView({
                 Start Count
               </button>
             )}
-            {!isCompleted && !isCancelled && (
+            {/* A scheduled count has no Submit yet, so its Cancel stays up here
+                beside Start Count; an in-progress one cancels from the footer. */}
+            {isScheduled && (
               <button
                 type="button"
-                onClick={() => onCancel(count.id)}
+                onClick={() => setConfirming('cancel')}
                 disabled={isCancelling}
                 className="rounded-lg px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
               >
-                Cancel
+                Cancel Count
               </button>
             )}
             <button
@@ -266,29 +391,6 @@ export default function CountSessionView({
             </button>
           </div>
         </div>
-
-        {isInProgress && (
-          <div className="shrink-0 border-b border-zinc-200 px-6">
-            <div className="flex gap-4">
-              <button
-                type="button"
-                onClick={() => setTab('count')}
-                className={`border-b-2 py-3 text-sm font-medium transition-colors ${tab === 'count' ? 'border-prominent-purple-700 text-prominent-purple-700' : 'border-transparent text-zinc-500 hover:text-zinc-700'}`}
-              >
-                Count Sheet
-              </button>
-              {canAdjust && (
-                <button
-                  type="button"
-                  onClick={() => setTab('adjust')}
-                  className={`border-b-2 py-3 text-sm font-medium transition-colors ${tab === 'adjust' ? 'border-prominent-purple-700 text-prominent-purple-700' : 'border-transparent text-zinc-500 hover:text-zinc-700'}`}
-                >
-                  Create Adjustment
-                </button>
-              )}
-            </div>
-          </div>
-        )}
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {(isScheduled || isCompleted || isCancelled) && (
@@ -309,290 +411,136 @@ export default function CountSessionView({
                   Completed: {new Date(count.completedAt).toLocaleDateString()}
                 </p>
               )}
+              {isCompleted && (
+                <div className="mt-4 flex items-center justify-between gap-3 border-t border-zinc-200 pt-4">
+                  <p className="text-xs text-ink-muted">
+                    The Monthly Physical Inventory and its Stock Count Sheet, for signing.
+                  </p>
+                  <PrintPhysicalInventoryButton count={count} />
+                </div>
+              )}
             </div>
           )}
 
-          {isInProgress && tab === 'count' && (
+          {isInProgress && (
             <div className="space-y-4">
-              <p className="text-xs text-zinc-500">
-                Expected quantities come from the system&apos;s stock balance at the moment this
-                count started — they can&apos;t be edited. Enter what you actually counted; anything
-                found that isn&apos;t already listed can be added below as a new find.
-                Serial-tracked items show one line per unit — enter 1 for every one you physically
-                find; anything left blank is treated as missing once you submit.
+              <p className="text-xs text-ink-muted">
+                This list is the system&apos;s stock when the count started. Tick{' '}
+                <strong>In Store?</strong> for each unit you find. If a unit is missing, note where
+                it is and its document number in Remarks. Use <strong>Add Found Item</strong> for
+                anything not on the list.
               </p>
 
-              {variantLines.length > 0 && (
-                <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
+              {(variantLines.length > 0 || unaccountedCount > 0) && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                   <p className="text-xs text-amber-800">
-                    {variantLines.length} line(s) have variances. Review before submitting.
+                    {variantLines.length} line(s) differ from the system.
+                    {unaccountedCount > 0 &&
+                      ` ${unaccountedCount} not in store have no remark saying where they are — they'll be reported as unaccounted for.`}
                   </p>
                 </div>
               )}
 
               {isCountLinesLoading ? (
-                <div className="flex items-center justify-center py-8 text-sm text-zinc-400">
+                <div className="flex items-center justify-center py-8 text-sm text-ink-faint">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading snapshot…
                 </div>
+              ) : lines.length > 0 ? (
+                <>
+                  <ScanToTick
+                    lines={lines}
+                    query={sheetQuery}
+                    onQuery={setSheetQuery}
+                    onTick={tickLine}
+                    onFound={scanFoundUnit}
+                  />
+                  <CountSheetTable
+                    lines={lines}
+                    usedSerialIds={usedSerialIds}
+                    onPickFound={pickFoundUnit}
+                    onChange={updateLine}
+                    onRemove={removeLine}
+                    query={sheetQuery}
+                  />
+                </>
               ) : (
-                <div className="space-y-3">
-                  {lines.map((line, i) => {
-                    const isFound = line.systemQty === null
-                    const isSerial = line.serialNumberId !== undefined
-                    const needsSerialPick = isSerial && !line.serialNumberId
-                    const variance =
-                      line.countedQty !== ''
-                        ? Number(line.countedQty) - (line.systemQty ?? 0)
-                        : null
-
-                    return (
-                      <div key={i} className="grid grid-cols-12 gap-2 items-start">
-                        <div className="col-span-5">
-                          {needsSerialPick ? (
-                            <select
-                              value=""
-                              onChange={(e) => updateLineSerial(i, e.target.value)}
-                              className={`${fieldClass} bg-white`}
-                            >
-                              <option value="">Select found serial…</option>
-                              {availableSerials.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.serialNumber} — {s.item?.sku ?? ''} {s.item?.name ?? ''}
-                                </option>
-                              ))}
-                            </select>
-                          ) : isFound && !isSerial ? (
-                            <select
-                              value={line.itemId}
-                              onChange={(e) => updateLineItem(i, e.target.value)}
-                              className={`${fieldClass} bg-white`}
-                            >
-                              <option value="">Select found item…</option>
-                              {items.map((item) => (
-                                <option key={item.id} value={item.id}>
-                                  {item.sku} — {item.name}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <div className="flex h-9.5 items-center gap-2 rounded-lg border border-zinc-100 bg-zinc-50 px-3 text-sm text-zinc-700">
-                              <span className="truncate">{line.itemLabel}</span>
-                              {isSerial && (
-                                <span className="ml-auto shrink-0 rounded bg-zinc-200 px-1.5 py-0.5 text-xs text-zinc-600">
-                                  {line.serialLabel}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        <div className="col-span-2">
-                          <div className="flex h-9.5 items-center justify-end rounded-lg border border-zinc-100 bg-zinc-50 px-3 text-sm text-zinc-500">
-                            {isFound ? (
-                              <span className="text-xs font-medium text-blue-600">New find</span>
-                            ) : (
-                              line.systemQty
-                            )}
-                          </div>
-                        </div>
-                        <div className="col-span-2">
-                          {needsSerialPick ? (
-                            <div className="flex h-9.5 items-center justify-center text-sm text-zinc-300">
-                              —
-                            </div>
-                          ) : (
-                            <input
-                              type="number"
-                              min={0}
-                              step={1}
-                              value={line.countedQty}
-                              onChange={(e) => updateLineCounted(i, e.target.value)}
-                              placeholder="Counted"
-                              className={`${fieldClass} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
-                                variance !== null && variance !== 0
-                                  ? 'border-amber-400 bg-amber-50'
-                                  : ''
-                              }`}
-                            />
-                          )}
-                        </div>
-                        <div className="col-span-2 flex items-center justify-center pt-2 text-sm font-semibold">
-                          {variance !== null ? (
-                            <span className={variance >= 0 ? 'text-green-600' : 'text-red-600'}>
-                              {variance >= 0 ? '+' : ''}
-                              {variance}
-                            </span>
-                          ) : (
-                            <span className="text-zinc-300">—</span>
-                          )}
-                        </div>
-                        <div className="col-span-1 flex items-center justify-center">
-                          <button
-                            type="button"
-                            onClick={() => removeLine(i)}
-                            className="rounded p-1 text-zinc-400 hover:bg-zinc-100"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-
-              {!isCountLinesLoading && lines.length === 0 && (
-                <p className="text-center text-sm text-zinc-400 py-4">
+                <p className="py-4 text-center text-sm text-ink-faint">
                   Nothing in the system balance for this warehouse yet — add a found item below to
                   begin counting.
                 </p>
               )}
             </div>
           )}
-
-          {isInProgress && tab === 'adjust' && canAdjust && (
-            <form
-              onSubmit={adjustForm.handleSubmit(async (data) => {
-                await onAdjust({ ...data, warehouseId: count.warehouse?.id ?? '' })
-              })}
-              className="space-y-4"
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700">
-                    Reason Code <span className="text-red-500">*</span>
-                  </label>
-                  <Controller
-                    name="reasonCode"
-                    control={adjustForm.control}
-                    render={({ field }) => (
-                      <select {...field} className={`${fieldClass} bg-white`}>
-                        {reasonCodes.map((code) => (
-                          <option key={code} value={code}>
-                            {ADJUSTMENT_REASON_LABELS[code]}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700">
-                    Date <span className="text-red-500">*</span>
-                  </label>
-                  <Controller
-                    name="adjustmentDate"
-                    control={adjustForm.control}
-                    render={({ field }) => <input {...field} type="date" className={fieldClass} />}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-zinc-700">
-                  Notes <span className="text-red-500">*</span>
-                </label>
-                <Controller
-                  name="notes"
-                  control={adjustForm.control}
-                  render={({ field }) => (
-                    <textarea
-                      {...field}
-                      rows={2}
-                      placeholder="Explain the adjustment…"
-                      className={`${fieldClass} resize-none`}
-                    />
-                  )}
-                />
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="block text-sm font-medium text-zinc-700">
-                    Items <span className="text-red-500">*</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => adjustLines.append({ itemId: '', expectedQty: 0, actualQty: 0 })}
-                    className="flex items-center gap-1.5 rounded-lg border border-dashed border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:border-prominent-purple-400 hover:text-prominent-purple-700"
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Add Line
-                  </button>
-                </div>
-
-                {adjustLines.fields.length === 0 && (
-                  <p className="rounded-lg border border-dashed border-zinc-200 py-4 text-center text-sm text-zinc-400">
-                    Add at least one item to adjust.
-                  </p>
-                )}
-
-                {adjustLines.fields.map((line, i) => (
-                  <AdjustmentLineRow
-                    key={line.id}
-                    index={i}
-                    control={adjustForm.control}
-                    items={items}
-                    batches={batches}
-                    serials={serials}
-                    fieldClass={fieldClass}
-                    onRemove={() => adjustLines.remove(i)}
-                  />
-                ))}
-
-                {typeof adjustForm.formState.errors.lines?.message === 'string' && (
-                  <p className="text-xs text-red-600">
-                    {adjustForm.formState.errors.lines.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={isAdjusting}
-                  className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
-                >
-                  {isAdjusting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {isAdjusting ? 'Submitting…' : 'Submit for Review'}
-                </button>
-              </div>
-            </form>
-          )}
         </div>
 
-        {isInProgress && tab === 'count' && (
+        {isInProgress && (
           <div className="flex shrink-0 items-center gap-3 border-t border-zinc-200 bg-white px-6 py-4">
             <button
               type="button"
-              onClick={addFoundLine}
+              onClick={addFoundItem}
               className="flex items-center gap-2 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:border-prominent-purple-400 hover:text-prominent-purple-700"
             >
               <Plus className="h-4 w-4" /> Add Found Item
             </button>
 
-            {availableSerials.length > 0 && (
-              <button
-                type="button"
-                onClick={addFoundSerialLine}
-                className="flex items-center gap-2 rounded-lg border border-dashed border-zinc-300 px-4 py-2 text-sm text-zinc-600 hover:border-prominent-purple-400 hover:text-prominent-purple-700"
-              >
-                <Plus className="h-4 w-4" /> Add Found Serial
-              </button>
-            )}
+            <SaveStatus status={autosave.status} onRetry={() => void autosave.retry()} />
 
-            {lines.length > 0 && (
+            <div className="ml-auto flex items-center gap-2">
               <button
                 type="button"
-                onClick={handleSubmitCount}
-                disabled={isSubmitting}
-                className="ml-auto flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+                onClick={() => setConfirming('cancel')}
+                disabled={isCancelling || isSubmitting}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
               >
-                {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isSubmitting ? 'Submitting…' : 'Submit Count'}
+                Cancel Count
               </button>
-            )}
+              {lines.length > 0 && (
+                <SubmitCountButton
+                  disabled={!hasChanges || isSubmitting || isCancelling}
+                  noChanges={!hasChanges}
+                  isSubmitting={isSubmitting}
+                  onClick={() => setConfirming('submit')}
+                />
+              )}
+            </div>
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirming === 'submit'}
+        title="Submit this physical inventory?"
+        message={<SubmitSummary lines={lines} />}
+        confirmLabel="Submit Count"
+        cancelLabel="Keep counting"
+        loading={isSubmitting}
+        onCancel={() => setConfirming(null)}
+        onConfirm={async () => {
+          await handleSubmitCount()
+          setConfirming(null)
+        }}
+      />
+      <ConfirmDialog
+        open={confirming === 'cancel'}
+        title="Cancel this physical inventory?"
+        message={
+          <p>
+            The count is marked cancelled and can&apos;t be resumed.
+            {isInProgress && ' Everything ticked and typed on this sheet is discarded.'}
+          </p>
+        }
+        confirmLabel="Cancel Count"
+        cancelLabel={isInProgress ? 'Keep counting' : 'Keep it'}
+        destructive
+        loading={isCancelling}
+        onCancel={() => setConfirming(null)}
+        onConfirm={async () => {
+          autosave.discard()
+          await onCancel(count.id)
+          setConfirming(null)
+        }}
+      />
     </div>
   )
 }

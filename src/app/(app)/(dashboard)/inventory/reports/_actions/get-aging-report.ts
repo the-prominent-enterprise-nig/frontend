@@ -1,13 +1,18 @@
 'use server'
 
 import { api } from '@/src/libs/api/client'
-import type { AgingReportResponse, SerialAgingBucket } from '@/src/schema/inventory/reports'
+import type {
+  AgingReportResponse,
+  SerialAgingBucket,
+  UnitClassification,
+} from '@/src/schema/inventory/reports'
 
 type Params = {
   warehouseId?: string
   categoryId?: string
   itemId?: string
   typeId?: string
+  classification?: UnitClassification
   asOf?: string
   search?: string
   serialNumber?: string
@@ -28,6 +33,7 @@ export async function getAgingReport(params: Params = {}) {
     categoryId: params.categoryId,
     itemId: params.itemId,
     typeId: params.typeId,
+    classification: params.classification,
     asOf: params.asOf,
     search: params.search,
     serialNumber: params.serialNumber,

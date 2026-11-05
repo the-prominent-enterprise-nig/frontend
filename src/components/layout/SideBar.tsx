@@ -264,11 +264,17 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Stock Report',
         href: '/inventory/reports',
         icon: FileBarChart,
-        requiredPermission: INVENTORY_PERMISSIONS.REPORTS_VALUATION,
+        // Its tabs: Aging of Inventory (turnover) and Physical Inventory
+        // (stock-count read) — Scenario 87. Same list as the page's own gate.
+        requiredPermission: [
+          INVENTORY_PERMISSIONS.REPORTS_TURNOVER,
+          INVENTORY_PERMISSIONS.STOCK_COUNT_READ,
+        ],
       },
       // Counting and Finance are hidden from the nav. Their routes still load:
       // /inventory/counting (Stock Adjustments is linked from Stock Transaction
-      // above), /inventory/finance.
+      // above; its old Stock Counts tab redirects to Stock Report → Physical
+      // Inventory), /inventory/finance.
     ],
     bottom: [],
   },

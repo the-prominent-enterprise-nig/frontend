@@ -45,6 +45,23 @@ export const CreateCountFormSchema = z.object({
 })
 export type CreateCountFormValues = z.infer<typeof CreateCountFormSchema>
 
+// Scenario 87 — the preset half of a Count Sheet line's Remarks (the other
+// half is free text: for a unit not in store, its location and reference no.).
+export const CountRemarkTagSchema = z.enum([
+  'found_on_main_shelf',
+  'defective',
+  'yellowish',
+  'lacking_parts',
+])
+export type CountRemarkTag = z.infer<typeof CountRemarkTagSchema>
+
+export const COUNT_REMARK_TAG_LABELS: Record<CountRemarkTag, string> = {
+  found_on_main_shelf: 'Found on main shelf',
+  defective: 'Defective',
+  yellowish: 'Yellowish',
+  lacking_parts: 'Lacking parts',
+}
+
 export const CountLineSubmitSchema = z.object({
   itemId: z.string(),
   batchId: z.string().optional(),
@@ -53,6 +70,8 @@ export const CountLineSubmitSchema = z.object({
   // serial instead of item/batch/location.
   serialNumberId: z.string().optional(),
   countedQty: z.number().min(0, 'Counted quantity cannot be negative'),
+  remarkTag: CountRemarkTagSchema.optional(),
+  remarks: z.string().max(500, 'Remarks can be at most 500 characters').optional(),
 })
 export type CountLineSubmit = z.infer<typeof CountLineSubmitSchema>
 
@@ -66,7 +85,13 @@ export type SubmitCountFormValues = z.infer<typeof SubmitCountFormSchema>
 export const CountLineSnapshotSchema = z.object({
   id: z.string(),
   itemId: z.string(),
-  item: z.object({ id: z.string(), sku: z.string(), name: z.string() }),
+  item: z.object({
+    id: z.string(),
+    sku: z.string(),
+    name: z.string(),
+    modelNumber: z.string().nullable().optional(),
+    brand: z.object({ name: z.string() }).nullable().optional(),
+  }),
   batchId: z.string().optional().nullable(),
   batch: z.object({ id: z.string(), batchNumber: z.string() }).optional().nullable(),
   locationId: z.string().optional().nullable(),
@@ -85,6 +110,8 @@ export const CountLineSnapshotSchema = z.object({
   systemQty: z.coerce.number(),
   countedQty: z.coerce.number().optional().nullable(),
   countedAt: z.string().optional().nullable(),
+  remarkTag: CountRemarkTagSchema.optional().nullable(),
+  remarks: z.string().optional().nullable(),
 })
 export type CountLineSnapshot = z.infer<typeof CountLineSnapshotSchema>
 
@@ -100,6 +127,14 @@ export const AddCountLineFormSchema = z.object({
   serialNumberId: z.string().optional(),
 })
 export type AddCountLineFormValues = z.infer<typeof AddCountLineFormSchema>
+
+// Scenario 87 — one line's progress, saved as the counter goes.
+export const UpdateCountLineSchema = z.object({
+  countedQty: z.number().min(0).optional(),
+  remarkTag: CountRemarkTagSchema.nullable().optional(),
+  remarks: z.string().max(500).nullable().optional(),
+})
+export type UpdateCountLineValues = z.infer<typeof UpdateCountLineSchema>
 
 const CountWarehouseSchema = z.object({
   id: z.string(),
@@ -129,24 +164,3 @@ export const CountListResponseSchema = z.object({
 
 export type CountSummary = z.infer<typeof CountSummarySchema>
 export type CountListResponse = z.infer<typeof CountListResponseSchema>
-
-export const CreateAdjustmentFormSchema = z.object({
-  warehouseId: z.string().min(1, 'Warehouse is required'),
-  adjustmentDate: z.string().min(1, 'Date is required'),
-  reasonCode: AdjustmentReasonCodeSchema,
-  notes: z.string().min(1, 'Notes are required').max(1000),
-  lines: z
-    .array(
-      z.object({
-        itemId: z.string().min(1),
-        batchId: z.string().optional(),
-        locationId: z.string().optional(),
-        serialNumberId: z.string().optional(),
-        expectedQty: z.number(),
-        actualQty: z.number().min(0),
-        unitCost: z.number().min(0).optional(),
-      })
-    )
-    .min(1, 'At least one line is required'),
-})
-export type CreateAdjustmentFormValues = z.infer<typeof CreateAdjustmentFormSchema>
