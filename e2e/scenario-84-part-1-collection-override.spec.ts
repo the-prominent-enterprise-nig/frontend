@@ -94,4 +94,22 @@ test.describe('Scenario 84 Part 1 — Payment date follows the date override', (
     ).toBeChecked()
     await expect(paymentDateInput(page)).toBeVisible()
   })
+
+  test('S84-FE-1.4: on an open session the override only judges on time or late — the receipt stays today', async ({
+    page,
+  }) => {
+    // Option 1 (2026-11-05). Which branch applies depends on whether this
+    // database has an open session the screen can attach the collection to.
+    await tickFirstDue(page)
+    await fillStable(overrideInput(page), localDay(-1))
+    const assessedLabel = page.getByText('Rebate / penalty as of')
+    if (await assessedLabel.isVisible()) {
+      await expect(page.getByTestId('collection-assessed-as-of')).toBeVisible()
+      await expect(page.getByTestId('collection-assessed-as-of')).toContainText('dated today')
+    } else {
+      // No session to count it: the picked day is the receipt's own date.
+      await expect(page.getByText('Payment date', { exact: false })).toBeVisible()
+      await expect(page.getByTestId('collection-assessed-as-of')).toHaveCount(0)
+    }
+  })
 })

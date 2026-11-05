@@ -530,7 +530,8 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
           <div className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-white">
             <CalendarClock className="h-4 w-4 shrink-0" />
             Viewing this screen as of {fmtDate(overrideDateIso)}, not today — due statuses and
-            rebate eligibility below reflect this simulated date, not real collections.
+            rebate eligibility below reflect this date. A payment collected now is still dated
+            today; this date only decides whether a due counts as on time or late.
           </div>
         )}
 
@@ -1082,16 +1083,9 @@ function PaymentPanel({
     0
   )
 
-  // The field is capped at real today (the override can't go forward either —
-  // Oct 29 UAT DC-02), so "not today" can only mean a prior day.
-  const isBackdated = form.paymentDate.slice(0, 10) < todayIso()
+  // Capped at real today (the override can't go forward either — Oct 29 UAT
+  // DC-02), so "not today" can only mean a prior day.
   const maxPaymentDate = todayIso()
-  // Informational only, not blocking — the backend only rejects a repeat
-  // same-date payment once the invoice is already fully paid (isFullyPaid,
-  // handled separately above). A due that's still open can be topped up
-  // again on a date that already has a payment, so this just tells the
-  // cashier that's what's about to happen.
-  const alreadyPaidOnChosenDate = single ? hasPaymentOnDate(single.line, form.paymentDate) : false
   // Live per-due split of whatever's currently typed into Total, plus each
   // due's own resolved rebate/penalty — drives both the dues-list preview
   // below and the actual bulk submit payload, so what the cashier sees is
@@ -1152,6 +1146,25 @@ function PaymentPanel({
   const ownOpenSession = me ? openSessionList.find((s) => s.cashierId === me.id) : undefined
   const openSessionId =
     ownOpenSession?.id ?? (openSessionList.length === 1 ? openSessionList[0].id : undefined)
+
+  // Option 1 (2026-11-05): cash taken into an open session is in TODAY's
+  // drawer, so its receipt is dated today — a backdated receipt put the money
+  // on the earlier day's Collection Report while Close Session counted it
+  // today (one day short, the other over). The date picked in the form then
+  // only judges rebate/penalty lateness, sent as `assessedAsOf`. With no
+  // session to count it (a collection entered after the fact), the picked
+  // date is the receipt's own, as before.
+  const onSession = Boolean(openSessionId)
+  const pickedDate = form.paymentDate.slice(0, 10)
+  const receiptDate = onSession ? todayIso() : pickedDate
+  const assessedAsOf = onSession && pickedDate < receiptDate ? pickedDate : undefined
+  const isBackdated = receiptDate < todayIso()
+  // Informational only, not blocking — the backend only rejects a repeat
+  // same-date payment once the invoice is already fully paid (isFullyPaid,
+  // handled separately above). A due that's still open can be topped up
+  // again on a date that already has a payment, so this just tells the
+  // cashier that's what's about to happen.
+  const alreadyPaidOnChosenDate = single ? hasPaymentOnDate(single.line, receiptDate) : false
 
   // What the collection is still missing. Collect payment is never switched
   // off for these — pressing it lists them (and marks the fields) and sends
@@ -1232,7 +1245,8 @@ function PaymentPanel({
     if (single) {
       const res = await ARInvoices.recordPayment(single.line.arInvoice.id, {
         amount: bulkAllocated[0]?.amount ?? typedAmount,
-        paymentDate: form.paymentDate,
+        paymentDate: receiptDate,
+        assessedAsOf,
         withholdingAmount: Number(form.withholdingAmount || 0),
         rebateAmount: resolvedLines[0]?.rebateAmount ?? 0,
         penaltyAmount: bulkAllocated[0]?.penaltyAmount ?? 0,
@@ -1268,7 +1282,8 @@ function PaymentPanel({
           rebateAmount: p.rebateAmount,
           penaltyAmount: p.penaltyAmount,
         })),
-        paymentDate: form.paymentDate,
+        paymentDate: receiptDate,
+        assessedAsOf,
         method: firstPayment.method,
         paymentMethodConfigId: firstPayment.option?.configId,
         paymentMethodOptionId: firstPayment.optionId,
@@ -1408,14 +1423,27 @@ function PaymentPanel({
           {single && !isFullyPaid && alreadyPaidOnChosenDate && (
             <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-[12px] text-blue-800">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />A payment was already collected
-              on this plan on {isToday(form.paymentDate) ? 'today' : fmtDate(form.paymentDate)}.
-              This will be recorded as an additional payment toward the remaining balance.
+              on this plan on {isToday(receiptDate) ? 'today' : fmtDate(receiptDate)}. This will be
+              recorded as an additional payment toward the remaining balance.
+            </div>
+          )}
+          {assessedAsOf && (
+            <div
+              data-testid="collection-assessed-as-of"
+              className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[12px] text-amber-900"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                The receipt is dated <strong>today</strong>: the cash goes into today&apos;s drawer
+                and today&apos;s Collection Report. Rebate and penalty are judged as of{' '}
+                <strong>{fmtDate(assessedAsOf)}</strong>, and the receipt notes say so.
+              </span>
             </div>
           )}
           {single && !isFullyPaid && !alreadyPaidOnChosenDate && isBackdated && (
             <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-[12px] text-blue-800">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              This payment will be recorded for {fmtDate(form.paymentDate)}, not today — make sure
+              This payment will be recorded for {fmtDate(receiptDate)}, not today — make sure
               that&apos;s intentional (e.g. entering a collection from a prior day).
             </div>
           )}
@@ -1567,7 +1595,8 @@ function PaymentPanel({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Payment date <span className="text-red-500">*</span>
+                {onSession ? 'Rebate / penalty as of' : 'Payment date'}{' '}
+                <span className="text-red-500">*</span>
               </label>
               <input
                 required
@@ -1582,6 +1611,11 @@ function PaymentPanel({
                 onChange={(e) => setForm({ ...form, paymentDate: e.target.value })}
                 className={fieldClass}
               />
+              {onSession && (
+                <p className="mt-1 text-[11px] text-ink-muted">
+                  The receipt is dated today. This date only decides on time or late.
+                </p>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>

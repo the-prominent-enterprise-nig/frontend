@@ -441,6 +441,8 @@ export interface ArTenderInput {
 export interface RecordArPaymentInput {
   amount: number
   paymentDate: string
+  /** Collections override: judge rebate/penalty as of this earlier day; the receipt keeps paymentDate. */
+  assessedAsOf?: string
   method?: PaymentMethod
   /** Same per-branch configured payment method POS checkout uses (POS Collections). */
   paymentMethodConfigId?: string
@@ -621,6 +623,8 @@ export interface BulkPayInstallmentLineInput {
 export interface BulkRecordArPaymentInput {
   lines: BulkPayInstallmentLineInput[]
   paymentDate: string
+  /** Collections override: judge rebate/penalty as of this earlier day; the receipt keeps paymentDate. */
+  assessedAsOf?: string
   method?: PaymentMethod
   paymentMethodConfigId?: string
   paymentMethodOptionId?: string
