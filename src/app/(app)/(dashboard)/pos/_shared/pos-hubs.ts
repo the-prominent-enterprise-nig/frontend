@@ -33,7 +33,15 @@ import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { RESERVATION_ACCESS } from '@/src/libs/guards/shared-ownership'
-import { canManagePosSettings, canNavigate, type SessionUser } from '@/src/libs/guards/permission'
+import {
+  ADMIN_ROLE_PERMISSIONS,
+  POS_SETTINGS_PERMISSIONS,
+  can,
+  canManagePosSettings,
+  canNavigate,
+  isAdmin,
+  type SessionUser,
+} from '@/src/libs/guards/permission'
 
 /**
  * POS's sidebar hubs — six groups, named and ordered as the client's "Proposed
@@ -592,4 +600,46 @@ export function visiblePosTabHrefs(session: SessionUser | null): string[] {
     }
     return holdsAny(session, tab.permissions) ? [tab.href] : []
   })
+}
+
+/**
+ * What the sidebar row of a hub requires: any one permission of a tab the row
+ * can open. A configOnly tab (Settings) counts through the rows
+ * canManagePosSettings reads, so a role that holds only a settings toggle (say
+ * Terminals) still gets the Operations & Admin row, and so does an admin. An
+ * empty list means the hub is not gated by a permission.
+ */
+export function posHubNavPermissions(hub: PosHub): string[] {
+  const tabs = hub.tabs.filter((tab) => !tab.configOnly)
+  const ungated = !hub.permission && tabs.some((tab) => posTabPermissions(tab).length === 0)
+  if (ungated) return []
+  const settings = hub.tabs.some((tab) => tab.configOnly)
+    ? [...POS_SETTINGS_PERMISSIONS, ...ADMIN_ROLE_PERMISSIONS]
+    : []
+  return [...(hub.permission ?? tabs.flatMap((tab) => posTabPermissions(tab))), ...settings]
+}
+
+/**
+ * The POS Settings pages, in the order of the left rail, and what each page
+ * needs to open (its own guard). The Settings area itself opens for anyone
+ * canManagePosSettings; each page then shows only to a role that can open it, so
+ * a role with one settings toggle lands on its page, not on General.
+ */
+export const POS_SETTINGS_PAGES: { href: string; permissions: string[] }[] = [
+  { href: '/pos/settings/general', permissions: [POS_PERMISSIONS.CONFIG_READ] },
+  { href: '/pos/settings/payment-methods', permissions: [POS_PERMISSIONS.CONFIG_READ] },
+  { href: '/pos/settings/terminals', permissions: [POS_PERMISSIONS.TERMINALS_READ] },
+  { href: '/pos/settings/receipt-branding', permissions: [POS_PERMISSIONS.CONFIG_READ] },
+  { href: '/pos/settings/financing-terms', permissions: [POS_PERMISSIONS.FINANCING_TERMS_READ] },
+  { href: '/pos/settings/tpf-providers', permissions: [POS_PERMISSIONS.TPF_PROVIDERS_READ] },
+  { href: '/pos/settings/override-reasons', permissions: [POS_PERMISSIONS.CONFIG_MANAGE] },
+  { href: '/pos/settings/customer-display', permissions: [POS_PERMISSIONS.SESSIONS_READ] },
+]
+
+/** The Settings pages this person can open. An admin sees them all. */
+export function visiblePosSettingsHrefs(session: SessionUser): string[] {
+  if (isAdmin(session)) return POS_SETTINGS_PAGES.map((page) => page.href)
+  return POS_SETTINGS_PAGES.filter((page) => page.permissions.some((p) => can(session, p))).map(
+    (page) => page.href
+  )
 }

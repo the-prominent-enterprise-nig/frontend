@@ -196,7 +196,7 @@ export function canNavigateModule(user: SessionUser, module: string): boolean {
 }
 
 // Permissions granted by the admin role
-const ADMIN_ROLE_PERMISSIONS = ['admin:roles:manage', 'admin:permissions:manage'] as const
+export const ADMIN_ROLE_PERMISSIONS = ['admin:roles:manage', 'admin:permissions:manage'] as const
 
 // Check if user is an admin (assigned the admin role)
 export function isAdmin(user: PermissionHolder): boolean {

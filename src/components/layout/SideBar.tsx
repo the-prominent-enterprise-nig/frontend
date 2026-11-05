@@ -79,7 +79,7 @@ import {
   REPORTS_HUB,
   SALES_COUNTER_HUB,
   posHubActiveHrefs,
-  posTabPermissions,
+  posHubNavPermissions,
   type PosHub,
 } from '@/src/app/(app)/(dashboard)/pos/_shared/pos-hubs'
 import SidebarSearch, { type SearchEntry } from './SidebarSearch'
@@ -198,15 +198,11 @@ function hubNavItem(hub: Hub, label: string, icon: LucideIcon): NavItem {
  * page — and lit on the hub's routes.
  */
 function posHubNavItem(hub: PosHub, label: string, icon: LucideIcon): NavItem {
-  // A configOnly tab (Settings) lists no permission because its check is any of
-  // several POS "manage" rows (canManagePosSettings), not because anyone may
-  // open it. It doesn't make the hub ungated: the roles that pass that check
-  // hold the hub's other tabs anyway.
-  const tabs = hub.tabs.filter((tab) => !tab.configOnly)
-  const ungated = !hub.permission && tabs.some((tab) => posTabPermissions(tab).length === 0)
-  const permissions = ungated
-    ? []
-    : (hub.permission ?? tabs.flatMap((tab) => posTabPermissions(tab)))
+  // A configOnly tab (Settings) lists no permission of its own: its check is any
+  // of several POS "manage" rows (canManagePosSettings). posHubNavPermissions
+  // adds those rows to the hub's, so a role that holds only a settings toggle
+  // (Terminals, say) still gets the row; it doesn't make the hub ungated.
+  const permissions = posHubNavPermissions(hub)
   const { exact, prefix } = posHubActiveHrefs(hub)
   return {
     label,

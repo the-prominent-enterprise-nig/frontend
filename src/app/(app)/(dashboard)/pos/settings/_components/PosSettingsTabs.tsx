@@ -36,32 +36,38 @@ const GROUPS: TabGroup[] = [
   },
 ]
 
-export function PosSettingsTabs() {
+/** `visibleHrefs`: the pages this person can open (visiblePosSettingsHrefs). A role with
+ * one settings toggle sees only its own page, not the whole rail. */
+export function PosSettingsTabs({ visibleHrefs }: { visibleHrefs: string[] }) {
   const pathname = usePathname()
   return (
     <nav
       aria-label="POS settings tabs"
       className="w-full border-b border-gray-200 bg-white px-3 py-5 md:w-56 md:shrink-0 md:border-r md:border-b-0"
     >
-      {GROUPS.map((group, i) => (
-        <div key={i} className={i > 0 ? 'mt-4 border-t border-gray-100 pt-4' : ''}>
-          {group.items.map(({ label, href, icon: Icon }) => {
-            const active = pathname.startsWith(href)
-            return (
-              <Link
-                key={href}
-                href={href}
-                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  active ? 'bg-purple-50 text-purple-700' : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <Icon size={15} />
-                {label}
-              </Link>
-            )
-          })}
-        </div>
-      ))}
+      {GROUPS.map((group) => ({
+        items: group.items.filter((item) => visibleHrefs.includes(item.href)),
+      }))
+        .filter((group) => group.items.length > 0)
+        .map((group, i) => (
+          <div key={i} className={i > 0 ? 'mt-4 border-t border-gray-100 pt-4' : ''}>
+            {group.items.map(({ label, href, icon: Icon }) => {
+              const active = pathname.startsWith(href)
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                    active ? 'bg-purple-50 text-purple-700' : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <Icon size={15} />
+                  {label}
+                </Link>
+              )
+            })}
+          </div>
+        ))}
     </nav>
   )
 }
