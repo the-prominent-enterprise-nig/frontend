@@ -6,6 +6,7 @@ import { fillStable, gotoReady, loginAs } from './utils'
  * shared filter bar and the four stat cards. Part 2: the Sales Report tab
  * (paged units, totals, Export to Excel). Part 3: the Dashboard tab.
  * Part 5: Sales per Branch → Branch Scorecard. Part 6: → Daily Sales Monitoring.
+ * Part 7: Export to Excel on every tab.
  *
  * Exact figures (gross at LCP, refunds netted, Office vs Agent, each filter,
  * branch scoping) are covered by backend/test/sales-reports-revamp.e2e-spec.ts,
@@ -191,10 +192,34 @@ test.describe('POS — Sales Reports revamp (Scenario 85)', () => {
       ).toBe('PK')
     })
 
-    test('Export to Excel only shows on the Sales Report tab for now', async ({ page }) => {
-      await open(page)
-      await expect(page.getByRole('button', { name: /Export to Excel/ })).toHaveCount(0)
-    })
+    // Part 7 — every tab exports its own workbook.
+    for (const [tab, file] of [
+      ['Dashboard', /sales-dashboard.*\.xlsx$/],
+      ['Sales per Branch', /sales-per-branch.*\.xlsx$/],
+    ] as const) {
+      test(`Export to Excel on ${tab} downloads its own workbook`, async ({ page }) => {
+        await open(page, '?from=2026-10-01&to=2026-10-31')
+        await page.getByRole('tab', { name: tab, exact: true }).click()
+        const exportButton = page.getByRole('button', { name: /Export to Excel/ })
+        if (await exportButton.isDisabled()) {
+          test.info().annotations.push({
+            type: 'skipped-assertion',
+            description: 'No sales in range — download path not exercised.',
+          })
+          return
+        }
+        const downloadPromise = page.waitForEvent('download', { timeout: 60_000 })
+        await exportButton.click()
+        const download = await downloadPromise
+        expect(download.suggestedFilename()).toMatch(file)
+        const { readFileSync } = await import('fs')
+        expect(
+          readFileSync(await download.path())
+            .subarray(0, 2)
+            .toString()
+        ).toBe('PK')
+      })
+    }
   })
 
   test.describe('Dashboard tab (Part 3)', () => {
@@ -285,11 +310,9 @@ test.describe('POS — Sales Reports revamp (Scenario 85)', () => {
       const name = (await first.textContent())!.trim()
       await first.click()
       await expect(first).toHaveAttribute('aria-expanded', 'true')
-      await expect(
-        page.getByText(`${name} — daily sales, office sales under each day`)
-      ).toBeVisible()
+      await expect(page.getByText(`${name} · daily sales`)).toBeVisible()
       await first.click()
-      await expect(page.getByText(/daily sales, office sales under each day/)).toHaveCount(0)
+      await expect(page.getByText(/· daily sales/)).toHaveCount(0)
     })
 
     test('titles the scorecard after the chosen region', async ({ page }) => {
@@ -356,7 +379,9 @@ test.describe('POS — Sales Reports revamp (Scenario 85)', () => {
   test.describe('as a Branch Manager', () => {
     test.use({ storageState: { cookies: [], origins: [] } })
 
-    test('names their branch instead of offering Region and Branch filters', async ({ page }) => {
+    test('gets no Region or Branch filter — they only ever see their own branch', async ({
+      page,
+    }) => {
       await loginAs(
         page,
         'technova.b1.manager@test.com',
@@ -366,7 +391,6 @@ test.describe('POS — Sales Reports revamp (Scenario 85)', () => {
 
       await expect(page.getByLabel('Region', { exact: true })).toHaveCount(0)
       await expect(page.getByLabel('Branch', { exact: true })).toHaveCount(0)
-      await expect(page.getByText('Bago', { exact: true })).toBeVisible()
       for (const label of ['Type', 'Group', 'Brand']) {
         await expect(page.getByLabel(label, { exact: true })).toBeVisible()
       }

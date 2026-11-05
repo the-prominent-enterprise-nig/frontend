@@ -103,7 +103,9 @@ function MonitoringGrid({ data }: { data: DailyMonitoring }): React.JSX.Element 
         {allCollapsed ? 'Show all weeks' : 'Hide all weeks'}
       </button>
       <div className="max-h-[75vh] overflow-auto rounded-lg border border-zinc-200">
-        <table className="min-w-max text-[11px]">
+        {/* w-full: a branch-locked user gets one or two columns, which should
+            fill the panel instead of sitting in a narrow strip. */}
+        <table className="w-full min-w-max text-[11px]">
           <GridHead columns={columns} />
           <tbody>
             {weeks.map((week) => (

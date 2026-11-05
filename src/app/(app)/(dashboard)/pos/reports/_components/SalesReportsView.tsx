@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import ExportButton from '@/src/components/common/ExportButton'
-import type { SalesFilterOptions } from '@/src/schema/pos/sales-reports'
+import type { SalesFilterOptions, SalesReportsParams } from '@/src/schema/pos/sales-reports'
 import { getSalesFilterOptions, getSalesSummary } from '../_actions/get-sales-reports'
 import {
   useSalesReportFilters,
@@ -18,10 +18,15 @@ import SalesStatCards from './SalesStatCards'
 /**
  * Scenario 85 — Sales Reports: "Units and sales by model and brand, month by
  * month." One filter bar and one row of stat cards shared by three tabs.
- * Each tab's body arrives in its own part of the scenario (Sales Report in
- * Part 2, Dashboard in Part 3, Sales per Branch in Parts 5–6), and so does
- * the per-tab Export to Excel (Part 7).
+ * Export to Excel follows the active tab: the Dashboard's month tables, the
+ * Branch Scorecard with Daily Sales Monitoring, or every unit sold.
  */
+
+const EXPORT_ENDPOINTS: Record<SalesReportsTab, string> = {
+  dashboard: '/pos/reports/sales/by-month/export',
+  branch: '/pos/reports/sales/scorecard/export',
+  report: '/pos/reports/sales/lines/export',
+}
 
 const TABS: { key: SalesReportsTab; label: string }[] = [
   { key: 'dashboard', label: 'Dashboard' },
@@ -31,6 +36,12 @@ const TABS: { key: SalesReportsTab; label: string }[] = [
 
 /** What the Sales per Branch views are scoped to: the caller's own branch,
  * the chosen branch, the chosen region ("Negros Operations"), or all. */
+/** A branch-locked non-owner sees one branch, so "per Branch" would mislead.
+ * The Business Owner always keeps "Sales per Branch". */
+function tabLabel(tab: SalesReportsTab, label: string, branchLocked: boolean): string {
+  return tab === 'branch' && branchLocked ? 'Branch Sales' : label
+}
+
 function scopeTitle(filters: Filters, options: SalesFilterOptions | undefined): string {
   const name = (list: { id: string; name: string }[] | undefined, id: string) =>
     list?.find((o) => o.id === id)?.name
@@ -41,8 +52,19 @@ function scopeTitle(filters: Filters, options: SalesFilterOptions | undefined): 
   return region ? `${region} Operations` : 'All Operations'
 }
 
-export default function SalesReportsView(): React.JSX.Element {
+/** Region and Branch are Business Owner only: for everyone else they are
+ * hidden on every tab and left out of every query and export. */
+function withoutScope(params: SalesReportsParams): SalesReportsParams {
+  return { ...params, regions: undefined, branchIds: undefined }
+}
+
+export default function SalesReportsView({ isOwner }: { isOwner: boolean }): React.JSX.Element {
   const report = useSalesReportFilters()
+  const hideScope = !isOwner
+  const params = hideScope ? withoutScope(report.apiParams) : report.apiParams
+  const hasFilters = hideScope
+    ? Boolean(report.filters.type || report.filters.group || report.filters.brand)
+    : report.hasFilters
 
   const options = useQuery({
     queryKey: ['pos-sales-report-filters'],
@@ -54,9 +76,9 @@ export default function SalesReportsView(): React.JSX.Element {
   })
 
   const summary = useQuery({
-    queryKey: ['pos-sales-report-summary', report.apiParams],
+    queryKey: ['pos-sales-report-summary', params],
     queryFn: async () => {
-      const res = await getSalesSummary(report.apiParams)
+      const res = await getSalesSummary(params)
       if (!res.success || !res.data) throw new Error(res.error ?? 'Could not load sales')
       return res.data
     },
@@ -72,14 +94,13 @@ export default function SalesReportsView(): React.JSX.Element {
             Units and sales by model and brand, month by month.
           </p>
         </div>
-        {/* Sales Report tab only until Part 7 gives every tab its own export. */}
-        {report.filters.tab === 'report' && (
-          <ExportButton
-            endpoint="/pos/reports/sales/lines/export"
-            params={report.apiParams}
-            disabled={!summary.data?.lineCount}
-          />
-        )}
+        {/* Each tab exports its own workbook, with the same filters. The Sales
+            per Branch export is the scorecard month, so it is never empty. */}
+        <ExportButton
+          endpoint={EXPORT_ENDPOINTS[report.filters.tab]}
+          params={params}
+          disabled={report.filters.tab !== 'branch' && !summary.data?.lineCount}
+        />
       </header>
 
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Sales report views">
@@ -96,7 +117,7 @@ export default function SalesReportsView(): React.JSX.Element {
                 : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50'
             }`}
           >
-            {t.label}
+            {tabLabel(t.key, t.label, !isOwner && Boolean(options.data?.branchLocked))}
           </button>
         ))}
       </div>
@@ -109,7 +130,8 @@ export default function SalesReportsView(): React.JSX.Element {
         onFilter={report.setFilter}
         onRegion={report.setRegion}
         onClear={report.clearFilters}
-        hasFilters={report.hasFilters}
+        hasFilters={hasFilters}
+        hideScope={hideScope}
       />
 
       {summary.isError && (
@@ -121,13 +143,17 @@ export default function SalesReportsView(): React.JSX.Element {
       <SalesStatCards summary={summary.data} loading={summary.isLoading} />
 
       {report.filters.tab === 'report' ? (
-        <SalesReportTab params={report.apiParams} />
+        <SalesReportTab params={params} />
       ) : report.filters.tab === 'dashboard' ? (
-        <DashboardTab params={report.apiParams} />
+        <DashboardTab params={params} />
       ) : (
         <SalesPerBranchTab
-          params={report.apiParams}
-          title={scopeTitle(report.filters, options.data)}
+          params={params}
+          title={
+            hideScope && !options.data?.branchLocked
+              ? 'All Operations'
+              : scopeTitle(report.filters, options.data)
+          }
         />
       )}
     </div>

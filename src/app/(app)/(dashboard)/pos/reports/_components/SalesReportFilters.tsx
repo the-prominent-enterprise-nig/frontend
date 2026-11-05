@@ -14,6 +14,8 @@ interface Props {
   onRegion: (region: string, branchStillValid: boolean) => void
   onClear: () => void
   hasFilters: boolean
+  /** Hide Region and Branch (everyone but the Business Owner). */
+  hideScope?: boolean
 }
 
 type Option = { id: string; name: string }
@@ -32,6 +34,7 @@ export default function SalesReportFilters({
   onRegion,
   onClear,
   hasFilters,
+  hideScope = false,
 }: Props): React.JSX.Element {
   const branches = (options?.branches ?? []).filter(
     (b) => !filters.region || b.region === filters.region
@@ -49,7 +52,7 @@ export default function SalesReportFilters({
         {/* A branch-tied user (Branch Manager) only ever sees their own
             branch, so Region and Branch would do nothing — name the branch
             instead of offering filters that can't change the figures. */}
-        {options?.branchLocked ? (
+        {hideScope ? null : options?.branchLocked ? (
           <div className="flex flex-col gap-1 text-xs text-zinc-600">
             Branch
             <span className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-900">

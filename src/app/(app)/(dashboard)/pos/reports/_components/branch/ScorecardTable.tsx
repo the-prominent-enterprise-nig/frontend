@@ -165,45 +165,78 @@ function StatusPill({ figures }: { figures: ScorecardFigures }): React.JSX.Eleme
   )
 }
 
+type DailyEntry = ScorecardRow['daily'][number]
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** Day of week for an ISO 'YYYY-MM-DD', read in UTC so the date never shifts. */
+function weekday(day: string): number {
+  return new Date(`${day}T00:00:00Z`).getUTCDay()
+}
+
+/** The month as a calendar: one cell per day, sales on top, office sales under it. */
 function DailyRow({ row }: { row: ScorecardRow }): React.JSX.Element {
+  const lead = row.daily.length ? weekday(row.daily[0].day) : 0
+  const activeDays = row.daily.filter((d) => d.total > 0).length
   return (
     <tr className="bg-zinc-50/70">
-      <td colSpan={HEADERS.length} className="px-3 py-3">
-        <p className="mb-2 text-[11px] font-semibold text-zinc-600">
-          {row.name} — daily sales, office sales under each day
-        </p>
-        <div className="overflow-x-auto">
-          <table className="text-[11px]">
-            <tbody>
-              <tr>
-                {row.daily.map((d) => (
-                  <th
-                    key={d.day}
-                    scope="col"
-                    className="px-2 pb-1 text-right font-medium text-zinc-500"
-                  >
-                    {Number(d.day.slice(8))}
-                  </th>
-                ))}
-              </tr>
-              <tr>
-                {row.daily.map((d) => (
-                  <td key={d.day} className="px-2 text-right tabular-nums text-zinc-900">
-                    {d.total ? peso(d.total) : '·'}
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                {row.daily.map((d) => (
-                  <td key={d.day} className="px-2 text-right tabular-nums text-zinc-500">
-                    {d.office ? peso(d.office) : ''}
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
+      <td colSpan={HEADERS.length} className="px-4 py-4">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <p className="text-xs font-semibold text-zinc-900">
+            {row.name} · daily sales
+            <span className="ml-2 font-normal text-zinc-500">
+              {activeDays} of {row.daily.length} days with sales
+            </span>
+          </p>
+          <DailyLegend />
+        </div>
+        <div className="grid grid-cols-7 gap-1.5">
+          {WEEKDAYS.map((w) => (
+            <span
+              key={w}
+              className="px-2 text-[10px] font-medium tracking-wide text-zinc-500 uppercase"
+            >
+              {w}
+            </span>
+          ))}
+          {Array.from({ length: lead }, (_, i) => (
+            <span key={`pad-${i}`} aria-hidden />
+          ))}
+          {row.daily.map((d) => (
+            <DayCell key={d.day} entry={d} />
+          ))}
         </div>
       </td>
     </tr>
+  )
+}
+
+function DailyLegend(): React.JSX.Element {
+  return (
+    <p className="flex items-center gap-3 text-[11px] text-zinc-500">
+      <span className="font-semibold text-zinc-900">Total sales</span>
+      <span>Office sales</span>
+    </p>
+  )
+}
+
+function DayCell({ entry }: { entry: DailyEntry }): React.JSX.Element {
+  const hasSales = entry.total > 0
+  return (
+    <div
+      className={`rounded-md border px-2 py-1.5 text-right ${hasSales ? 'border-zinc-200 bg-white' : 'border-zinc-100 bg-transparent'}`}
+    >
+      <p className="text-left text-[10px] font-medium text-zinc-500">
+        {Number(entry.day.slice(8))}
+      </p>
+      <p
+        className={`text-xs tabular-nums ${hasSales ? 'font-semibold text-zinc-900' : 'text-zinc-300'}`}
+      >
+        {hasSales ? peso(entry.total) : '—'}
+      </p>
+      <p className="min-h-4 text-[11px] text-zinc-500 tabular-nums">
+        {entry.office ? peso(entry.office) : ''}
+      </p>
+    </div>
   )
 }
