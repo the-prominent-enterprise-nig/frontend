@@ -15,40 +15,96 @@ import {
   isNetMismatchRow,
   type AcknowledgementImportPreview,
 } from '@/src/schema/pos/acknowledgement-import'
+import SegmentedControl from '@/src/components/ui/SegmentedControl'
 import { useReceiptsImport } from '../_hooks/useReceiptsImport'
 import { useImportLookups } from '../_hooks/useImportLookups'
 import { downloadReceiptImportTemplate } from '../_lib/upload-template'
+import { PAID_BY_CUSTOMER } from '../_lib/cells'
 import PreviewTable from './PreviewTable'
+
+/** Who paid the receipts in the file — the customer, or one financing partner.
+ * Covers every row with no Paid by of its own. No option starts selected: the
+ * answer decides which receivable the money clears, so it is never assumed. */
+function PaidByChoice({
+  value,
+  partnerNames,
+  disabled,
+  onChange,
+}: {
+  value: string
+  partnerNames: string[]
+  disabled?: boolean
+  onChange: (value: string) => void
+}) {
+  return (
+    <div className={disabled ? 'pointer-events-none opacity-60' : undefined}>
+      <span className="mb-1 block text-xs font-medium text-gray-800">
+        Who paid these receipts? <span className="text-red-600">*</span>
+      </span>
+      <SegmentedControl
+        name="Who paid these receipts"
+        value={value}
+        onChange={onChange}
+        options={[PAID_BY_CUSTOMER, ...partnerNames].map((n) => ({ value: n, label: n }))}
+      />
+      <span className="mt-1 block text-xs text-gray-500">
+        Applies to every row with no Paid by of its own. A financing partner&apos;s payment clears
+        that partner&apos;s receivable and stays off the customer&apos;s ledger; the customer&apos;s
+        clears their own Accounts Receivable.
+      </span>
+    </div>
+  )
+}
 
 function ChooseStep({
   file,
   busy,
+  paidBy,
+  partnerNames,
+  onPaidBy,
   onFile,
 }: {
   file: File | null
   busy: boolean
+  paidBy: string
+  partnerNames: string[]
+  onPaidBy: (value: string) => void
   onFile: (file: File) => void
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const ready = !!paidBy
   return (
     <section className="space-y-4">
       <div>
         <h2 className="text-base font-semibold text-prominent-purple-900">1. Choose your CSV</h2>
         <p className="mt-1 text-sm text-gray-500">
           Export your sheet as CSV (File → Download → Comma-separated values). You will see every
-          row — and what would be posted — before anything is saved. Delete the two example rows
+          row — and what would be posted — before anything is saved. Delete the three example rows
           from the template first.
         </p>
       </div>
 
+      <PaidByChoice
+        value={paidBy}
+        partnerNames={partnerNames}
+        disabled={busy}
+        onChange={onPaidBy}
+      />
+
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || !ready}
         onClick={() => inputRef.current?.click()}
         className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 bg-white py-10 text-sm text-gray-500 hover:border-purple-700 hover:bg-purple-50 hover:text-purple-800 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-        {busy ? 'Reading your file…' : file ? 'Choose a different file' : 'Choose CSV file'}
+        {busy
+          ? 'Reading your file…'
+          : !ready
+            ? 'Choose who paid first'
+            : file
+              ? 'Choose a different file'
+              : 'Choose CSV file'}
       </button>
       <input
         ref={inputRef}
@@ -155,7 +211,14 @@ export default function ImportReceiptsView() {
 
       <div className="mt-6 space-y-6">
         {(phase === 'choose' || phase === 'previewing') && (
-          <ChooseStep file={imp.file} busy={phase === 'previewing'} onFile={imp.choose} />
+          <ChooseStep
+            file={imp.file}
+            busy={phase === 'previewing'}
+            paidBy={imp.paidBy}
+            partnerNames={lookups.financingPartnerNames}
+            onPaidBy={imp.setPaidBy}
+            onFile={imp.choose}
+          />
         )}
 
         {(phase === 'review' || phase === 'applying') && preview && (
@@ -179,13 +242,20 @@ export default function ImportReceiptsView() {
               </div>
               <button
                 type="button"
-                onClick={imp.reset}
+                onClick={() => imp.reset()}
                 disabled={phase === 'applying'}
                 className="rounded-lg border border-gray-200 px-3 py-1.5 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
                 Choose a different file
               </button>
             </div>
+
+            <PaidByChoice
+              value={imp.paidBy}
+              partnerNames={lookups.financingPartnerNames}
+              disabled={phase === 'applying'}
+              onChange={imp.setPaidBy}
+            />
 
             {blocked && (
               <div className="flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
@@ -229,6 +299,7 @@ export default function ImportReceiptsView() {
                   checking={imp.checking}
                   disabled={phase === 'applying'}
                   lookups={lookups}
+                  paidBy={imp.paidBy}
                   onToggle={imp.toggleExpanded}
                   onRemove={imp.removeRow}
                   onCellsChange={imp.updateCells}
@@ -290,7 +361,7 @@ export default function ImportReceiptsView() {
               </Link>
               <button
                 type="button"
-                onClick={imp.reset}
+                onClick={() => imp.reset()}
                 className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
               >
                 Import another file

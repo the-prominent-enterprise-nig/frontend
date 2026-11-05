@@ -154,18 +154,18 @@ function OpenRequestRow({
         <span className={`${MONO} text-[12.5px] font-medium text-[#17171c]`}>{pr.code}</span>
       </td>
       <td className="px-4 py-[10px] text-[12.5px] text-[#3d3d4a]">
-        {pr.supplier?.name ?? <span className="text-[#a3a3b2]">—</span>}
+        {pr.supplier?.name ?? <span className="text-ink-subtle">—</span>}
       </td>
       <td className="px-4 py-[10px]">
         <StatusBadge status={pr.status} />
       </td>
       <td className="px-4 py-[10px] text-[12.5px] text-[#3d3d4a]">
-        {pr.branch?.name ?? <span className="text-[#a3a3b2]">—</span>}
+        {pr.branch?.name ?? <span className="text-ink-subtle">—</span>}
       </td>
       <td className={`${MONO} px-4 py-[10px] text-right text-[13px] font-semibold`}>
         {fmtPHP(prTotal(pr))}
       </td>
-      <td className="px-4 py-[10px] text-[11.5px] text-[#8b8b9b]">{fmtDate(pr.createdAt)}</td>
+      <td className="px-4 py-[10px] text-[11.5px] text-ink-muted">{fmtDate(pr.createdAt)}</td>
       <td className="px-4 py-[10px]" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-end gap-2">
           <ConvertedPoLink pr={pr} />
@@ -197,7 +197,7 @@ function RequestsEmpty({ view }: { view: RequestsView }): React.ReactElement {
     <div className="flex flex-col items-center gap-2 px-6 py-13 text-center">
       <div className="h-[34px] w-[34px] rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb]" />
       <div className="mt-1 text-[15px] font-semibold">{copy.title}</div>
-      <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">{copy.body}</div>
+      <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#4b4b5a]">{copy.body}</div>
     </div>
   )
 }
@@ -258,7 +258,7 @@ function RequestsTableBody({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-6 w-6 animate-spin text-[#a3a3b2]" />
+        <Loader2 className="h-6 w-6 animate-spin text-ink-subtle" />
       </div>
     )
   }
@@ -284,7 +284,7 @@ function RequestsTableBody({
         </tbody>
       </table>
       {total > items.length && (
-        <div className="border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px] text-[11.5px] text-[#8b8b9b]">
+        <div className="border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px] text-[11.5px] text-ink-muted">
           Showing {items.length} of {total} requests
         </div>
       )}
@@ -297,7 +297,7 @@ function RequestStatus({ pr }: { pr: PurchaseRequestSummary }): React.ReactEleme
   return (
     <div className="flex flex-col items-start gap-[3px]">
       <StatusBadge status={pr.status} />
-      <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
+      <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-ink-muted`}>
         Request
       </span>
     </div>
@@ -305,7 +305,7 @@ function RequestStatus({ pr }: { pr: PurchaseRequestSummary }): React.ReactEleme
 }
 
 function RequestSupplier({ pr }: { pr: PurchaseRequestSummary }): React.ReactElement {
-  if (!pr.supplier) return <span className="text-[12.5px] text-[#a3a3b2]">No supplier yet</span>
+  if (!pr.supplier) return <span className="text-[12.5px] text-ink-subtle">No supplier yet</span>
   return (
     <>
       <SupplierAvatar name={pr.supplier.name} />
@@ -340,7 +340,7 @@ export function RequestGridRows({
               <span className={`${MONO} whitespace-nowrap text-[12.5px] font-medium`}>
                 {pr.code}
               </span>
-              <span className="text-[11px] text-[#8b8b9b]">{fmtPoDate(pr.createdAt)}</span>
+              <span className="text-[11px] text-ink-muted">{fmtPoDate(pr.createdAt)}</span>
             </div>
             <div role="cell" className="flex min-w-0 items-center gap-[9px] pl-1.5">
               <RequestSupplier pr={pr} />
@@ -351,10 +351,10 @@ export function RequestGridRows({
             <span role="cell" className={`${MONO} text-right text-[13px] font-semibold`}>
               {fmtPeso(prTotal(pr))}
             </span>
-            <span role="cell" className="truncate text-[11.5px] text-[#5b5b6b]">
+            <span role="cell" className="truncate text-[11.5px] text-[#4b4b5a]">
               {pr.branch?.name ?? '—'}
             </span>
-            <span role="cell" className="text-[11.5px] text-[#a3a3b2]">
+            <span role="cell" className="text-[11.5px] text-ink-subtle">
               Not ordered yet
             </span>
             <span
@@ -390,7 +390,7 @@ export function RequestCards({
           <div className="flex items-start justify-between gap-[10px]">
             <div className="flex min-w-0 flex-col gap-[3px]">
               <span className={`${MONO} text-[13px] font-medium`}>{pr.code}</span>
-              <span className="text-[11.5px] text-[#8b8b9b]">{fmtPoDate(pr.createdAt)}</span>
+              <span className="text-[11.5px] text-ink-muted">{fmtPoDate(pr.createdAt)}</span>
             </div>
             <RequestStatus pr={pr} />
           </div>

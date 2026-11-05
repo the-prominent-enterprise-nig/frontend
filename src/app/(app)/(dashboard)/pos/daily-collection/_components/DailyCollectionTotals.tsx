@@ -310,8 +310,10 @@ function Verdict({
           </>
         ) : (
           <>
-            Closed sessions collected {peso(report.settledCashCollection)} — that is what this count
-            must come to.
+            {(report.turnoverInTotal ?? 0) > 0.005
+              ? `Closed sessions collected ${peso(report.settledCashCollection)}, plus ${peso(report.turnoverInTotal)} turned over by another branch`
+              : `Closed sessions collected ${peso(report.settledCashCollection)}`}{' '}
+            — that is what this count must come to.
             {!balanced && ' Recount, then check the day’s sessions before signing.'}
           </>
         )}

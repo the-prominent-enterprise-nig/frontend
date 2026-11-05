@@ -75,20 +75,26 @@ async function send<T>(
   }
 }
 
+/** Who paid the rows that have no Paid by cell of their own, from the form. */
+function paidByOf(formData: FormData): Record<string, string> {
+  const paidBy = formData.get('paidBy')
+  return typeof paidBy === 'string' && paidBy ? { paidBy } : {}
+}
+
 /** Dry run — reads the CSV and reports what each row would do. Writes nothing.
- * FormData fields: `file`. */
+ * FormData fields: `file`, `paidBy`. */
 export async function previewAcknowledgementReceiptImport(
   formData: FormData
 ): Promise<ApiResponse<AcknowledgementImportPreview>> {
-  return send<AcknowledgementImportPreview>('import/preview', formData, {})
+  return send<AcknowledgementImportPreview>('import/preview', formData, paidByOf(formData))
 }
 
 /** The real import — re-sends the same file once the user has read the
- * preview. FormData field: `file`. */
+ * preview. FormData fields: `file`, `paidBy`. */
 export async function commitAcknowledgementReceiptImport(
   formData: FormData
 ): Promise<ApiResponse<AcknowledgementImportResult>> {
-  const res = await send<AcknowledgementImportResult>('import', formData, {})
+  const res = await send<AcknowledgementImportResult>('import', formData, paidByOf(formData))
   if (res.success) revalidatePath('/pos/collections/acknowledgement')
   return res
 }

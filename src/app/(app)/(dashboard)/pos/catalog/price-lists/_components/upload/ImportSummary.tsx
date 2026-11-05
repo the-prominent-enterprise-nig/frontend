@@ -66,14 +66,14 @@ export function ImportSummary({
             className={`flex flex-col gap-1 px-4 py-3 ${index % 2 === 1 ? 'border-l border-[#eeeef1]' : ''} lg:border-l lg:first:border-l-0 ${index > 1 ? 'border-t border-[#eeeef1] lg:border-t-0' : ''}`}
           >
             <span
-              className={`${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`}
+              className={`${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4b4b5a]`}
             >
               {stat.label}
             </span>
             <span className={`${MONO} text-[19px] font-semibold tracking-tight ${stat.tone}`}>
               {stat.value.toLocaleString()}
             </span>
-            <span className="text-[11px] text-[#5b5b6b]">{stat.note}</span>
+            <span className="text-[11px] text-[#4b4b5a]">{stat.note}</span>
           </div>
         ))}
       </div>
@@ -115,7 +115,7 @@ export function ImportSummary({
       )}
 
       {result.skippedBlankRows > 0 && (
-        <p className="text-xs text-[#8b8b9b]">
+        <p className="text-xs text-ink-muted">
           {result.skippedBlankRows} fully blank row(s) ignored.
         </p>
       )}

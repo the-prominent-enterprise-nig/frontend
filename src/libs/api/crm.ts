@@ -54,7 +54,6 @@ import type {
   CreateInstallmentAccountInput,
   UpdateInstallmentAccountInput,
   EarlyPayoffInput,
-  RecordPaymentInput,
 } from '@/src/schema/crm/installment-account'
 import type { CreateAgentInput, UpdateAgentInput } from '@/src/schema/crm/agent'
 import type { InstallmentSchedule } from '@/src/schema/pos'
@@ -363,11 +362,6 @@ export const installmentAccountsApi = {
     api.get<EarlyPayoffQuote>(
       `/crm/installment-accounts/${id}/early-payoff-quote`,
       asOf ? { asOf } : undefined
-    ),
-  recordPayment: (id: string, body: RecordPaymentInput) =>
-    api.post<InstallmentAccountDetail & { pointEarned: boolean; monthsCovered: number }>(
-      `/crm/installment-accounts/${id}/payments`,
-      body
     ),
   requestGraduation: (id: string, body: { notes?: string }) =>
     api.post<CategoryGraduationRequest>(

@@ -114,7 +114,7 @@ export function resolveCollectionPayment(
   }
 }
 
-export type CollectionIssueField = 'amount' | 'bankReference' | 'option' | 'cr'
+export type CollectionIssueField = 'amount' | 'bankReference' | 'option'
 
 export interface CollectionIssue {
   /** Zero-based payment, or null for the collection as a whole. */
@@ -136,9 +136,10 @@ export function collectionIssues(args: {
      * when its method offers any; null when there is nothing to choose. */
     option?: { label: string; chosen: boolean } | null
   }[]
-  cr: string
 }): CollectionIssue[] {
-  const { rows, cr } = args
+  // The CR number is no longer an issue: it is optional (Oct 29 UAT POS-14 /
+  // CC-01).
+  const { rows } = args
   const several = rows.length > 1
   const issues: CollectionIssue[] = []
   rows.forEach((r, i) => {
@@ -164,6 +165,5 @@ export function collectionIssues(args: {
       issues.push({ row: i, field: 'bankReference', message: `${who}Bank reference number` })
     }
   })
-  if (!cr.trim()) issues.push({ row: null, field: 'cr', message: 'CR number' })
   return issues
 }

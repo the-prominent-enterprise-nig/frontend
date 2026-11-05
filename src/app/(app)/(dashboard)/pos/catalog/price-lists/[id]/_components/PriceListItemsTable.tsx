@@ -191,7 +191,7 @@ export function PriceListItemsTable({
             <button
               type="button"
               onClick={() => setSelected(new Set())}
-              className="rounded-lg px-2 py-1 text-xs text-[#5b5b6b] hover:text-[#17171c]"
+              className="rounded-lg px-2 py-1 text-xs text-[#4b4b5a] hover:text-[#17171c]"
             >
               Clear
             </button>
@@ -203,7 +203,7 @@ export function PriceListItemsTable({
         className={`overflow-hidden rounded-xl border border-[#e4e4e9] bg-white transition-opacity ${isFetching ? 'opacity-60' : ''}`}
       >
         {isLoading ? (
-          <div className="flex items-center justify-center py-12 text-[#8b8b9b]">
+          <div className="flex items-center justify-center py-12 text-ink-muted">
             <Loader2 className="h-5 w-5 animate-spin" />
           </div>
         ) : items.length === 0 ? (
@@ -211,7 +211,7 @@ export function PriceListItemsTable({
             <p className="text-sm font-medium text-[#3d3d4a]">
               {search ? `No items match "${search}"` : 'No items priced yet'}
             </p>
-            <p className="mx-auto mt-1 max-w-md text-xs text-[#5b5b6b]">
+            <p className="mx-auto mt-1 max-w-md text-xs text-[#4b4b5a]">
               {search
                 ? 'Only this list is searched — an item missing here may still exist in the catalog.'
                 : 'Until an item is priced here, a sale under this use type falls through to the next list by priority.'}
@@ -221,7 +221,7 @@ export function PriceListItemsTable({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead
-                className={`bg-[#fbfbfc] text-left ${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`}
+                className={`bg-[#fbfbfc] text-left ${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4b4b5a]`}
               >
                 <tr>
                   {canEdit && (
@@ -271,7 +271,7 @@ export function PriceListItemsTable({
                       )}
                       <td className="px-4 py-2">
                         <div className="font-medium text-[#3d3d4a]">{i.item.name}</div>
-                        <div className="text-xs text-[#8b8b9b]">{i.item.sku}</div>
+                        <div className="text-xs text-ink-muted">{i.item.sku}</div>
                       </td>
                       {FIELDS.map((field) => (
                         <td key={field.key} className="px-4 py-2 text-right">
@@ -294,9 +294,9 @@ export function PriceListItemsTable({
                               }`}
                             />
                           ) : field.key === 'minQty' ? (
-                            <span className="text-[#5b5b6b]">{i.minQty ?? '—'}</span>
+                            <span className="text-[#4b4b5a]">{i.minQty ?? '—'}</span>
                           ) : (
-                            <span className="text-[#5b5b6b]">
+                            <span className="text-[#4b4b5a]">
                               {money(i[field.key as keyof PriceListItem] as string | number | null)}
                             </span>
                           )}
@@ -309,7 +309,7 @@ export function PriceListItemsTable({
                               type="button"
                               onClick={() => handleRemoveOne(i)}
                               aria-label={`Remove ${i.item.name}`}
-                              className="rounded p-1 text-[#8b8b9b] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                              className="rounded p-1 text-ink-muted hover:bg-[#fdeceb] hover:text-[#b42318]"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -325,7 +325,7 @@ export function PriceListItemsTable({
         )}
 
         {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-[#eeeef1] px-4 py-3 text-sm text-[#5b5b6b]">
+          <div className="flex items-center justify-between border-t border-[#eeeef1] px-4 py-3 text-sm text-[#4b4b5a]">
             <span>
               Page {page} of {totalPages} ({total} total)
             </span>
@@ -373,7 +373,7 @@ export function PriceListItemsTable({
               type="button"
               onClick={() => setDrafts({})}
               disabled={isSaving}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-[#5b5b6b] hover:bg-[#f1f1f4] disabled:opacity-50"
+              className="rounded-lg px-4 py-2 text-sm font-medium text-[#4b4b5a] hover:bg-[#f1f1f4] disabled:opacity-50"
             >
               Discard changes
             </button>

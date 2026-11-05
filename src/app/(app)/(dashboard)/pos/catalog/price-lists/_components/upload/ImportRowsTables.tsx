@@ -34,7 +34,7 @@ export function SkippedRowsTable({ rows }: { rows: PriceListImportRow[] }) {
       </div>
       <div className="max-h-[26rem] overflow-y-auto">
         <table className="w-full text-left text-sm">
-          <thead className="sticky top-0 bg-white text-[11px] uppercase tracking-wide text-[#5b5b6b]">
+          <thead className="sticky top-0 bg-white text-[11px] uppercase tracking-wide text-[#4b4b5a]">
             <tr className="border-b border-[#eeeef1]">
               <th className="px-4 py-2 font-semibold">Row</th>
               <th className="px-4 py-2 font-semibold">Brand</th>
@@ -45,14 +45,14 @@ export function SkippedRowsTable({ rows }: { rows: PriceListImportRow[] }) {
           <tbody>
             {rows.map((r) => (
               <tr key={r.row} className="border-b border-[#f4f4f6] last:border-0">
-                <td className={`${MONO} px-4 py-2 text-xs text-[#8b8b9b]`}>{r.row}</td>
+                <td className={`${MONO} px-4 py-2 text-xs text-ink-muted`}>{r.row}</td>
                 <td className="px-4 py-2">{r.brand || '—'}</td>
                 <td className={`${MONO} px-4 py-2 text-xs`}>{r.model || '—'}</td>
                 <td className="px-4 py-2">
                   <span className="mr-2 inline-flex rounded-md bg-[#fbeed8] px-2 py-0.5 text-[11px] font-medium text-[#8a4b06]">
                     {SKIPPED_STATUS_LABELS[r.status] ?? r.status}
                   </span>
-                  <span className="text-[#5b5b6b]">{r.message}</span>
+                  <span className="text-[#4b4b5a]">{r.message}</span>
                 </td>
               </tr>
             ))}
@@ -76,7 +76,7 @@ export function ChangesTable({
     <section className="rounded-xl border border-[#e4e4e9] bg-white">
       <div className="border-b border-[#eeeef1] px-4 py-3">
         <h3 className="text-sm font-semibold text-prominent-purple-900">What will be uploaded</h3>
-        <p className="text-xs text-[#5b5b6b]">
+        <p className="text-xs text-[#4b4b5a]">
           {rows.length > shown.length
             ? `Showing the first ${shown.length} of ${rows.length.toLocaleString()} rows.`
             : `${rows.length.toLocaleString()} row${rows.length === 1 ? '' : 's'}.`}
@@ -84,7 +84,7 @@ export function ChangesTable({
       </div>
       <div className="max-h-[26rem] overflow-y-auto">
         <table className="w-full text-left text-sm">
-          <thead className="sticky top-0 bg-white text-[11px] uppercase tracking-wide text-[#5b5b6b]">
+          <thead className="sticky top-0 bg-white text-[11px] uppercase tracking-wide text-[#4b4b5a]">
             <tr className="border-b border-[#eeeef1]">
               <th className="px-4 py-2 font-semibold">Row</th>
               {showPriceUse && <th className="px-4 py-2 font-semibold">Price use</th>}
@@ -110,11 +110,11 @@ function ChangeRow({ row, showPriceUse }: { row: PriceListImportRow; showPriceUs
   const isUpdate = row.status === 'update'
   return (
     <tr className="border-b border-[#f4f4f6] last:border-0">
-      <td className={`${MONO} px-4 py-2 text-xs text-[#8b8b9b]`}>{row.row}</td>
+      <td className={`${MONO} px-4 py-2 text-xs text-ink-muted`}>{row.row}</td>
       {showPriceUse && <td className="px-4 py-2 text-xs font-medium">{row.priceUse}</td>}
       <td className="px-4 py-2">
         <div className="font-medium text-prominent-purple-900">{row.itemName}</div>
-        <div className={`${MONO} text-xs text-[#8b8b9b]`}>{row.itemSku}</div>
+        <div className={`${MONO} text-xs text-ink-muted`}>{row.itemSku}</div>
       </td>
       <td className="px-4 py-2">
         <span
@@ -125,14 +125,14 @@ function ChangeRow({ row, showPriceUse }: { row: PriceListImportRow; showPriceUs
           {isUpdate ? 'Update' : 'Add'}
         </span>
       </td>
-      <td className={`${MONO} px-4 py-2 text-right text-xs text-[#5b5b6b]`}>
+      <td className={`${MONO} px-4 py-2 text-right text-xs text-[#4b4b5a]`}>
         {money(row.currentPrice)}
       </td>
       <td className={`${MONO} px-4 py-2 text-right text-xs font-semibold`}>{money(row.price)}</td>
       <td className="px-4 py-2 text-xs text-[#8a4b06]">
         {row.warning}
         {row.matchedBy === 'sku' && (
-          <span className="ml-1 text-[#8b8b9b]">{row.warning ? '· ' : ''}matched by SKU</span>
+          <span className="ml-1 text-ink-muted">{row.warning ? '· ' : ''}matched by SKU</span>
         )}
       </td>
     </tr>

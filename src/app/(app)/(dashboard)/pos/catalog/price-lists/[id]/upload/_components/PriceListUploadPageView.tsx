@@ -29,7 +29,7 @@ function BackLink({ priceListId, label }: { priceListId: string; label: string }
   return (
     <Link
       href={`/pos/catalog/price-lists/${priceListId}`}
-      className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#5b5b6b] hover:text-[#3f1490]"
+      className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#4b4b5a] hover:text-[#3f1490]"
     >
       <ArrowLeft className="h-3.5 w-3.5" />
       {label}
@@ -46,7 +46,7 @@ export function PriceListUploadPageView({ priceListId }: { priceListId: string }
 
   if (isLoading) {
     return (
-      <div className="flex min-h-full items-center justify-center py-24 text-[#8b8b9b]">
+      <div className="flex min-h-full items-center justify-center py-24 text-ink-muted">
         <Loader2 className="h-6 w-6 animate-spin" />
       </div>
     )
@@ -85,7 +85,7 @@ export function PriceListUploadPageView({ priceListId }: { priceListId: string }
               {STATUS_LABELS[priceList.status] ?? priceList.status}
             </span>
           </div>
-          <p className="mt-1.5 text-sm text-[#5b5b6b]">
+          <p className="mt-1.5 text-sm text-[#4b4b5a]">
             Adds items to, and updates prices in,{' '}
             <span className="font-medium">{priceList.name}</span> only. Have the whole sheet, with
             every price use? Use{' '}

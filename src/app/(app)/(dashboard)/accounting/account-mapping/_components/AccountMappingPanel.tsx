@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react'
 import { Save, RefreshCw, Sparkles } from 'lucide-react'
+import SearchableSelect, { type SearchableSelectOption } from '@/src/components/ui/SearchableSelect'
 import { AccountMappings, COASeed, type AccountMapping } from '@/src/libs/data/AccountingV2Data'
 import { getAccountOptions, type Account, type AccountType } from '@/src/libs/data/AccountingData'
 
@@ -71,6 +72,41 @@ function normalBalanceBadge(account: Account | undefined) {
   )
 }
 
+// Unconfigured keys get an amber border so gaps stand out, as the native
+// selects did.
+const UNSET_CHROME = {
+  idle: 'border-amber-400',
+  focused: 'border-prominent-purple-500 ring-1 ring-prominent-purple-500',
+}
+
+function AccountPicker({
+  value,
+  options,
+  account,
+  onChange,
+}: {
+  value: string | null | undefined
+  options: SearchableSelectOption[]
+  account: Account | undefined
+  onChange: (accountId: string) => void
+}): ReactElement {
+  return (
+    <div className="flex items-center gap-1">
+      <SearchableSelect
+        value={value ?? ''}
+        onChange={(v) => onChange(v)}
+        options={options}
+        placeholder="— Not configured —"
+        chrome={value ? undefined : UNSET_CHROME}
+        clearable
+        portal
+        className="min-w-0 flex-1 text-sm"
+      />
+      {normalBalanceBadge(account)}
+    </div>
+  )
+}
+
 export default function AccountMappingPanel() {
   const [mappings, setMappings] = useState<AccountMapping[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -99,6 +135,10 @@ export default function AccountMappingPanel() {
 
   const mappingByKey = new Map(mappings.map((m) => [m.key, m]))
   const accountById = new Map(accounts.map((a) => [a.id, a]))
+  const accountOptions = useMemo(
+    () => accounts.map((a) => ({ value: a.id, label: `${a.number ?? a.code} — ${a.name}` })),
+    [accounts]
+  )
   const pairedKeys = new Set(PAIRED_MAPPINGS.flatMap((p) => [p.debitKey, p.creditKey]))
   const otherMappings = mappings.filter((m) => !pairedKeys.has(m.key))
 
@@ -135,7 +175,7 @@ export default function AccountMappingPanel() {
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="px-6 py-5 lg:px-10">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-2xl font-bold">Account Mapping</h2>
@@ -185,9 +225,9 @@ export default function AccountMappingPanel() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs uppercase text-gray-600">
                 <tr>
-                  <th className="px-3 py-2 text-left">Transaction</th>
-                  <th className="px-3 py-2 text-left">Debit Account</th>
-                  <th className="px-3 py-2 text-left">Credit Account</th>
+                  <th className="w-1/5 px-3 py-2 text-left">Transaction</th>
+                  <th className="w-2/5 px-3 py-2 text-left">Debit Account</th>
+                  <th className="w-2/5 px-3 py-2 text-left">Credit Account</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -208,34 +248,20 @@ export default function AccountMappingPanel() {
                         )}
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <select
-                          value={debitMapping.accountId ?? ''}
-                          onChange={(e) => setAcc(pair.debitKey, e.target.value)}
-                          className={`w-full px-2 py-1.5 text-sm border rounded ${debitMapping.accountId ? 'border-gray-200' : 'border-amber-300 bg-amber-50'}`}
-                        >
-                          <option value="">— Not configured —</option>
-                          {accounts.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.number ?? a.code} — {a.name}
-                            </option>
-                          ))}
-                        </select>
-                        {normalBalanceBadge(debitAccount)}
+                        <AccountPicker
+                          value={debitMapping.accountId}
+                          options={accountOptions}
+                          account={debitAccount}
+                          onChange={(id) => setAcc(pair.debitKey, id)}
+                        />
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <select
-                          value={creditMapping.accountId ?? ''}
-                          onChange={(e) => setAcc(pair.creditKey, e.target.value)}
-                          className={`w-full px-2 py-1.5 text-sm border rounded ${creditMapping.accountId ? 'border-gray-200' : 'border-amber-300 bg-amber-50'}`}
-                        >
-                          <option value="">— Not configured —</option>
-                          {accounts.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.number ?? a.code} — {a.name}
-                            </option>
-                          ))}
-                        </select>
-                        {normalBalanceBadge(creditAccount)}
+                        <AccountPicker
+                          value={creditMapping.accountId}
+                          options={accountOptions}
+                          account={creditAccount}
+                          onChange={(id) => setAcc(pair.creditKey, id)}
+                        />
                       </td>
                     </tr>
                   )
@@ -272,19 +298,12 @@ export default function AccountMappingPanel() {
                   </td>
                   <td className="px-3 py-2 text-xs text-gray-600 max-w-sm">{m.description}</td>
                   <td className="px-3 py-2">
-                    <select
-                      value={m.accountId ?? ''}
-                      onChange={(e) => setAcc(m.key, e.target.value)}
-                      className={`w-full px-2 py-1.5 text-sm border rounded ${m.accountId ? 'border-gray-200' : 'border-amber-300 bg-amber-50'}`}
-                    >
-                      <option value="">— Not configured —</option>
-                      {accounts.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.number ?? a.code} — {a.name}
-                        </option>
-                      ))}
-                    </select>
-                    {normalBalanceBadge(accountById.get(m.accountId ?? ''))}
+                    <AccountPicker
+                      value={m.accountId}
+                      options={accountOptions}
+                      account={accountById.get(m.accountId ?? '')}
+                      onChange={(id) => setAcc(m.key, id)}
+                    />
                   </td>
                 </tr>
               ))

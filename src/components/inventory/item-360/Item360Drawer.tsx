@@ -42,12 +42,12 @@ const DEFAULT_TAB: Record<DrawerContext, Tab> = { catalog: 'overview', stock: 's
 const LIFECYCLE_META: Record<string, string> = {
   active: 'bg-[#e7f5ef] text-[#0b6644]',
   discontinued: 'bg-[#fdf3e7] text-[#8a4b06]',
-  archived: 'bg-[#f1f1f4] text-[#5b5b6b]',
+  archived: 'bg-[#f1f1f4] text-[#4b4b5a]',
 }
 
 const TRACKING_META = {
   serial: { label: 'Serial-tracked', badge: 'bg-[#eaf0fb] text-[#1f4b99]' },
-  none: { label: 'Non-tracked', badge: 'bg-[#f1f1f4] text-[#5b5b6b]' },
+  none: { label: 'Non-tracked', badge: 'bg-[#f1f1f4] text-[#4b4b5a]' },
 }
 
 function DrawerSkeleton() {
@@ -145,7 +145,7 @@ function Item360Content({
                   )}
                 </div>
                 <div className="mt-0.5 flex flex-wrap items-center gap-2">
-                  <p className={`${MONO} text-[11.5px] text-[#8b8b9b]`}>{itemData.sku}</p>
+                  <p className={`${MONO} text-[11.5px] text-ink-muted`}>{itemData.sku}</p>
                   {tracking && (
                     <span
                       className={`inline-flex shrink-0 rounded-[5px] px-1.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${tracking.badge}`}
@@ -156,13 +156,13 @@ function Item360Content({
                 </div>
               </>
             ) : (
-              <p className="text-[13px] text-[#8b8b9b]">Item not found</p>
+              <p className="text-[13px] text-ink-muted">Item not found</p>
             )}
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 rounded-lg p-1.5 text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
+            className="shrink-0 rounded-lg p-1.5 text-ink-muted hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
           >
             <X className="h-4 w-4" />
           </button>
@@ -202,7 +202,7 @@ function Item360Content({
                 className={`shrink-0 border-b-2 px-3 py-3 text-[12.5px] font-medium whitespace-nowrap transition-colors ${
                   activeTab === tab.id
                     ? 'border-[#5b21b6] text-[#5b21b6]'
-                    : 'border-transparent text-[#8b8b9b] hover:border-[#e4e4e9] hover:text-[#3d3d4a]'
+                    : 'border-transparent text-ink-muted hover:border-[#e4e4e9] hover:text-[#3d3d4a]'
                 }`}
               >
                 {tab.label}
@@ -220,7 +220,7 @@ function Item360Content({
         {item.isLoading ? (
           <DrawerSkeleton />
         ) : !itemData ? (
-          <div className="p-5 text-[13px] text-[#8b8b9b]">Failed to load item details.</div>
+          <div className="p-5 text-[13px] text-ink-muted">Failed to load item details.</div>
         ) : activeTab === 'overview' ? (
           <OverviewTab item={itemData} />
         ) : activeTab === 'stock' ? (
@@ -289,7 +289,7 @@ export default function Item360Drawer() {
             <button
               type="button"
               onClick={popPanel}
-              className="inline-flex items-center gap-1 text-[12px] font-medium text-[#8b8b9b] hover:text-[#17171c]"
+              className="inline-flex items-center gap-1 text-[12px] font-medium text-ink-muted hover:text-[#17171c]"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               Back
@@ -315,7 +315,7 @@ export default function Item360Drawer() {
           />
         ) : (
           <div className="flex flex-1 items-center justify-center">
-            <p className="text-[13px] text-[#8b8b9b]">Select an item to view details.</p>
+            <p className="text-[13px] text-ink-muted">Select an item to view details.</p>
           </div>
         )}
       </div>

@@ -47,7 +47,7 @@ const withholdingClassLabel = (cls?: string | null) =>
 function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-[11px] text-[#8b8b9b]">{label}</span>
+      <span className="text-[11px] text-ink-muted">{label}</span>
       <span className={`text-[13px] text-[#17171c] ${mono ? MONO : ''}`}>{value}</span>
     </div>
   )
@@ -98,11 +98,11 @@ export default function ManualRrDetail({ id }: { id: string }) {
   const header = (breadcrumbTail: string, title: string, subtitle: string) => (
     <div className="flex shrink-0 flex-wrap items-start justify-between gap-5 border-b border-[#e4e4e9] bg-white px-4 py-3.5 lg:px-5">
       <div className="flex min-w-0 flex-col gap-1">
-        <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+        <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-ink-subtle`}>
           Accounting › Receiving Reports › {breadcrumbTail}
         </div>
         <h2 className="text-[21px] font-semibold tracking-[-.02em]">{title}</h2>
-        <p className="text-[12.5px] text-[#5b5b6b]">{subtitle}</p>
+        <p className="text-[12.5px] text-[#4b4b5a]">{subtitle}</p>
       </div>
     </div>
   )
@@ -190,13 +190,13 @@ export default function ManualRrDetail({ id }: { id: string }) {
         <div className={`${PANEL} flex flex-col overflow-hidden`}>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-2.5">
             <span className="text-[13.5px] font-semibold">Items</span>
-            <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+            <span className={`${MONO} text-[11px] text-ink-muted`}>
               {report.lines.length} {report.lines.length === 1 ? 'line' : 'lines'} · {totalUnits}{' '}
               units
             </span>
           </div>
           <div
-            className={`${MONO} hidden grid-cols-[1fr_80px_100px_100px_1fr] items-end gap-x-4 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] lg:grid`}
+            className={`${MONO} hidden grid-cols-[1fr_80px_100px_100px_1fr] items-end gap-x-4 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-ink-muted lg:grid`}
           >
             <span>Item</span>
             <span className="text-right">Qty</span>
@@ -221,12 +221,12 @@ export default function ManualRrDetail({ id }: { id: string }) {
                     </span>
                   )}
                   {line.taxCode && taxCodeLabel(line.taxCode) && (
-                    <span className="ml-1.5 rounded-full bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] font-medium text-[#5b5b6b]">
+                    <span className="ml-1.5 rounded-full bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] font-medium text-[#4b4b5a]">
                       {taxCodeLabel(line.taxCode)}
                     </span>
                   )}
                   {line.withholdingClass && withholdingClassLabel(line.withholdingClass) && (
-                    <span className="ml-1.5 rounded-full bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] font-medium text-[#5b5b6b]">
+                    <span className="ml-1.5 rounded-full bg-[#f1f1f4] px-1.5 py-0.5 text-[10px] font-medium text-[#4b4b5a]">
                       {withholdingClassLabel(line.withholdingClass)}
                     </span>
                   )}
@@ -238,7 +238,7 @@ export default function ManualRrDetail({ id }: { id: string }) {
                 <span className={`${MONO} text-[13px] text-[#17171c] lg:text-right`}>
                   {unitCost != null || line.isFreebie ? money(total) : '—'}
                 </span>
-                <span className={`${MONO} truncate text-[12px] text-[#5b5b6b]`}>
+                <span className={`${MONO} truncate text-[12px] text-[#4b4b5a]`}>
                   {line.serialNumbers && line.serialNumbers.length > 0
                     ? line.serialNumbers.join(', ')
                     : '—'}
@@ -271,7 +271,7 @@ export default function ManualRrDetail({ id }: { id: string }) {
                 AP{report.withheldAmount ? ' / Cr WHT Payable' : ''}).
               </p>
             ) : (
-              <p className="mt-1 text-[12px] text-[#5b5b6b]">
+              <p className="mt-1 text-[12px] text-[#4b4b5a]">
                 No unit cost was given on any line — this delivery has no financial value.
               </p>
             )}
@@ -287,7 +287,7 @@ export default function ManualRrDetail({ id }: { id: string }) {
       <div className="sticky bottom-0 z-40 flex flex-wrap items-center justify-between gap-3.5 border-t border-[#e4e4e9] bg-white px-4 py-3 shadow-[0_-8px_24px_-16px_rgba(20,20,30,.3)] lg:px-5">
         <Link
           href="/accounting/receiving-reports"
-          className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#5b5b6b] hover:bg-[#f1f1f4]"
+          className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#4b4b5a] hover:bg-[#f1f1f4]"
         >
           ← Back to Receiving Reports
         </Link>

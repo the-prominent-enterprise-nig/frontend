@@ -34,7 +34,7 @@ const toggleBtnClass = (active: boolean) =>
   `shrink-0 rounded-md border px-2 py-1 text-[11.5px] font-medium transition-colors ${
     active
       ? 'border-[#ddd0f7] bg-[#f1ebfb] text-[#3f1490]'
-      : 'border-[#d3d3db] text-[#5b5b6b] hover:border-[#a3a3b2]'
+      : 'border-[#d3d3db] text-[#4b4b5a] hover:border-[#a3a3b2]'
   }`
 
 // Scenario 55 — why this is a no-PO receipt with no registered supplier.
@@ -63,6 +63,8 @@ type Props = {
   control: Control<ReceiveStockFormValues>
   errors: FieldErrors<ReceiveStockFormValues>
   warehouses: WarehouseOption[]
+  /** True while `warehouses` is being fetched — an empty list is not loading. */
+  warehousesLoading: boolean
   /** Validation messages are held back until the receiver has tried to post,
    * so an untouched form isn't red on open. */
   showErrors: boolean
@@ -84,6 +86,9 @@ type Props = {
   onUnlinkPo: () => void
   /** Scenario 73 — Repair/Return's Origin; undefined reads as From Customer. */
   origin?: string
+  /** The receiver's own branch location, when they have one. A repossessed
+   * unit lands there, so the field is hidden for them. */
+  ownBranchWarehouseId?: string
   /** Scenario 73 — the service centers (repair providers) holding units. */
   serviceCenterOptions: SearchableSelectOption[]
   serviceCentersLoading: boolean
@@ -95,6 +100,7 @@ export function RrDeliveryPanel({
   control,
   errors,
   warehouses,
+  warehousesLoading,
   showErrors,
   supplierId,
   supplierName,
@@ -106,6 +112,7 @@ export function RrDeliveryPanel({
   onBrowsePo,
   onUnlinkPo,
   origin,
+  ownBranchWarehouseId,
   serviceCenterOptions,
   serviceCentersLoading,
 }: Props): React.ReactElement {
@@ -128,13 +135,19 @@ export function RrDeliveryPanel({
     })),
   ]
 
-  // Repossession and Repair/Return share one layout: no Source, Location or
-  // Reference # — the unit comes back from a customer's invoice, and the
-  // destination is silently the receiver's own branch.
+  // Repossession and Repair/Return share one layout: no Source or Reference #
+  // — the unit comes back from a customer's invoice.
   const isUnitReturn = reason === 'repossession' || reason === 'repair_return'
   // Scenario 73 — units back from a service center: Service Center replaces
   // Repair Type, and the service center's own DR is worth a reference.
   const fromServiceCenter = reason === 'repair_return' && origin === 'service_center'
+  // A customer's unit handed in for repair (WH-05): the field shows as
+  // Receiving branch — any branch or either warehouse, for every receiver.
+  const repairIntake = reason === 'repair_return' && !fromServiceCenter
+  // Where a unit from a customer lands. A repossession still hides the field
+  // for a branch receiver (it's filled with their own branch); head office
+  // sees it for every unit return and has to choose — there's no default.
+  const showLocation = !isUnitReturn || fromServiceCenter || repairIntake || !ownBranchWarehouseId
   // Read off the value, not the resolver: posting stops at the blockers list
   // before the resolver runs, and the field should still say why.
   const serviceCenterId = useWatch({ control, name: 'serviceCenterId' })
@@ -155,7 +168,7 @@ export function RrDeliveryPanel({
             Linked to {linkedPo.code}
           </span>
         ) : (
-          <span className="text-[11.5px] text-[#8b8b9b]">
+          <span className="text-[11.5px] text-ink-muted">
             Direct delivery, no purchase order linked
           </span>
         )}
@@ -234,7 +247,7 @@ export function RrDeliveryPanel({
                   <FieldError text="Pick the service center the units came back from." />
                 ) : (
                   <Hint>
-                    The repair provider on each unit&rsquo;s UDS. Ones with units out right now are
+                    The service center on each unit&rsquo;s UDS. Ones with units out right now are
                     listed first, with their count.
                   </Hint>
                 )
@@ -405,9 +418,9 @@ export function RrDeliveryPanel({
         {/* Scenario 73 — a unit back from a service center lands where the
             custodian receives it (Main Office, usually), which is not always
             the receiver's own branch; prefilled with it, but theirs to set. */}
-        {(!isUnitReturn || fromServiceCenter) && (
+        {showLocation && (
           <Field
-            label="Location"
+            label={repairIntake ? 'Receiving branch' : 'Location'}
             required
             footer={
               showErrors && errors.warehouseId ? (
@@ -423,8 +436,8 @@ export function RrDeliveryPanel({
                   portal
                   value={field.value ?? ''}
                   onChange={field.onChange}
-                  placeholder="Select location…"
-                  loading={warehouses.length === 0}
+                  placeholder={repairIntake ? 'Select branch…' : 'Select location…'}
+                  loading={warehousesLoading}
                   loadingLabel="Loading locations…"
                   chrome={showErrors && errors.warehouseId ? INVALID_CHROME : CONTROL_CHROME}
                   options={locationOptions}
@@ -548,7 +561,7 @@ export function RrDeliveryPanel({
                   <button
                     type="button"
                     onClick={onUnlinkPo}
-                    className="flex h-9.5 items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 text-[12.5px] text-[#5b5b6b] hover:border-[#a3a3b2] hover:text-[#17171c]"
+                    className="flex h-9.5 items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 text-[12.5px] text-[#4b4b5a] hover:border-[#a3a3b2] hover:text-[#17171c]"
                   >
                     <Link2Off className="h-3.5 w-3.5" />
                     Unlink
@@ -605,10 +618,10 @@ function Field({
       <span className="flex items-center gap-1 text-[12px] font-medium text-[#3d3d4a]">
         {label}
         {required && <span className="text-[#b42318]"> *</span>}
-        {hint && <span className="ml-1 font-normal text-[#8b8b9b]">{hint}</span>}
+        {hint && <span className="ml-1 font-normal text-ink-muted">{hint}</span>}
         {tooltip && (
           <Tooltip label={tooltip}>
-            <Info className="h-3 w-3 text-[#a3a3b2]" />
+            <Info className="h-3 w-3 text-ink-subtle" />
           </Tooltip>
         )}
       </span>
@@ -624,7 +637,7 @@ function Field({
 }
 
 function Hint({ children }: { children: React.ReactNode }): React.ReactElement {
-  return <span className="text-[11px] leading-[1.4] text-[#8b8b9b]">{children}</span>
+  return <span className="text-[11px] leading-[1.4] text-ink-muted">{children}</span>
 }
 
 function FieldError({ text }: { text?: string }): React.ReactElement {

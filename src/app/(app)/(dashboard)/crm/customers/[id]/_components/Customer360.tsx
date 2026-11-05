@@ -113,8 +113,8 @@ export default function Customer360({
    * Every endpoint behind this view is reachable by a Cashier — `/crm/
    * customers/:id/360` needs only `crm:customers:read`, the installment
    * schedules and transaction history are POS routes — so the sections
-   * themselves need no gating. Only the LINKS differ: a Cashier is confined
-   * to the `pos` module by ROLE_MODULE_ACCESS, so a `/crm/...` href would
+   * themselves need no gating. Only the LINKS differ: a role that holds only
+   * POS permissions can't open the `crm` module, so a `/crm/...` href would
    * bounce off /403 even though the underlying data loaded fine. Under
    * `pos`, links to CRM-only destinations (leads, installment account
    * detail) render as plain text instead of being followed. The customer

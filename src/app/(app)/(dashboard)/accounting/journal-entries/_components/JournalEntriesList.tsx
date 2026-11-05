@@ -92,8 +92,8 @@ export default function JournalEntriesList({ session }: { session: SessionUser |
   }
 
   return (
-    <div className="w-full h-full p-4 md:p-6 lg:p-8">
-      <div className="max-w-7xl mx-auto">
+    <div className="px-6 py-5 lg:px-10">
+      <div>
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Journal Entries</h2>

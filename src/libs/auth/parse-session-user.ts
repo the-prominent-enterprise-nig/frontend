@@ -83,6 +83,7 @@ export function parseSessionUser(raw: any): SessionUser {
     permissions,
     rolePermissions,
     primaryRole: data.primaryRole,
+    homeModule: typeof data.homeModule === 'string' ? data.homeModule : null,
     hierarchyLevel: data.hierarchyLevel,
     moduleAccess: Array.isArray(data.moduleAccess) ? data.moduleAccess : undefined,
     createdAt: data.createdAt,

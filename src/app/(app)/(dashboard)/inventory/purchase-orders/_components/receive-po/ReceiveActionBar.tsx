@@ -51,7 +51,7 @@ export function ReceiveActionBar({
     <div className="sticky bottom-0 z-40 flex flex-wrap items-center justify-between gap-3.5 border-t border-[#e4e4e9] bg-white px-4 py-3 shadow-[0_-8px_24px_-16px_rgba(20,20,30,.3)] lg:px-5">
       <div className="flex min-w-0 flex-wrap items-center gap-3.5">
         <div className="flex min-w-0 flex-col gap-0.5">
-          {caption && <span className="text-[11.5px] text-[#8b8b9b]">{caption}</span>}
+          {caption && <span className="text-[11.5px] text-ink-muted">{caption}</span>}
           <span className="text-[13px] font-semibold">{headline}</span>
         </div>
         {blocked && showBlockers && (
@@ -67,7 +67,7 @@ export function ReceiveActionBar({
           type="button"
           onClick={onCancel}
           disabled={isSubmitting}
-          className="rounded-lg px-3.5 py-2.5 text-[13px] text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#17171c] disabled:opacity-50"
+          className="rounded-lg px-3.5 py-2.5 text-[13px] text-[#4b4b5a] hover:bg-[#f1f1f4] hover:text-[#17171c] disabled:opacity-50"
         >
           Cancel
         </button>

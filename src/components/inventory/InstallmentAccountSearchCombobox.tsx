@@ -32,10 +32,11 @@ type Props = {
 
 /** Picks the InstallmentAccount a repossessed unit came from. `search`
  * matches the account number, the customer's name, the item name, a serial
- * number, or the AR invoice number — the receiver usually knows one of
- * those, not the account number off the top of their head. Always shows the
- * item(s) sold under the account (when known) so a search by customer still
- * confirms which item is which before picking. */
+ * number, or the invoice number — the receiver usually knows one of those,
+ * not the account number off the top of their head. Each option leads with
+ * the invoice number (the field is labelled Invoice #, and the picked label
+ * stays in the field), with the item(s) sold and the customer beneath so a
+ * search by customer still confirms which item is which before picking. */
 export function InstallmentAccountSearchCombobox({
   value,
   onChange,
@@ -67,13 +68,12 @@ export function InstallmentAccountSearchCombobox({
         return (res.data?.data ?? []).map((a) => {
           const items = a.itemNames ?? []
           const secondaryParts = [
-            a.accountNumber,
-            a.invoiceNumber ? `INV ${a.invoiceNumber}` : undefined,
-            items.length > 0 ? a.customer?.name : undefined,
+            items.length > 0 ? items.join(', ') : undefined,
+            a.customer?.name,
           ].filter(Boolean)
           return {
             id: a.id,
-            primary: items.length > 0 ? items.join(', ') : (a.customer?.name ?? a.accountNumber),
+            primary: a.siNumber || a.accountNumber,
             secondary: secondaryParts.length > 0 ? secondaryParts.join(' · ') : undefined,
             meta: {
               customerId: a.customerId,

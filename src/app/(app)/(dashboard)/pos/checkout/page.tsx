@@ -42,7 +42,7 @@ import { BILLER_OPTION_NAMES, GCASH_OPTION_NAMES } from './_utils/qr-option-grou
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getSessionStateWithRetry } from '@/src/libs/auth/session-client'
 import { SessionUnavailableError } from '@/src/libs/auth/session-unavailable-error'
-import { can } from '@/src/libs/guards/permission'
+import { can, managesOwnBranch } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSessions } from '../_hooks/usePos'
@@ -340,6 +340,10 @@ const PAYMENT_LABELS: Record<PosPaymentMethod, string> = {
  *  be chosen from here on. */
 const HIDDEN_PAYMENT_METHODS: PosPaymentMethod[] = ['loyalty_points']
 
+/** Oct 29 UAT CA-02 — offered as an override reason only while the credit
+ *  application is waived (the backend seeds it and refuses it otherwise). */
+const TPF_WAIVER_REASON = 'Third-Party Financing (TPF)'
+
 const REF_METHODS: PosPaymentMethod[] = [
   'card',
   'bank_transfer',
@@ -349,6 +353,19 @@ const REF_METHODS: PosPaymentMethod[] = [
   'tpf',
   'qr',
 ]
+
+/** Oct 29 UAT POS-07 / POS-13 — checkout asks for no reference number on a
+ *  GCash, bank transfer or debit/credit card payment, whatever the method's
+ *  config says. QR through other gateways and Billers still ask for one; the
+ *  down payment's CR Number is a separate field. `firstRowTender` is the
+ *  tender of the first row, which carries none of its own. */
+const NO_REFERENCE_TENDERS: readonly DeliveryFeeTender[] = ['gcash', 'bank_transfer', 'card']
+function takesNoReference(p: PaymentRow, firstRowTender?: DeliveryFeeTender): boolean {
+  if (p.method === 'card' || p.method === 'bank_transfer') return true
+  const tender = p.tender ?? firstRowTender
+  if (tender && NO_REFERENCE_TENDERS.includes(tender)) return true
+  return p.method === 'qr' && !!p.optionName && GCASH_OPTION_NAMES.includes(p.optionName)
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -755,7 +772,7 @@ export default function CheckoutPage() {
         router.replace('/403')
         return
       }
-      setIsBranchManager(s.primaryRole === 'Branch Manager')
+      setIsBranchManager(managesOwnBranch(s))
       setAuthBranchId(s.branchId ?? null)
       setCanOverride(can(s, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE))
       setCanSignPromissoryNote(can(s, CREDIT_PERMISSIONS.PROMISSORY_NOTE_SIGN))
@@ -767,7 +784,8 @@ export default function CheckoutPage() {
   if (sessionUnavailable) throw sessionUnavailable
 
   const activeBranchId = useMemo(() => {
-    // Branch Managers: use their assigned branch (matches "My Branch" settings)
+    // Whoever manages their own branch's POS settings (the Branch Manager's
+    // position): use their assigned branch (matches "My Branch" settings)
     if (isBranchManager && authBranchId) return authBranchId
     // Everyone else: use the terminal's branch
     const session = openSessions.find((s) => s.id === sessionId)
@@ -955,12 +973,9 @@ export default function CheckoutPage() {
   // The check's own number, captured once for the transaction while the Check
   // sub-mode is chosen.
   const [checkNumber, setCheckNumber] = useState('')
-  // Scenario 38 Gap 7 — the cashier confirms the transfer already landed at
-  // the register (e.g. checked the business's own banking app in real
-  // time), so it posts straight to Cash in Bank instead of the usual
-  // clearing account. Same transaction-scoped treatment as cardTxnMode/
-  // cashSubMode above; only meaningful while cashSubMode is bank_transfer.
-  const [bankTransferVerifiedAtRegister, setBankTransferVerifiedAtRegister] = useState(false)
+  // No "verified at register" for a bank transfer: the client wants every one
+  // to post to the bank-transfer account, never straight to Cash in Bank
+  // (Scenario 80 review, Nov 4).
 
   // Down payment now shares the cash/card state above (see hasCashLine/
   // hasCreditCardLine below) and the same `payments` pool — paymentMode
@@ -2107,9 +2122,9 @@ export default function CheckoutPage() {
     return 'Rate card + default'
   })()
 
-  /** The plan's one down payment box. An in-house plan may take 0; a TPF sale
-   * never. An X-Deal's is the cash portion and an Employee Appliance Loan's is
-   * optional — their own wording, the same single figure. */
+  /** The plan's one down payment box. A TPF sale may take 0; an in-house plan
+   * never (Oct 29 UAT POS-11). An X-Deal's is the cash portion and an Employee
+   * Appliance Loan's is optional — their own wording, the same single figure. */
   function renderPlanDownPayment() {
     if (xDealActive) {
       // Scenario 68 — the part paid now, if any.
@@ -2154,7 +2169,7 @@ export default function CheckoutPage() {
       <PlanDownPaymentField
         total={planDownPayment}
         max={planSaleAmount}
-        allowZero
+        allowZero={planProvider === 'tpf'}
         badge={planDpBadge}
         hint={
           installmentCartLines.length > 1
@@ -2254,14 +2269,13 @@ export default function CheckoutPage() {
   const regularTenderTarget = Math.round((cashLinesTotal + tpfCollectedAtRegister) * 100) / 100
   const tenderTarget = Math.round((regularTenderTarget + installmentDownPaymentsTotal) * 100) / 100
 
-  // CR Number (collection receipt) is optional on a plain sale. It stays
-  // required where a payment can't go through without one: card / bank /
-  // e-wallet / etc. (or whatever the method's own config says), and any sale
-  // collecting a down payment — the backend refuses a down payment without a
-  // reference because that reference IS its collection receipt.
+  // CR Number (collection receipt) is optional, a down payment's included
+  // (Oct 29 UAT POS-14). A payment's own reference stays required where it
+  // can't go through without one: QR / Billers / etc. (or whatever the
+  // method's own config says).
   const saleHasDownPayment = allDownPaymentsTotal > 0
   const crIsRequired = (p: PaymentRow) =>
-    REF_METHODS.includes(p.method) || p.refRequired === true || saleHasDownPayment
+    !noReference(p) && (REF_METHODS.includes(p.method) || p.refRequired === true)
 
   // Scenario 66 — the delivery fee as entered (0 while blank or not yet a
   // valid amount).
@@ -2297,6 +2311,8 @@ export default function CheckoutPage() {
     if (m === 'qr') return cashSubMode === 'gcash' || cashSubMode === 'billers' ? cashSubMode : 'qr'
     return firstRowIsCheck ? 'check' : 'cash_on_hand'
   })()
+  const noReference = (p: PaymentRow) =>
+    takesNoReference(p, p === payments[0] ? firstRowTender : undefined)
   // ─── CR Number / reference ────────────────────────────────────────────────
   // A CR Number exists only where there is a down payment (installment / TPF):
   // ONE for the whole transaction, held on the first payment row and stamped on
@@ -2305,6 +2321,7 @@ export default function CheckoutPage() {
   const saleCr = (payments[0]?.referenceNumber ?? '').trim()
   const rowShowsReference = (p: PaymentRow) =>
     !saleHasDownPayment &&
+    !noReference(p) &&
     (REF_METHODS.includes(p.method) || p.refRequired === true || !!p.refFieldLabel)
   const effectiveReference = (p: PaymentRow) =>
     saleHasDownPayment ? saleCr : rowShowsReference(p) ? p.referenceNumber.trim() : ''
@@ -3724,7 +3741,12 @@ export default function CheckoutPage() {
    */
   function toggleCreditApplicationWaiver(on: boolean) {
     setCreditApplicationWaived(on)
-    if (!on) return
+    if (!on) {
+      // The TPF reason only explains a waiver (Oct 29 UAT CA-02).
+      const picked = overrideReasons.find((r) => r.id === exceptionReasonId)
+      if (picked?.name === TPF_WAIVER_REASON) setExceptionReasonId('')
+      return
+    }
     setCreditApplicationOverridden(false)
     setCreditApplicationId('')
     const termFor = (l: CartLine) =>
@@ -4398,7 +4420,6 @@ export default function CheckoutPage() {
     xDealDownPaymentReferenceNumber?: string
     xDealDownPaymentCheckNumber?: string
     xDealDownPaymentMethodOptionId?: string
-    xDealDownPaymentVerifiedAtRegister?: boolean
   } {
     if (!xDealActive || xDealDownPaymentTotal <= 0) return {}
     const method = (preferredPaymentMethodKey() ?? 'cash') as
@@ -4425,9 +4446,6 @@ export default function CheckoutPage() {
         : (method === 'bank_transfer' || method === 'qr') && cashPaymentOptionId
           ? { xDealDownPaymentMethodOptionId: cashPaymentOptionId }
           : {}),
-      ...(method === 'bank_transfer' && bankTransferVerifiedAtRegister
-        ? { xDealDownPaymentVerifiedAtRegister: true }
-        : {}),
     }
   }
 
@@ -4780,6 +4798,17 @@ export default function CheckoutPage() {
       setError(fmiDateError)
       return
     }
+    // Oct 29 UAT POS-11 — an in-house plan (typed or from a term) takes a
+    // down payment above 0; the backend refuses one without.
+    if (
+      inhouseInstallmentCartLines.length > 0 &&
+      !xDealActive &&
+      !employeeApplianceLoanActive &&
+      planDownPayment <= 0
+    ) {
+      setError('An in-house installment sale needs a down payment above ₱0.')
+      return
+    }
     if (
       inhouseInstallmentCartLines.length > 0 &&
       !creditApplicationId &&
@@ -4878,15 +4907,13 @@ export default function CheckoutPage() {
         return
       }
       // A sale has a CR Number only with a down payment: one for the whole
-      // transaction. Without one, QR/GCash/Billers, card and bank transfer each
-      // need their own reference number. Reserve mode only asks for a
+      // transaction, optional (Oct 29 UAT POS-14). Without one, QR and Billers
+      // each need their own reference number. Reserve mode only asks for a
       // reference on REF_METHODS.
       const missingRefIndex =
         saleMode === 'sale'
           ? saleHasDownPayment
-            ? saleCr
-              ? -1
-              : 0
+            ? -1
             : payments.findIndex(
                 (p) =>
                   p.amount > 0 &&
@@ -4895,7 +4922,11 @@ export default function CheckoutPage() {
                   !p.referenceNumber.trim()
               )
           : payments.findIndex(
-              (p) => p.amount > 0 && !p.referenceNumber.trim() && REF_METHODS.includes(p.method)
+              (p) =>
+                p.amount > 0 &&
+                !p.referenceNumber.trim() &&
+                REF_METHODS.includes(p.method) &&
+                !noReference(p)
             )
       const missingRef = missingRefIndex >= 0 ? payments[missingRefIndex] : undefined
       if (
@@ -4911,9 +4942,7 @@ export default function CheckoutPage() {
         setError(
           saleMode !== 'sale'
             ? `CR Number is required for ${PAYMENT_LABELS[missingRef.method]}.`
-            : saleHasDownPayment
-              ? 'CR Number is required for the down payment.'
-              : `${referenceLabelFor(missingRef, missingRefIndex)} is required.`
+            : `${referenceLabelFor(missingRef, missingRefIndex)} is required.`
         )
         return
       }
@@ -5280,27 +5309,31 @@ export default function CheckoutPage() {
             // Scenario 37 — card's terminal/txn-mode/term, and bank_transfer/qr's
             // bank/gateway, all come from the Payment Method toggle's
             // transaction-scoped state now, not this row.
-            paymentMethodOptionId: row.tender
-              ? row.paymentMethodOptionId
-              : row.method === 'card'
-                ? cardTerminalOptionId
-                : row.method === 'bank_transfer' || row.method === 'qr'
-                  ? cashPaymentOptionId
-                  : row.method === 'cash' && hasCashLine && cashSubMode === 'check'
-                    ? configuredMethods
-                        .find((m) => m.key === 'cash')
-                        ?.options.find((o) => o.isEnabled && o.name === 'Check')?.id
-                    : row.paymentMethodOptionId,
+            paymentMethodOptionId:
+              (row.tender
+                ? row.paymentMethodOptionId
+                : row.method === 'card'
+                  ? cardTerminalOptionId
+                  : row.method === 'bank_transfer' || row.method === 'qr'
+                    ? cashPaymentOptionId
+                    : row.method === 'cash' && hasCashLine && cashSubMode === 'check'
+                      ? configuredMethods
+                          .find((m) => m.key === 'cash')
+                          ?.options.find((o) => o.isEnabled && o.name === 'Check')?.id
+                      : row.paymentMethodOptionId) ??
+              // Oct 29 UAT POS-07 — GCash goes without a reference; the
+              // backend knows it's GCash by its gateway, so a GCash payment
+              // with none picked is sent under the first GCash gateway.
+              (row.tender === 'gcash' ||
+              (!row.tender && row.method === 'qr' && cashSubMode === 'gcash')
+                ? configuredMethods
+                    .find((m) => m.key === 'qr')
+                    ?.options.find((o) => o.isEnabled && GCASH_OPTION_NAMES.includes(o.name))?.id
+                : undefined),
             cardTxnMode:
               row.method === 'card' ? (row.tender ? row.cardTxnMode : cardTxnMode) : undefined,
             cardInstallmentTerm:
               row.method === 'card' ? (row.tender ? row.cardTerm : cardInstallmentTerm) : undefined,
-            bankTransferVerifiedAtRegister:
-              row.method === 'bank_transfer'
-                ? row.tender
-                  ? row.bankVerified
-                  : bankTransferVerifiedAtRegister
-                : undefined,
             installmentScheduleId,
           })
           if (!payRes.success) {
@@ -5573,7 +5606,11 @@ export default function CheckoutPage() {
       return
     }
     const missingRef = payments.find(
-      (p) => REF_METHODS.includes(p.method) && p.amount > 0 && !p.referenceNumber.trim()
+      (p) =>
+        REF_METHODS.includes(p.method) &&
+        !noReference(p) &&
+        p.amount > 0 &&
+        !p.referenceNumber.trim()
     )
     if (missingRef) {
       setError(`Reference number is required for ${PAYMENT_LABELS[missingRef.method]}.`)
@@ -5807,7 +5844,6 @@ export default function CheckoutPage() {
                 onClick={() => {
                   setCashSubMode(mode)
                   setCashPaymentOptionId(undefined)
-                  if (mode !== 'bank_transfer') setBankTransferVerifiedAtRegister(false)
                 }}
                 className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
                   cashSubMode === mode
@@ -5876,17 +5912,6 @@ export default function CheckoutPage() {
               value={checkNumber}
               onChange={(e) => setCheckNumber(e.target.value)}
             />
-          )}
-          {cashSubMode === 'bank_transfer' && (
-            <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
-              <input
-                type="checkbox"
-                checked={bankTransferVerifiedAtRegister}
-                onChange={(e) => setBankTransferVerifiedAtRegister(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-gray-300"
-              />
-              Verified at register — the credit already landed, post straight to Cash in Bank
-            </label>
           )}
         </div>
       )}
@@ -6692,6 +6717,77 @@ export default function CheckoutPage() {
             <p className="mb-4 text-sm font-bold uppercase tracking-wider text-prominent-purple-900">
               Order Summary
             </p>
+            {/* Oct 29 UAT POS-09 — Cash / Installment and Inhouse / TPF are picked
+                first, above the cart, so they're settled before any line's
+                Override price. The plan's term and down payment stay under
+                Sale Mode. */}
+            {saleMode === 'sale' && cart.length > 0 && (
+              <div className="mb-4 space-y-2" data-testid="payment-mode-picker">
+                <p className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">
+                  Payment Mode
+                </p>
+                {/* Cash / Installment — one choice for
+                    the whole cart, never per item. If any item needs a
+                    different mode, it's a separate transaction. */}
+                <div className="relative">
+                  <div className="flex gap-1.5 rounded-lg border border-purple-200 bg-white p-1">
+                    {(['cash', 'installment'] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        // Scenario 67 — an X-Deal is installment-only.
+                        disabled={xDealActive && mode !== 'installment'}
+                        title={
+                          xDealActive && mode !== 'installment'
+                            ? 'An X-Deal is always an inhouse installment sale'
+                            : undefined
+                        }
+                        onClick={() => {
+                          setPaymentMode(mode)
+                          if (mode === 'installment' && cashSubMode === 'card')
+                            setCashSubMode('cash_on_hand')
+                          setLineInvoiceType(
+                            cart.map((l) => l.lineId),
+                            mode === 'installment' ? 'installment' : 'cash'
+                          )
+                        }}
+                        className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                          paymentMode === mode
+                            ? 'bg-prominent-purple-200 text-prominent-purple-800'
+                            : 'bg-white text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white'
+                        }`}
+                      >
+                        {mode === 'cash' ? 'Cash' : 'Installment'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Oct 29 UAT POS-08 — as large as the Cash / Installment toggle. */}
+                {installmentCartLines.length > 0 && (
+                  <div
+                    data-testid="installment-provider-toggle"
+                    className="flex gap-1.5 rounded-lg border border-purple-200 bg-white p-1"
+                  >
+                    {(['inhouse', 'tpf'] as InstallmentProvider[]).map((provider) => (
+                      <button
+                        key={provider}
+                        type="button"
+                        onClick={() => setLineInstallmentProvider(planLineIds, provider)}
+                        // Scenario 67 — an X-Deal is inhouse-only.
+                        disabled={xDealActive && provider === 'tpf'}
+                        className={`flex-1 rounded-lg px-3 py-2 text-[13.5px] font-semibold transition-colors ${
+                          planProvider === provider
+                            ? 'bg-prominent-purple-200 text-prominent-purple-800'
+                            : 'bg-white text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white'
+                        }`}
+                      >
+                        {provider === 'inhouse' ? 'Inhouse Installment' : 'TPF Installment'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="space-y-2 text-base">
               {/* Cart — moved into Order Summary so it's always visible next
                   to the totals, instead of scrolled past at the bottom of
@@ -7233,7 +7329,9 @@ export default function CheckoutPage() {
                   <Select
                     value={exceptionReasonId}
                     onChange={setExceptionReasonId}
-                    options={overrideReasons.map((r) => ({ value: r.id, label: r.name }))}
+                    options={overrideReasons
+                      .filter((r) => r.name !== TPF_WAIVER_REASON || creditApplicationWaivedActive)
+                      .map((r) => ({ value: r.id, label: r.name }))}
                     placeholder="Pick a reason…"
                     compact
                   />
@@ -7732,45 +7830,6 @@ export default function CheckoutPage() {
 
             {saleMode === 'sale' && cart.length > 0 && (
               <div className="mt-3 space-y-2">
-                <p className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">
-                  Payment Mode
-                </p>
-                {/* Cash / Installment — one choice for
-                    the whole cart, never per item. If any item needs a
-                    different mode, it's a separate transaction. */}
-                <div className="relative">
-                  <div className="flex gap-1.5 rounded-lg border border-purple-200 bg-white p-1">
-                    {(['cash', 'installment'] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        // Scenario 67 — an X-Deal is installment-only.
-                        disabled={xDealActive && mode !== 'installment'}
-                        title={
-                          xDealActive && mode !== 'installment'
-                            ? 'An X-Deal is always an inhouse installment sale'
-                            : undefined
-                        }
-                        onClick={() => {
-                          setPaymentMode(mode)
-                          if (mode === 'installment' && cashSubMode === 'card')
-                            setCashSubMode('cash_on_hand')
-                          setLineInvoiceType(
-                            cart.map((l) => l.lineId),
-                            mode === 'installment' ? 'installment' : 'cash'
-                          )
-                        }}
-                        className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
-                          paymentMode === mode
-                            ? 'bg-prominent-purple-200 text-prominent-purple-800'
-                            : 'bg-white text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white'
-                        }`}
-                      >
-                        {mode === 'cash' ? 'Cash' : 'Installment'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
                 {displayGroups.map((group) => {
                   const line = group[0]
                   const groupQty = group.length
@@ -7790,32 +7849,15 @@ export default function CheckoutPage() {
                     </div>
                   )
                 })}
-                {/* One plan for the whole cart: the provider, the term and the
-                    down payment are asked for once, whatever the number of items
-                    — one schedule, one ledger. */}
+                {/* One plan for the whole cart: the term and the down payment
+                    are asked for once, whatever the number of items — one
+                    schedule, one ledger. Inhouse / TPF is picked above the cart
+                    (Oct 29 UAT POS-09). */}
                 {installmentCartLines.length > 0 && (
                   <div
                     data-testid="installment-plan"
                     className="space-y-3 rounded-lg border border-prominent-purple-200 bg-prominent-purple-50/40 p-2.5"
                   >
-                    <div className="flex gap-1.5">
-                      {(['inhouse', 'tpf'] as InstallmentProvider[]).map((provider) => (
-                        <button
-                          key={provider}
-                          type="button"
-                          onClick={() => setLineInstallmentProvider(planLineIds, provider)}
-                          // Scenario 67 — an X-Deal is inhouse-only.
-                          disabled={xDealActive && provider === 'tpf'}
-                          className={`flex-1 rounded-lg px-2 py-1 text-xs font-semibold transition-colors ${
-                            planProvider === provider
-                              ? 'bg-prominent-purple-200 text-prominent-purple-800'
-                              : 'bg-gray-50 text-gray-400 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-gray-50'
-                          }`}
-                        >
-                          {provider === 'inhouse' ? 'Inhouse Installment' : 'TPF Installment'}
-                        </button>
-                      ))}
-                    </div>
                     {planProvider === 'inhouse' && planTyped && (
                       <TypedPlanPanel
                         line={{
@@ -7960,40 +8002,6 @@ export default function CheckoutPage() {
                     </div>
                   </div>
                 )}
-                {installmentCartLines.length > 0 && !dpCollectsNothing && (
-                  <div
-                    data-testid="dp-payment-mode-toggle"
-                    className="rounded-lg border border-prominent-purple-200 bg-prominent-purple-50/40 p-2.5"
-                  >
-                    <p className="mb-1.5 text-xs font-medium text-gray-800">
-                      {xDealActive ? 'Cash Portion' : 'Down Payment'}
-                      <span className="ml-1 font-normal text-gray-500">
-                        ({fmt(allDownPaymentsTotal)})
-                      </span>
-                    </p>
-                    <div className="flex gap-1.5">
-                      {(['cash', 'credit_card'] as const).map((mode) => (
-                        <button
-                          key={mode}
-                          type="button"
-                          onClick={() => setInstallmentPaymentMethod(mode)}
-                          className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
-                            installmentPaymentMethod === mode
-                              ? 'bg-prominent-purple-200 text-prominent-purple-800'
-                              : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                          }`}
-                        >
-                          {mode === 'cash' ? 'Cash' : 'Debit/Credit Card'}
-                        </button>
-                      ))}
-                    </div>
-                    {!installmentPaymentMethod && (
-                      <p className="mt-1.5 text-[12px] text-amber-700">
-                        Required before checkout can be completed.
-                      </p>
-                    )}
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -8095,6 +8103,43 @@ export default function CheckoutPage() {
 
           {/* Payment */}
           <div className="flex-1 p-5">
+            {/* Oct 29 UAT POS-06 — how the down payment is paid (Cash or
+                Debit/Credit Card) is asked here, last, after everything else
+                the sale needs, instead of inside the installment plan. */}
+            {saleMode === 'sale' && installmentCartLines.length > 0 && !dpCollectsNothing && (
+              <div
+                data-testid="dp-payment-mode-toggle"
+                className="mb-3 rounded-lg border border-prominent-purple-200 bg-prominent-purple-50/40 p-2.5"
+              >
+                <p className="mb-1.5 text-xs font-medium text-gray-800">
+                  {xDealActive ? 'Cash Portion' : 'Down Payment'}
+                  <span className="ml-1 font-normal text-gray-500">
+                    ({fmt(allDownPaymentsTotal)})
+                  </span>
+                </p>
+                <div className="flex gap-1.5">
+                  {(['cash', 'credit_card'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setInstallmentPaymentMethod(mode)}
+                      className={`flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
+                        installmentPaymentMethod === mode
+                          ? 'bg-prominent-purple-200 text-prominent-purple-800'
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                      }`}
+                    >
+                      {mode === 'cash' ? 'Cash' : 'Debit/Credit Card'}
+                    </button>
+                  ))}
+                </div>
+                {!installmentPaymentMethod && (
+                  <p className="mt-1.5 text-[12px] text-amber-700">
+                    Required before checkout can be completed.
+                  </p>
+                )}
+              </div>
+            )}
             {saleMode === 'reserve' && (
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wider text-gray-700">
@@ -8173,11 +8218,12 @@ export default function CheckoutPage() {
                     />
                   </div>
                 ))}
-                {/* A down payment: ONE CR Number for the whole transaction. */}
+                {/* A down payment: ONE CR Number for the whole transaction,
+                    optional (Oct 29 UAT POS-14). */}
                 {saleHasDownPayment && (
                   <ReferenceField
                     label="CR Number"
-                    required
+                    required={false}
                     value={payments[0]?.referenceNumber ?? ''}
                     invalid={crInvalid}
                     onChange={(v) => updatePayment(0, { referenceNumber: v })}
@@ -8287,10 +8333,13 @@ export default function CheckoutPage() {
 
                 {/* Reserve mode's deposit: a reference on REF_METHODS or where the
                     method's own config labels one. */}
-                {payments.some((p) => REF_METHODS.includes(p.method) || p.refFieldLabel) && (
+                {payments.some(
+                  (p) => !noReference(p) && (REF_METHODS.includes(p.method) || p.refFieldLabel)
+                ) && (
                   <div className="mt-2 space-y-1.5">
                     {payments.map((p, i) => {
-                      const needsRef = REF_METHODS.includes(p.method) || p.refFieldLabel
+                      const needsRef =
+                        !noReference(p) && (REF_METHODS.includes(p.method) || p.refFieldLabel)
                       const label =
                         p.refFieldLabel ??
                         (PAYMENT_LABELS[p.method]

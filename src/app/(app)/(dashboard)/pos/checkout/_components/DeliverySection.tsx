@@ -311,7 +311,6 @@ export default function DeliverySection({
                           tender,
                           checkNumber: '',
                           optionId: undefined,
-                          bankVerified: false,
                           cardTxnMode: 'straight',
                           cardTerm: undefined,
                         }))
@@ -343,18 +342,6 @@ export default function DeliverySection({
                     value={state.checkNumber}
                     onChange={(e) => setState((s) => ({ ...s, checkNumber: e.target.value }))}
                   />
-                )}
-
-                {state.tender === 'bank_transfer' && (
-                  <label className="mt-1.5 flex items-center gap-1.5 text-[12px] text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={state.bankVerified}
-                      onChange={(e) => setState((s) => ({ ...s, bankVerified: e.target.checked }))}
-                      className="h-3.5 w-3.5 rounded border-gray-300"
-                    />
-                    Verified at register — the credit already landed, post straight to Cash in Bank
-                  </label>
                 )}
 
                 {state.tender === 'card' && (

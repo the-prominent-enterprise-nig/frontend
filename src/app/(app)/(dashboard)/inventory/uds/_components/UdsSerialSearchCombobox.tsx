@@ -23,7 +23,9 @@ export function UdsSerialSearchCombobox({ value, onChange, error, supplierId }: 
       placeholder="Search serial number…"
       typeToSearchMessage="Type to search serial numbers…"
       emptyMessage={
-        supplierId ? "No matching units of this provider's items" : 'No matching serial numbers'
+        supplierId
+          ? "No matching units of this service center's items"
+          : 'No matching serial numbers'
       }
       search={async (query) => {
         const res = await getSerialNumbers({

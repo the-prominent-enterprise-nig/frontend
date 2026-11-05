@@ -16,13 +16,16 @@ import { ItemSearchCombobox } from '../../../purchase-requests/_components/ItemS
 import { MONO, fmtPeso } from '../../../purchase-orders/_components/procurementTokens'
 import type { InstallmentAccountUnitItem } from '../../_actions/get-installment-account'
 import { PANEL } from './rrTokens'
-import type { RrLine } from './rrTotals'
+import { invoiceKeyOf, type RrLine } from './rrTotals'
+import { RepairIntakeSaleSearchCombobox } from './RepairIntakeSaleSearchCombobox'
+import type { RepairIntakeSale } from '../../_actions/get-repair-intake-sales'
 
 /** One invoice the units are coming back from. Its checked units are the
- * receipt's lines (linked by installmentAccountId), so this holds only what
- * the panel needs to show — never what gets posted. */
+ * receipt's lines (linked through invoiceKeyOf), so this holds only what the
+ * panel needs to show — never what gets posted. */
 export type ReturnBlock = {
   key: string
+  /** The installment account (repossession) or the sale (repair/return). */
   accountId: string
   invoiceLabel?: string
   customerId: string
@@ -45,6 +48,8 @@ type Props = {
   showErrors: boolean
   itemNameFor: (itemId?: string) => string | undefined
   onPickInvoice: (key: string, id: string, meta?: InstallmentAccountMeta, label?: string) => void
+  /** Repair/return: the sale picked by its Sales Invoice No. */
+  onPickSale: (key: string, sale: RepairIntakeSale) => void
   onPickCustomer: (key: string, id: string, label?: string) => void
   onToggleUnit: (key: string, unit: InstallmentAccountUnitItem, checked: boolean) => void
   onFallbackItem: (key: string, option: SearchComboboxOption) => void
@@ -72,6 +77,7 @@ export function ReturnedUnitsPanel({
   showErrors,
   itemNameFor,
   onPickInvoice,
+  onPickSale,
   onPickCustomer,
   onToggleUnit,
   onFallbackItem,
@@ -99,12 +105,12 @@ export function ReturnedUnitsPanel({
               {isRepo ? 'Repossessed Items' : 'Units for Repair/Return'}{' '}
               <span className="text-[#b42318]">*</span>
             </span>
-            <span className="text-[11px] text-[#8b8b9b]">
+            <span className="text-[11px] text-ink-muted">
               {checkedCount} {checkedCount === 1 ? 'unit' : 'units'} checked
             </span>
           </div>
           <span
-            className={`text-[11.5px] ${showErrors && noneChecked ? 'text-[#b42318]' : 'text-[#8b8b9b]'}`}
+            className={`text-[11.5px] ${showErrors && noneChecked ? 'text-[#b42318]' : 'text-ink-muted'}`}
           >
             {showErrors && noneChecked
               ? 'Check at least one unit.'
@@ -132,6 +138,7 @@ export function ReturnedUnitsPanel({
           itemNameFor={itemNameFor}
           canRemove={blocks.length > 1}
           onPickInvoice={onPickInvoice}
+          onPickSale={onPickSale}
           onPickCustomer={onPickCustomer}
           onToggleUnit={onToggleUnit}
           onFallbackItem={onFallbackItem}
@@ -143,7 +150,7 @@ export function ReturnedUnitsPanel({
 
       {isRepo && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[#e4e4e9] bg-[#fbfbfc] px-4.5 py-3">
-          <span className="text-[11.5px] text-[#8b8b9b]">
+          <span className="text-[11.5px] text-ink-muted">
             Repo cost = list price − payments received (monthly + down payment) + the sales
             commission encoded in Expenses for the sale — the value each unit re-enters stock at.
           </span>
@@ -165,6 +172,7 @@ function Block({
   itemNameFor,
   canRemove,
   onPickInvoice,
+  onPickSale,
   onPickCustomer,
   onToggleUnit,
   onFallbackItem,
@@ -180,6 +188,7 @@ function Block({
   itemNameFor: (itemId?: string) => string | undefined
   canRemove: boolean
   onPickInvoice: Props['onPickInvoice']
+  onPickSale: Props['onPickSale']
   onPickCustomer: Props['onPickCustomer']
   onToggleUnit: Props['onToggleUnit']
   onFallbackItem: Props['onFallbackItem']
@@ -192,13 +201,11 @@ function Block({
   // No linked sale to list units from (hand-entered/imported account, or every
   // unit already taken back): the item + serial are searched by hand instead.
   const manual = hasInvoice && block.units !== undefined && units.length === 0
-  const manualLine = manual
-    ? lines.find((l) => l?.installmentAccountId === block.accountId)
-    : undefined
+  const manualLine = manual ? lines.find((l) => invoiceKeyOf(l) === block.accountId) : undefined
   const isChecked = (unit: InstallmentAccountUnitItem): boolean =>
     lines.some(
       (l) =>
-        l?.installmentAccountId === block.accountId &&
+        invoiceKeyOf(l) === block.accountId &&
         !!unit.serialNumberId &&
         l.existingSerialNumberIds?.[0] === unit.serialNumberId
     )
@@ -208,24 +215,49 @@ function Block({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <span className={CAPTION}>Invoice #</span>
-          <InstallmentAccountSearchCombobox
-            key={block.accountId || 'none'}
-            value={block.accountId}
-            onChange={(id) => onPickInvoice(block.key, id)}
-            onSelect={(option: SearchComboboxOption) =>
-              onPickInvoice(
-                block.key,
-                option.id,
-                option.meta as InstallmentAccountMeta,
-                option.primary
-              )
-            }
-            initialLabel={block.invoiceLabel}
-            customerId={block.customerId || undefined}
-            error={showErrors && !hasInvoice && lines.length === 0 ? 'Pick the invoice' : undefined}
-            placeholder="Search by invoice number…"
-            typeToSearchMessage="Type an invoice number to search…"
-          />
+          {/* Repossession takes back a financed unit, so it searches
+              installment accounts; a repair/return can be any sale, cash or
+              financed, found by its Sales Invoice No. */}
+          {isRepo ? (
+            <InstallmentAccountSearchCombobox
+              key={block.accountId || 'none'}
+              value={block.accountId}
+              onChange={(id) => onPickInvoice(block.key, id)}
+              onSelect={(option: SearchComboboxOption) =>
+                onPickInvoice(
+                  block.key,
+                  option.id,
+                  option.meta as InstallmentAccountMeta,
+                  option.primary
+                )
+              }
+              initialLabel={block.invoiceLabel}
+              customerId={block.customerId || undefined}
+              error={
+                showErrors && !hasInvoice && lines.length === 0 ? 'Pick the invoice' : undefined
+              }
+              placeholder="Search by invoice number…"
+              typeToSearchMessage="Type an invoice number to search…"
+            />
+          ) : (
+            <RepairIntakeSaleSearchCombobox
+              key={block.accountId || 'none'}
+              value={block.accountId}
+              // A pick fires onChange before onSelect; only onSelect carries
+              // the sale, and handing its id to onPickInvoice would look it
+              // up as an installment account and wipe the units. onChange
+              // only clears.
+              onChange={(id) => {
+                if (!id) onPickInvoice(block.key, '')
+              }}
+              onSelect={(sale) => onPickSale(block.key, sale)}
+              initialLabel={block.invoiceLabel}
+              customerId={block.customerId || undefined}
+              error={
+                showErrors && !hasInvoice && lines.length === 0 ? 'Pick the invoice' : undefined
+              }
+            />
+          )}
 
           <div className="mt-2.5 grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2">
             <div className="min-w-0">
@@ -241,7 +273,7 @@ function Block({
                         type="button"
                         onClick={() => onPickCustomer(block.key, '')}
                         aria-label="Change customer"
-                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#a3a3b2] hover:bg-[#eeeef1] hover:text-[#17171c]"
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-subtle hover:bg-[#eeeef1] hover:text-[#17171c]"
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -262,7 +294,7 @@ function Block({
               <span className={CAPTION}>Customer ID</span>
               <div
                 className={`${MONO} flex h-9.5 items-center rounded-lg border border-[#e4e4e9] bg-[#f5f5f7] px-3 text-[12.5px] ${
-                  block.customerCode ? 'text-[#17171c]' : 'text-[#a3a3b2]'
+                  block.customerCode ? 'text-[#17171c]' : 'text-ink-subtle'
                 }`}
               >
                 {block.customerCode ?? 'Fills in from the customer'}
@@ -277,7 +309,7 @@ function Block({
               type="button"
               onClick={() => onRemoveBlock(block.key)}
               aria-label="Remove invoice"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#8b8b9b] hover:bg-[#fdeceb] hover:text-[#b42318]"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-[#fdeceb] hover:text-[#b42318]"
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -286,7 +318,7 @@ function Block({
       </div>
 
       {hasInvoice && block.loading && (
-        <div className="mt-2.5 text-[11px] text-[#8b8b9b]">Loading this invoice&rsquo;s units…</div>
+        <div className="mt-2.5 text-[11px] text-ink-muted">Loading this invoice&rsquo;s units…</div>
       )}
 
       {units.length > 0 && (
@@ -312,12 +344,12 @@ function Block({
                     <span className={`${MONO} text-[12.5px] text-[#17171c]`}>
                       {unit.serialNumber ?? '—'}
                     </span>
-                    <span className="text-[#c4c4cf]">–</span>
+                    <span className="text-ink-faint">–</span>
                     <span className="min-w-0 flex-1 truncate text-[12.5px] text-[#17171c]">
                       {unit.modelNumber || unit.itemName || '—'}
                     </span>
-                    <span className="text-[#c4c4cf]">–</span>
-                    <span className="text-[12.5px] text-[#5b5b6b]">{unit.brand || '—'}</span>
+                    <span className="text-ink-faint">–</span>
+                    <span className="text-[12.5px] text-[#4b4b5a]">{unit.brand || '—'}</span>
                     {isRepo && canViewCost && checked && unit.repoCost > 0 && (
                       <span className={`${MONO} text-[12px] text-[#0b6644]`}>
                         {fmtPeso(unit.repoCost)}
@@ -328,7 +360,7 @@ function Block({
                     <UnitCostInput
                       line={lines.find(
                         (l) =>
-                          l?.installmentAccountId === block.accountId &&
+                          invoiceKeyOf(l) === block.accountId &&
                           l.existingSerialNumberIds?.[0] === unit.serialNumberId
                       )}
                       showErrors={showErrors}

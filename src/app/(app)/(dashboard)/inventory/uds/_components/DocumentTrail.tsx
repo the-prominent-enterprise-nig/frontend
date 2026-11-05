@@ -194,7 +194,7 @@ export function udsDocumentTrail(uds: Uds): TrailHop[] {
     },
     {
       key: 'to-provider',
-      label: 'Main to provider',
+      label: 'Main to service center',
       icon: Wrench,
       docs: [
         {
@@ -208,7 +208,7 @@ export function udsDocumentTrail(uds: Uds): TrailHop[] {
     },
     {
       key: 'from-provider',
-      label: 'Provider to main',
+      label: 'Service center to main',
       icon: PackageCheck,
       docs: [
         {

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRef } from 'react'
 import { RotateCcw, X, Pencil, Loader2, LayoutDashboard, Crown, Building2 } from 'lucide-react'
 import { useDashboardLayout } from '@/src/hooks/useDashboardLayout'
+import { dashboardRoleForHome } from '@/src/libs/guards/home-module'
 import DashboardWidgetSelector from '@/src/components/dashboard/DashboardWidgetSelector'
 import { DashboardBranchSwitcher } from '@/src/components/dashboard/DashboardBranchSwitcher'
 import { CARD_SHADOW_RESTING } from '@/src/components/dashboard/DashboardWidgetWrapper'
@@ -29,18 +30,20 @@ type DashboardClientProps = {
   userName: string
   roles: string[]
   primaryRole?: string
+  homeModule?: string | null
   companyName?: string | null
   branchName?: string | null
 }
 
-function resolveDashboardRole(roles: string[], primaryRole?: string): DashboardRole {
+function resolveDashboardRole(
+  roles: string[],
+  primaryRole?: string,
+  homeModule?: string | null
+): DashboardRole {
   if (primaryRole === 'Business Owner' || roles.includes('Business Owner')) return 'admin'
-  if (primaryRole === 'Branch Manager' || roles.includes('Branch Manager')) return 'admin'
   if (roles.some((r) => r === 'Superadmin')) return 'admin'
-  if (primaryRole === 'Accountant' || roles.includes('Accountant')) return 'accounting'
-  if (primaryRole === 'Stock Controller' || roles.includes('Stock Controller')) return 'inventory'
-  if (primaryRole === 'Marketing Manager' || roles.includes('Marketing Manager')) return 'sales'
-  return 'default'
+  // Everyone else: the home page set on their highest-priority role.
+  return dashboardRoleForHome(homeModule)
 }
 
 function timeOfDayGreeting(): string {
@@ -61,10 +64,11 @@ export default function DashboardClient({
   userName,
   roles,
   primaryRole,
+  homeModule,
   companyName,
   branchName,
 }: DashboardClientProps) {
-  const dashboardRole = resolveDashboardRole(roles, primaryRole)
+  const dashboardRole = resolveDashboardRole(roles, primaryRole, homeModule)
   const layout = useDashboardLayout(dashboardRole)
 
   // naturalHeightsRef is written by EditableDashboard as widgets render.

@@ -8,7 +8,7 @@ export const DR_STATUS_META: Record<DrStatus, { label: string; badge: string }> 
   posted: { label: 'Posted', badge: 'bg-[#e7f5ef] text-[#0b6644]' },
   invoiced: { label: 'Invoiced', badge: 'bg-[#eaf0fb] text-[#1f4b99]' },
   rejected: { label: 'Rejected', badge: 'bg-[#fdeceb] text-[#8f1c14]' },
-  voided: { label: 'Voided', badge: 'bg-[#f1f1f4] text-[#8b8b9b] line-through' },
+  voided: { label: 'Voided', badge: 'bg-[#f1f1f4] text-ink-muted line-through' },
 }
 
 /** "Approved" means different things per purpose; say which. */

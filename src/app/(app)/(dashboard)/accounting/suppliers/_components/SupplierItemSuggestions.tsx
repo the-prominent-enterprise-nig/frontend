@@ -103,7 +103,7 @@ export default function SupplierItemSuggestions({
 
   if (isLoading)
     return (
-      <div className="flex items-center justify-center rounded-xl border border-[#e4e4e9] py-10 text-[#8b8b9b]">
+      <div className="flex items-center justify-center rounded-xl border border-[#e4e4e9] py-10 text-ink-muted">
         <Loader2 className="h-5 w-5 animate-spin" />
       </div>
     )
@@ -113,7 +113,7 @@ export default function SupplierItemSuggestions({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h4 className="text-[12.5px] font-semibold text-[#3f1490]">Suggested items</h4>
-          <p className="mt-0.5 text-[11.5px] leading-relaxed text-[#5b5b6b]">
+          <p className="mt-0.5 text-[11.5px] leading-relaxed text-[#4b4b5a]">
             {suggestions.length === 0
               ? 'Nothing to suggest — no purchase history, and no item brand matches this supplier’s name.'
               : 'From past purchases and matching brand names. Review before linking — brand matches are a guess.'}
@@ -124,7 +124,7 @@ export default function SupplierItemSuggestions({
             type="button"
             onClick={onClose}
             aria-label="Close suggestions"
-            className="rounded p-1 text-[#8b8b9b] hover:bg-white hover:text-[#3d3d4a]"
+            className="rounded p-1 text-ink-muted hover:bg-white hover:text-[#3d3d4a]"
           >
             <X className="h-4 w-4" />
           </button>
@@ -135,7 +135,7 @@ export default function SupplierItemSuggestions({
         <>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-[200px] flex-1">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8b8b9b]" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
               <input
                 type="text"
                 value={search}
@@ -155,7 +155,7 @@ export default function SupplierItemSuggestions({
 
           <div className="max-h-80 divide-y divide-[#f4f4f6] overflow-y-auto rounded-lg border border-[#e4e4e9] bg-white">
             {visible.length === 0 ? (
-              <p className="py-8 text-center text-[12.5px] text-[#5b5b6b]">
+              <p className="py-8 text-center text-[12.5px] text-[#4b4b5a]">
                 No suggestion matches.
               </p>
             ) : (
@@ -174,7 +174,7 @@ export default function SupplierItemSuggestions({
                     <span className="block truncate text-[12.5px] font-medium text-[#17171c]">
                       {s.name}
                     </span>
-                    <span className={`${MONO} mt-0.5 block text-[10.5px] text-[#5b5b6b]`}>
+                    <span className={`${MONO} mt-0.5 block text-[10.5px] text-[#4b4b5a]`}>
                       {s.sku}
                       {s.brandName ? ` · ${s.brandName}` : ''}
                     </span>
@@ -191,14 +191,14 @@ export default function SupplierItemSuggestions({
           </div>
 
           <div className="flex items-center justify-between gap-3">
-            <p className="text-[11.5px] text-[#5b5b6b]">
+            <p className="text-[11.5px] text-[#4b4b5a]">
               {selected.size === 0 ? 'Nothing selected yet' : `${selected.size} selected`}
             </p>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#5b5b6b] hover:bg-white hover:text-[#17171c]"
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#4b4b5a] hover:bg-white hover:text-[#17171c]"
               >
                 Cancel
               </button>

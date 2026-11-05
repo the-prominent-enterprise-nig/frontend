@@ -36,7 +36,7 @@ export const STATUS_META: Record<
   },
   inactive: {
     label: 'Inactive',
-    chip: 'bg-[#f1f1f4] text-[#5b5b6b]',
+    chip: 'bg-[#f1f1f4] text-[#4b4b5a]',
     dot: 'bg-[#a3a3b2]',
     hint: 'Hidden from new documents — its history stays',
   },

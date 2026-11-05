@@ -305,6 +305,9 @@ export interface PosTransactionLine {
   /** Resolved from this line's own financingTerm — only set on installment
    * lines, and only by endpoints that include it (findOne, getCustomerHistory). */
   termMonths?: number | null
+  /** The Price Use (WIP / CR-BR / SSC…) this line was priced under — set by
+   * findOne only. */
+  priceUseName?: string | null
 }
 
 export interface PosPayment {
@@ -458,6 +461,29 @@ export interface PosTransaction {
    * the cart. Used to split the down payment's tendered rows across
    * schedules via addPayment's installmentScheduleId. */
   installmentSchedules?: { id: string; downPayment: number }[]
+  /** Set by GET /pos/transactions/:id only: the installment account figures
+   * printed beside the receipt. Null for a sale that opened no account
+   * (cash, charge, partner financing). */
+  accountSummary?: PosSaleAccountSummary | null
+}
+
+/** Decimals arrive as numbers here — the backend rounds them for display. */
+export interface PosSaleAccountSummary {
+  accountNumbers: string[]
+  /** LCP — the listed cash price. */
+  listedCashPrice: number
+  downPayment: number
+  /** The credit: LCP less the down payment. */
+  amountFinanced: number
+  monthlyInstallment: number
+  termMonths: number[]
+  /** Rebates applied against the account so far. */
+  rebate: number
+  agentName: string | null
+  /** Null when the viewer may not read agents. */
+  commission: number | null
+  /** Each unit's own share of the credit, keyed by line id. */
+  lineCredits: Record<string, number>
 }
 
 /** An installment-due payment collected later via POS Collections
@@ -643,7 +669,6 @@ export interface CreateTransactionInput {
    * with a check number) — the same ones addPayment takes for the sale. */
   deliveryFeeCheckNumber?: string
   deliveryFeePaymentMethodOptionId?: string
-  deliveryFeeBankTransferVerifiedAtRegister?: boolean
   deliveryFeeCardTxnMode?: PosCardTxnMode
   deliveryFeeCardInstallmentTerm?: number
   /** Scenario 68 — an X-Deal's down payment (the part paid at the register;
@@ -652,7 +677,6 @@ export interface CreateTransactionInput {
   xDealDownPaymentReferenceNumber?: string
   xDealDownPaymentCheckNumber?: string
   xDealDownPaymentMethodOptionId?: string
-  xDealDownPaymentVerifiedAtRegister?: boolean
   /** The sale's output VAT class (Scenario 69 Part F): VAT-OUT-12 when left
    * out, or VAT-OUT-0ZR / VAT-OUT-EXEMPT, which need taxExemptionRef and a
    * manager's approval (managerOverride + managerUserId). */
@@ -876,10 +900,6 @@ export interface AddPaymentInput {
   cardTxnMode?: PosCardTxnMode
   /** Months (3/6/9/12/18/24) — required when cardTxnMode is 'installment'. */
   cardInstallmentTerm?: number
-  /** Scenario 38 Gap 7 — bank_transfer only. The cashier confirmed the
-   * credit already landed at the register, so this posts straight to Cash
-   * in Bank instead of the usual clearing account. */
-  bankTransferVerifiedAtRegister?: boolean
   currency?: string
   fxRate?: number
   notes?: string
@@ -1660,7 +1680,7 @@ export function isRefundPendingApproval(
   )
 }
 
-// ─── Override Review (Scenario 71 Part 4) ─────────────────────────────────────
+// ─── Price Override Log (Scenario 71 Part 4, was Override Review) ─────────────
 
 export type OverrideFlag =
   | 'over_threshold'
@@ -1671,12 +1691,9 @@ export type OverrideFlag =
   | 'credit_overridden'
   | 'credit_warning'
 
-/** 'voided' is read-time only: the sale was voided after the entry was made. */
-export type OverrideEntryStatus = 'pending' | 'approved' | 'rejected' | 'voided'
-
 export type OverridePlanKind = 'cash' | 'installment_term' | 'installment_typed' | 'tpf'
 
-export interface OverrideReviewEntry {
+export interface PriceOverrideLogEntry {
   id: string
   branchId: string
   branchName: string | null
@@ -1712,41 +1729,24 @@ export interface OverrideReviewEntry {
   creditWarnings: string[]
   /** The credit application override and what differed, when there was one. */
   creditOverride: CreditApplicationOverrideSnapshot | null
-  status: OverrideEntryStatus
-  decidedByName: string | null
-  decidedAt: string | null
-  decisionNote: string | null
-  /** The day is signed off — decisions can no longer change. */
-  locked: boolean
+  /** The sale was voided after the override was taken. */
+  voided: boolean
 }
 
-export interface OverrideReviewSignOff {
-  branchId: string
-  branchName: string | null
-  signedAt: string
-  signedByName: string | null
-  entryCount: number
-  approvedCount: number
-  rejectedCount: number
-  totalDifference: number
-}
-
-export interface OverrideReviewDay {
-  date: string
+/** The Price Override Log over a period — read-only, nothing waits for a decision. */
+export interface PriceOverrideLog {
+  /** First and last business day read, yyyy-mm-dd. */
+  from: string
+  to: string
   branchId: string | null
   /** The business's "flag when further below list than this" %, for the flag chip. */
   flagThresholdPct: number
-  signOffs: OverrideReviewSignOff[]
-  /** Other days that still have entries waiting for a decision. */
-  pendingDays: Array<{ date: string; count: number }>
   kpis: {
     entries: number
-    pending: number
     totalDifference: number
     averageBelowListPct: number | null
     flagged: number
     dpWaived: number
-    rejected: number
   }
-  entries: OverrideReviewEntry[]
+  entries: PriceOverrideLogEntry[]
 }

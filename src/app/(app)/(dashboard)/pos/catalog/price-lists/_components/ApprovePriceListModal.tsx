@@ -54,7 +54,7 @@ export function ApprovePriceListModal({ open, onClose, priceList, onApprove, isA
             type="button"
             onClick={onClose}
             disabled={isApproving}
-            className="rounded-lg p-2 text-[#5b5b6b] hover:bg-[#f1f1f4] disabled:opacity-50"
+            className="rounded-lg p-2 text-[#4b4b5a] hover:bg-[#f1f1f4] disabled:opacity-50"
           >
             <X className="h-5 w-5" />
           </button>
@@ -64,7 +64,7 @@ export function ApprovePriceListModal({ open, onClose, priceList, onApprove, isA
           <div className="space-y-4 px-6 py-4">
             <div className="space-y-1 rounded-lg border border-[#e4e4e9] bg-[#fbfbfc] px-4 py-3">
               <p className="text-sm font-medium text-[#17171c]">{priceList.name}</p>
-              <p className="text-xs text-[#5b5b6b]">
+              <p className="text-xs text-[#4b4b5a]">
                 {priceList.allowedBranchIds?.length
                   ? `${priceList.allowedBranchIds.length} branch(es)`
                   : 'All branches'}
@@ -73,7 +73,7 @@ export function ApprovePriceListModal({ open, onClose, priceList, onApprove, isA
 
             <div>
               <label className="mb-1 block text-sm font-medium text-[#3d3d4a]">
-                Remarks <span className="font-normal text-[#8b8b9b]">(optional)</span>
+                Remarks <span className="font-normal text-ink-muted">(optional)</span>
               </label>
               <Controller
                 name="remarks"

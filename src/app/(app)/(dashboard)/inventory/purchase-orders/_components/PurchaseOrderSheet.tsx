@@ -20,8 +20,6 @@ export interface PurchaseOrderPrintDocument {
     totalAmount: number | string
     deliveryInstructions?: string | null
     shippingAddress?: string | null
-    preparedByName?: string | null
-    approvedByName?: string | null
     supplier?: { name?: string | null; address?: string | null; taxId?: string | null } | null
     warehouse?: {
       name: string
@@ -191,16 +189,10 @@ export default function PurchaseOrderSheet({ doc }: { doc: PurchaseOrderPrintDoc
         <div className="max-w-xs">
           <p className="mb-8 font-bold text-prominent-purple-900">Prepared By:</p>
           <div className="border-b border-gray-700" />
-          {po.preparedByName && (
-            <p className="mt-1 text-[12px] text-gray-700">{po.preparedByName}</p>
-          )}
         </div>
         <div className="max-w-xs">
           <p className="mb-8 font-bold text-prominent-purple-900">Approved by:</p>
           <div className="border-b border-gray-700" />
-          {po.approvedByName && (
-            <p className="mt-1 text-[12px] text-gray-700">{po.approvedByName}</p>
-          )}
         </div>
       </div>
     </div>

@@ -197,7 +197,7 @@ export default function SessionsPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-[21px] font-semibold tracking-[-.02em]">Sessions</h1>
-            <p className="mt-0.5 text-[13px] text-[#5b5b6b]">
+            <p className="mt-0.5 text-[13px] text-[#4b4b5a]">
               Every till shift, and how each one reconciled.
             </p>
           </div>
@@ -247,14 +247,14 @@ export default function SessionsPage() {
               ))}
             </div>
           ) : sessions.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-16 text-[#a3a3b2]">
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-ink-subtle">
               <Monitor size={36} />
               <p className="text-[13px]">No sessions found.</p>
             </div>
           ) : (
             <>
               <div
-                className={`hidden gap-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-2.5 text-[10px] uppercase tracking-[.08em] text-[#5b5b6b] lg:grid ${ROW_GRID}`}
+                className={`hidden gap-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-2.5 text-[10px] uppercase tracking-[.08em] text-[#4b4b5a] lg:grid ${ROW_GRID}`}
               >
                 <span />
                 <span>Shift</span>
@@ -403,7 +403,7 @@ function OpenSessionModal({
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
       setSearching(true)
-      const res = await searchUsers(search.trim(), effectiveBranchId, 'Cashier')
+      const res = await searchUsers(search.trim(), effectiveBranchId, 'Branch Cashier')
       if (res.success && Array.isArray(res.data)) {
         setFiltered(res.data)
         setUsersError('')
@@ -627,7 +627,7 @@ const ROW_GRID =
 
 const STATUS_CHIP: Record<string, { label: string; chip: string; dot: string }> = {
   open: { label: 'Open', chip: 'bg-[#e7f5ef] text-[#0b6644]', dot: 'bg-[#0f7b52]' },
-  closed: { label: 'Closed', chip: 'bg-[#f1f1f4] text-[#5b5b6b]', dot: 'bg-[#a3a3b2]' },
+  closed: { label: 'Closed', chip: 'bg-[#f1f1f4] text-[#4b4b5a]', dot: 'bg-[#a3a3b2]' },
   handed_over: { label: 'Handed over', chip: 'bg-[#fdf3e3] text-[#8a4b06]', dot: 'bg-[#c8861a]' },
 }
 
@@ -709,7 +709,7 @@ function SessionRow({
       aria-expanded={expanded}
       aria-label={expanded ? 'Hide session detail' : 'Show session detail'}
       className={`flex h-6 w-6 items-center justify-center rounded-md ${
-        expanded ? 'bg-[#f1ebfb] text-[#3f1490]' : 'text-[#8b8b9b] hover:bg-[#f4f4f6]'
+        expanded ? 'bg-[#f1ebfb] text-[#3f1490]' : 'text-ink-muted hover:bg-[#f4f4f6]'
       }`}
     >
       <ChevronDown size={14} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
@@ -763,7 +763,7 @@ function SessionRow({
           <span className="truncate text-[12.5px] font-medium">
             {terminal} · opened {shiftTime(session.openedAt)}
           </span>
-          <span className="truncate text-[10.5px] text-[#5b5b6b]">{subline}</span>
+          <span className="truncate text-[10.5px] text-[#4b4b5a]">{subline}</span>
         </div>
         <span className="min-w-0 truncate text-[12.5px] text-[#3d3d4a]">{cashier}</span>
         <span className="text-right text-[12.5px] tabular-nums">
@@ -793,11 +793,11 @@ function SessionRow({
               <span className="truncate text-[12.5px] font-medium">
                 {terminal} · opened {shiftTime(session.openedAt)}
               </span>
-              <span className="truncate text-[11px] text-[#5b5b6b]">
+              <span className="truncate text-[11px] text-[#4b4b5a]">
                 {cashier} · {session._count?.transactions ?? 0} txns ·{' '}
                 {formatCurrency(session.openingCash)} float
               </span>
-              <span className="truncate text-[11px] text-[#5b5b6b]">{subline}</span>
+              <span className="truncate text-[11px] text-[#4b4b5a]">{subline}</span>
             </button>
           </div>
           {chip}
@@ -818,7 +818,7 @@ function SessionRow({
 function DetailPane({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5 rounded-[10px] border border-[#e4e4e9] bg-white px-3.5 py-3">
-      <span className="text-[9.5px] uppercase tracking-[.08em] text-[#5b5b6b]">{title}</span>
+      <span className="text-[9.5px] uppercase tracking-[.08em] text-[#4b4b5a]">{title}</span>
       {children}
     </div>
   )
@@ -938,7 +938,7 @@ function SessionDetail({ session }: { session: PosSession }) {
     strong: true,
     tone:
       variance === null
-        ? 'text-[#5b5b6b]'
+        ? 'text-[#4b4b5a]'
         : isOff
           ? variance > 0
             ? 'text-[#1f4b99]'
@@ -967,13 +967,13 @@ function SessionDetail({ session }: { session: PosSession }) {
                   <span className={`text-[12px] ${row.strong ? 'font-semibold' : ''}`}>
                     {row.label}
                   </span>
-                  <span className="text-[10px] text-[#5b5b6b]">{row.note}</span>
+                  <span className="text-[10px] text-[#4b4b5a]">{row.note}</span>
                 </div>
                 <span
                   className={`shrink-0 tabular-nums ${
                     row.key === 'variance' ? 'text-[14px]' : 'text-[12.5px]'
                   } ${row.strong ? 'font-semibold' : 'font-medium'} ${
-                    row.tone ?? (row.muted ? 'text-[#5b5b6b]' : '')
+                    row.tone ?? (row.muted ? 'text-[#4b4b5a]' : '')
                   }`}
                 >
                   {row.value}
@@ -999,7 +999,7 @@ function SessionDetail({ session }: { session: PosSession }) {
               </div>
             ))
           ) : (
-            <p className="text-[12px] text-[#5b5b6b]">
+            <p className="text-[12px] text-[#4b4b5a]">
               {isClosed ? 'No payments taken this session.' : 'Recorded at close.'}
             </p>
           )}
@@ -1021,7 +1021,7 @@ function SessionDetail({ session }: { session: PosSession }) {
                   <span className="text-[12px] tabular-nums text-[#3d3d4a]">
                     {denomination === 'coins' ? 'Coins' : `₱${denomination}`}
                   </span>
-                  <span className="text-right text-[11px] tabular-nums text-[#5b5b6b]">
+                  <span className="text-right text-[11px] tabular-nums text-[#4b4b5a]">
                     {denomination === 'coins' ? '' : `× ${value}`}
                   </span>
                   <span className="text-right text-[12px] tabular-nums">
@@ -1336,7 +1336,7 @@ function CloseSessionModal({
     },
     {
       key: 'collections',
-      label: 'Counter collections',
+      label: 'MI collections',
       note: 'monthly installments (MI) paid in cash at the counter',
       amount: Number(reconciliation?.totalCollectionsCash ?? 0),
     },
@@ -1415,7 +1415,7 @@ function CloseSessionModal({
     .sort((a, b) => a.label.localeCompare(b.label))
 
   const tone = !hasCount
-    ? { text: 'text-[#5b5b6b]', bg: 'bg-white', border: 'border-[#e4e4e9]' }
+    ? { text: 'text-[#4b4b5a]', bg: 'bg-white', border: 'border-[#e4e4e9]' }
     : !isOff
       ? { text: 'text-[#0b6644]', bg: 'bg-[#f4fbf7]', border: 'border-[#dcefe5]' }
       : variance > 0
@@ -1462,7 +1462,7 @@ function CloseSessionModal({
             ← Back to sessions
           </button>
           <h2 className="text-[20px] font-semibold tracking-[-.02em]">Close session</h2>
-          <p className="text-[12.5px] text-[#5b5b6b]">
+          <p className="text-[12.5px] text-[#4b4b5a]">
             {[
               terminalPlaceName(session.terminal),
               session.terminal?.name ?? session.terminalId,
@@ -1509,7 +1509,7 @@ function CloseSessionModal({
                 up hunting for ₱28,690 of GCash in a cash till. */}
             <div className="flex flex-col gap-2 rounded-[11px] border border-[#e4e4e9] bg-white px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <span className="text-[9.5px] uppercase leading-[1.5] tracking-[.08em] text-[#5b5b6b]">
+                <span className="text-[9.5px] uppercase leading-[1.5] tracking-[.08em] text-[#4b4b5a]">
                   Also taken this shift
                 </span>
                 <span className="text-[12.5px] tabular-nums text-[#3d3d4a]">
@@ -1536,7 +1536,7 @@ function CloseSessionModal({
                             }`}
                           />
                           <span className="min-w-0 text-[12.5px] leading-[1.4]">{group.label}</span>
-                          <span className="whitespace-nowrap text-[11px] text-[#5b5b6b]">
+                          <span className="whitespace-nowrap text-[11px] text-[#4b4b5a]">
                             {group.providers.length > 1
                               ? `${group.providers.length} providers`
                               : ''}
@@ -1552,7 +1552,7 @@ function CloseSessionModal({
                                 key={provider}
                                 className="grid grid-cols-[minmax(0,1fr)_96px] items-baseline gap-2.5 py-1 pl-5"
                               >
-                                <span className="min-w-0 text-[11.5px] leading-[1.4] text-[#5b5b6b]">
+                                <span className="min-w-0 text-[11.5px] leading-[1.4] text-[#4b4b5a]">
                                   {provider}
                                 </span>
                                 <span className="text-right text-[11.5px] tabular-nums text-[#3d3d4a]">
@@ -1567,7 +1567,7 @@ function CloseSessionModal({
                   })}
                 </div>
               ) : (
-                <p className="text-[11.5px] text-[#5b5b6b]">
+                <p className="text-[11.5px] text-[#4b4b5a]">
                   No non-cash payments taken this shift.
                 </p>
               )}
@@ -1581,7 +1581,7 @@ function CloseSessionModal({
 
             <div className="flex flex-col gap-1.5">
               <label htmlFor="shift-notes" className="text-[12px] font-medium text-[#3d3d4a]">
-                Shift notes <span className="font-normal text-[#5b5b6b]">optional</span>
+                Shift notes <span className="font-normal text-[#4b4b5a]">optional</span>
               </label>
               <textarea
                 id="shift-notes"
@@ -1600,7 +1600,7 @@ function CloseSessionModal({
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4 py-3">
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className="text-[13.5px] font-semibold">Cash count</span>
-                  <span className="text-[11px] text-[#5b5b6b]">
+                  <span className="text-[11px] text-[#4b4b5a]">
                     Pieces per denomination. Tab moves down the list.
                   </span>
                 </div>
@@ -1660,7 +1660,7 @@ function CloseSessionModal({
                     />
                     <span
                       className={`text-right text-[12.5px] tabular-nums ${
-                        counts[d] ? '' : 'text-[#5b5b6b]'
+                        counts[d] ? '' : 'text-[#4b4b5a]'
                       }`}
                     >
                       {peso(d * (counts[d] ?? 0))}
@@ -1685,7 +1685,7 @@ function CloseSessionModal({
                   />
                   <span
                     className={`text-right text-[12.5px] tabular-nums ${
-                      coinsAmount ? '' : 'text-[#5b5b6b]'
+                      coinsAmount ? '' : 'text-[#4b4b5a]'
                     }`}
                   >
                     {peso(coinsAmount)}
@@ -1696,7 +1696,7 @@ function CloseSessionModal({
               <div className="flex items-start justify-between gap-4 border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-3">
                 <div className="flex min-w-0 flex-col">
                   <span className="text-[12.5px] font-semibold">Counted</span>
-                  <span className="text-[10.5px] text-[#5b5b6b]">
+                  <span className="text-[10.5px] text-[#4b4b5a]">
                     {pieceCount} {pieceCount === 1 ? 'note' : 'notes'}
                     {coinsAmount ? ` + ₱${peso(coinsAmount)} in coins` : ''}
                   </span>
@@ -1719,7 +1719,7 @@ function CloseSessionModal({
                   <span className="text-[12px] leading-[1.5] text-[#3d3d4a]">{verdictBody}</span>
                 </div>
                 <div className="flex shrink-0 flex-col items-end">
-                  <span className="text-[9.5px] uppercase tracking-[.08em] text-[#5b5b6b]">
+                  <span className="text-[9.5px] uppercase tracking-[.08em] text-[#4b4b5a]">
                     {!hasCount
                       ? 'Over / short'
                       : variance > 0
@@ -1801,7 +1801,7 @@ function CloseSessionModal({
                         setSearch('')
                         setPin('')
                       }}
-                      className="ml-auto text-[11.5px] text-[#5b5b6b] hover:text-[#17171c]"
+                      className="ml-auto text-[11.5px] text-[#4b4b5a] hover:text-[#17171c]"
                     >
                       Change
                     </button>
@@ -1817,7 +1817,7 @@ function CloseSessionModal({
                           setPin('')
                           setVerifyError('')
                         }}
-                        className="text-[11.5px] text-[#5b5b6b] hover:text-[#17171c]"
+                        className="text-[11.5px] text-[#4b4b5a] hover:text-[#17171c]"
                       >
                         Change
                       </button>
@@ -1859,7 +1859,7 @@ function CloseSessionModal({
                       onChange={(e) => setSearch(e.target.value)}
                       className={inputChrome}
                     />
-                    {searching && <p className="text-[11.5px] text-[#5b5b6b]">Searching…</p>}
+                    {searching && <p className="text-[11.5px] text-[#4b4b5a]">Searching…</p>}
                     {usersError && <p className="text-[11.5px] text-[#b42318]">{usersError}</p>}
                     {filtered.length > 0 && (
                       <div className="overflow-hidden rounded-lg border border-[#e4e4e9] bg-white">
@@ -1870,7 +1870,7 @@ function CloseSessionModal({
                             onClick={() => setSelectedUser({ id: u.id, name: u.name })}
                             className="block w-full px-3 py-2 text-left text-[13px] hover:bg-[#f6f6f8]"
                           >
-                            {u.name} <span className="text-[11.5px] text-[#5b5b6b]">{u.email}</span>
+                            {u.name} <span className="text-[11.5px] text-[#4b4b5a]">{u.email}</span>
                           </button>
                         ))}
                       </div>
@@ -1888,7 +1888,7 @@ function CloseSessionModal({
           that has scrolled out of view. */}
       <div className="flex flex-wrap items-center justify-between gap-3.5 border-t border-[#e4e4e9] bg-white px-5 py-3 shadow-[0_-8px_24px_-18px_rgba(20,20,30,.35)]">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span className={`text-[11.5px] ${reasonMissing ? 'text-[#b42318]' : 'text-[#5b5b6b]'}`}>
+          <span className={`text-[11.5px] ${reasonMissing ? 'text-[#b42318]' : 'text-[#4b4b5a]'}`}>
             {!hasCount
               ? `Expected ₱${peso(expected)}`
               : countedNothing && nothingExpected
@@ -1946,7 +1946,7 @@ function SessionCollectionsPanel({
   return (
     <div className="flex flex-col gap-2 rounded-[11px] border border-[#e4e4e9] bg-white px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="text-[9.5px] uppercase leading-[1.5] tracking-[.08em] text-[#5b5b6b]">
+        <span className="text-[9.5px] uppercase leading-[1.5] tracking-[.08em] text-[#4b4b5a]">
           Collections this shift
         </span>
         <span className="text-[12.5px] tabular-nums text-[#3d3d4a]">
@@ -1956,7 +1956,7 @@ function SessionCollectionsPanel({
       {loading ? (
         <Skeleton className="h-4 w-40" />
       ) : collections.length === 0 ? (
-        <p className="text-[11.5px] text-[#5b5b6b]">No collections this shift.</p>
+        <p className="text-[11.5px] text-[#4b4b5a]">No collections this shift.</p>
       ) : (
         <div className="flex flex-col">
           {collections.map((c, i) => (
@@ -1972,7 +1972,7 @@ function SessionCollectionsPanel({
                 </span>
                 <span className="tabular-nums">{c.number ?? 'No CR #'}</span>
               </span>
-              <span className="whitespace-nowrap text-[11px] text-[#5b5b6b]">
+              <span className="whitespace-nowrap text-[11px] text-[#4b4b5a]">
                 {tenderLabel(c.tenderKey)}
                 {c.isCash ? ' · in drawer' : ''}
               </span>
@@ -2023,7 +2023,7 @@ function HandoverModal({
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
       setSearching(true)
-      const res = await searchUsers(search.trim(), branchId ?? undefined, 'Cashier')
+      const res = await searchUsers(search.trim(), branchId ?? undefined, 'Branch Cashier')
       if (res.success && Array.isArray(res.data)) {
         setFiltered(res.data)
         setUsersError('')
@@ -2263,7 +2263,7 @@ function ReconciliationModal({
         {Number(data.totalCollectionsCash ?? 0) > 0 && (
           <div className="rounded-xl border border-gray-200 px-4 py-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Counter collections (cash)</span>
+              <span className="text-sm text-gray-600">MI collections (cash)</span>
               <span className="text-sm font-medium text-gray-900">
                 {formatCurrency(Number(data.totalCollectionsCash))}
               </span>

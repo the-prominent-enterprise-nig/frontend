@@ -73,7 +73,7 @@ export default function SettlementLedger({ settlement, notes, onNotes }: Props) 
                 cell.strong ? 'text-[20px] text-[#17171c]' : 'text-[15px]'
               } ${
                 !cell.strong && (cell.value === '—' || cell.value === 'pending')
-                  ? 'text-[#a3a3b2]'
+                  ? 'text-ink-subtle'
                   : cell.strong
                     ? ''
                     : 'text-[#3d3d4a]'
@@ -83,7 +83,7 @@ export default function SettlementLedger({ settlement, notes, onNotes }: Props) 
             </span>
             <span
               className={`text-[10.5px] leading-[1.35] ${
-                cell.strong ? 'text-[#3d3d4a]' : 'text-[#5b5b6b]'
+                cell.strong ? 'text-[#3d3d4a]' : 'text-[#4b4b5a]'
               }`}
             >
               {cell.note}

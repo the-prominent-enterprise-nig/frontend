@@ -38,6 +38,8 @@ import {
 } from '@/src/libs/data/AccountingV2Data'
 import { validateManagerByPin } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import Tooltip from '@/src/components/ui/Tooltip'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
 import Field from '../../_shared/Field'
 import CreditMemoDialog from '../../_shared/CreditMemoDialog'
 import DebitMemoDialog from '../../_shared/DebitMemoDialog'
@@ -64,6 +66,12 @@ export default function ARInvoicesList({
   dedicatedCustomer?: boolean
 } = {}) {
   const router = useRouter()
+  // Edit, Void and Delete show only to those the backend lets through
+  // (UAT review 2026-11-04: shown to everyone, refused on click).
+  const { data: me } = useMe()
+  const canEdit = !!me && can(me, 'accounting:ar-invoices:update')
+  const canVoid = !!me && can(me, 'accounting:ar-invoices:void')
+  const canDelete = !!me && can(me, 'accounting:ar-invoices:delete')
   const [items, setItems] = useState<ARInvoice[]>([])
   const [loading, setLoading] = useState(true)
   const [sweeping, setSweeping] = useState(false)
@@ -310,9 +318,13 @@ export default function ARInvoicesList({
                     onHistory={() => setHistoryFor(invoice)}
                     onCredit={() => setCreditingFor(invoice)}
                     onDebit={() => setDebitingFor(invoice)}
-                    onEdit={() => router.push(`/accounting/ar-invoices/${invoice.id}/edit`)}
-                    onVoid={() => setVoidingFor(invoice)}
-                    onDelete={() => setDeletingFor(invoice)}
+                    onEdit={
+                      canEdit
+                        ? () => router.push(`/accounting/ar-invoices/${invoice.id}/edit`)
+                        : undefined
+                    }
+                    onVoid={canVoid ? () => setVoidingFor(invoice) : undefined}
+                    onDelete={canDelete ? () => setDeletingFor(invoice) : undefined}
                   />
                 ))
               )
@@ -404,9 +416,10 @@ function InvoiceRow({
   onHistory: () => void
   onCredit: () => void
   onDebit: () => void
-  onEdit: () => void
-  onVoid: () => void
-  onDelete: () => void
+  /** Absent when the user may not: the button isn't shown. */
+  onEdit?: () => void
+  onVoid?: () => void
+  onDelete?: () => void
 }) {
   return (
     <tr onClick={onOpen} className="cursor-pointer hover:bg-gray-50">
@@ -524,37 +537,45 @@ function InvoiceRow({
               </Tooltip>
             )}
           </div>
-          <div className="ml-1 flex items-center gap-0.5 border-l border-gray-200 pl-1.5">
-            <Tooltip label="Edit">
-              <button
-                onClick={onEdit}
-                aria-label="Edit"
-                className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
-              >
-                <Pencil className="w-4 h-4" />
-              </button>
-            </Tooltip>
-            {['SENT', 'PARTIAL', 'OVERDUE'].includes(i.status) && i.amountPaid === 0 && (
-              <Tooltip label="Void">
-                <button
-                  onClick={onVoid}
-                  aria-label="Void"
-                  className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                >
-                  <Ban className="w-4 h-4" />
-                </button>
-              </Tooltip>
-            )}
-            <Tooltip label="Delete">
-              <button
-                onClick={onDelete}
-                aria-label="Delete"
-                className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </Tooltip>
-          </div>
+          {(onEdit || onVoid || onDelete) && (
+            <div className="ml-1 flex items-center gap-0.5 border-l border-gray-200 pl-1.5">
+              {onEdit && (
+                <Tooltip label="Edit">
+                  <button
+                    onClick={onEdit}
+                    aria-label="Edit"
+                    className="p-1.5 text-purple-600 hover:bg-purple-50 rounded"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                </Tooltip>
+              )}
+              {onVoid &&
+                ['SENT', 'PARTIAL', 'OVERDUE'].includes(i.status) &&
+                i.amountPaid === 0 && (
+                  <Tooltip label="Void">
+                    <button
+                      onClick={onVoid}
+                      aria-label="Void"
+                      className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                    >
+                      <Ban className="w-4 h-4" />
+                    </button>
+                  </Tooltip>
+                )}
+              {onDelete && (
+                <Tooltip label="Delete">
+                  <button
+                    onClick={onDelete}
+                    aria-label="Delete"
+                    className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </Tooltip>
+              )}
+            </div>
+          )}
         </div>
       </td>
     </tr>

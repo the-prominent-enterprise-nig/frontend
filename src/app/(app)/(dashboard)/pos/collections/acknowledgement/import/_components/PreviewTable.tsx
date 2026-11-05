@@ -8,6 +8,7 @@ import type {
 } from '@/src/schema/pos/acknowledgement-import'
 import type { EditableImportRow } from '../_hooks/useReceiptsImport'
 import type { ImportLookups } from '../_hooks/useImportLookups'
+import { PAID_BY_CUSTOMER } from '../_lib/cells'
 import RowEditPanel from './RowEditPanel'
 
 type Status = AcknowledgementImportRow['status']
@@ -41,7 +42,7 @@ const STATUS_STYLES: Record<
   },
 }
 
-// Row · Customer · Gross · Subsidy · Withholding · Net · Status · Actions.
+// Row · Customer · Paid by · Gross · Subsidy · Withholding · Net · Status · Actions.
 // The money columns have a floor wide enough for a figure like ₱1,250,000.00,
 // so they never run into each other; the Customer column is the one that gives
 // (and truncates). This grid only applies when the review section — the page's
@@ -49,7 +50,34 @@ const STATUS_STYLES: Record<
 // each receipt is the stacked summary instead. (Class names are written out in
 // full: Tailwind can't see one built from pieces.)
 const GRID =
-  '@min-[1000px]:grid-cols-[2rem_minmax(0,2.4fr)_minmax(6.5rem,1fr)_minmax(6.5rem,1fr)_minmax(6.5rem,1fr)_minmax(7rem,1.1fr)_5.5rem_8rem]'
+  '@min-[1000px]:grid-cols-[2rem_minmax(0,2.4fr)_minmax(5rem,0.9fr)_minmax(6.5rem,1fr)_minmax(6.5rem,1fr)_minmax(6.5rem,1fr)_minmax(7rem,1.1fr)_5.5rem_8rem]'
+
+/** Who paid a row: "Customer" in grey, a financing partner in the brand colour
+ * so a settlement stands out; "row" marks one a row's own cell chose over the
+ * page's choice. */
+function PaidByCell({
+  paidBy,
+  fromRow,
+  inline,
+}: {
+  paidBy: string | null
+  fromRow: boolean
+  inline?: boolean
+}) {
+  if (!paidBy) return <span className="text-gray-400">—</span>
+  const partner = paidBy !== PAID_BY_CUSTOMER
+  return (
+    <span className={inline ? undefined : 'flex min-w-0 items-center gap-1'}>
+      <span
+        className={`truncate ${partner ? 'font-medium text-purple-700' : inline ? 'text-gray-700' : 'text-gray-700'}`}
+        title={paidBy}
+      >
+        {paidBy}
+      </span>
+      {fromRow && <span className="ml-1 shrink-0 text-[11px] text-gray-400">row</span>}
+    </span>
+  )
+}
 
 function money(n: number | null | undefined) {
   return n === null || n === undefined ? '—' : fmtMoney(n)
@@ -112,6 +140,7 @@ export default function PreviewTable({
   checking,
   disabled,
   lookups,
+  paidBy,
   onToggle,
   onRemove,
   onCellsChange,
@@ -124,6 +153,9 @@ export default function PreviewTable({
   checking: boolean
   disabled: boolean
   lookups: ImportLookups
+  /** The page's "Who paid these receipts?" choice — what a row with no Paid by
+   * of its own takes. */
+  paidBy: string
   onToggle: (rowNumber: number) => void
   onRemove: (rowNumber: number) => void
   onCellsChange: (rowNumber: number, patch: AcknowledgementImportCells) => void
@@ -136,6 +168,7 @@ export default function PreviewTable({
       >
         <span>Row</span>
         <span>Customer</span>
+        <span>Paid by</span>
         <span className="text-right">Gross</span>
         <span className="text-right">Subsidy</span>
         <span className="text-right">Withholding</span>
@@ -213,6 +246,9 @@ export default function PreviewTable({
                   </div>
                 )}
               </div>
+              <div className="min-w-0">
+                <PaidByCell paidBy={d.paidBy} fromRow={d.paidByFromRow} />
+              </div>
               <div className="text-right tabular-nums whitespace-nowrap text-gray-900">
                 {money(d.grossAmount)}
               </div>
@@ -257,6 +293,9 @@ export default function PreviewTable({
                 </div>
                 <StatusPill status={row.status} />
               </div>
+              <p className="mt-1 text-xs text-gray-500">
+                Paid by <PaidByCell paidBy={d.paidBy} fromRow={d.paidByFromRow} inline />
+              </p>
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                 <p className="tabular-nums text-gray-700">
                   {money(d.grossAmount)} <span className="text-gray-400">→</span>{' '}
@@ -297,6 +336,7 @@ export default function PreviewTable({
                   row={row}
                   cells={own.cells}
                   lookups={lookups}
+                  paidBy={paidBy}
                   disabled={disabled}
                   onChange={(patch) => onCellsChange(row.rowNumber, patch)}
                   onClose={() => onToggle(row.rowNumber)}

@@ -5,11 +5,16 @@ import { ArrowLeft, AlertTriangle, RotateCcw, ShieldCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { type Permission, type Role } from '@/src/schema/settings/list'
-import { assignPermissions, reactivateRole } from '@/src/app/(app)/(dashboard)/settings/_actions'
+import {
+  assignPermissions,
+  reactivateRole,
+  updateRoleHomeModule,
+} from '@/src/app/(app)/(dashboard)/settings/_actions'
 import ModuleAccessList from '@/src/components/settings/ModuleAccessList'
 import { type AccessMap } from '@/src/components/settings/module-map'
 import AdvancedPermissionsSection from '@/src/components/settings/AdvancedPermissionsSection'
 import UnsavedChangesModal from '@/src/components/settings/UnsavedChangesModal'
+import HomePageField from '@/src/components/settings/HomePageField'
 import { showToast } from '@/src/components/ui/toast'
 import { useUnsavedChangesGuard } from '@/src/hooks/useUnsavedChangesGuard'
 import { ACCESS_MODULES, getModulePermissions } from '@/src/components/settings/access-levels'
@@ -41,6 +46,8 @@ export default function RoleAccessClient({
   )
   const [isSaving, setIsSaving] = useState(false)
   const [isReactivating, setIsReactivating] = useState(false)
+  const [homeModule, setHomeModule] = useState<string | null>(role.homeModule ?? null)
+  const [isSavingHome, setIsSavingHome] = useState(false)
 
   // Frozen once, from what the role held on load — same reasoning as
   // moduleOrder below: comparing against a moving target would never detect
@@ -50,6 +57,41 @@ export default function RoleAccessClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   )
+
+  // The home page saves as soon as it is chosen: it is one setting, not part of
+  // the permission list the Save bar below holds.
+  async function handleHomeModuleChange(next: string | null) {
+    const previous = homeModule
+    setHomeModule(next)
+    setIsSavingHome(true)
+    try {
+      const result = await updateRoleHomeModule(role.id, next)
+      if (!result.success) {
+        setHomeModule(previous)
+        showToast({
+          title: 'Failed to update home page',
+          description: result.message || result.error,
+          status: 'error',
+        })
+        return
+      }
+      showToast({
+        title: 'Home page updated',
+        description: `${role.name} now opens on its new home page.`,
+        status: 'success',
+      })
+      router.refresh()
+    } catch (error) {
+      setHomeModule(previous)
+      showToast({
+        title: 'Failed to update home page',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        status: 'error',
+      })
+    } finally {
+      setIsSavingHome(false)
+    }
+  }
 
   const hasUnsavedChanges = useMemo(() => {
     if (selected.size !== initialSelectedIds.size) return true
@@ -241,6 +283,24 @@ export default function RoleAccessClient({
         </div>
 
         <fieldset disabled={isFounderRole} className="space-y-6 disabled:opacity-60">
+          <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_0_rgba(0,0,0,0.03),0_2px_8px_-2px_rgba(0,0,0,0.06)]">
+            <div className="border-b border-zinc-100 px-6 py-4">
+              <h2 className="text-sm font-semibold text-zinc-900">Home page</h2>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                Where people with this role land after signing in, and the menu and dashboard they
+                open with. If someone holds several roles, the one with the highest priority that
+                sets a home page decides.
+              </p>
+            </div>
+            <div className="max-w-sm px-6 py-5">
+              <HomePageField
+                value={homeModule}
+                onChange={handleHomeModuleChange}
+                disabled={isSavingHome}
+              />
+            </div>
+          </section>
+
           <section className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_2px_0_rgba(0,0,0,0.03),0_2px_8px_-2px_rgba(0,0,0,0.06)]">
             <div className="border-b border-zinc-100 px-6 py-4">
               <h2 className="text-sm font-semibold text-zinc-900">Module access</h2>

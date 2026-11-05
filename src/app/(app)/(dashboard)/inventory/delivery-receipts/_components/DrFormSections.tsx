@@ -316,7 +316,7 @@ function CounterpartyField(): React.JSX.Element | null {
   if (isRepairPurpose(purpose) && udsId && udsFixesParty) {
     // Whoever the ticket names — the provider it goes to, or its customer.
     return (
-      <Field className={WIDE} label={kind === 'supplier' ? 'Repair provider' : 'Customer'}>
+      <Field className={WIDE} label={kind === 'supplier' ? 'Service center' : 'Customer'}>
         <div className={READONLY}>
           {(kind === 'supplier' ? supplierLabel : customerLabel) || 'From the repair ticket'}
         </div>
@@ -360,7 +360,7 @@ function CounterpartyField(): React.JSX.Element | null {
   return (
     <Field
       className={WIDE}
-      label={purpose === 'to_service_center' ? 'Repair provider' : 'Supplier'}
+      label={purpose === 'to_service_center' ? 'Service center' : 'Supplier'}
       required={required}
       error={formState.errors.supplierId?.message}
     >

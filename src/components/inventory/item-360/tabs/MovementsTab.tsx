@@ -35,7 +35,7 @@ const TX_COLORS: Record<string, string> = {
   write_off: 'bg-[#fdeceb] text-[#b42318]',
   supplier_return: 'bg-[#eceef5] text-[#3d4a7a]',
   exchange_out: 'bg-[#e8e9fb] text-[#312e81]',
-  field_edit: 'bg-[#f1f1f4] text-[#5b5b6b]',
+  field_edit: 'bg-[#f1f1f4] text-[#4b4b5a]',
 }
 
 function humanizeField(field: string): string {
@@ -112,7 +112,7 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
       {currentBalances.length > 0 && (
         <div className="space-y-1">
           <p
-            className={`${MONO} text-[10.5px] font-semibold tracking-[.08em] text-[#8b8b9b] uppercase`}
+            className={`${MONO} text-[10.5px] font-semibold tracking-[.08em] text-ink-muted uppercase`}
           >
             Current Stock
           </p>
@@ -137,11 +137,11 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
                       b.warehouse?.code ??
                       'Unknown'}
                   </span>
-                  <span className="text-[#a3a3b2]">·</span>
+                  <span className="text-ink-subtle">·</span>
                   <span className={`${MONO} font-semibold text-[#17171c]`}>{b.availableQty}</span>
-                  <span className="text-[#a3a3b2]">avail</span>
+                  <span className="text-ink-subtle">avail</span>
                   {b.reservedQty > 0 && (
-                    <span className="text-[#a3a3b2]">· {b.reservedQty} reserved</span>
+                    <span className="text-ink-subtle">· {b.reservedQty} reserved</span>
                   )}
                 </button>
               )
@@ -175,7 +175,7 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
           onChange={(e) => setStartDate(e.target.value || undefined)}
           className="rounded-lg border border-[#d3d3db] bg-white px-2.5 py-1.5 text-[12px] text-[#3d3d4a] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
         />
-        <span className="text-[12px] text-[#8b8b9b]">to</span>
+        <span className="text-[12px] text-ink-muted">to</span>
         <label htmlFor="movements-end-date" className="sr-only">
           To date
         </label>
@@ -199,7 +199,7 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
         )}
 
         {isFetching && !isLoading && (
-          <RefreshCw className="h-3.5 w-3.5 animate-spin text-[#a3a3b2]" />
+          <RefreshCw className="h-3.5 w-3.5 animate-spin text-ink-subtle" />
         )}
       </div>
 
@@ -221,15 +221,15 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
           </div>
         ) : entries.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Activity className="mb-3 h-8 w-8 text-[#c9c9d3]" />
-            <p className="text-[13px] font-medium text-[#5b5b6b]">No movements found</p>
-            <p className="mt-1 text-[12px] text-[#8b8b9b]">Try adjusting the filters above.</p>
+            <Activity className="mb-3 h-8 w-8 text-ink-faint" />
+            <p className="text-[13px] font-medium text-[#4b4b5a]">No movements found</p>
+            <p className="mt-1 text-[12px] text-ink-muted">Try adjusting the filters above.</p>
           </div>
         ) : (
           <div role="table" aria-label="Stock movements">
             <div
               role="row"
-              className={`${LEDGER_GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] tracking-[.08em] text-[#8b8b9b] uppercase`}
+              className={`${LEDGER_GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] tracking-[.08em] text-ink-muted uppercase`}
             >
               <span role="columnheader">Date</span>
               <span role="columnheader">Reference</span>
@@ -242,7 +242,7 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
 
             <div className="divide-y divide-[#f4f4f6]">
               {entries.map((entry) => {
-                const colorClass = TX_COLORS[entry.transactionType] ?? 'bg-[#f1f1f4] text-[#5b5b6b]'
+                const colorClass = TX_COLORS[entry.transactionType] ?? 'bg-[#f1f1f4] text-[#4b4b5a]'
                 const label = TX_LABELS[entry.transactionType] ?? entry.transactionType
                 const isFieldEdit = entry.transactionType === 'field_edit'
                 const hasIn = entry.quantityIn > 0
@@ -258,7 +258,7 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
                     role="row"
                     className={`${LEDGER_GRID} px-4 py-3 hover:bg-[#fcfcfd]`}
                   >
-                    <span role="cell" className="text-[12px] text-[#5b5b6b]">
+                    <span role="cell" className="text-[12px] text-[#4b4b5a]">
                       {new Date(entry.occurredAt).toLocaleDateString('en-PH', {
                         month: 'short',
                         day: 'numeric',
@@ -282,7 +282,7 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
                           </span>
                         )
                       ) : (
-                        <span className="text-[#a3a3b2]">—</span>
+                        <span className="text-ink-subtle">—</span>
                       )}
                     </span>
 
@@ -298,29 +298,29 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
                       {isFieldEdit ? (
                         <>
                           {humanizeField(entry.field ?? '')}:{' '}
-                          <span className="text-[#a3a3b2] line-through">
+                          <span className="text-ink-subtle line-through">
                             {entry.oldValue ?? '—'}
                           </span>{' '}
-                          <span className="text-[#c9c9d3]">→</span>{' '}
+                          <span className="text-ink-faint">→</span>{' '}
                           <span className="font-medium">{entry.newValue ?? '—'}</span>
                         </>
                       ) : (
                         (location ?? '—')
                       )}
                       {!isFieldEdit && entry.notes && (
-                        <span className="ml-1.5 text-[#a3a3b2] italic">{entry.notes}</span>
+                        <span className="ml-1.5 text-ink-subtle italic">{entry.notes}</span>
                       )}
                     </span>
 
                     <span role="cell" className={`${MONO} text-right text-[13px] font-bold`}>
                       {isFieldEdit ? (
-                        <span className="text-[#a3a3b2]">—</span>
+                        <span className="text-ink-subtle">—</span>
                       ) : hasIn ? (
                         <span className="text-[#0b6644]">+{entry.quantityIn}</span>
                       ) : hasOut ? (
                         <span className="text-[#b42318]">−{entry.quantityOut}</span>
                       ) : (
-                        <span className="text-[#5b5b6b]">0</span>
+                        <span className="text-[#4b4b5a]">0</span>
                       )}
                     </span>
                   </div>
@@ -333,7 +333,7 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-[12px] text-[#8b8b9b]">
+        <div className="flex items-center justify-between text-[12px] text-ink-muted">
           <span>
             {(page - 1) * 20 + 1}–{Math.min(page * 20, total)} of {total}
           </span>

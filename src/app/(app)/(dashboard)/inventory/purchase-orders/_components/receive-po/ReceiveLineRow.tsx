@@ -139,7 +139,7 @@ function WideRow(props: InnerProps) {
       <div className="flex min-w-0 flex-col gap-[3px]">
         <span className="text-[13px] font-medium leading-[1.35]">{props.title}</span>
         <div className="flex flex-wrap items-center gap-[7px]">
-          {props.sku && <span className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>{props.sku}</span>}
+          {props.sku && <span className={`${MONO} text-[10.5px] text-ink-muted`}>{props.sku}</span>}
           {line.isSerialTracked && !closed && <SerialBadge />}
         </div>
       </div>
@@ -155,13 +155,13 @@ function WideRow(props: InnerProps) {
         {props.ordered}
       </span>
       <span
-        className={`${MONO} flex h-[34px] items-center justify-center self-start text-[12.5px] text-[#8b8b9b]`}
+        className={`${MONO} flex h-[34px] items-center justify-center self-start text-[12.5px] text-ink-muted`}
       >
         {props.receivedToDate > 0 ? props.receivedToDate : '—'}
       </span>
       <span
         className={`${MONO} flex h-[34px] items-center justify-center self-start pr-3 text-[13px] font-semibold ${
-          closed ? 'text-[#8b8b9b]' : 'text-[#b25e09]'
+          closed ? 'text-ink-muted' : 'text-[#b25e09]'
         }`}
       >
         {closed ? 'None' : remaining}
@@ -187,7 +187,7 @@ function WideRow(props: InnerProps) {
           <>
             <span
               className={`${MONO} text-right text-[13px] font-semibold ${
-                line.selected && line.quantityReceived > 0 ? 'text-[#17171c]' : 'text-[#a3a3b2]'
+                line.selected && line.quantityReceived > 0 ? 'text-[#17171c]' : 'text-ink-subtle'
               }`}
             >
               {fmtPeso(lineTotal)}
@@ -201,7 +201,7 @@ function WideRow(props: InnerProps) {
             </button>
           </>
         ) : (
-          <span className="text-[11px] text-[#a3a3b2]">—</span>
+          <span className="text-[11px] text-ink-subtle">—</span>
         )}
       </div>
     </div>
@@ -218,7 +218,7 @@ function NarrowCard(props: InnerProps) {
           <span className="text-[13.5px] font-medium leading-[1.35]">{props.title}</span>
           <div className="flex flex-wrap items-center gap-[7px]">
             {props.sku && (
-              <span className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>{props.sku}</span>
+              <span className={`${MONO} text-[10.5px] text-ink-muted`}>{props.sku}</span>
             )}
             {line.isSerialTracked && !closed && <SerialBadge />}
           </div>
@@ -250,7 +250,7 @@ function NarrowCard(props: InnerProps) {
         {canViewCost && (
           <div className="ml-auto flex flex-col items-end gap-px">
             <span className={`${MONO} text-[13px] font-semibold`}>{fmtPeso(lineTotal)}</span>
-            <span className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>
+            <span className={`${MONO} text-[10.5px] text-ink-muted`}>
               @ {fmtPeso(line.unitCost ?? 0)}
             </span>
           </div>
@@ -335,7 +335,7 @@ function QtyStepper({
         onClick={() => onQtyChange(line.quantityReceived - 1)}
         disabled={closed}
         aria-label="Decrease quantity"
-        className={`flex shrink-0 items-center justify-center rounded-md text-[#5b5b6b] hover:bg-[#f1f1f4] disabled:opacity-40 ${step}`}
+        className={`flex shrink-0 items-center justify-center rounded-md text-[#4b4b5a] hover:bg-[#f1f1f4] disabled:opacity-40 ${step}`}
       >
         <Minus className="h-3.5 w-3.5" />
       </button>
@@ -356,7 +356,7 @@ function QtyStepper({
         onClick={() => onQtyChange(line.quantityReceived + 1)}
         disabled={closed}
         aria-label="Increase quantity"
-        className={`flex shrink-0 items-center justify-center rounded-md text-[#5b5b6b] hover:bg-[#f1f1f4] disabled:opacity-40 ${step}`}
+        className={`flex shrink-0 items-center justify-center rounded-md text-[#4b4b5a] hover:bg-[#f1f1f4] disabled:opacity-40 ${step}`}
       >
         <Plus className="h-3.5 w-3.5" />
       </button>
@@ -383,13 +383,13 @@ function SerialQty({ line, remaining, large }: InnerProps & { large?: boolean })
         } ${
           qty > 0
             ? 'border-[#7c4fd1] bg-white text-[#17171c] shadow-[0_0_0_3px_#f4efff]'
-            : 'border-[#d3d3db] bg-[#f7f7f8] text-[#8b8b9b]'
+            : 'border-[#d3d3db] bg-[#f7f7f8] text-ink-muted'
         }`}
       >
         <span>{qty}</span>
-        <span className="text-[#a3a3b2]">/ {remaining}</span>
+        <span className="text-ink-subtle">/ {remaining}</span>
       </div>
-      <span className="text-[10.5px] text-[#8b8b9b]">Counted from serials</span>
+      <span className="text-[10.5px] text-ink-muted">Counted from serials</span>
     </div>
   )
 }
@@ -410,7 +410,7 @@ function FillMaxButton({
         type="button"
         onClick={onFillMax}
         disabled={closed || atMax}
-        className="min-h-[46px] rounded-lg border border-[#d3d3db] bg-white px-3 py-2.5 text-[12.5px] text-[#17171c] disabled:text-[#a3a3b2]"
+        className="min-h-[46px] rounded-lg border border-[#d3d3db] bg-white px-3 py-2.5 text-[12.5px] text-[#17171c] disabled:text-ink-faint"
       >
         {label}
       </button>
@@ -423,7 +423,7 @@ function FillMaxButton({
       onClick={onFillMax}
       disabled={closed || atMax}
       className={`text-left text-[10.5px] ${
-        closed || atMax ? 'cursor-default text-[#8b8b9b]' : 'text-[#5b21b6] hover:underline'
+        closed || atMax ? 'cursor-default text-ink-muted' : 'text-[#5b21b6] hover:underline'
       }`}
     >
       {label}
@@ -456,7 +456,7 @@ function TrackingButton({
       : `${filled} / ${remaining} serials`
 
   const tone = closed
-    ? 'border-[#eeeef1] bg-[#f7f7f8] text-[#8b8b9b]'
+    ? 'border-[#eeeef1] bg-[#f7f7f8] text-ink-muted'
     : !tracked
       ? 'border-[#dcefe5] bg-[#f4fbf7] text-[#0b6644]'
       : hasDuplicate
@@ -511,7 +511,7 @@ function MiniStat({
         highlight ? 'border-[#f7dfc0] bg-[#fdf3e7]' : 'border-[#eeeef1] bg-[#fbfbfc]'
       }`}
     >
-      <span className={`${MONO} text-[9.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+      <span className={`${MONO} text-[9.5px] uppercase tracking-[.08em] text-ink-subtle`}>
         {label}
       </span>
       <span

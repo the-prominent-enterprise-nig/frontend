@@ -1,8 +1,6 @@
 'use client'
 
-import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
 import { showToast } from '@/src/components/ui/toast'
 import { flatToCategorySelectOptions } from '@/src/libs/format/category-tree'
 import type {
@@ -11,7 +9,7 @@ import type {
   UomOption,
 } from '@/src/schema/inventory/items'
 import { createItem } from '../_actions/create-item'
-import { getUnitsOfMeasure, getItemBrands } from '../_actions/get-lookup-data'
+import { getUnitsOfMeasure, getItemBrands, getItemTypes } from '../_actions/get-lookup-data'
 import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
 import CreateItemModal from './CreateItemModal'
 
@@ -25,14 +23,21 @@ function toUomOptions(d: unknown): UomOption[] {
 }
 
 /**
- * Scenario 56 — "Add Item" wherever stock is looked at, not only on the
- * Catalog. Same CreateItemModal and action as Item Master; its lookups share
- * Item Master's cache keys and only load once the modal is opened. A new item
- * refreshes both the catalog and Stock Balance (initial stock may have been
- * recorded with it).
+ * Item Master's Add Item (WH-03 moved it there from Stock Ledger). Opened by
+ * the button in the hub's tab strip, but rendered by the hub itself rather
+ * than beside that button: CreateItemModal fills its nearest positioned
+ * ancestor, and inside the sticky strip that is the strip. Same modal and
+ * action as the Items list; its lookups share that list's cache keys and only
+ * load once opened. A new item refreshes both the catalog and Stock Balance
+ * (initial stock may have been recorded with it).
  */
-export function AddItemButton({ className }: { className?: string }): React.ReactElement {
-  const [open, setOpen] = useState(false)
+export function AddItemModal({
+  open,
+  onClose,
+}: {
+  open: boolean
+  onClose: () => void
+}): React.ReactElement {
   const queryClient = useQueryClient()
 
   const categories = useQuery({
@@ -54,6 +59,13 @@ export function AddItemButton({ className }: { className?: string }): React.Reac
     enabled: open,
   })
 
+  const types = useQuery({
+    queryKey: ['inventory-item-types'],
+    queryFn: () => getItemTypes(),
+    staleTime: LOOKUP_STALE,
+    enabled: open,
+  })
+
   const create = useMutation({
     mutationFn: (data: CreateItemFormValues) => createItem(data),
     onSuccess: (result) => {
@@ -68,27 +80,15 @@ export function AddItemButton({ className }: { className?: string }): React.Reac
   })
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className={
-          className ??
-          'flex items-center gap-2 rounded-lg bg-[#5b21b6] px-3 py-[9px] text-[13px] font-medium text-white hover:bg-[#4a189b]'
-        }
-      >
-        <Plus className="h-3.5 w-3.5" />
-        Add Item
-      </button>
-      <CreateItemModal
-        isOpen={open}
-        onClose={() => setOpen(false)}
-        onSubmit={(data) => create.mutateAsync(data)}
-        isSubmitting={create.isPending}
-        categories={flatToCategorySelectOptions(categories.data?.data?.data ?? [])}
-        uomOptions={toUomOptions(uom.data?.data)}
-        brandOptions={(brands.data?.data ?? []) as ClassificationOption[]}
-      />
-    </>
+    <CreateItemModal
+      isOpen={open}
+      onClose={onClose}
+      onSubmit={(data) => create.mutateAsync(data)}
+      isSubmitting={create.isPending}
+      categories={flatToCategorySelectOptions(categories.data?.data?.data ?? [])}
+      uomOptions={toUomOptions(uom.data?.data)}
+      brandOptions={(brands.data?.data ?? []) as ClassificationOption[]}
+      typeOptions={(types.data?.data ?? []) as ClassificationOption[]}
+    />
   )
 }

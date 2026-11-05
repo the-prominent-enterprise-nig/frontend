@@ -33,7 +33,7 @@ export function DeletePriceListModal({ open, onClose, priceList, onDelete, isDel
             type="button"
             onClick={onClose}
             disabled={isDeleting}
-            className="rounded-lg p-2 text-[#5b5b6b] hover:bg-[#f1f1f4] disabled:opacity-50"
+            className="rounded-lg p-2 text-[#4b4b5a] hover:bg-[#f1f1f4] disabled:opacity-50"
           >
             <X className="h-5 w-5" />
           </button>

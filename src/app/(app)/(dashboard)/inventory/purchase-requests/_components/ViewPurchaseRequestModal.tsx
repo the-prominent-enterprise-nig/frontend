@@ -53,9 +53,9 @@ function InfoRow({
 }): React.ReactElement {
   return (
     <div className="min-w-0">
-      <p className={`${MONO} text-[10px] uppercase tracking-[.09em] text-[#a3a3b2]`}>{label}</p>
+      <p className={`${MONO} text-[10px] uppercase tracking-[.09em] text-ink-subtle`}>{label}</p>
       <p
-        className={`mt-[3px] text-[13px] font-medium ${muted ? 'text-[#8b8b9b]' : 'text-[#17171c]'}`}
+        className={`mt-[3px] text-[13px] font-medium ${muted ? 'text-ink-muted' : 'text-[#17171c]'}`}
       >
         {value}
       </p>
@@ -109,14 +109,14 @@ export function ViewPurchaseRequestModal({
       {/* Header */}
       <div className="sticky top-0 z-40 flex flex-wrap items-start justify-between gap-4 border-b border-[#e4e4e9] bg-white px-5 py-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#a3a3b2]`}>
+          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-ink-subtle`}>
             Purchase Request
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             <h2 className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>{pr.code}</h2>
             <StatusBadge status={pr.status} />
           </div>
-          <p className="text-[11.5px] text-[#8b8b9b]">
+          <p className="text-[11.5px] text-ink-muted">
             Created {fmtDate(pr.createdAt)}
             {pr.submittedAt && ` · Submitted ${fmtDate(pr.submittedAt)}`}
           </p>
@@ -126,7 +126,7 @@ export function ViewPurchaseRequestModal({
           onClick={onClose}
           title="Close"
           aria-label="Close"
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-[#4b4b5a] hover:bg-[#f1f1f4] hover:text-[#17171c]"
         >
           <X className="h-4.5 w-4.5" />
         </button>
@@ -164,20 +164,20 @@ export function ViewPurchaseRequestModal({
         {/* Supplier + facts */}
         <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[1fr_1.15fr]">
           <div className="rounded-xl border border-[#e4e4e9] bg-white p-4">
-            <p className={`${MONO} text-[10px] uppercase tracking-[.09em] text-[#a3a3b2]`}>
+            <p className={`${MONO} text-[10px] uppercase tracking-[.09em] text-ink-subtle`}>
               Supplier
             </p>
             <div className="mt-2.5">
               <p className="text-[15px] font-semibold tracking-[-.005em]">
-                {pr.supplier?.name ?? <span className="text-[#a3a3b2]">Not yet specified</span>}
+                {pr.supplier?.name ?? <span className="text-ink-subtle">Not yet specified</span>}
               </p>
               {pr.supplier?.address && (
-                <p className="mt-0.5 text-[12px] leading-[1.45] text-[#5b5b6b]">
+                <p className="mt-0.5 text-[12px] leading-[1.45] text-[#4b4b5a]">
                   {pr.supplier.address}
                 </p>
               )}
               {pr.supplier?.taxId && (
-                <span className={`${MONO} mt-1.5 inline-block text-[10.5px] text-[#5b5b6b]`}>
+                <span className={`${MONO} mt-1.5 inline-block text-[10.5px] text-[#4b4b5a]`}>
                   TIN {pr.supplier.taxId}
                 </span>
               )}
@@ -220,7 +220,7 @@ export function ViewPurchaseRequestModal({
           <div className="flex items-center justify-between gap-3 border-b border-[#eeeef1] px-4 py-3">
             <div className="flex items-center gap-2">
               <span className="text-[13.5px] font-semibold">Line Items</span>
-              <span className={`${MONO} text-[11px] text-[#8b8b9b]`}>
+              <span className={`${MONO} text-[11px] text-ink-muted`}>
                 {pr.lines.length} {pr.lines.length === 1 ? 'line' : 'lines'}
               </span>
             </div>
@@ -230,7 +230,7 @@ export function ViewPurchaseRequestModal({
             <table className="w-full min-w-[560px] text-sm">
               <thead>
                 <tr
-                  className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+                  className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[10px] uppercase tracking-[.09em] text-ink-muted`}
                 >
                   <th className="px-4 py-2.5 text-left">Item / SKU</th>
                   <th className="px-3 py-2.5 text-right">Qty</th>
@@ -262,11 +262,11 @@ export function ViewPurchaseRequestModal({
                             </span>
                           )}
                         </div>
-                        <p className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>{line.item.sku}</p>
+                        <p className={`${MONO} text-[10.5px] text-ink-muted`}>{line.item.sku}</p>
                         {line.notes && (
-                          <p className="mt-0.5 text-[11.5px] text-[#5b5b6b]">{line.notes}</p>
+                          <p className="mt-0.5 text-[11.5px] text-[#4b4b5a]">{line.notes}</p>
                         )}
-                        {chain && <p className="mt-0.5 text-[11.5px] text-[#5b5b6b]">{chain}</p>}
+                        {chain && <p className="mt-0.5 text-[11.5px] text-[#4b4b5a]">{chain}</p>}
                       </td>
                       <td className={`${MONO} px-3 py-3 text-right text-[13px] text-[#3d3d4a]`}>
                         {line.quantity}
@@ -310,7 +310,7 @@ export function ViewPurchaseRequestModal({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+          className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#4b4b5a] hover:bg-[#f1f1f4] hover:text-[#17171c]"
         >
           Close
         </button>

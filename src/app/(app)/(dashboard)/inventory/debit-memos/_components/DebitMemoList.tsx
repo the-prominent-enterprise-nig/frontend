@@ -178,7 +178,7 @@ function MemoRowActions({
   ]
 
   if (!primary && menuItems.length === 0) {
-    return <span className="text-xs text-[#a3a3b2]">—</span>
+    return <span className="text-xs text-ink-subtle">—</span>
   }
 
   return (
@@ -329,14 +329,14 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
     <div
       className={`min-h-full w-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px] ${PLEX}`}
     >
-      <div className="mx-auto max-w-7xl space-y-5">
+      <div className="mx-auto max-w-[1520px] space-y-5">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="max-w-2xl">
             <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Debit Memos</h1>
             {/* Says "back out" because the Returns screen moves stock the
                 opposite way and the two names can't tell them apart. */}
-            <p className="mt-1 text-sm text-[#5b5b6b]">
+            <p className="mt-1 text-sm text-[#4b4b5a]">
               Supplier returns going <strong>back out</strong> to a supplier, and the internal memos
               approved delivery receipts post.
             </p>
@@ -346,7 +346,7 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[220px] flex-1 sm:max-w-md">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8b8b9b]" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
             <input
               type="search"
               value={filters.query}
@@ -406,7 +406,7 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
               >
                 {pill.label}
                 <span
-                  className={`rounded-full px-1.5 py-px text-[10px] font-semibold ${isOn ? 'bg-white/20' : 'bg-[#f1f1f4] text-[#5b5b6b]'}`}
+                  className={`rounded-full px-1.5 py-px text-[10px] font-semibold ${isOn ? 'bg-white/20' : 'bg-[#f1f1f4] text-[#4b4b5a]'}`}
                 >
                   {pill.count}
                 </span>
@@ -426,12 +426,12 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
           className={`overflow-hidden rounded-xl border border-[#e4e4e9] bg-white shadow-sm transition-opacity ${isFetching || internal.isFetching ? 'opacity-60' : ''}`}
         >
           {loading ? (
-            <div className="p-8 text-center text-sm text-[#8b8b9b]">Loading debit memos…</div>
+            <div className="p-8 text-center text-sm text-ink-muted">Loading debit memos…</div>
           ) : isEmptyOverall ? (
             <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-              <PackageX className="mb-3 h-10 w-10 text-[#c9c9d3]" />
+              <PackageX className="mb-3 h-10 w-10 text-ink-faint" />
               <p className="text-sm font-medium text-[#3d3d4a]">No debit memos yet</p>
-              <p className="mt-1 max-w-lg text-xs leading-relaxed text-[#5b5b6b]">
+              <p className="mt-1 max-w-lg text-xs leading-relaxed text-[#4b4b5a]">
                 Memos come from delivery receipts: a &quot;Return units to supplier&quot; DR drafts
                 a supplier memo, and an approved DR with a debit memo drafts an internal one for
                 accounting.
@@ -439,9 +439,9 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
             </div>
           ) : isFilteredEmpty ? (
             <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
-              <Search className="mb-3 h-8 w-8 text-[#c9c9d3]" />
+              <Search className="mb-3 h-8 w-8 text-ink-faint" />
               <p className="text-sm font-medium text-[#3d3d4a]">No memos match</p>
-              <p className="mt-1 max-w-md text-xs text-[#5b5b6b]">
+              <p className="mt-1 max-w-md text-xs text-[#4b4b5a]">
                 {filters.query
                   ? `Nothing matches “${filters.query}” inside the current filters.`
                   : 'No memo falls inside these filters.'}
@@ -487,7 +487,7 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
                           <span className="mt-0.5 block truncate text-xs text-[#3d3d4a]">
                             {memo.supplier?.name ?? '—'} · {appliedLabel(memo).text}
                           </span>
-                          <span className="mt-0.5 block truncate text-[11px] text-[#8b8b9b]">
+                          <span className="mt-0.5 block truncate text-[11px] text-ink-muted">
                             {fmtDate(memo.memoDate)} · {returningLabel(memo)}
                           </span>
                         </button>
@@ -499,7 +499,7 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
                         </div>
                       </div>
                       <div className="mt-2">
-                        <span className="text-[11px] text-[#8b8b9b]">{linesLabel(memo)}</span>
+                        <span className="text-[11px] text-ink-muted">{linesLabel(memo)}</span>
                       </div>
                       <div className="mt-3 border-t border-[#eeeef1] pt-3">
                         <MemoRowActions
@@ -575,7 +575,7 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
                                 onClick={() => setExpanded(isOpen ? null : memo.id)}
                                 aria-expanded={isOpen}
                                 aria-label={isOpen ? 'Collapse memo' : 'Expand memo'}
-                                className={`rounded-md p-1.5 ${isOpen ? 'bg-[#f1ebfb] text-[#3f1490]' : 'text-[#8b8b9b] hover:bg-[#f1f1f4]'}`}
+                                className={`rounded-md p-1.5 ${isOpen ? 'bg-[#f1ebfb] text-[#3f1490]' : 'text-ink-muted hover:bg-[#f1f1f4]'}`}
                               >
                                 {isOpen ? (
                                   <ChevronDown className="h-4 w-4" />
@@ -592,7 +592,7 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
                               >
                                 {memo.memoNumber}
                               </button>
-                              <span className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-[#8b8b9b]">
+                              <span className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-ink-muted">
                                 <TypeChip internal={false} />
                                 {fmtDate(memo.memoDate)}
                                 {memo.finalizedAt && ` · posted ${fmtDate(memo.finalizedAt)}`}
@@ -618,7 +618,7 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
                               <span className="block truncate text-[12.5px] text-[#3d3d4a]">
                                 {returningLabel(memo)}
                               </span>
-                              <span className="mt-0.5 block truncate text-[10.5px] text-[#8b8b9b]">
+                              <span className="mt-0.5 block truncate text-[10.5px] text-ink-muted">
                                 {linesLabel(memo)}
                               </span>
                             </td>

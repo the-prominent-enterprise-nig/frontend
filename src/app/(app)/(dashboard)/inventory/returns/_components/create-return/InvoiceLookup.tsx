@@ -90,7 +90,7 @@ export default function InvoiceLookup({
 
   return (
     <div className="relative w-full max-w-[420px]">
-      <Receipt className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8a8a99]" />
+      <Receipt className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
       <input
         ref={inputRef}
         type="search"
@@ -109,7 +109,7 @@ export default function InvoiceLookup({
         className={`h-[38px] w-full pl-8 pr-9 ${INPUT} [&::-webkit-search-cancel-button]:appearance-none`}
       />
       {isLoading ? (
-        <Loader2 className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-[#8a8a99]" />
+        <Loader2 className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-ink-muted" />
       ) : (
         value && (
           <button
@@ -119,7 +119,7 @@ export default function InvoiceLookup({
               inputRef.current?.focus()
             }}
             aria-label="Clear the invoice search"
-            className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-[#8a8a99] hover:bg-[#f2f2f4] hover:text-[#17171c]"
+            className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-ink-muted hover:bg-[#f2f2f4] hover:text-[#17171c]"
           >
             <X className="h-3.5 w-3.5" />
           </button>

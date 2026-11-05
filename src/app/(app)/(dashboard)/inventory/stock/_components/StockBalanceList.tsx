@@ -10,10 +10,6 @@ import CategorySelect from '@/src/components/ui/CategorySelect'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import type { StockBalance, StockStateFilter } from '@/src/schema/inventory/goods-receiving'
-import type { SessionUser } from '@/src/libs/guards/permission'
-import { hasPermission } from '@/src/hooks/usePermission'
-import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
-import { AddItemButton } from '../../items/_components/AddItemButton'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
 import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
 import { stockStatusOf, type StockStatus } from '@/src/libs/inventory/stock-status'
@@ -95,10 +91,8 @@ function SkeletonBar({ wide }: { wide?: boolean }) {
 }
 
 export default function StockBalanceList({
-  session,
   onLocationsChange,
 }: {
-  session: SessionUser
   /** Lets StockHub snapshot the current location filter so the Ledger tab
    * can inherit it when it's opened next. */
   onLocationsChange?: (v: LocationToken[]) => void
@@ -161,14 +155,10 @@ export default function StockBalanceList({
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
             <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Stock Balance</h1>
-            <p className="text-[13px] text-[#5b5b6b]">
+            <p className="text-[13px] text-[#4b4b5a]">
               One row per item — on-hand, sold, reserved and available, rolled up across every
               selected location.
             </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Scenario 56 — add an item without leaving Stock. */}
-            {hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_CREATE) && <AddItemButton />}
           </div>
         </div>
 
@@ -185,7 +175,7 @@ export default function StockBalanceList({
         {!isLoading && (
           <div className="grid grid-cols-2 divide-x divide-y divide-[#eeeef1] overflow-hidden rounded-xl border border-[#e4e4e9] bg-white min-[640px]:grid-cols-3 min-[1280px]:grid-cols-6 min-[1080px]:divide-y-0">
             <div className="flex flex-col gap-1 px-4 py-3">
-              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
+              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-ink-muted`}>
                 Items
               </span>
               <span className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>
@@ -193,7 +183,7 @@ export default function StockBalanceList({
               </span>
             </div>
             <div className="flex flex-col gap-1 px-4 py-3">
-              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
+              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-ink-muted`}>
                 Total
               </span>
               <span className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>
@@ -201,7 +191,7 @@ export default function StockBalanceList({
               </span>
             </div>
             <div className="flex flex-col gap-1 px-4 py-3">
-              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
+              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-ink-muted`}>
                 Transferred
               </span>
               <span className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>
@@ -209,7 +199,7 @@ export default function StockBalanceList({
               </span>
             </div>
             <div className="flex flex-col gap-1 px-4 py-3">
-              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
+              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-ink-muted`}>
                 Sold
               </span>
               <span className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>
@@ -217,7 +207,7 @@ export default function StockBalanceList({
               </span>
             </div>
             <div className="flex flex-col gap-1 px-4 py-3">
-              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
+              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-ink-muted`}>
                 Reserved
               </span>
               <span
@@ -229,7 +219,7 @@ export default function StockBalanceList({
               </span>
             </div>
             <div className="flex flex-col gap-1 bg-[#f4fbf7] px-4 py-3">
-              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8b8b9b]`}>
+              <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-ink-muted`}>
                 Available
               </span>
               <span
@@ -251,14 +241,14 @@ export default function StockBalanceList({
               searchFocus ? CONTROL_CHROME.focused : CONTROL_CHROME.idle
             }`}
           >
-            <Search className="h-3.25 w-3.25 shrink-0 text-[#8b8b9b]" />
+            <Search className="h-3.25 w-3.25 shrink-0 text-ink-muted" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onFocus={() => setSearchFocus(true)}
               onBlur={() => setSearchFocus(false)}
               placeholder="Search brand, model, or category…"
-              className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
+              className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-ink-faint"
             />
             {search !== '' && (
               <Tooltip label="Clear search" side="bottom" align="end">
@@ -266,7 +256,7 @@ export default function StockBalanceList({
                   type="button"
                   onClick={() => setSearch('')}
                   aria-label="Clear search"
-                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
+                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-ink-muted hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -347,7 +337,7 @@ export default function StockBalanceList({
             <div role="table" aria-label="Stock balance" className="hidden min-[1280px]:block">
               <div
                 role="row"
-                className={`${GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+                className={`${GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[12px] uppercase tracking-[.09em] text-ink-muted`}
               >
                 <span role="columnheader">Item</span>
                 <span role="columnheader">Category</span>
@@ -393,7 +383,7 @@ export default function StockBalanceList({
                         {itemTitle(bal.item)}
                       </span>
                       {subline && (
-                        <span className="break-words text-[13px] leading-snug text-[#8b8b9b]">
+                        <span className="break-words text-[13px] leading-snug text-ink-muted">
                           {subline}
                         </span>
                       )}
@@ -401,7 +391,7 @@ export default function StockBalanceList({
 
                     <span
                       role="cell"
-                      className="break-words text-[14px] leading-snug text-[#5b5b6b]"
+                      className="break-words text-[14px] leading-snug text-[#4b4b5a]"
                     >
                       {bal.item?.primaryCategory?.name ?? '—'}
                     </span>
@@ -416,20 +406,20 @@ export default function StockBalanceList({
                     <span
                       role="cell"
                       className={`${MONO} text-right text-[13px] ${
-                        bal.inTransitQty > 0 ? 'text-[#1d4ed8]' : 'text-[#a3a3b2]'
+                        bal.inTransitQty > 0 ? 'text-[#1d4ed8]' : 'text-ink-subtle'
                       }`}
                     >
                       {bal.inTransitQty.toLocaleString()}
                     </span>
 
-                    <span role="cell" className={`${MONO} text-right text-[13px] text-[#8b8b9b]`}>
+                    <span role="cell" className={`${MONO} text-right text-[13px] text-ink-muted`}>
                       {bal.soldQty.toLocaleString()}
                     </span>
 
                     <span
                       role="cell"
                       className={`${MONO} text-right text-[13px] ${
-                        bal.reservedQty > 0 ? 'text-[#8a4b06]' : 'text-[#a3a3b2]'
+                        bal.reservedQty > 0 ? 'text-[#8a4b06]' : 'text-ink-subtle'
                       }`}
                     >
                       {bal.reservedQty.toLocaleString()}
@@ -450,12 +440,12 @@ export default function StockBalanceList({
               })}
 
               <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
-                <span className="text-[11.5px] text-[#8b8b9b]">
+                <span className="text-[11.5px] text-ink-muted">
                   Showing {(page - 1) * pagination.limit + 1}–
                   {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} items
                 </span>
                 <div className="flex items-center gap-[10px]">
-                  <span className="text-[11.5px] text-[#8b8b9b]">Rows</span>
+                  <span className="text-[11.5px] text-ink-muted">Rows</span>
                   <select
                     value={limit}
                     onChange={(e) => setLimit(Number(e.target.value))}
@@ -470,7 +460,7 @@ export default function StockBalanceList({
                       type="button"
                       onClick={() => setPage(Math.max(1, page - 1))}
                       disabled={page <= 1}
-                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-[#a3a3b2]"
+                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-ink-faint"
                     >
                       Previous
                     </button>
@@ -478,7 +468,7 @@ export default function StockBalanceList({
                       type="button"
                       onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
                       disabled={page >= pagination.totalPages}
-                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-[#a3a3b2]"
+                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-ink-faint"
                     >
                       Next
                     </button>
@@ -512,7 +502,7 @@ export default function StockBalanceList({
                           {itemTitle(bal.item)}
                         </span>
                         {subline && (
-                          <span className="break-words text-[11.5px] leading-snug text-[#8b8b9b]">
+                          <span className="break-words text-[11.5px] leading-snug text-ink-muted">
                             {subline}
                           </span>
                         )}
@@ -526,13 +516,13 @@ export default function StockBalanceList({
                         {
                           label: 'Transferred',
                           value: bal.inTransitQty,
-                          tone: bal.inTransitQty > 0 ? 'text-[#1d4ed8]' : 'text-[#a3a3b2]',
+                          tone: bal.inTransitQty > 0 ? 'text-[#1d4ed8]' : 'text-ink-subtle',
                         },
-                        { label: 'Sold', value: bal.soldQty, tone: 'text-[#8b8b9b]' },
+                        { label: 'Sold', value: bal.soldQty, tone: 'text-ink-muted' },
                         {
                           label: 'Reserved',
                           value: bal.reservedQty,
-                          tone: bal.reservedQty > 0 ? 'text-[#8a4b06]' : 'text-[#a3a3b2]',
+                          tone: bal.reservedQty > 0 ? 'text-[#8a4b06]' : 'text-ink-subtle',
                         },
                         {
                           label: 'Available',
@@ -545,7 +535,7 @@ export default function StockBalanceList({
                           className="flex flex-col gap-[2px] rounded-[8px] bg-[#fbfbfc] px-2 py-[7px]"
                         >
                           <span
-                            className={`${MONO} text-[9px] uppercase tracking-[.06em] text-[#8b8b9b]`}
+                            className={`${MONO} text-[9px] uppercase tracking-[.06em] text-ink-muted`}
                           >
                             {m.label}
                           </span>
@@ -557,7 +547,7 @@ export default function StockBalanceList({
                     </div>
 
                     {bal.item?.primaryCategory?.name && (
-                      <div className="rounded-[8px] border border-[#eeeef1] bg-[#fbfbfc] px-3 py-2 text-[12px] text-[#5b5b6b]">
+                      <div className="rounded-[8px] border border-[#eeeef1] bg-[#fbfbfc] px-3 py-2 text-[12px] text-[#4b4b5a]">
                         {bal.item.primaryCategory.name}
                         {(bal.locationCount ?? 0) > 1 ? ` · ${bal.locationCount} locations` : ''}
                       </div>
@@ -572,7 +562,7 @@ export default function StockBalanceList({
           {isLoading && (
             <div>
               <div
-                className={`${GRID} ${MONO} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#8b8b9b] min-[1280px]:grid`}
+                className={`${GRID} ${MONO} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-ink-muted min-[1280px]:grid`}
               >
                 <span>Item</span>
                 <span>Category</span>
@@ -609,7 +599,7 @@ export default function StockBalanceList({
                   </div>
                 ))}
               </div>
-              <div className="border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px] text-[11.5px] text-[#8b8b9b]">
+              <div className="border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px] text-[11.5px] text-ink-muted">
                 Loading stock balances…
               </div>
             </div>
@@ -619,9 +609,9 @@ export default function StockBalanceList({
           {isNoResults &&
             (hasFilters ? (
               <div className="flex flex-col items-center gap-2 px-6 py-11 text-center">
-                <Package className="h-[30px] w-[30px] text-[#c9c9d3]" />
+                <Package className="h-[30px] w-[30px] text-ink-faint" />
                 <div className="mt-1 text-[14px] font-semibold">No items match</div>
-                <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+                <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#4b4b5a]">
                   {search
                     ? `Nothing matches "${search}". Try the SKU, model or serial number, or clear a filter to widen the search.`
                     : 'No items fall inside these filters. Clear one to see more stock.'}
@@ -640,7 +630,7 @@ export default function StockBalanceList({
                   <Package className="h-4 w-4 text-[#5b21b6]" />
                 </div>
                 <div className="mt-1 text-[13.5px] font-semibold">No stock on record</div>
-                <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+                <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#4b4b5a]">
                   Balances appear here once stock is received against a purchase order or entered
                   through an opening-stock adjustment.
                 </div>

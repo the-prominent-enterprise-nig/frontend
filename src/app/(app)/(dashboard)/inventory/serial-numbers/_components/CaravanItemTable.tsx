@@ -140,7 +140,7 @@ type CaravanStage = { label: string; color: string; dot: string }
 /** Running, ending within three days, ended (stock still to clear) or closed. */
 function caravanStage(branch: WarehouseBranch | null): CaravanStage {
   if (branch?.closedAt)
-    return { label: 'Closed', color: 'bg-[#f1f1f4] text-[#5b5b6b]', dot: 'bg-[#8b8b9b]' }
+    return { label: 'Closed', color: 'bg-[#f1f1f4] text-[#4b4b5a]', dot: 'bg-[#8b8b9b]' }
   if (isCaravanEnded(branch))
     return { label: 'Ended', color: 'bg-[#fdeceb] text-[#b42318]', dot: 'bg-[#b42318]' }
   const days = caravanDaysLeft(branch?.endDate)
@@ -326,7 +326,7 @@ function CaravanListItem({
           </span>
           <StageBadge caravan={caravan} />
         </div>
-        <div className="text-[11.5px] text-[#8b8b9b]">
+        <div className="text-[11.5px] text-ink-muted">
           {caravan?.hostBranch?.name ?? '—'} ·{' '}
           <span className={MONO}>{blockOnHand(block).toLocaleString()}</span> on hand
         </div>
@@ -348,7 +348,7 @@ function CaravanList({
   return (
     <div className="flex min-h-0 flex-col border-b border-[#eeeef1] lg:border-b-0 lg:border-r">
       <div
-        className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[12px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+        className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[12px] uppercase tracking-[.09em] text-ink-muted`}
       >
         Caravans · {blocks.length}
       </div>
@@ -386,7 +386,7 @@ function DetailHeader({
           <h3 className="text-[15px] font-medium text-[#17171c]">
             {caravan ? caravanLabelWithPlace(caravan) : 'Unknown caravan'}
           </h3>
-          <div className="mt-0.5 text-[12.5px] text-[#5b5b6b]">
+          <div className="mt-0.5 text-[12.5px] text-[#4b4b5a]">
             Hosted at {caravan?.hostBranch?.name ?? '—'}
             {dates && <> · {dates}</>}
           </div>
@@ -406,7 +406,7 @@ function DetailStatus({ block }: { block: CaravanBlock }): React.ReactElement {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
       {caravan?.endDate && (
-        <span className="text-[12px] text-[#5b5b6b]">
+        <span className="text-[12px] text-[#4b4b5a]">
           {caravanCountdown(caravan.endDate, caravan.closedAt)}
         </span>
       )}
@@ -439,7 +439,7 @@ function UnitRow({ serial }: { serial: SerialNumberSummary }): React.ReactElemen
           <CopySerialButton serialNumber={serial.serialNumber} />
         </div>
       </td>
-      <td className="hidden py-1.5 pr-4 text-[12px] text-[#8b8b9b] sm:table-cell">
+      <td className="hidden py-1.5 pr-4 text-[12px] text-ink-muted sm:table-cell">
         {displayClassificationLabel(serial.item?.type?.name) || '—'}
       </td>
       <td className="py-1.5 pr-5 text-right">
@@ -460,7 +460,7 @@ function UnitsPlaceholder({ isLoading }: { isLoading: boolean }): React.ReactEle
             ))}
           </div>
         ) : (
-          <p className="text-[12px] text-[#8b8b9b]">No units to show for this item.</p>
+          <p className="text-[12px] text-ink-muted">No units to show for this item.</p>
         )}
       </td>
     </tr>
@@ -479,7 +479,7 @@ function ItemHeaderRow({ group }: { group: CaravanItemGroup }): React.ReactEleme
               {group.item?.name ?? 'Unknown item'}
             </span>
           </div>
-          <span className={`${MONO} whitespace-nowrap text-[12px] text-[#5b5b6b]`}>
+          <span className={`${MONO} whitespace-nowrap text-[12px] text-[#4b4b5a]`}>
             <span className="font-medium text-[#17171c]">{onHandOf(group).toLocaleString()}</span>{' '}
             on hand
           </span>
@@ -523,7 +523,7 @@ function DetailItems({
 }): React.ReactElement {
   if (block.groups.length === 0) {
     return (
-      <p className="px-5 py-8 text-center text-[12.5px] text-[#8b8b9b]">
+      <p className="px-5 py-8 text-center text-[12.5px] text-ink-muted">
         {emptyCaravanNote(block.caravan)}
       </p>
     )
@@ -533,7 +533,7 @@ function DetailItems({
       <table className="w-full text-sm">
         <thead className="sticky top-0 z-10">
           <tr
-            className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-left text-[11px] uppercase tracking-[.09em] text-[#8b8b9b]`}
+            className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-left text-[11px] uppercase tracking-[.09em] text-ink-muted`}
           >
             <th className="py-[9px] pl-5 pr-4 font-normal">Item / Serial #</th>
             <th className="hidden py-[9px] pr-4 font-normal sm:table-cell">Type</th>
@@ -553,7 +553,7 @@ function DetailItems({
 function EmptyState({ label }: { label: string }): React.ReactElement {
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-11 text-center">
-      <Package className="h-[30px] w-[30px] text-[#c9c9d3]" />
+      <Package className="h-[30px] w-[30px] text-ink-faint" />
       <div className="mt-1 text-[14px] font-semibold">{label}</div>
     </div>
   )

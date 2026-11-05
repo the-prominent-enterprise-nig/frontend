@@ -26,6 +26,8 @@ import {
 } from '@/src/libs/data/AccountingV2Data'
 import { TaxReports } from '@/src/libs/data/TaxReportsData'
 import { manilaToday } from '@/src/libs/tax/tax-reports'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
 
 const STATUS_STYLES: Record<FiscalPeriodStatus, string> = {
   OPEN: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -43,6 +45,9 @@ function getStatus(p: FiscalPeriod): FiscalPeriodStatus {
 }
 
 export default function FiscalPeriodsList() {
+  // Shown only to those the backend lets through (UAT review 2026-11-04).
+  const { data: me } = useMe()
+  const canDelete = !!me && can(me, 'accounting:fiscal:delete')
   const [items, setItems] = useState<FiscalPeriod[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
@@ -200,13 +205,15 @@ export default function FiscalPeriodsList() {
                             >
                               <Lock className="w-4 h-4" />
                             </button>
-                            <button
-                              onClick={() => del(p.id)}
-                              className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            {canDelete && (
+                              <button
+                                onClick={() => del(p.id)}
+                                className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </>
                         )}
                         {status === 'SOFT_CLOSED' && (

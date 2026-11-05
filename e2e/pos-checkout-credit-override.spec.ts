@@ -481,32 +481,20 @@ test.describe.skip('POS Checkout — overriding the credit application (Scenario
       applicationStatus: 'draft',
     })
 
-    // And it is waiting for the manager, with the flag and what differed.
+    // And it is in the Price Override Log, with the flag and what differed.
+    // A day either side of today: the sale's business day is the server's local
+    // day, which a UTC date can sit a day away from.
+    const dayKey = (offset: number) =>
+      new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10)
     const day = await (
       await page.request.get('/api/pos/override-review', {
-        params: { date: new Date().toISOString().slice(0, 10), branchId: fx.branchId },
+        params: { from: dayKey(-1), to: dayKey(1), branchId: fx.branchId },
       })
     ).json()
-    let entry = (day.entries as { transactionId: string; flags: string[]; status: string }[]).find(
+    const entry = (day.entries as { transactionId: string; flags: string[] }[]).find(
       (e) => e.transactionId === sale.id
     )
-    if (!entry) {
-      // The review day rolls past a day already signed off.
-      for (let offset = 1; offset < 30 && !entry; offset++) {
-        const d = new Date()
-        d.setDate(d.getDate() + offset)
-        const next = await (
-          await page.request.get('/api/pos/override-review', {
-            params: { date: d.toISOString().slice(0, 10), branchId: fx.branchId },
-          })
-        ).json()
-        entry = (next.entries as { transactionId: string; flags: string[]; status: string }[]).find(
-          (e) => e.transactionId === sale.id
-        )
-      }
-    }
     expect(entry).toBeTruthy()
     expect(entry!.flags).toContain('credit_overridden')
-    expect(entry!.status).toBe('pending')
   })
 })

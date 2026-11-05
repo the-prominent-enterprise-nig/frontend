@@ -86,7 +86,7 @@ import type {
   CustomerAdvance,
   CreateCustomerAdvanceInput,
   CustomerAdvanceFilters,
-  OverrideReviewDay,
+  PriceOverrideLog,
 } from '@/src/schema/pos'
 import { isPendingApproval } from '@/src/schema/pos'
 import type { BranchPaymentMethod, PosPaymentMethod } from '@/src/schema/pos'
@@ -1923,78 +1923,25 @@ export async function updatePosOverrideReason(
   }
 }
 
-// ─── Override Review (Scenario 71 Part 4) ──────────────────────────────────────
+// ─── Price Override Log (Scenario 71 Part 4, was Override Review) ──────────────
 
-export async function getOverrideReview(
-  date: string,
+export async function getPriceOverrideLog(
+  from: string,
+  to: string,
   branchId?: string
-): Promise<ApiResponse<OverrideReviewDay>> {
+): Promise<ApiResponse<PriceOverrideLog>> {
   try {
-    const result = await api.get<OverrideReviewDay>('/pos/override-review', {
-      date,
+    const result = await api.get<PriceOverrideLog>('/pos/override-review', {
+      from,
+      to,
       ...(branchId ? { branchId } : {}),
     })
     if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to load the override review' }
+      return { success: false, error: result.error || 'Failed to load the price override log' }
     }
     return { success: true, data: result.data }
   } catch {
-    return { success: false, error: 'Failed to load the override review' }
-  }
-}
-
-export async function decideOverrideEntry(
-  id: string,
-  status: 'approved' | 'rejected',
-  note?: string
-): Promise<ApiResponse<{ id: string; status: string }>> {
-  try {
-    const result = await api.post<{ id: string; status: string }>(
-      `/pos/override-review/${id}/decide`,
-      { status, ...(note ? { note } : {}) }
-    )
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to save the decision' }
-    }
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to save the decision' }
-  }
-}
-
-export async function approveAllOverrideEntries(
-  date: string,
-  branchId?: string
-): Promise<ApiResponse<{ approved: number }>> {
-  try {
-    const result = await api.post<{ approved: number }>('/pos/override-review/approve-all', {
-      date,
-      ...(branchId ? { branchId } : {}),
-    })
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to approve the pending entries' }
-    }
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to approve the pending entries' }
-  }
-}
-
-export async function signOffOverrideDay(
-  date: string,
-  branchId?: string
-): Promise<ApiResponse<{ id: string }>> {
-  try {
-    const result = await api.post<{ id: string }>('/pos/override-review/sign-off', {
-      date,
-      ...(branchId ? { branchId } : {}),
-    })
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to sign off the day' }
-    }
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to sign off the day' }
+    return { success: false, error: 'Failed to load the price override log' }
   }
 }
 
@@ -3068,6 +3015,27 @@ export async function rejectReturnRefundRequest(
   }
 }
 
+/** One bank slip of a posted deposit: where a session's cash was banked. */
+export interface SessionBankSlip {
+  depositId: string
+  bankName: string
+  /** Last four digits of the account number. */
+  accountLast4: string | null
+  reference: string | null
+  amount: number
+}
+
+/** Scenario 83 — a session's cash handed to another branch, not a bank. */
+export interface SessionTurnover {
+  id: string
+  depositId: string
+  toBranchName: string
+  /** The turnover slip number. */
+  reference: string | null
+  amount: number
+  status: 'pending' | 'acknowledged'
+}
+
 export interface CashInTransitSessionRow {
   sessionId: string
   branchId: string | null
@@ -3100,6 +3068,10 @@ export interface CashInTransitSessionRow {
   pendingDeposits?: { id: string; depositDate: string; bankName: string; amount: number }[]
   /** The posted deposits that banked part of it, latest first. */
   bankedDeposits?: { id: string; depositDate: string; bankName: string; amount: number }[]
+  /** Scenario 83 — what posted deposits turned over to another branch. */
+  turnovers?: SessionTurnover[]
+  /** The bank slips of the same posted deposits. */
+  bankSlips?: SessionBankSlip[]
 }
 
 /** A session already banked — Scenario 61's Undeposited Funds table lists
@@ -3134,6 +3106,10 @@ export interface CashInTransitHistoryRow {
   depositedAmount?: number | null
   /** Whether its deposit has a slip or other proof attached yet. */
   hasProof?: boolean
+  /** Scenario 83 — its cash handed to another branch instead of a bank. */
+  turnovers?: SessionTurnover[]
+  /** The bank slips of the same posted deposits. */
+  bankSlips?: SessionBankSlip[]
 }
 
 export async function getCashInTransitHistory(filters?: {

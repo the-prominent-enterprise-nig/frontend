@@ -62,7 +62,7 @@ export default function SetRepairProviderModal({
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div>
             <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#17171c]">
-              {uds.repairProvider ? 'Change Repair Provider' : 'Set Repair Provider'}
+              {uds.repairProvider ? 'Change Service Center' : 'Set Service Center'}
             </h2>
             <p className="mt-0.5 font-mono text-xs text-zinc-400">{uds.code}</p>
           </div>
@@ -83,7 +83,7 @@ export default function SetRepairProviderModal({
           <div className="mx-auto w-full max-w-2xl flex-1 space-y-4 overflow-y-auto px-6 py-5">
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Repair Provider <span className="text-red-500">*</span>
+                Service Center <span className="text-red-500">*</span>
               </label>
               <Controller
                 name="repairProviderId"
@@ -92,7 +92,7 @@ export default function SetRepairProviderModal({
                   <SearchableSelect
                     value={field.value ?? ''}
                     onChange={(v) => field.onChange(v)}
-                    placeholder="Search repair provider…"
+                    placeholder="Search service center…"
                     portal
                     options={providerOptions}
                   />

@@ -73,7 +73,7 @@ export function ManualRrTotalsPanel({
     <div className={`${PANEL} flex h-full flex-col overflow-hidden`}>
       <div className="flex items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-3">
         <span className="text-[13.5px] font-semibold">Receipt totals</span>
-        <span className="text-[11.5px] text-[#8b8b9b]">
+        <span className="text-[11.5px] text-ink-muted">
           {units > 0
             ? `Computed from ${units} units on ${lines} ${lines === 1 ? 'line' : 'lines'}`
             : 'No quantities entered yet'}
@@ -98,7 +98,7 @@ export function ManualRrTotalsPanel({
               >
                 {row.label}
               </span>
-              {row.note && <span className="text-[11px] text-[#a3a3b2]">{row.note}</span>}
+              {row.note && <span className="text-[11px] text-ink-subtle">{row.note}</span>}
             </div>
             <span
               className={`${MONO} shrink-0 text-right tracking-[-.02em] ${

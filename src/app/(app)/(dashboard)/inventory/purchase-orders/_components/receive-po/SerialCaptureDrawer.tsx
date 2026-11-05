@@ -62,7 +62,7 @@ export function SerialCaptureDrawer({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md border border-[#ddd0f7] bg-white px-2.5 py-1 text-[11.5px] text-[#5b5b6b] hover:border-[#7c4fd1] hover:text-[#3f1490]"
+              className="rounded-md border border-[#ddd0f7] bg-white px-2.5 py-1 text-[11.5px] text-[#4b4b5a] hover:border-[#7c4fd1] hover:text-[#3f1490]"
             >
               Close
             </button>
@@ -84,7 +84,7 @@ export function SerialCaptureDrawer({
             return (
               <div key={unitIndex} className="flex min-w-0 flex-col gap-1">
                 <div className="flex items-center justify-between gap-2">
-                  <span className={`${MONO} text-[10.5px] text-[#8b8b9b]`}>
+                  <span className={`${MONO} text-[10.5px] text-ink-muted`}>
                     Unit {unitIndex + 1} of {quantity}
                   </span>
                   {value.trim() && (
@@ -130,7 +130,7 @@ export function SerialCaptureDrawer({
                         tabIndex={-1}
                         onClick={() => onChange(unitIndex, '')}
                         aria-label={`Clear serial for unit ${unitIndex + 1}`}
-                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-ink-subtle hover:bg-[#fdeceb] hover:text-[#b42318]"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -152,11 +152,11 @@ export function SerialCaptureDrawer({
           <button
             type="button"
             onClick={onClearAll}
-            className="rounded-[7px] border border-[#e4e4e9] px-2.5 py-1.5 text-[12px] text-[#5b5b6b] hover:border-[#a3a3b2] hover:text-[#17171c]"
+            className="rounded-[7px] border border-[#e4e4e9] px-2.5 py-1.5 text-[12px] text-[#4b4b5a] hover:border-[#a3a3b2] hover:text-[#17171c]"
           >
             Clear all
           </button>
-          <span className="text-[11px] text-[#8b8b9b]">
+          <span className="text-[11px] text-ink-muted">
             Duplicates are rejected across the whole receipt.
             {!requireAll &&
               ' Only the serials entered are received — blank units stay open on the PO.'}

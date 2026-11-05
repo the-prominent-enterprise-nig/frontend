@@ -236,7 +236,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
             <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Purchase Requests</h1>
-            <p className="text-[13px] text-[#5b5b6b]">
+            <p className="text-[13px] text-[#4b4b5a]">
               Manage and track purchase requests across your organisation
             </p>
           </div>
@@ -262,14 +262,14 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
               searchFocus ? CONTROL_CHROME.focused : CONTROL_CHROME.idle
             }`}
           >
-            <Search className="h-3.25 w-3.25 shrink-0 text-[#8b8b9b]" />
+            <Search className="h-3.25 w-3.25 shrink-0 text-ink-muted" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onFocus={() => setSearchFocus(true)}
               onBlur={() => setSearchFocus(false)}
               placeholder="Search PR number, supplier, or item…"
-              className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
+              className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-ink-faint"
             />
             {search !== '' && (
               <Tooltip label="Clear search" side="bottom" align="end">
@@ -277,7 +277,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                   type="button"
                   onClick={() => setSearch('')}
                   aria-label="Clear search"
-                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
+                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-ink-muted hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -322,7 +322,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
         <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
           {isLoading ? (
             <div className="flex items-center justify-center py-16">
-              <Loader2 className="h-6 w-6 animate-spin text-[#a3a3b2]" />
+              <Loader2 className="h-6 w-6 animate-spin text-ink-subtle" />
             </div>
           ) : isNoResults ? (
             filtersActive ? (
@@ -331,7 +331,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                 <div className="mt-1 text-[14px] font-semibold">
                   No purchase requests match your filters
                 </div>
-                <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+                <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#4b4b5a]">
                   {search
                     ? `Nothing matches “${search}”. Check the PR number, or search by supplier or item instead.`
                     : 'No requests match the status filter you have applied. Clear it to see more.'}
@@ -348,7 +348,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
               <div className="flex flex-col items-center gap-2 px-6 py-13 text-center">
                 <div className="h-[34px] w-[34px] rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb]" />
                 <div className="mt-1 text-[15px] font-semibold">No purchase requests yet</div>
-                <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+                <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#4b4b5a]">
                   Purchase requests appear here once someone raises one. Submitted requests convert
                   into a purchase order automatically.
                 </div>
@@ -390,19 +390,19 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                           {pr.code}
                         </span>
                         {pr.reason && (
-                          <p className="mt-0.5 line-clamp-1 text-[11px] text-[#8b8b9b]">
+                          <p className="mt-0.5 line-clamp-1 text-[11px] text-ink-muted">
                             {pr.reason}
                           </p>
                         )}
                       </td>
                       <td className="px-4 py-[11px] text-[12.5px] text-[#3d3d4a]">
-                        {pr.supplier?.name ?? <span className="text-[#a3a3b2]">—</span>}
+                        {pr.supplier?.name ?? <span className="text-ink-subtle">—</span>}
                       </td>
                       <td className="px-4 py-[11px]">
                         <StatusBadge status={pr.status} />
                       </td>
                       <td className="px-4 py-[11px] text-[12.5px] text-[#3d3d4a]">
-                        {pr.branch?.name ?? <span className="text-[#a3a3b2]">—</span>}
+                        {pr.branch?.name ?? <span className="text-ink-subtle">—</span>}
                       </td>
                       <td className={`${MONO} px-4 py-[11px] text-[12.5px] text-[#3d3d4a]`}>
                         {pr.lines.length}
@@ -412,7 +412,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                       >
                         {fmtPHP(prTotal(pr))}
                       </td>
-                      <td className="px-4 py-[11px] text-[11.5px] text-[#8b8b9b]">
+                      <td className="px-4 py-[11px] text-[11.5px] text-ink-muted">
                         {fmtDate(pr.createdAt)}
                       </td>
                       <td className="px-4 py-[11px]" onClick={(e) => e.stopPropagation()}>
@@ -454,7 +454,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                   second page to go to. */}
               {pagination.total > 0 && (
                 <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
-                  <span className="text-[11.5px] text-[#8b8b9b]">
+                  <span className="text-[11.5px] text-ink-muted">
                     Showing {(page - 1) * pagination.limit + 1}–
                     {Math.min(page * pagination.limit, pagination.total)} of {pagination.total}{' '}
                     {pagination.total === 1 ? 'request' : 'requests'}
@@ -464,7 +464,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                       type="button"
                       onClick={() => setPage(page - 1)}
                       disabled={page <= 1}
-                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-[#a3a3b2]"
+                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-ink-faint"
                     >
                       Previous
                     </button>
@@ -472,7 +472,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                       type="button"
                       onClick={() => setPage(page + 1)}
                       disabled={page >= pagination.totalPages}
-                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-[#a3a3b2]"
+                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-ink-faint"
                     >
                       Next
                     </button>

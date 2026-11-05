@@ -53,7 +53,7 @@ export function IdmLinesSection({ readOnly }: { readOnly: boolean }): React.JSX.
       description="The journal entry this memo posts. Debits and credits must be equal."
     >
       <div
-        className={`${GRID} hidden text-[11px] font-medium uppercase tracking-[.06em] text-[#8b8b9b] md:grid`}
+        className={`${GRID} hidden text-[11px] font-medium uppercase tracking-[.06em] text-ink-muted md:grid`}
       >
         <span>Account</span>
         <span>Description</span>

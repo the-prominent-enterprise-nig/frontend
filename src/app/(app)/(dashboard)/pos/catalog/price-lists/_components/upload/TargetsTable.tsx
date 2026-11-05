@@ -12,12 +12,12 @@ export function TargetsTable({ targets }: { targets: PriceListImportTarget[] }) 
     <section className="rounded-xl border border-[#e4e4e9] bg-white">
       <div className="border-b border-[#eeeef1] px-4 py-3">
         <h3 className="text-sm font-semibold text-prominent-purple-900">Where it goes</h3>
-        <p className="text-xs text-[#5b5b6b]">
+        <p className="text-xs text-[#4b4b5a]">
           Each row goes to the company-wide price list for its PRICE USE.
         </p>
       </div>
       <table className="w-full text-left text-sm">
-        <thead className="text-[11px] uppercase tracking-wide text-[#5b5b6b]">
+        <thead className="text-[11px] uppercase tracking-wide text-[#4b4b5a]">
           <tr className="border-b border-[#eeeef1]">
             <th className="px-4 py-2 font-semibold">Price use</th>
             <th className="px-4 py-2 font-semibold">Price list</th>
@@ -48,7 +48,7 @@ function TargetRow({ target: t }: { target: PriceListImportTarget }) {
       </td>
       <td className="px-4 py-2">
         <div className="font-medium text-prominent-purple-900">{t.listName}</div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#5b5b6b]">
+        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#4b4b5a]">
           <span
             className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 ${before.chip}`}
           >
@@ -66,7 +66,7 @@ function TargetRow({ target: t }: { target: PriceListImportTarget }) {
       </td>
       <td className={`${MONO} px-4 py-2 text-right text-xs`}>{t.toCreate.toLocaleString()}</td>
       <td className={`${MONO} px-4 py-2 text-right text-xs`}>{t.toUpdate.toLocaleString()}</td>
-      <td className="px-4 py-2 text-xs text-[#5b5b6b]">
+      <td className="px-4 py-2 text-xs text-[#4b4b5a]">
         {changes
           ? `${STATUS_LABELS[t.listStatusAfter] ?? t.listStatusAfter} — needs re-approval`
           : (STATUS_LABELS[t.listStatusAfter] ?? t.listStatusAfter)}

@@ -31,7 +31,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'banks', label: 'Bank accounts' },
 ]
 
-const monoHeadClass = `${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5b5b6b]`
+const monoHeadClass = `${MONO} text-[10px] font-semibold uppercase tracking-[0.09em] text-[#4b4b5a]`
 
 /** One fact, read-only. A blank reads grey — these are facts about a supplier,
  * not gaps somebody has to close. */
@@ -41,7 +41,7 @@ function Fact({ label, value }: { label: string; value: string | null | undefine
     <div className="min-w-0">
       <p className={monoHeadClass}>{label}</p>
       <p
-        className={`mt-0.5 truncate text-[12.5px] font-medium ${shown ? 'text-[#17171c]' : 'text-[#a3a3b2]'}`}
+        className={`mt-0.5 truncate text-[12.5px] font-medium ${shown ? 'text-[#17171c]' : 'text-ink-subtle'}`}
         title={shown || undefined}
       >
         {shown || 'Not set'}
@@ -54,9 +54,9 @@ function FieldRow({ label, value }: { label: string; value: string | null | unde
   const shown = value?.trim()
   return (
     <div className="min-w-0">
-      <p className="text-[11px] text-[#5b5b6b]">{label}</p>
+      <p className="text-[11px] text-[#4b4b5a]">{label}</p>
       <p
-        className={`mt-0.5 text-[12.5px] font-medium break-words ${shown ? 'text-[#17171c]' : 'text-[#a3a3b2]'}`}
+        className={`mt-0.5 text-[12.5px] font-medium break-words ${shown ? 'text-[#17171c]' : 'text-ink-subtle'}`}
       >
         {shown || 'Not set'}
       </p>
@@ -109,7 +109,7 @@ export default function SupplierDetailPanel({
 
   if (detailQuery.isLoading) {
     return (
-      <div className="flex items-center justify-center rounded-xl border border-[#e4e4e9] bg-white py-20 text-[#8b8b9b]">
+      <div className="flex items-center justify-center rounded-xl border border-[#e4e4e9] bg-white py-20 text-ink-muted">
         <Loader2 className="h-5 w-5 animate-spin" />
       </div>
     )
@@ -172,7 +172,7 @@ export default function SupplierDetailPanel({
                 {status.label}
               </span>
             </div>
-            <p className="mt-1 text-[12.5px] text-[#5b5b6b]">{supplierSubline(supplier)}</p>
+            <p className="mt-1 text-[12.5px] text-[#4b4b5a]">{supplierSubline(supplier)}</p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             {canUpdate && (
@@ -226,7 +226,7 @@ export default function SupplierDetailPanel({
               className={`-mb-px whitespace-nowrap border-b-2 px-3 pb-2.5 pt-3 text-[12.5px] ${
                 isOn
                   ? 'border-[#5b21b6] font-semibold text-[#3f1490]'
-                  : 'border-transparent text-[#5b5b6b] hover:text-[#17171c]'
+                  : 'border-transparent text-[#4b4b5a] hover:text-[#17171c]'
               }`}
             >
               {t.label}
@@ -293,7 +293,7 @@ export default function SupplierDetailPanel({
           (supplier.bankAccounts.length === 0 ? (
             <div className="rounded-xl border border-dashed border-[#d3d3db] px-5 py-10 text-center">
               <p className="text-sm font-medium text-[#3d3d4a]">No bank account on file</p>
-              <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-[#5b5b6b]">
+              <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-[#4b4b5a]">
                 Payments to this supplier cannot be released until one is recorded. Add it from{' '}
                 <span className="font-medium text-[#3d3d4a]">Edit supplier</span>.
               </p>
@@ -320,7 +320,7 @@ export default function SupplierDetailPanel({
                   <p className={`${MONO} mt-1 text-[12px] text-[#3d3d4a]`}>
                     {account.accountNumber}
                   </p>
-                  <p className="mt-0.5 text-[11.5px] text-[#5b5b6b]">
+                  <p className="mt-0.5 text-[11.5px] text-[#4b4b5a]">
                     {account.accountName?.trim() || 'No account name on file'}
                   </p>
                 </div>

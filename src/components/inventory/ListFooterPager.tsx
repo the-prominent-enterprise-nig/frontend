@@ -1,7 +1,7 @@
 'use client'
 
 const pagerButtonClass =
-  'rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-[6px] text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:border-[#e4e4e9] disabled:text-[#a3a3b2]'
+  'rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-[6px] text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:border-[#e4e4e9] disabled:text-ink-faint'
 
 /**
  * The footer bar the Stock Transactions tables share (Stock Transfer's
@@ -27,7 +27,7 @@ export function ListFooterPager({
 }): React.JSX.Element {
   return (
     <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-[18px] py-[11px]">
-      <span className="text-[11.5px] text-[#5b5b6b]">
+      <span className="text-[11.5px] text-[#4b4b5a]">
         Showing {shown} of {total} {noun}
       </span>
       {pageCount > 1 && (

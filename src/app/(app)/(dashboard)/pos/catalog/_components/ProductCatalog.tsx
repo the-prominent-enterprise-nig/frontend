@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, Search, Tag, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Pencil, Search, Tag, X } from 'lucide-react'
 import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
 import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { Skeleton } from '@/src/components/ui/Skeleton'
@@ -11,6 +11,7 @@ import { can, type SessionUser } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { usePosCatalog, type PosCatalogItem } from '../_hooks/usePosCatalog'
 import { PriceTierModal } from './PriceTierModal'
+import { EditCatalogItem } from './EditCatalogItem'
 
 const PAGE_SIZE = 25
 
@@ -47,9 +48,13 @@ export function ProductCatalog({
   const [search, setSearch] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const [tierItem, setTierItem] = useState<PosCatalogItem | null>(null)
+  const [editItemId, setEditItemId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
 
   const canViewStock = can(session, INVENTORY_PERMISSIONS.STOCKS_READ)
+  // The Item Master's own edit, for whoever may update items — the Items tab
+  // left Inventory → Catalog for here.
+  const canEdit = can(session, INVENTORY_PERMISSIONS.ITEMS_UPDATE)
   const all = useMemo(() => items ?? [], [items])
   const categories = useMemo(() => uniqueCategories(all), [all])
   const visible = useMemo(() => {
@@ -128,6 +133,7 @@ export function ProductCatalog({
           filtered={filtered}
           canViewStock={canViewStock}
           onViewTiers={setTierItem}
+          onEdit={canEdit ? (item) => setEditItemId(item.id) : undefined}
         />
 
         {visible.length > PAGE_SIZE && (
@@ -141,6 +147,11 @@ export function ProductCatalog({
       </div>
 
       <PriceTierModal item={tierItem} onClose={() => setTierItem(null)} />
+      <EditCatalogItem
+        itemId={editItemId}
+        canReadAttributes={can(session, INVENTORY_PERMISSIONS.ATTRIBUTES_READ)}
+        onClose={() => setEditItemId(null)}
+      />
     </div>
   )
 }
@@ -199,12 +210,15 @@ function CatalogTable({
   filtered,
   canViewStock,
   onViewTiers,
+  onEdit,
 }: {
   items: PosCatalogItem[]
   isLoading: boolean
   filtered: boolean
   canViewStock: boolean
   onViewTiers: (item: PosCatalogItem) => void
+  /** Absent for a user who may not update items. */
+  onEdit?: (item: PosCatalogItem) => void
 }) {
   return (
     <div className="scroll-fade-x overflow-x-auto rounded-xl border border-zinc-200 bg-white">
@@ -231,6 +245,7 @@ function CatalogTable({
                 item={item}
                 canViewStock={canViewStock}
                 onViewTiers={onViewTiers}
+                onEdit={onEdit}
               />
             ))
           )}
@@ -244,10 +259,12 @@ function CatalogRow({
   item,
   canViewStock,
   onViewTiers,
+  onEdit,
 }: {
   item: PosCatalogItem
   canViewStock: boolean
   onViewTiers: (item: PosCatalogItem) => void
+  onEdit?: (item: PosCatalogItem) => void
 }) {
   return (
     <tr className="align-top hover:bg-zinc-50/60">
@@ -274,14 +291,26 @@ function CatalogRow({
         <StockCell item={item} canViewStock={canViewStock} />
       </td>
       <td className="px-4 py-3 text-right">
-        <button
-          type="button"
-          onClick={() => onViewTiers(item)}
-          className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-prominent-purple-300 bg-white px-3 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-        >
-          <Tag className="h-3.5 w-3.5" />
-          View Price Tiers
-        </button>
+        <div className="inline-flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onViewTiers(item)}
+            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-prominent-purple-300 bg-white px-3 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+          >
+            <Tag className="h-3.5 w-3.5" />
+            View Price Tiers
+          </button>
+          {onEdit && (
+            <button
+              type="button"
+              onClick={() => onEdit(item)}
+              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </button>
+          )}
+        </div>
       </td>
     </tr>
   )

@@ -14,8 +14,13 @@ export interface AcknowledgementImportRowData {
   clearedDate: string | null
   customerName: string | null
   invoiceNo: string | null
-  /** The financing partner (Tonik, Salmon…) that paid it, when one is named. */
+  /** The financing partner (Tonik, Salmon…) that paid it, when one did. */
   financingPartnerName: string | null
+  /** Who paid: "Customer" or the partner's name; null while neither the row
+   * nor the page's choice says. */
+  paidBy: string | null
+  /** The row's own Paid by cell said it, rather than the page's choice. */
+  paidByFromRow: boolean
   bankAccountName: string | null
   description: string | null
   grossAmount: number
@@ -33,7 +38,7 @@ export interface AcknowledgementImportRowData {
 
 /** A row's raw, editable values — exactly what the CSV cell held, all strings,
  * '' for blank. Keys: receiptType, branch, date, reference, cleared, clearDate,
- * customer, invoiceNo, financingPartner, receivedIn, description, gross, subsidy, subsidyAccount,
+ * customer, invoiceNo, financingPartner (the "Paid by" column), receivedIn, description, gross, subsidy, subsidyAccount,
  * withholding, withholdingAccount, net (the backend may add `account`, which
  * this screen ignores). */
 export type AcknowledgementImportCells = Record<string, string>

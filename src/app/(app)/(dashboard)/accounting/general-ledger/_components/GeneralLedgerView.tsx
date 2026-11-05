@@ -62,7 +62,7 @@ export default function GeneralLedgerView() {
   const showBalance = !!accountId
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="px-6 py-5 lg:px-10">
       <h2 className="text-2xl font-bold text-gray-900 mb-1">General Ledger</h2>
       <p className="text-sm text-gray-500 mb-4">
         Every posted journal entry line, in date order. Select an account to see its running

@@ -151,7 +151,7 @@ export default function SupplierItemsPanel({
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12 text-[#8b8b9b]">
+      <div className="flex items-center justify-center py-12 text-ink-muted">
         <Loader2 className="h-5 w-5 animate-spin" />
       </div>
     )
@@ -167,7 +167,7 @@ export default function SupplierItemsPanel({
               ? 'No items linked'
               : `${mappings.length} ${mappings.length === 1 ? 'item' : 'items'} linked`}
           </p>
-          <p className="text-[11.5px] leading-relaxed text-[#5b5b6b]">
+          <p className="text-[11.5px] leading-relaxed text-[#4b4b5a]">
             Only a linked item can go on a purchase order raised against this supplier.
           </p>
         </div>
@@ -280,7 +280,7 @@ export default function SupplierItemsPanel({
                 setShowAddForm(false)
                 setForm(emptyForm)
               }}
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#5b5b6b] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-[#4b4b5a] hover:bg-[#f1f1f4] hover:text-[#17171c]"
             >
               Cancel
             </button>
@@ -300,7 +300,7 @@ export default function SupplierItemsPanel({
       {/* Search — only once there is enough to hunt through. */}
       {mappings.length > PAGE_SIZE && (
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8b8b9b]" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
           <input
             type="search"
             value={search}
@@ -319,13 +319,13 @@ export default function SupplierItemsPanel({
       {mappings.length === 0 ? (
         <div className="rounded-xl border border-dashed border-[#d3d3db] px-5 py-10 text-center">
           <p className="text-sm font-medium text-[#3d3d4a]">No items linked yet</p>
-          <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-[#5b5b6b]">
+          <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-[#4b4b5a]">
             Link the items this supplier carries, or let the system suggest them from what has
             already been bought from them.
           </p>
         </div>
       ) : visible.length === 0 ? (
-        <p className="rounded-xl border border-[#e4e4e9] px-4 py-8 text-center text-[12.5px] text-[#5b5b6b]">
+        <p className="rounded-xl border border-[#e4e4e9] px-4 py-8 text-center text-[12.5px] text-[#4b4b5a]">
           No linked item matches &ldquo;{search}&rdquo;.
         </p>
       ) : (
@@ -357,11 +357,11 @@ export default function SupplierItemsPanel({
                           {mapping.item.name}
                         </p>
                       </div>
-                      <p className={`${MONO} mt-1 text-[10.5px] text-[#5b5b6b]`}>
+                      <p className={`${MONO} mt-1 text-[10.5px] text-[#4b4b5a]`}>
                         {mapping.item.sku}
                       </p>
                       {meta.length > 0 && (
-                        <p className="mt-0.5 text-[10.5px] text-[#5b5b6b]">{meta.join(' · ')}</p>
+                        <p className="mt-0.5 text-[10.5px] text-[#4b4b5a]">{meta.join(' · ')}</p>
                       )}
                     </div>
                     {canUpdate && (
@@ -370,7 +370,7 @@ export default function SupplierItemsPanel({
                           type="button"
                           onClick={() => setPendingRemoval(mapping)}
                           aria-label={`Unlink ${mapping.item.name}`}
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#a3a3b2] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-subtle hover:bg-[#fdeceb] hover:text-[#b42318]"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
@@ -383,7 +383,7 @@ export default function SupplierItemsPanel({
           </ul>
 
           {(totalPages > 1 || search.trim() !== '') && (
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#eeeef1] bg-[#fbfbfc] px-4 py-2.5 text-[11.5px] text-[#5b5b6b]">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#eeeef1] bg-[#fbfbfc] px-4 py-2.5 text-[11.5px] text-[#4b4b5a]">
               <span>
                 {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, visible.length)} of{' '}
                 {visible.length}

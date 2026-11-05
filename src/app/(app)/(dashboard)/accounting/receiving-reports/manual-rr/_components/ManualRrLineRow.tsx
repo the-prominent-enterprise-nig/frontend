@@ -264,7 +264,7 @@ export default function ManualRrLineRow({
               onBlur={f.onBlur}
               placeholder="0.00"
               disabled={!!line?.isFreebie}
-              className={`${INPUT} text-right ${MONO} text-[12.5px] disabled:bg-[#f5f5f7] disabled:text-[#a3a3b2]`}
+              className={`${INPUT} text-right ${MONO} text-[12.5px] disabled:bg-[#f5f5f7] disabled:text-ink-faint`}
             />
           )}
         />
@@ -288,7 +288,7 @@ export default function ManualRrLineRow({
               type="button"
               onClick={onDuplicate}
               aria-label="Duplicate line"
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#3f1490]"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-muted hover:bg-[#f1f1f4] hover:text-[#3f1490]"
             >
               <Copy className="h-3.5 w-3.5" />
             </button>
@@ -298,7 +298,7 @@ export default function ManualRrLineRow({
               type="button"
               onClick={onRemove}
               aria-label="Remove line"
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-[#8b8b9b] hover:bg-[#fdeceb] hover:text-[#b42318]"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-muted hover:bg-[#fdeceb] hover:text-[#b42318]"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
@@ -310,7 +310,7 @@ export default function ManualRrLineRow({
         <button
           type="button"
           onClick={() => setTaxOpen((v) => !v)}
-          className="flex items-center gap-1 rounded-md border border-[#d3d3db] px-2 py-1 text-[11.5px] font-medium text-[#5b5b6b] hover:border-[#a3a3b2]"
+          className="flex items-center gap-1 rounded-md border border-[#d3d3db] px-2 py-1 text-[11.5px] font-medium text-[#4b4b5a] hover:border-[#a3a3b2]"
         >
           Tax: {taxSummary}
           {taxOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
@@ -319,7 +319,7 @@ export default function ManualRrLineRow({
 
       {taxOpen && (
         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[10px] border border-[#e4e4e9] bg-[#fbfbfc] px-3.5 py-2.5">
-          <span className="text-[11px] text-[#8b8b9b]">Tax code</span>
+          <span className="text-[11px] text-ink-muted">Tax code</span>
           <Controller
             name={`lines.${index}.taxCode`}
             control={control}
@@ -328,7 +328,7 @@ export default function ManualRrLineRow({
                 {...f}
                 value={f.value ?? ''}
                 aria-label="Tax code"
-                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#4b4b5a] outline-none focus:border-[#5b21b6]"
               >
                 {MANUAL_RR_TAX_CODES.map((code) => (
                   <option key={code.value} value={code.value}>
@@ -338,7 +338,7 @@ export default function ManualRrLineRow({
               </select>
             )}
           />
-          <span className="text-[11px] text-[#8b8b9b]">Withholding</span>
+          <span className="text-[11px] text-ink-muted">Withholding</span>
           <Controller
             name={`lines.${index}.withholdingClass`}
             control={control}
@@ -347,7 +347,7 @@ export default function ManualRrLineRow({
                 {...f}
                 value={f.value ?? ''}
                 aria-label="Withholding"
-                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#5b5b6b] outline-none focus:border-[#5b21b6]"
+                className="h-6.5 rounded-md border border-[#d3d3db] bg-white px-1.5 text-[11.5px] text-[#4b4b5a] outline-none focus:border-[#5b21b6]"
               >
                 {withholdingClassOptions(rateFor).map((cls) => (
                   <option key={cls.value} value={cls.value}>
@@ -366,7 +366,7 @@ export default function ManualRrLineRow({
             type="button"
             onClick={() => setStackOpen(false)}
             aria-label="Collapse discounts"
-            className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-md text-[#a3a3b2] hover:bg-white hover:text-[#3f1490]"
+            className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-md text-ink-subtle hover:bg-white hover:text-[#3f1490]"
           >
             <ChevronUp className="h-3.5 w-3.5" />
           </button>
@@ -419,7 +419,7 @@ export default function ManualRrLineRow({
                   type="button"
                   onClick={() => removeDiscount(di)}
                   aria-label="Remove discount"
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-[#8b8b9b] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-ink-muted hover:bg-[#fdeceb] hover:text-[#b42318]"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -434,7 +434,7 @@ export default function ManualRrLineRow({
             + Add another discount
           </button>
           {!hasSrp && (
-            <p className="mt-1.5 text-[11px] text-[#8b8b9b]">
+            <p className="mt-1.5 text-[11px] text-ink-muted">
               Set an SRP above for the discount chain to compute a Unit Price.
             </p>
           )}
@@ -442,7 +442,7 @@ export default function ManualRrLineRow({
       )}
 
       {mode === 'other' && (
-        <label className="mt-2.5 flex items-center gap-1.5 text-[11.5px] text-[#5b5b6b]">
+        <label className="mt-2.5 flex items-center gap-1.5 text-[11.5px] text-[#4b4b5a]">
           <input
             type="checkbox"
             checked={trackSerial}
@@ -489,5 +489,5 @@ const toggleBtnClass = (active: boolean) =>
   `shrink-0 rounded-md border px-2 py-1 text-[11.5px] font-medium transition-colors ${
     active
       ? 'border-[#ddd0f7] bg-[#f1ebfb] text-[#3f1490]'
-      : 'border-[#d3d3db] text-[#5b5b6b] hover:border-[#a3a3b2]'
+      : 'border-[#d3d3db] text-[#4b4b5a] hover:border-[#a3a3b2]'
   }`

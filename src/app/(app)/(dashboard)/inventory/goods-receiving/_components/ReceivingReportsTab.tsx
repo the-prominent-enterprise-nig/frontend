@@ -126,7 +126,7 @@ function DeliveryBillCell({ report }: { report: ReceivingReport }): React.ReactE
             SI {si}
           </span>
         ) : (
-          <span className="rounded-[5px] bg-[#f1f1f4] px-1.5 py-0.5 text-[11px] font-medium text-[#5b5b6b]">
+          <span className="rounded-[5px] bg-[#f1f1f4] px-1.5 py-0.5 text-[11px] font-medium text-[#4b4b5a]">
             Awaiting SI
           </span>
         ))}
@@ -189,7 +189,7 @@ function StatCell({
         : 'text-[#17171c]'
   return (
     <div className={`flex flex-col gap-1 px-5 py-4 ${tone === 'highlight' ? 'bg-[#f0f9f4]' : ''}`}>
-      <span className={`${MONO} text-[10px] uppercase tracking-[.09em] text-[#8b8b9b]`}>
+      <span className={`${MONO} text-[10px] uppercase tracking-[.09em] text-ink-muted`}>
         {label}
       </span>
       {loading ? (
@@ -199,7 +199,7 @@ function StatCell({
           {(value ?? 0).toLocaleString()}
         </span>
       )}
-      <span className="text-[11.5px] text-[#5b5b6b]">{hint}</span>
+      <span className="text-[11.5px] text-[#4b4b5a]">{hint}</span>
     </div>
   )
 }
@@ -227,7 +227,7 @@ function CopyCodeButton({ code }: { code: string }) {
         type="button"
         onClick={handleCopy}
         aria-label="Copy receipt number"
-        className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded text-[#a3a3b2] hover:bg-[#f1f1f4] hover:text-[#5b21b6]"
+        className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded text-ink-subtle hover:bg-[#f1f1f4] hover:text-[#5b21b6]"
       >
         {copied ? <Check className="h-3 w-3 text-[#0b6644]" /> : <Copy className="h-3 w-3" />}
       </button>
@@ -255,7 +255,7 @@ function PoLink({ report }: { report: ReceivingReport }) {
   // reference, under the customer's name.
   const reason = receivingReportReasonLabel(report)
   if (!code) {
-    return reason ? <p className="truncate text-[13px] text-[#8b8b9b]">{reason}</p> : null
+    return reason ? <p className="truncate text-[13px] text-ink-muted">{reason}</p> : null
   }
 
   // Both references are deep-linkable, to different screens. A PO opens by
@@ -271,7 +271,7 @@ function PoLink({ report }: { report: ReceivingReport }) {
   // A typed-in (unlinked) PO number names a document the system doesn't
   // hold, so there is nothing to open — it stays plain text.
   if (!href) {
-    return <p className={`${MONO} truncate text-[11px] text-[#8b8b9b]`}>{code}</p>
+    return <p className={`${MONO} truncate text-[11px] text-ink-muted`}>{code}</p>
   }
   return (
     <button
@@ -496,7 +496,7 @@ export default function ReceivingReportsTab({
       <div className="flex flex-wrap items-end justify-between gap-5">
         <div className="flex min-w-0 flex-col gap-1">
           <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Receiving Reports</h1>
-          <p className="text-[13px] text-[#5b5b6b]">
+          <p className="text-[13px] text-[#4b4b5a]">
             {showAmounts
               ? 'Goods received against purchase orders, with value and outstanding balance.'
               : 'Goods received against purchase orders, with quantities, location, and status.'}
@@ -562,14 +562,14 @@ export default function ReceivingReportsTab({
             searchFocus ? CONTROL_CHROME.focused : CONTROL_CHROME.idle
           }`}
         >
-          <Search className="h-3.25 w-3.25 shrink-0 text-[#8b8b9b]" />
+          <Search className="h-3.25 w-3.25 shrink-0 text-ink-muted" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onFocus={() => setSearchFocus(true)}
             onBlur={() => setSearchFocus(false)}
             placeholder="Search RR no., PO / transfer no., or source…"
-            className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
+            className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-ink-faint"
           />
           {search !== '' && (
             <Tooltip label="Clear search" side="bottom" align="end">
@@ -577,7 +577,7 @@ export default function ReceivingReportsTab({
                 type="button"
                 onClick={() => setSearch('')}
                 aria-label="Clear search"
-                className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[#8b8b9b] hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
+                className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-ink-muted hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -618,7 +618,7 @@ export default function ReceivingReportsTab({
         />
 
         {isFetching && !isLoading && (
-          <RefreshCw className="h-3.5 w-3.5 animate-spin text-[#a3a3b2]" />
+          <RefreshCw className="h-3.5 w-3.5 animate-spin text-ink-subtle" />
         )}
 
         {hasFilters && (
@@ -664,9 +664,9 @@ export default function ReceivingReportsTab({
         ) : isNoResults ? (
           hasFilters ? (
             <div className="flex flex-col items-center gap-2 px-6 py-11 text-center">
-              <ClipboardList className="h-[30px] w-[30px] text-[#c9c9d3]" />
+              <ClipboardList className="h-[30px] w-[30px] text-ink-faint" />
               <div className="mt-1 text-[14px] font-semibold">No reports match</div>
-              <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+              <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#4b4b5a]">
                 Nothing matches these filters. Clear one to see more of the list.
               </div>
               <button
@@ -683,7 +683,7 @@ export default function ReceivingReportsTab({
                 <ClipboardList className="h-4 w-4 text-[#5b21b6]" />
               </div>
               <div className="mt-1 text-[15px] font-semibold">No receiving reports yet</div>
-              <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#5b5b6b]">
+              <div className="max-w-[440px] text-[12.5px] leading-[1.55] text-[#4b4b5a]">
                 Receive stock against a purchase order and its report shows up here.
               </div>
             </div>
@@ -741,7 +741,7 @@ export default function ReceivingReportsTab({
                         </p>
                         <CopyCodeButton code={report.code} />
                       </div>
-                      <p className="text-[13px] text-[#a3a3b2]">{fmtDate(report.receivedAt)}</p>
+                      <p className="text-[13px] text-ink-subtle">{fmtDate(report.receivedAt)}</p>
                     </div>
 
                     <div role="cell" className="flex min-w-0 flex-col gap-0.5 pl-6">
@@ -749,14 +749,14 @@ export default function ReceivingReportsTab({
                         {sourceName(report)}
                       </p>
                       {receivingReportSourceSubtitle(report) && (
-                        <p className="truncate text-[13px] text-[#8b8b9b]">
+                        <p className="truncate text-[13px] text-ink-muted">
                           {receivingReportSourceSubtitle(report)}
                         </p>
                       )}
                       <PoLink report={report} />
                     </div>
 
-                    <span role="cell" className="truncate text-[14.5px] text-[#5b5b6b]">
+                    <span role="cell" className="truncate text-[14.5px] text-[#4b4b5a]">
                       {report.warehouse?.branch?.name ?? report.warehouse?.name ?? '—'}
                     </span>
 
@@ -772,7 +772,7 @@ export default function ReceivingReportsTab({
                         {amount != null ? (
                           fmtMoney(amount)
                         ) : (
-                          <span className="text-[#c9c9d3]">—</span>
+                          <span className="text-ink-faint">—</span>
                         )}
                       </span>
                     )}
@@ -816,7 +816,7 @@ export default function ReceivingReportsTab({
                           </span>
                           <CopyCodeButton code={report.code} />
                         </div>
-                        <span className="truncate text-[11.5px] text-[#8b8b9b]">
+                        <span className="truncate text-[11.5px] text-ink-muted">
                           {fmtDate(report.receivedAt)} · {sourceName(report)}
                         </span>
                         <PoLink report={report} />
@@ -833,7 +833,7 @@ export default function ReceivingReportsTab({
                     >
                       <div className="flex flex-col gap-[2px] rounded-[8px] bg-[#fbfbfc] px-2 py-[7px]">
                         <span
-                          className={`${MONO} text-[9px] uppercase tracking-[.06em] text-[#8b8b9b]`}
+                          className={`${MONO} text-[9px] uppercase tracking-[.06em] text-ink-muted`}
                         >
                           Units
                         </span>
@@ -844,7 +844,7 @@ export default function ReceivingReportsTab({
                       {showAmounts && (
                         <div className="flex flex-col gap-[2px] rounded-[8px] bg-[#fbfbfc] px-2 py-[7px]">
                           <span
-                            className={`${MONO} text-[9px] uppercase tracking-[.06em] text-[#8b8b9b]`}
+                            className={`${MONO} text-[9px] uppercase tracking-[.06em] text-ink-muted`}
                           >
                             Amount
                           </span>
@@ -857,7 +857,7 @@ export default function ReceivingReportsTab({
 
                     <DeliveryBillCell report={report} />
 
-                    <div className="text-[12px] text-[#5b5b6b]">
+                    <div className="text-[12px] text-[#4b4b5a]">
                       {report.warehouse?.branch?.name ?? report.warehouse?.name ?? '—'}
                     </div>
                   </div>
@@ -867,7 +867,7 @@ export default function ReceivingReportsTab({
 
             {/* Pagination */}
             <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
-              <span className="text-[11.5px] text-[#8b8b9b]">
+              <span className="text-[11.5px] text-ink-muted">
                 Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of{' '}
                 {total.toLocaleString()} receipts
               </span>
@@ -877,18 +877,18 @@ export default function ReceivingReportsTab({
                     type="button"
                     onClick={() => setPage(Math.max(1, page - 1))}
                     disabled={page <= 1}
-                    className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-[#a3a3b2]"
+                    className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-ink-faint"
                   >
                     Previous
                   </button>
-                  <span className="px-2 py-1.5 text-[12px] tabular-nums text-[#5b5b6b]">
+                  <span className="px-2 py-1.5 text-[12px] tabular-nums text-[#4b4b5a]">
                     {page} / {totalPages}
                   </span>
                   <button
                     type="button"
                     onClick={() => setPage(Math.min(totalPages, page + 1))}
                     disabled={page >= totalPages}
-                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-[#a3a3b2]"
+                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-ink-faint"
                   >
                     Next
                   </button>
@@ -906,6 +906,7 @@ export default function ReceivingReportsTab({
           onSubmit={receiveMutation.mutateAsync}
           isSubmitting={receiveMutation.isPending}
           warehouses={destinationWarehousesQuery.data?.data?.data ?? []}
+          warehousesLoading={destinationWarehousesQuery.isLoading}
           items={createItemsQuery.data?.data?.data ?? []}
           actorBranchId={me?.branchId}
           canViewCost={canViewCost}

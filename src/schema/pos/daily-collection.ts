@@ -181,6 +181,32 @@ export const DailyCollectionReportSchema = z.object({
    * figure that moves into cashOnHand as they close. Not a variance. */
   pendingCashOnHand: z.number().default(0),
   totalDeposited: z.number(),
+  /** Scenario 83 — cash other branches turned over to this one and it
+   * acknowledged that day: its own TURNOVER IN line, counted in the day's
+   * total and in the balance. */
+  turnoversIn: z
+    .array(
+      z.object({
+        date: z.string(),
+        fromName: z.string(),
+        reference: z.string().nullable(),
+        amount: z.number(),
+      })
+    )
+    .default([]),
+  turnoverInTotal: z.number().default(0),
+  /** Scenario 83 — turnovers sent to this branch that day, not acknowledged
+   * yet: shown as Pending turnover, counted in no total. */
+  pendingTurnoversIn: z
+    .array(
+      z.object({
+        date: z.string(),
+        fromName: z.string(),
+        reference: z.string().nullable(),
+        amount: z.number(),
+      })
+    )
+    .default([]),
   /** Undeposited cash: everything collected less what was banked, open-session
    * takings included. Matches where the ledger's BALANCE column lands. */
   balance: z.number(),

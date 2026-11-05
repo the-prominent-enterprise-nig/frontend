@@ -300,7 +300,7 @@ export default function ReturnList({ session }: { session: SessionUser }) {
 
   return (
     <div className="w-full min-h-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
-      <div className="mx-auto max-w-7xl space-y-5">
+      <div className="mx-auto max-w-[1520px] space-y-5">
         {/* Header */}
         {/* Header chrome — sizes, weights and the #5b21b6 primary — is shared
             with Stock Transfers next door, so the two inventory movement
@@ -311,7 +311,7 @@ export default function ReturnList({ session }: { session: SessionUser }) {
             {/* Says "in" explicitly because the Debit Memos tab next door
                 moves stock the opposite way, and the two labels can't tell
                 them apart on their own. */}
-            <p className="text-[13px] text-[#5b5b6b]">
+            <p className="text-[13px] text-[#4b4b5a]">
               Customer stock coming <strong>back in</strong> to inventory. Sellable stock is
               immediately available; damaged stock goes to on-hand only.
             </p>

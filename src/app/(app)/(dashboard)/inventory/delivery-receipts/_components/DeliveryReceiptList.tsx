@@ -55,11 +55,11 @@ export default function DeliveryReceiptList({
     <div
       className={`min-h-full w-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px] ${PLEX}`}
     >
-      <div className="mx-auto max-w-7xl space-y-5">
+      <div className="mx-auto max-w-[1520px] space-y-5">
         <ListHeader canCreate={canCreate} />
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[220px] flex-1 sm:max-w-md">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8b8b9b]" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
             <input
               type="search"
               value={search}
@@ -88,7 +88,7 @@ export default function DeliveryReceiptList({
           className={`overflow-hidden rounded-xl border border-[#e4e4e9] bg-white shadow-sm transition-opacity ${query.isFetching ? 'opacity-60' : ''}`}
         >
           {query.isLoading ? (
-            <div className="p-8 text-center text-sm text-[#8b8b9b]">Loading delivery receipts…</div>
+            <div className="p-8 text-center text-sm text-ink-muted">Loading delivery receipts…</div>
           ) : rows.length === 0 ? (
             <EmptyState filtered={status !== 'all' || !!search.trim()} canCreate={canCreate} />
           ) : (
@@ -115,7 +115,7 @@ function ListHeader({ canCreate }: { canCreate: boolean }): React.JSX.Element {
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="max-w-2xl">
         <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Delivery Receipts</h1>
-        <p className="mt-1 text-sm text-[#5b5b6b]">
+        <p className="mt-1 text-sm text-[#4b4b5a]">
           Stock going out for office use, raffle prizes, giveaways and donations, or held for a
           sales invoice to follow.
         </p>
@@ -179,15 +179,15 @@ function EmptyState({
   return (
     <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
       {filtered ? (
-        <Search className="mb-3 h-8 w-8 text-[#c9c9d3]" />
+        <Search className="mb-3 h-8 w-8 text-ink-faint" />
       ) : (
-        <Truck className="mb-3 h-10 w-10 text-[#c9c9d3]" />
+        <Truck className="mb-3 h-10 w-10 text-ink-faint" />
       )}
       <p className="text-sm font-medium text-[#3d3d4a]">
         {filtered ? 'No delivery receipts match' : 'No delivery receipts yet'}
       </p>
       {!filtered && (
-        <p className="mt-1 max-w-lg text-xs leading-relaxed text-[#5b5b6b]">
+        <p className="mt-1 max-w-lg text-xs leading-relaxed text-[#4b4b5a]">
           Raise one when a unit leaves for office use, a raffle, a giveaway or a donation. Saving a
           draft does not touch stock; submitting it posts its debit memo automatically.
         </p>
@@ -263,7 +263,7 @@ function DrRow({ dr }: { dr: DrSummary }): React.JSX.Element {
         </Link>
       </td>
       <td>
-        <Link href={href} className={`${cell} ${MONO} text-[#5b5b6b]`}>
+        <Link href={href} className={`${cell} ${MONO} text-[#4b4b5a]`}>
           {(dr.debitMemo ?? dr.supplierDebitMemo)?.memoNumber ?? '—'}
         </Link>
       </td>

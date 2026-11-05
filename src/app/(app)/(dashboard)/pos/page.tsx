@@ -19,6 +19,8 @@ import { Skeleton } from '@/src/components/ui/Skeleton'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { type SessionUser } from '@/src/libs/guards/permission'
 import { TransactionDetail } from './_components/TransactionDetail'
+import { MonthStepper } from './_components/MonthStepper'
+import { DatePickerButton } from './_components/DatePickerButton'
 import type { PosTransaction } from '@/src/schema/pos'
 import {
   ShoppingCart,
@@ -42,6 +44,60 @@ const APPROVAL_GRID_COLS: Record<number, string> = {
   2: 'lg:grid-cols-2',
   3: 'lg:grid-cols-3',
   4: 'lg:grid-cols-4',
+}
+
+/** Local calendar date as YYYY-MM-DD (what a date input holds). */
+function localIso(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/**
+ * Oct 29 UAT POS-02 / POS-03 — the period the Overview's figures cover: a
+ * calendar month (the default, the current one — accumulated sales for the
+ * month) or a date range. Returned as the instants the transactions endpoint
+ * compares occurredAt against: local start of the first day, local end of
+ * the last.
+ */
+type OverviewPeriod = { mode: 'month'; month: string } | { mode: 'range'; from: string; to: string }
+
+function periodBounds(p: OverviewPeriod): { dateFrom: string; dateTo: string } {
+  const [fromDay, toDay] =
+    p.mode === 'month'
+      ? (() => {
+          const [y, m] = p.month.split('-').map(Number)
+          return [new Date(y, m - 1, 1), new Date(y, m, 0)]
+        })()
+      : (() => {
+          const [a, b] = [p.from, p.to].sort()
+          const parse = (iso: string) => {
+            const [y, m, d] = iso.split('-').map(Number)
+            return new Date(y, m - 1, d)
+          }
+          return [parse(a), parse(b)]
+        })()
+  const start = new Date(fromDay)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(toDay)
+  end.setHours(23, 59, 59, 999)
+  return { dateFrom: start.toISOString(), dateTo: end.toISOString() }
+}
+
+function periodLabel(p: OverviewPeriod): string {
+  if (p.mode === 'month') {
+    const [y, m] = p.month.split('-').map(Number)
+    return new Date(y, m - 1, 1).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
+  }
+  const fmt = (iso: string) => {
+    const [y, m, d] = iso.split('-').map(Number)
+    return new Date(y, m - 1, d).toLocaleDateString('en-PH', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })
+  }
+  const [a, b] = [p.from, p.to].sort()
+  return a === b ? fmt(a) : `${fmt(a)} – ${fmt(b)}`
 }
 
 function formatCurrency(n: number) {
@@ -68,6 +124,13 @@ export default function PosOverviewPage() {
   const { branchId } = usePosBranchContext()
   const branchFilter = branchId ? { branchId } : undefined
 
+  const todayIso = localIso(new Date())
+  const [period, setPeriod] = useState<OverviewPeriod>({
+    mode: 'month',
+    month: todayIso.slice(0, 7),
+  })
+  const txFilter = { ...branchFilter, ...periodBounds(period) }
+
   const { data: me } = useMe()
   const canReadApprovals = !!me && can(me, POS_PERMISSIONS.TRANSACTIONS_READ)
   const canOverrideApprovals = !!me && can(me, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
@@ -78,7 +141,7 @@ export default function PosOverviewPage() {
     isLoading: txLoading,
     refetch,
     isFetching,
-  } = useTransactions(branchFilter, autoRefresh)
+  } = useTransactions(txFilter, autoRefresh)
   const { data: sessData, isLoading: sessLoading } = useSessions(branchFilter, autoRefresh)
   const { data: termData, isLoading: termLoading } = useTerminals(branchFilter, autoRefresh)
 
@@ -266,6 +329,70 @@ export default function PosOverviewPage() {
             )}
           </div>
         )}
+
+        {/* Oct 29 UAT POS-02 / POS-03 — the period Total Sales, Transactions
+            and Recent Transactions cover. */}
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm"
+          data-testid="overview-period"
+        >
+          <div className="inline-flex rounded-lg border border-purple-200 p-0.5">
+            {(['month', 'range'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() =>
+                  setPeriod(
+                    mode === 'month'
+                      ? { mode: 'month', month: todayIso.slice(0, 7) }
+                      : { mode: 'range', from: todayIso, to: todayIso }
+                  )
+                }
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  period.mode === mode
+                    ? 'bg-purple-200 text-purple-800'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {mode === 'month' ? 'Month' : 'Date range'}
+              </button>
+            ))}
+          </div>
+          {period.mode === 'month' ? (
+            <MonthStepper
+              value={period.month}
+              max={todayIso.slice(0, 7)}
+              onChange={(month) => setPeriod({ mode: 'month', month })}
+            />
+          ) : (
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              {/* From can't pass To, nor To come before From. */}
+              <DatePickerButton
+                label="From"
+                value={period.from}
+                max={period.to}
+                today={todayIso}
+                rangeFrom={period.from}
+                rangeTo={period.to}
+                onChange={(from) => setPeriod({ ...period, from })}
+              />
+              to
+              <DatePickerButton
+                label="To"
+                value={period.to}
+                min={period.from}
+                max={todayIso}
+                today={todayIso}
+                rangeFrom={period.from}
+                rangeTo={period.to}
+                onChange={(to) => setPeriod({ ...period, to })}
+              />
+            </div>
+          )}
+          <span className="text-sm text-gray-500" data-testid="overview-period-label">
+            Showing {periodLabel(period)}
+          </span>
+        </div>
 
         {/* Stat Cards */}
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
