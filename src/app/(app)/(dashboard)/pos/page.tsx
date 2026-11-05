@@ -18,7 +18,7 @@ import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
-import { type SessionUser } from '@/src/libs/guards/permission'
+import { type SessionUser, hasPrivilegedRole } from '@/src/libs/guards/permission'
 import { TransactionDetail } from './_components/TransactionDetail'
 import { MonthStepper } from './_components/MonthStepper'
 import { DatePickerButton } from './_components/DatePickerButton'
@@ -146,10 +146,15 @@ export default function PosOverviewPage() {
   } = useTransactions(txFilter, autoRefresh)
   // Oct 29 UAT POS-01 — with no branch picked, Total Sales is every branch
   // combined, so it's broken down per branch underneath. Same period bounds
-  // and sale rule (non-voided sales) as the card.
+  // and sale rule (non-voided sales) as the card. Only for users who see
+  // every branch — the Business Owner, or anyone (Head Office) with no branch
+  // of their own: a branch user's card is already their own branch, which the
+  // server scopes the summary to anyway.
+  const showSalesByBranch =
+    !branchId && !!session && (hasPrivilegedRole(session) || !session.branchId)
   const { data: byBranchData, isLoading: byBranchLoading } = useSalesByBranch(
     periodBounds(period),
-    !branchId,
+    showSalesByBranch,
     autoRefresh
   )
   const { data: sessData, isLoading: sessLoading } = useSessions(branchFilter, autoRefresh)
@@ -433,7 +438,7 @@ export default function PosOverviewPage() {
           />
         </div>
 
-        {!branchId && (
+        {showSalesByBranch && (
           <SalesByBranchBreakdown
             rows={byBranchData?.data ?? null}
             loading={byBranchLoading}
