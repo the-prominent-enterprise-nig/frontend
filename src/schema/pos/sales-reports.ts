@@ -42,6 +42,8 @@ export type SalesReportsParams = {
  * Money is gross at LCP; quantity and LCP are negative on a refund. */
 export const SalesLineSchema = z.object({
   date: z.string(),
+  /** Manila business day, 'YYYY-MM-DD' — what Date and Month show. */
+  day: z.string(),
   transactionId: z.string(),
   transactionNumber: z.string(),
   salesInvoiceNumber: z.string().nullable(),
@@ -76,3 +78,30 @@ export const SalesLinesPageSchema = z.object({
 
 export type SalesLine = z.infer<typeof SalesLineSchema>
 export type SalesLinesPage = z.infer<typeof SalesLinesPageSchema>
+
+/** Scenario 85 Part 3 — the Dashboard's model × month / brand × month view. */
+const MonthCellSchema = z.object({ units: z.number(), gross: z.number() })
+
+export const SalesByMonthSchema = z.object({
+  dimension: z.enum(['model', 'brand']),
+  /** 'YYYY-MM', oldest first. */
+  months: z.array(z.string()),
+  rows: z.array(
+    z.object({
+      key: z.string(),
+      brand: z.string(),
+      perMonth: z.array(MonthCellSchema),
+      totalUnits: z.number(),
+      totalGross: z.number(),
+    })
+  ),
+  rowCount: z.number(),
+  grandTotal: z.object({
+    perMonth: z.array(MonthCellSchema),
+    totalUnits: z.number(),
+    totalGross: z.number(),
+  }),
+})
+
+export type SalesByMonth = z.infer<typeof SalesByMonthSchema>
+export type SalesByMonthRow = SalesByMonth['rows'][number]

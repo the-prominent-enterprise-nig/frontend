@@ -46,29 +46,42 @@ export default function SalesReportFilters({
     <section className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
       <div className="flex flex-wrap items-end gap-3">
         <ReportDateRange value={filters.range} onChange={onRange} showPresets={false} />
-        <Filter label="Region">
-          <SearchableSelect
-            value={filters.region}
-            onChange={changeRegion}
-            options={toOptions(options?.regions)}
-            placeholder="All regions"
-            loading={loading}
-            clearable
-            portal
-          />
-        </Filter>
-        <Filter label="Branch">
-          <SearchableSelect
-            value={options?.branchLocked ? (options.branches[0]?.id ?? '') : filters.branch}
-            onChange={(v) => onFilter('branch', v)}
-            options={toOptions(branches)}
-            placeholder="All branches"
-            loading={loading}
-            disabled={options?.branchLocked}
-            clearable={!options?.branchLocked}
-            portal
-          />
-        </Filter>
+        {/* A branch-tied user (Branch Manager) only ever sees their own
+            branch, so Region and Branch would do nothing — name the branch
+            instead of offering filters that can't change the figures. */}
+        {options?.branchLocked ? (
+          <div className="flex flex-col gap-1 text-xs text-zinc-600">
+            Branch
+            <span className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-900">
+              {options.branches[0]?.name ?? 'Your branch'}
+            </span>
+          </div>
+        ) : (
+          <>
+            <Filter label="Region">
+              <SearchableSelect
+                value={filters.region}
+                onChange={changeRegion}
+                options={toOptions(options?.regions)}
+                placeholder="All regions"
+                loading={loading}
+                clearable
+                portal
+              />
+            </Filter>
+            <Filter label="Branch">
+              <SearchableSelect
+                value={filters.branch}
+                onChange={(v) => onFilter('branch', v)}
+                options={toOptions(branches)}
+                placeholder="All branches"
+                loading={loading}
+                clearable
+                portal
+              />
+            </Filter>
+          </>
+        )}
         <Filter label="Type">
           <SearchableSelect
             value={filters.type}

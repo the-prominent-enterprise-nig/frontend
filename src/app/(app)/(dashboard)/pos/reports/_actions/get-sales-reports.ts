@@ -2,6 +2,7 @@
 
 import { api, type ApiResponse } from '@/src/libs/api/client'
 import type {
+  SalesByMonth,
   SalesFilterOptions,
   SalesLinesPage,
   SalesReportsParams,
@@ -31,5 +32,15 @@ export async function getSalesLines(
 ): Promise<ApiResponse<SalesLinesPage>> {
   return api.get<SalesLinesPage>('/pos/reports/sales/lines', params, {
     tags: ['pos-sales-report-lines'],
+  })
+}
+
+/** Scenario 85 Part 3 — units and gross per model or brand, month by month.
+ * `top` omitted returns every row ("Show all"). */
+export async function getSalesByMonth(
+  params: SalesReportsParams & { dimension: 'model' | 'brand'; top?: number }
+): Promise<ApiResponse<SalesByMonth>> {
+  return api.get<SalesByMonth>('/pos/reports/sales/by-month', params, {
+    tags: ['pos-sales-report-by-month'],
   })
 }

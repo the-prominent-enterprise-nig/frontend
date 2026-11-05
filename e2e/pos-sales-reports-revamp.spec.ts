@@ -1,10 +1,10 @@
 import { test, expect, type Page } from '@playwright/test'
-import { fillStable, gotoReady } from './utils'
+import { fillStable, gotoReady, loginAs } from './utils'
 
 /**
  * Scenario 85 — revamped Sales Reports (/pos/reports). Part 1: tabs, the
  * shared filter bar and the four stat cards. Part 2: the Sales Report tab
- * (paged units, totals, Export to Excel).
+ * (paged units, totals, Export to Excel). Part 3: the Dashboard tab.
  *
  * Exact figures (gross at LCP, refunds netted, Office vs Agent, each filter,
  * branch scoping) are covered by backend/test/sales-reports-revamp.e2e-spec.ts,
@@ -193,6 +193,74 @@ test.describe('POS — Sales Reports revamp (Scenario 85)', () => {
     test('Export to Excel only shows on the Sales Report tab for now', async ({ page }) => {
       await open(page)
       await expect(page.getByRole('button', { name: /Export to Excel/ })).toHaveCount(0)
+    })
+  })
+
+  test.describe('Dashboard tab (Part 3)', () => {
+    test('shows the two bar panels and the two month tables', async ({ page }) => {
+      await open(page)
+      for (const title of [
+        'Top models',
+        'Units by brand',
+        'Top models by month',
+        'Brands by month',
+      ]) {
+        await expect(page.getByRole('region', { name: title, exact: true })).toBeVisible()
+      }
+      await expect(page.getByText('Loading…')).toHaveCount(0, { timeout: 20_000 })
+
+      const table = page.getByRole('region', { name: 'Top models by month', exact: true })
+      // Twelve month columns for the default range, plus #, Model, Brand, Total.
+      await expect(table.getByRole('columnheader')).toHaveCount(16)
+      if (await table.getByText('No sales for these filters.').isVisible()) {
+        test.info().annotations.push({
+          type: 'skipped-assertion',
+          description: 'No sales in range — bars and Grand total not exercised.',
+        })
+        return
+      }
+      await expect(table.getByText('Grand total')).toBeVisible()
+      const bars = page.getByRole('region', { name: 'Top models', exact: true })
+      expect(await bars.getByRole('listitem').count()).toBeLessThanOrEqual(10)
+    })
+
+    test('Show all lifts the top-10 cut on a month table', async ({ page }) => {
+      await open(page)
+      const table = page.getByRole('region', { name: 'Top models by month', exact: true })
+      await expect(page.getByText('Loading…')).toHaveCount(0, { timeout: 20_000 })
+      const showAll = table.getByRole('button', { name: /^Show all \d+$/ })
+      if (!(await showAll.isVisible())) {
+        test.info().annotations.push({
+          type: 'skipped-assertion',
+          description: 'Ten or fewer models in range — nothing to expand.',
+        })
+        return
+      }
+      const total = Number((await showAll.textContent())!.replace(/\D/g, ''))
+      await showAll.click()
+      await expect(table.locator('tbody tr')).toHaveCount(total, { timeout: 20_000 })
+      await table.getByRole('button', { name: 'Show top 10' }).click()
+      await expect(table.locator('tbody tr')).toHaveCount(10, { timeout: 20_000 })
+    })
+  })
+
+  test.describe('as a Branch Manager', () => {
+    test.use({ storageState: { cookies: [], origins: [] } })
+
+    test('names their branch instead of offering Region and Branch filters', async ({ page }) => {
+      await loginAs(
+        page,
+        'technova.b1.manager@test.com',
+        process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
+      )
+      await open(page)
+
+      await expect(page.getByLabel('Region', { exact: true })).toHaveCount(0)
+      await expect(page.getByLabel('Branch', { exact: true })).toHaveCount(0)
+      await expect(page.getByText('Bago', { exact: true })).toBeVisible()
+      for (const label of ['Type', 'Group', 'Brand']) {
+        await expect(page.getByLabel(label, { exact: true })).toBeVisible()
+      }
     })
   })
 })

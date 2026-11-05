@@ -20,8 +20,8 @@ const PAGE_SIZE = 50
 type Column = { header: string; cell: (l: SalesLine) => string | number; numeric?: boolean }
 
 const COLUMNS: Column[] = [
-  { header: 'Date', cell: (l) => l.date.slice(0, 10) },
-  { header: 'Month', cell: (l) => l.date.slice(0, 7) },
+  { header: 'Date', cell: (l) => l.day },
+  { header: 'Month', cell: (l) => l.day.slice(0, 7) },
   { header: 'Invoice Type', cell: (l) => l.invoiceType },
   { header: 'Classification', cell: (l) => l.classification },
   { header: 'Branch', cell: (l) => l.branchName },

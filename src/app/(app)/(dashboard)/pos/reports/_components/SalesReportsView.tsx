@@ -6,6 +6,7 @@ import { getSalesFilterOptions, getSalesSummary } from '../_actions/get-sales-re
 import { useSalesReportFilters, type SalesReportsTab } from '../_hooks/useSalesReportFilters'
 import SalesReportFilters from './SalesReportFilters'
 import SalesReportTab from './SalesReportTab'
+import DashboardTab from './dashboard/DashboardTab'
 import SalesStatCards from './SalesStatCards'
 
 /**
@@ -103,6 +104,8 @@ export default function SalesReportsView(): React.JSX.Element {
 
       {report.filters.tab === 'report' ? (
         <SalesReportTab params={report.apiParams} />
+      ) : report.filters.tab === 'dashboard' ? (
+        <DashboardTab params={report.apiParams} />
       ) : (
         <section
           role="tabpanel"
