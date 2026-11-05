@@ -105,3 +105,43 @@ export const SalesByMonthSchema = z.object({
 
 export type SalesByMonth = z.infer<typeof SalesByMonthSchema>
 export type SalesByMonthRow = SalesByMonth['rows'][number]
+
+/** Scenario 85 Part 5 — the Branch Scorecard. Money is gross at LCP. */
+export const PaceStatusSchema = z.enum(['met', 'ahead', 'behind', 'far_behind'])
+
+const ScorecardFiguresSchema = z.object({
+  total: z.number(),
+  office: z.number(),
+  officeShare: z.number(),
+  quota: z.number().nullable(),
+  achRate: z.number().nullable(),
+  bts: z.number().nullable(),
+  status: PaceStatusSchema.nullable(),
+})
+
+export const ScorecardSchema = z.object({
+  period: z.object({
+    from: z.string(),
+    asOf: z.string(),
+    daysInMonth: z.number(),
+    daysElapsed: z.number(),
+    pace: z.number(),
+  }),
+  rows: z.array(
+    ScorecardFiguresSchema.extend({
+      key: z.string(),
+      kind: z.enum(['branch', 'line']),
+      name: z.string(),
+      daily: z.array(z.object({ day: z.string(), total: z.number(), office: z.number() })),
+    })
+  ),
+  totalBranches: ScorecardFiguresSchema,
+  grandTotal: ScorecardFiguresSchema,
+  aheadOrMet: z.number(),
+  branchCount: z.number(),
+})
+
+export type PaceStatus = z.infer<typeof PaceStatusSchema>
+export type ScorecardFigures = z.infer<typeof ScorecardFiguresSchema>
+export type Scorecard = z.infer<typeof ScorecardSchema>
+export type ScorecardRow = Scorecard['rows'][number]

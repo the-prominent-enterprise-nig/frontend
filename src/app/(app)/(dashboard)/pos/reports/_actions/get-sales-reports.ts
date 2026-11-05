@@ -7,6 +7,7 @@ import type {
   SalesLinesPage,
   SalesReportsParams,
   SalesSummary,
+  Scorecard,
 } from '@/src/schema/pos/sales-reports'
 
 /** Scenario 85 — options for the shared filter bar. Served by the reports
@@ -42,5 +43,14 @@ export async function getSalesByMonth(
 ): Promise<ApiResponse<SalesByMonth>> {
   return api.get<SalesByMonth>('/pos/reports/sales/by-month', params, {
     tags: ['pos-sales-report-by-month'],
+  })
+}
+
+/** Scenario 85 Part 5 — the To date's month, to date, per branch against quota. */
+export async function getSalesScorecard(
+  params: SalesReportsParams
+): Promise<ApiResponse<Scorecard>> {
+  return api.get<Scorecard>('/pos/reports/sales/scorecard', params, {
+    tags: ['pos-sales-report-scorecard'],
   })
 }

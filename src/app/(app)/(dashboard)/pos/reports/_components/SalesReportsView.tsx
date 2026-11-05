@@ -2,11 +2,17 @@
 
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import ExportButton from '@/src/components/common/ExportButton'
+import type { SalesFilterOptions } from '@/src/schema/pos/sales-reports'
 import { getSalesFilterOptions, getSalesSummary } from '../_actions/get-sales-reports'
-import { useSalesReportFilters, type SalesReportsTab } from '../_hooks/useSalesReportFilters'
+import {
+  useSalesReportFilters,
+  type SalesReportFilters as Filters,
+  type SalesReportsTab,
+} from '../_hooks/useSalesReportFilters'
 import SalesReportFilters from './SalesReportFilters'
 import SalesReportTab from './SalesReportTab'
 import DashboardTab from './dashboard/DashboardTab'
+import SalesPerBranchTab from './branch/SalesPerBranchTab'
 import SalesStatCards from './SalesStatCards'
 
 /**
@@ -22,6 +28,18 @@ const TABS: { key: SalesReportsTab; label: string }[] = [
   { key: 'branch', label: 'Sales per Branch' },
   { key: 'report', label: 'Sales Report' },
 ]
+
+/** What the Sales per Branch views are scoped to: the caller's own branch,
+ * the chosen branch, the chosen region ("Negros Operations"), or all. */
+function scopeTitle(filters: Filters, options: SalesFilterOptions | undefined): string {
+  const name = (list: { id: string; name: string }[] | undefined, id: string) =>
+    list?.find((o) => o.id === id)?.name
+  if (options?.branchLocked) return options.branches[0]?.name ?? 'Your branch'
+  const branch = filters.branch && name(options?.branches, filters.branch)
+  if (branch) return branch
+  const region = filters.region && name(options?.regions, filters.region)
+  return region ? `${region} Operations` : 'All Operations'
+}
 
 export default function SalesReportsView(): React.JSX.Element {
   const report = useSalesReportFilters()
@@ -107,13 +125,10 @@ export default function SalesReportsView(): React.JSX.Element {
       ) : report.filters.tab === 'dashboard' ? (
         <DashboardTab params={report.apiParams} />
       ) : (
-        <section
-          role="tabpanel"
-          className="rounded-xl border border-dashed border-zinc-300 bg-white px-4 py-12 text-center text-sm text-zinc-500"
-        >
-          {TABS.find((t) => t.key === report.filters.tab)?.label} is being rebuilt to the new
-          layout.
-        </section>
+        <SalesPerBranchTab
+          params={report.apiParams}
+          title={scopeTitle(report.filters, options.data)}
+        />
       )}
     </div>
   )

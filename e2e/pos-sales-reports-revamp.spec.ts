@@ -5,6 +5,7 @@ import { fillStable, gotoReady, loginAs } from './utils'
  * Scenario 85 — revamped Sales Reports (/pos/reports). Part 1: tabs, the
  * shared filter bar and the four stat cards. Part 2: the Sales Report tab
  * (paged units, totals, Export to Excel). Part 3: the Dashboard tab.
+ * Part 5: Sales per Branch → Branch Scorecard.
  *
  * Exact figures (gross at LCP, refunds netted, Office vs Agent, each filter,
  * branch scoping) are covered by backend/test/sales-reports-revamp.e2e-spec.ts,
@@ -244,6 +245,61 @@ test.describe('POS — Sales Reports revamp (Scenario 85)', () => {
     })
   })
 
+  test.describe('Branch Scorecard (Part 5)', () => {
+    test("scores the To date's month, with both total rows and the AC line", async ({ page }) => {
+      await open(page, '?tab=branch&from=2026-10-01&to=2026-10-31')
+      await expect(page.getByRole('tab', { name: 'Branch Scorecard' })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+      await expect(page.getByText('OCTOBER 1–31, 2026')).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByRole('heading', { name: 'All Operations' })).toBeVisible()
+      for (const kpi of [
+        'Total Branches (gross)',
+        'Ach Rate (month pace 100%)',
+        'Ahead of pace or met',
+        'BTS (balance to quota)',
+      ]) {
+        await expect(page.getByText(kpi, { exact: true })).toBeVisible()
+      }
+      for (const header of [
+        'Total Sales',
+        'Office Sales',
+        '% Office',
+        'Quota',
+        'Ach Rate',
+        'BTS',
+        'Status',
+      ]) {
+        await expect(page.getByRole('columnheader', { name: header, exact: true })).toBeVisible()
+      }
+      await expect(page.getByRole('button', { name: 'AC Unit + Services' })).toBeVisible()
+      await expect(page.getByRole('rowheader', { name: 'Total Branches' })).toBeVisible()
+      await expect(page.getByRole('rowheader', { name: 'Grand Total' })).toBeVisible()
+    })
+
+    test('opens a branch to its day-by-day sales', async ({ page }) => {
+      await open(page, '?tab=branch&from=2026-10-01&to=2026-10-10')
+      const first = page.locator('tbody tr').first().getByRole('button')
+      await expect(first).toBeVisible({ timeout: 20_000 })
+      const name = (await first.textContent())!.trim()
+      await first.click()
+      await expect(first).toHaveAttribute('aria-expanded', 'true')
+      await expect(
+        page.getByText(`${name} — daily sales, office sales under each day`)
+      ).toBeVisible()
+      await first.click()
+      await expect(page.getByText(/daily sales, office sales under each day/)).toHaveCount(0)
+    })
+
+    test('titles the scorecard after the chosen region', async ({ page }) => {
+      await open(page, '?tab=branch&region=negros')
+      await expect(page.getByRole('heading', { name: 'Negros Operations' })).toBeVisible({
+        timeout: 20_000,
+      })
+    })
+  })
+
   test.describe('as a Branch Manager', () => {
     test.use({ storageState: { cookies: [], origins: [] } })
 
@@ -261,6 +317,20 @@ test.describe('POS — Sales Reports revamp (Scenario 85)', () => {
       for (const label of ['Type', 'Group', 'Brand']) {
         await expect(page.getByLabel(label, { exact: true })).toBeVisible()
       }
+    })
+
+    test('sees a scorecard of their own branch, without the AC Unit + Services line', async ({
+      page,
+    }) => {
+      await loginAs(
+        page,
+        'technova.b1.manager@test.com',
+        process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
+      )
+      await open(page, '?tab=branch')
+      await expect(page.getByRole('heading', { name: 'Bago' })).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator('tbody tr')).toHaveCount(1)
+      await expect(page.getByRole('button', { name: 'AC Unit + Services' })).toHaveCount(0)
     })
   })
 })
