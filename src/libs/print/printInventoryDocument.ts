@@ -1,5 +1,6 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import { MANILA_TZ, manilaDateOf, manilaMonthOf } from '@/src/libs/format/manila-date'
 import {
   receivingReportSourceName,
   receivingReportSourceSubtitle,
@@ -52,7 +53,7 @@ export function printInventoryDocument(
   </style></head><body>
     <p class="label">${label}</p>
     <h1>${doc.documentNumber}</h1>
-    <p style="font-size:12px;color:#666">Generated: ${new Date(doc.generatedAt).toLocaleString('en-PH')}</p>
+    <p style="font-size:12px;color:#666">Generated: ${new Date(doc.generatedAt).toLocaleString('en-PH', { timeZone: MANILA_TZ })}</p>
     ${
       doc.enterprise
         ? `<h2>Enterprise</h2><div class="meta">
@@ -93,7 +94,8 @@ export function buildReceivingReportHtml(
   // print whenever it carries them, quantities only otherwise.
   const { showAmounts = lines.some((l) => l.unitCost != null) } = opts
 
-  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const fmtDate = (v: unknown) =>
+    v ? new Date(v as string).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
   const fmtMoney = (n: number) =>
     n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const esc = (v: unknown) =>
@@ -336,7 +338,8 @@ export function buildCustomerReturnReceiptHtml(data: unknown): string {
     | undefined
   const lines = Array.isArray(ret.lines) ? (ret.lines as CustomerReturnDocLine[]) : []
 
-  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const fmtDate = (v: unknown) =>
+    v ? new Date(v as string).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
   const fmtMoney = (n: number) =>
     n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const esc = (v: unknown) =>
@@ -534,7 +537,8 @@ export function buildStockTransferHtml(data: unknown): string {
   const enterprise = doc.enterprise
   const lines = Array.isArray(transfer.lines) ? (transfer.lines as Record<string, unknown>[]) : []
 
-  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const fmtDate = (v: unknown) =>
+    v ? new Date(v as string).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
@@ -754,7 +758,8 @@ function buildPurchaseOrderHtml(
 
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
-  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const fmtDate = (v: unknown) =>
+    v ? new Date(v as string).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
@@ -1012,7 +1017,7 @@ export function buildCustomerLedgerHtml(
       minimumFractionDigits: 2,
     })
   const fmtDate = (v: string | null | undefined) =>
-    v ? new Date(v).toLocaleDateString('en-PH') : '—'
+    v ? new Date(v).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
@@ -1222,7 +1227,7 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
       currency: 'PHP',
       minimumFractionDigits: 2,
     })
-  const fmtDate = (v: string) => new Date(v).toLocaleDateString('en-PH')
+  const fmtDate = (v: string) => new Date(v).toLocaleDateString('en-PH', { timeZone: MANILA_TZ })
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
@@ -1370,7 +1375,7 @@ export function buildAgingReportHtml(report: AgingReportResponse): string {
       : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const fmtInt = (n: number | null) => (n === null ? '—' : n.toLocaleString('en-PH'))
   const fmtDate = (v: string | null | undefined) =>
-    v ? new Date(v).toLocaleDateString('en-PH') : '—'
+    v ? new Date(v).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
@@ -1674,7 +1679,7 @@ export function buildAgingRawDataHtml(report: AgingReportResponse): string {
       ? '—'
       : Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const fmtDate = (v: string | null | undefined) =>
-    v ? new Date(v).toLocaleDateString('en-PH') : '—'
+    v ? new Date(v).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
@@ -1775,7 +1780,12 @@ export function buildAgingRawDataHtml(report: AgingReportResponse): string {
   const fmtDash = (v: string | null | undefined) =>
     v
       ? new Date(v)
-          .toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+          .toLocaleDateString('en-US', {
+            timeZone: MANILA_TZ,
+            month: '2-digit',
+            day: '2-digit',
+            year: 'numeric',
+          })
           .replace(/\//g, '-')
       : ''
   const money = (n: number | null | undefined) =>
@@ -1787,13 +1797,14 @@ export function buildAgingRawDataHtml(report: AgingReportResponse): string {
   // span rounded UP to whole months (16 Days → 1, 1y 9m 24d → 22).
   const elapsedSince = (from: string | null | undefined, to: string) => {
     if (!from) return { label: '', mosRun: '' as string | number }
-    const a = new Date(from)
-    const b = new Date(to)
-    let months = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth())
-    let days = b.getDate() - a.getDate()
+    // Calendar parts of each Manila day, so the host's clock can't shift them.
+    const [ay, am, ad] = manilaDateOf(from).split('-').map(Number)
+    const [by, bm, bd] = manilaDateOf(to).split('-').map(Number)
+    let months = (by - ay) * 12 + (bm - am)
+    let days = bd - ad
     if (days < 0) {
       months -= 1
-      days += new Date(b.getFullYear(), b.getMonth(), 0).getDate()
+      days += new Date(Date.UTC(by, bm - 1, 0)).getUTCDate()
     }
     if (months < 0) return { label: '', mosRun: 0 as string | number }
     const parts = [
@@ -1806,10 +1817,7 @@ export function buildAgingRawDataHtml(report: AgingReportResponse): string {
       mosRun: (months + (days > 0 ? 1 : 0)) as string | number,
     }
   }
-  const yearMonth = (() => {
-    const d = new Date(report.asOf)
-    return `${d.getFullYear()}_${String(d.getMonth() + 1).padStart(2, '0')}`
-  })()
+  const yearMonth = manilaMonthOf(report.asOf).replace('-', '_')
 
   const rows = report.branches.flatMap((branch) =>
     branch.collectors.flatMap((collector) => {
@@ -1953,7 +1961,8 @@ export function buildARInvoiceHtml(data: unknown): string {
 
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
-  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const fmtDate = (v: unknown) =>
+    v ? new Date(v as string).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
@@ -2063,7 +2072,8 @@ export function buildAPBillHtml(data: unknown): string {
 
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
-  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const fmtDate = (v: unknown) =>
+    v ? new Date(v as string).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
@@ -2228,7 +2238,8 @@ export function buildAPPaymentVoucherHtml(data: unknown): string {
 
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
-  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const fmtDate = (v: unknown) =>
+    v ? new Date(v as string).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
   const prettyMethod = (m: unknown) =>
@@ -2515,6 +2526,7 @@ export function buildExpenseVoucherHtml(data: unknown): string {
   const fmtDate = (v: unknown) =>
     v
       ? new Date(v as string).toLocaleDateString('en-US', {
+          timeZone: MANILA_TZ,
           month: '2-digit',
           day: '2-digit',
           year: 'numeric',
@@ -2751,7 +2763,8 @@ export function buildEmployeeCashLoanVoucherHtml(data: unknown): string {
 
   const fmt = (n: number) =>
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
-  const fmtDate = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('en-PH') : '—')
+  const fmtDate = (v: unknown) =>
+    v ? new Date(v as string).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
@@ -2938,6 +2951,7 @@ export function buildInterAccountTransferVoucherHtml(data: unknown): string {
   const fmtDate = (v: unknown) =>
     v
       ? new Date(v as string).toLocaleDateString('en-US', {
+          timeZone: MANILA_TZ,
           month: '2-digit',
           day: '2-digit',
           year: 'numeric',
@@ -3090,6 +3104,7 @@ export function buildJournalVoucherHtml(data: unknown, title = 'Journal Voucher'
   const fmtDate = (v: unknown) =>
     v
       ? new Date(v as string).toLocaleDateString('en-US', {
+          timeZone: MANILA_TZ,
           month: '2-digit',
           day: '2-digit',
           year: 'numeric',
@@ -3228,6 +3243,7 @@ export function buildCollectionReceiptHtml(data: unknown): string {
   const longDate = (v: unknown) =>
     v
       ? new Date(v as string).toLocaleDateString('en-PH', {
+          timeZone: MANILA_TZ,
           year: 'numeric',
           month: 'long',
           day: 'numeric',

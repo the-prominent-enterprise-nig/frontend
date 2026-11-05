@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaMonthOf } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import { Plus, Coins, Check, X as XIcon, Trash2, Sparkles, HelpCircle } from 'lucide-react'
 import { collectionIncentivesApi, collectorsApi } from '@/src/libs/api/crm'
@@ -346,7 +347,7 @@ function GenerateMonthlyModal({
   onClose: () => void
   onGenerated: () => void
 }) {
-  const [period, setPeriod] = useState(new Date().toISOString().slice(0, 7))
+  const [period, setPeriod] = useState(manilaMonthOf())
   const [ratePercent, setRatePercent] = useState(5)
   const [submitting, setSubmitting] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
@@ -525,7 +526,7 @@ function NewIncentiveModal({
   onClose: () => void
   onCreated: () => void
 }) {
-  const defaultPeriod = new Date().toISOString().slice(0, 7)
+  const defaultPeriod = manilaMonthOf()
   const [form, setForm] = useState<CreateCollectionIncentiveInput>({
     collectorId: '',
     branchId: '',

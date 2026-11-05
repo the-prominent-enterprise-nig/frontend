@@ -4,6 +4,18 @@ import { useState } from 'react'
 import { X } from 'lucide-react'
 import { collectorsApi } from '@/src/libs/api/crm'
 import { createRemittanceSchema, type CreateRemittanceInput } from '@/src/schema/crm/collector'
+import { MANILA_OFFSET, formatManilaTime, manilaDateOf } from '@/src/libs/format/manila-date'
+
+/** Now as a datetime-local value ('YYYY-MM-DDTHH:mm'), Manila wall clock. */
+function manilaNowLocalInput(): string {
+  const now = Date.now()
+  const time = formatManilaTime(
+    now,
+    { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' },
+    'en-GB'
+  )
+  return `${manilaDateOf(now)}T${time}`
+}
 
 export default function RecordRemittanceModal({
   open,
@@ -18,7 +30,7 @@ export default function RecordRemittanceModal({
 }) {
   const [form, setForm] = useState<CreateRemittanceInput>({
     amount: 0,
-    remittedAt: new Date().toISOString().slice(0, 16),
+    remittedAt: manilaNowLocalInput(),
     reference: '',
     collectionBatch: '',
     notes: '',
@@ -50,7 +62,8 @@ export default function RecordRemittanceModal({
     setSubmitting(true)
     const res = await collectorsApi.remit(collectorId, {
       ...parsed.data,
-      remittedAt: new Date(parsed.data.remittedAt).toISOString(),
+      // The picker holds Manila wall-clock time.
+      remittedAt: new Date(`${parsed.data.remittedAt}${MANILA_OFFSET}`).toISOString(),
     })
     setSubmitting(false)
     if (res.success) {
@@ -58,7 +71,7 @@ export default function RecordRemittanceModal({
       onClose()
       setForm({
         amount: 0,
-        remittedAt: new Date().toISOString().slice(0, 16),
+        remittedAt: manilaNowLocalInput(),
         reference: '',
         collectionBatch: '',
         notes: '',

@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, CornerDownRight, Landmark } from 'lucide-react'
 import { fmtDate, fmtMoney, type AcknowledgementReceipt } from '@/src/libs/data/AccountingV2Data'
@@ -689,7 +690,7 @@ export function exportLedgerCsv(groups: BranchGroup[]): void {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `collected-funds-history-${new Date().toISOString().slice(0, 10)}.csv`
+  a.download = `collected-funds-history-${manilaToday()}.csv`
   a.click()
   URL.revokeObjectURL(url)
 }

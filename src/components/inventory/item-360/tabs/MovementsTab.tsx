@@ -8,6 +8,7 @@ import {
   PLEX,
   MONO,
 } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_components/procurementTokens'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 const TX_LABELS: Record<string, string> = {
   receipt: 'Goods Receipt',
@@ -259,7 +260,7 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
                     className={`${LEDGER_GRID} px-4 py-3 hover:bg-[#fcfcfd]`}
                   >
                     <span role="cell" className="text-[12px] text-[#4b4b5a]">
-                      {new Date(entry.occurredAt).toLocaleDateString('en-PH', {
+                      {formatManilaDate(entry.occurredAt, {
                         month: 'short',
                         day: 'numeric',
                         year: 'numeric',

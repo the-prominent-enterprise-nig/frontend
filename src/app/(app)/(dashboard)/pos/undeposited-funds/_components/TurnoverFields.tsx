@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useQuery } from '@tanstack/react-query'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import {
@@ -39,7 +40,7 @@ export function emptyTurnover(): Turnover {
     amount: '',
     receivedBy: '',
     reference: '',
-    date: new Date().toLocaleDateString('en-CA'),
+    date: manilaToday(),
   }
 }
 

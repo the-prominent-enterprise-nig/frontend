@@ -17,6 +17,7 @@ import {
 } from '@/src/schema/inventory/batches'
 import CreateBatchModal from './CreateBatchModal'
 import BatchDetailDrawer from './BatchDetailDrawer'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 const statusOptions = BatchStatusSchema.options
 
@@ -232,7 +233,11 @@ export default function BatchList({ session }: { session: SessionUser }) {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-center text-zinc-600 hidden md:table-cell">
-                          {batch.expiryDate ? new Date(batch.expiryDate).toLocaleDateString() : '—'}
+                          {batch.expiryDate
+                            ? new Date(batch.expiryDate).toLocaleDateString(undefined, {
+                                timeZone: MANILA_TZ,
+                              })
+                            : '—'}
                         </td>
                         <td className="px-4 py-3 text-center hidden lg:table-cell">
                           {batch.expiryDate ? (

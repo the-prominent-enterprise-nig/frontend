@@ -15,6 +15,7 @@ import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearc
 import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSearchCombobox'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { NoDestinationWarning } from '../../purchase-orders/_components/NoDestinationWarning'
+import { manilaDateOf } from '@/src/libs/format/manila-date'
 
 type Props = {
   open: boolean
@@ -64,9 +65,8 @@ export function ConvertPrToPoModal({ open, onClose, pr, onConvert, isConverting 
       reset({
         supplierId: pr.supplierId ?? '',
         warehouseId: pr.warehouseId ?? '',
-        // The PO Date the requester set, else today. en-CA formats as
-        // YYYY-MM-DD in the local timezone.
-        orderDate: new Date(pr.orderDate ?? Date.now()).toLocaleDateString('en-CA'),
+        // The PO Date the requester set, else today — as a Manila YYYY-MM-DD.
+        orderDate: manilaDateOf(pr.orderDate ?? Date.now()),
         expectedDeliveryDate: pr.expectedDeliveryDate ? pr.expectedDeliveryDate.slice(0, 10) : '',
         deliveryInstructions: pr.deliveryInstructions ?? '',
         paymentTerms: pr.paymentTerms ?? '',

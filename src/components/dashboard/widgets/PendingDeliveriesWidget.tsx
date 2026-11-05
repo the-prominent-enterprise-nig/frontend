@@ -6,6 +6,7 @@ import { useWidgetSize } from '../WidgetSizeContext'
 import { getSkuReservations } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import type { SkuReservation } from '@/src/schema/pos'
+import { formatManilaDate, manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
 
 const STATUS_STYLES: Record<string, { bg: string; icon: typeof PackageCheck; label: string }> = {
   open: { bg: 'bg-zinc-100 text-zinc-600', icon: Bookmark, label: 'Open' },
@@ -14,10 +15,9 @@ const STATUS_STYLES: Record<string, { bg: string; icon: typeof PackageCheck; lab
 
 function fmtDate(dateStr?: string): string {
   if (!dateStr) return '—'
-  const d = new Date(dateStr)
-  const today = new Date()
-  if (d.toDateString() === today.toDateString()) return 'Today'
-  return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+  if (Number.isNaN(new Date(dateStr).getTime())) return '—'
+  if (manilaDateOf(dateStr) === manilaToday()) return 'Today'
+  return formatManilaDate(dateStr, { month: 'short', day: 'numeric' })
 }
 
 function fmtMoney(n: number): string {

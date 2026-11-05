@@ -1,5 +1,6 @@
 ﻿'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { BellPlus, Plus, Search } from 'lucide-react'
@@ -236,7 +237,9 @@ export default function LeadsList({
                       <StatusBadge status={lead.status} />
                     </td>
                     <td className="px-4 py-3 text-[12px] text-gray-500">
-                      {new Date(lead.createdAt).toLocaleDateString()}
+                      {new Date(lead.createdAt).toLocaleDateString(undefined, {
+                        timeZone: MANILA_TZ,
+                      })}
                     </td>
                     {canScheduleReminder && (
                       <td className="px-4 py-3">

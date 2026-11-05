@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { EnterpriseStatusActions } from './_components/EnterpriseStatusActions'
 import { InviteCard } from './_components/InviteCard'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -145,8 +146,8 @@ function StatBlock({
   )
 }
 
-function fmt(dateStr: string, options?: Intl.DateTimeFormatOptions) {
-  return new Date(dateStr).toLocaleDateString('en-PH', {
+function fmt(dateStr: string, options?: Intl.DateTimeFormatOptions): string {
+  return formatManilaDate(dateStr, {
     year: 'numeric',
     month: 'long',
     day: 'numeric',

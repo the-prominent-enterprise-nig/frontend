@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { type BankAccountOption } from '@/src/libs/data/AccountingV2Data'
@@ -229,7 +230,7 @@ export function emptySlip(): Slip {
     clearsBankAccountId: '',
     note: '',
     reference: '',
-    depositDate: new Date().toLocaleDateString('en-CA'),
+    depositDate: manilaToday(),
   }
 }
 

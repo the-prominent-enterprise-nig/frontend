@@ -20,6 +20,7 @@ import {
   type CaravanFieldsForm,
 } from '../../transfers/_components/CaravanDestinationFields'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
+import { manilaToday } from '@/src/libs/format/manila-date'
 
 type Props = {
   isOpen: boolean
@@ -40,7 +41,7 @@ const inputClass =
 const errorClass = 'mt-1 text-[11.5px] text-[#b42318]'
 
 function today(): string {
-  return new Date().toISOString().split('T')[0]
+  return manilaToday()
 }
 
 /** The transfer the ticked units go out on — one pinned line per serial. */

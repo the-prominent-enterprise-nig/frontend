@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaDateOf, manilaToday, formatManilaDate } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -43,11 +44,7 @@ function dueStatus(d: ARInvoiceDue, isNext: boolean): { label: string; className
   if (Number(d.paidAmount) > 0) return { label: 'Partial', className: 'bg-amber-50 text-amber-700' }
   // Compared against the START of today, so a due dated today is not already
   // Overdue by a few hours.
-  const startOfToday = new Date()
-  startOfToday.setHours(0, 0, 0, 0)
-  const dueDay = new Date(d.dueDate)
-  dueDay.setHours(0, 0, 0, 0)
-  if (dueDay.getTime() < startOfToday.getTime())
+  if (manilaDateOf(d.dueDate) < manilaToday())
     return { label: 'Overdue', className: 'bg-red-50 text-red-700' }
   // "To pay" is the one being collected NEXT, not merely one whose date has
   // arrived — collections settle oldest-first, so exactly one open due is
@@ -59,7 +56,7 @@ function dueStatus(d: ARInvoiceDue, isNext: boolean): { label: string; className
 
 /** en-PH numeric date (09/02/2026) — the format the printed document uses. */
 function docDate(v: string | Date | undefined | null): string {
-  return v ? new Date(v).toLocaleDateString('en-PH') : '—'
+  return v ? formatManilaDate(v) : '—'
 }
 
 /** Names a due the way the rest of this page does ("Payment 2 of 12")

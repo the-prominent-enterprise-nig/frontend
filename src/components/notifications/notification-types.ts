@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import type { NotificationItem, NotificationType } from '@/src/schema/notifications/notification'
+import { manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
 
 type NotificationStatus = 'needs-action' | 'resolved' | 'rejected' | 'alert'
 
@@ -37,10 +38,10 @@ const reorderHref = (): string => '/inventory/reorder'
 const arInvoiceHref = (entityId: string): string => `/accounting/ar-invoices/${entityId}`
 const creditApplicationHref = (entityId: string): string => `/pos/credit-applications/${entityId}`
 const itemMasterHref = (): string => '/inventory/items'
-// Found live manually testing Scenario 26 Part 9 — /inventory/adjustments
-// has no page of its own (AdjustmentList only ever renders as a tab inside
-// CountingHub); the old href 404'd on every click-through.
-const stockAdjustmentHref = (): string => '/inventory/counting?tab=adjustments'
+// The Stock Adjustments list is retired (Scenario 87): a count's variance
+// posts on submit, so these notifications open the Physical Inventory list
+// the adjustment came from.
+const stockAdjustmentHref = (): string => '/inventory/reports?tab=physical-inventory'
 // Scenario 26 same-day follow-up — SKU Reservation cancellation lives under
 // /pos/reservations (not /inventory/reservations, a different list).
 const skuReservationHref = (): string => '/pos/reservations'
@@ -215,7 +216,7 @@ export function getNotificationHref(notification: {
   const meta = NOTIFICATION_TYPE_META[notification.eventType]
   const base = meta.getHref(notification.entityId)
   if (meta.status !== 'resolved') return base
-  // stockAdjustmentHref already carries its own `?tab=adjustments` — a bare
+  // stockAdjustmentHref already carries its own `?tab=` — a bare
   // `?tab=history` suffix would produce a second, malformed `?` in the URL.
   // `&` is always correct once a query string already exists; a repeated
   // `tab` key is harmless (URLSearchParams.get() returns the first match,
@@ -234,10 +235,8 @@ export function getNotificationHref(notification: {
  */
 /** "Today" / "Earlier" — matches the Facebook-style notification panel this UI mirrors. */
 export function dateBucket(iso: string): 'Today' | 'Earlier' {
-  const date = new Date(iso)
-  const startOfDay = (d: Date): number =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  return startOfDay(date) >= startOfDay(new Date()) ? 'Today' : 'Earlier'
+  if (Number.isNaN(new Date(iso).getTime())) return 'Earlier'
+  return manilaDateOf(iso) >= manilaToday() ? 'Today' : 'Earlier'
 }
 
 /** Buckets are computed per-page (not globally) — good enough for a page-sized slice. */

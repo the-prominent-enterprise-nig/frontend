@@ -8,10 +8,11 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import PlaceOnHoldModal from './PlaceOnHoldModal'
 import ReleaseHoldModal from './ReleaseHoldModal'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-PH', {
+  return formatManilaDate(dateStr, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

@@ -14,6 +14,7 @@ import {
 } from './_hooks/usePos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { useMe } from '@/src/hooks/useMe'
+import { manilaDayEndIso, manilaDayStartIso, manilaToday } from '@/src/libs/format/manila-date'
 import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { Skeleton } from '@/src/components/ui/Skeleton'
@@ -48,12 +49,6 @@ const APPROVAL_GRID_COLS: Record<number, string> = {
   4: 'lg:grid-cols-4',
 }
 
-/** Local calendar date as YYYY-MM-DD (what a date input holds). */
-function localIso(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
-
 /**
  * Oct 29 UAT POS-02 / POS-03 — the period the Overview's figures cover: a
  * calendar month (the default, the current one — accumulated sales for the
@@ -68,21 +63,13 @@ function periodBounds(p: OverviewPeriod): { dateFrom: string; dateTo: string } {
     p.mode === 'month'
       ? (() => {
           const [y, m] = p.month.split('-').map(Number)
-          return [new Date(y, m - 1, 1), new Date(y, m, 0)]
+          const lastDay = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
+          return [`${p.month}-01`, lastDay]
         })()
-      : (() => {
-          const [a, b] = [p.from, p.to].sort()
-          const parse = (iso: string) => {
-            const [y, m, d] = iso.split('-').map(Number)
-            return new Date(y, m - 1, d)
-          }
-          return [parse(a), parse(b)]
-        })()
-  const start = new Date(fromDay)
-  start.setHours(0, 0, 0, 0)
-  const end = new Date(toDay)
-  end.setHours(23, 59, 59, 999)
-  return { dateFrom: start.toISOString(), dateTo: end.toISOString() }
+      : [p.from, p.to].sort()
+  // Manila start of the first day and end of the last — the business's day,
+  // whatever clock the browser is on.
+  return { dateFrom: manilaDayStartIso(fromDay), dateTo: manilaDayEndIso(toDay) }
 }
 
 function periodLabel(p: OverviewPeriod): string {
@@ -126,7 +113,7 @@ export default function PosOverviewPage() {
   const { branchId } = usePosBranchContext()
   const branchFilter = branchId ? { branchId } : undefined
 
-  const todayIso = localIso(new Date())
+  const todayIso = manilaToday()
   const [period, setPeriod] = useState<OverviewPeriod>({
     mode: 'month',
     month: todayIso.slice(0, 7),

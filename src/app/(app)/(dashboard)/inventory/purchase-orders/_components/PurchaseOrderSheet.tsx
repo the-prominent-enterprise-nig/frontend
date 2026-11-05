@@ -2,6 +2,7 @@
 
 import { discountChainLabel } from '@/src/libs/format/discount-chain'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 /** Print/document envelope for one purchase order
  * (GET /procurement/purchase-orders/:id/document) — the order plus the
@@ -50,7 +51,7 @@ function fmtPeso(n: number): string {
 }
 
 function docDate(v: string | undefined | null): string {
-  return v ? new Date(v).toLocaleDateString('en-PH') : '—'
+  return v ? formatManilaDate(v) : '—'
 }
 
 function MetaPair({ label, value }: { label: string; value: React.ReactNode }) {

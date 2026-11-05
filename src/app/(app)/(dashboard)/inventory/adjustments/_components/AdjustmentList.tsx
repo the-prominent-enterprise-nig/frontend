@@ -12,6 +12,7 @@ import {
 } from '@/src/schema/inventory/adjustments'
 import { ADJUSTMENT_REASON_LABELS } from '@/src/schema/inventory/stock-counts'
 import AdjustmentDetailView from './AdjustmentDetailView'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 const STATUS_COLORS: Record<AdjustmentStatus, string> = {
   submitted: 'bg-zinc-100 text-zinc-600',
@@ -209,7 +210,7 @@ export default function AdjustmentList({ session }: { session: SessionUser }) {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-zinc-500 hidden md:table-cell">
-                        {new Date(adj.adjustmentDate).toLocaleDateString('en-PH', {
+                        {formatManilaDate(adj.adjustmentDate, {
                           month: 'short',
                           day: 'numeric',
                           year: 'numeric',

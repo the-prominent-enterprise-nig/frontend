@@ -20,6 +20,7 @@ import { resendInvite } from '@/src/app/(app)/(dashboard)/settings/_actions/rese
 import { revokeInvite } from '@/src/app/(app)/(dashboard)/settings/_actions/revoke-invite'
 import { getInviteLink } from '@/src/app/(app)/(dashboard)/settings/_actions/get-invite-link'
 import { showToast } from '@/src/components/ui/toast'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 type OpenMenu = string | null
 type Meta = { total: number; page: number; limit: number; totalPages?: number; lastPage?: number }
@@ -163,7 +164,9 @@ export default function PendingInvitesSection({
                       user.employee?.branch?.name ??
                       user.userBranches[0]?.branch.name ??
                       'Head Office'
-                    const invitedDate = new Date(user.createdAt).toLocaleDateString()
+                    const invitedDate = new Date(user.createdAt).toLocaleDateString(undefined, {
+                      timeZone: MANILA_TZ,
+                    })
                     const inviteStatus = getInviteStatus(user)
 
                     return (

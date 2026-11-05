@@ -39,6 +39,7 @@ import {
 } from './receive-po/receiveSchema'
 import { fmtPeso, receiptTotals } from './receive-po/receiveTotals'
 import { LINE_GRID, PANEL } from './receive-po/receiveTokens'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 type Props = {
   po: PurchaseOrderSummary | null
@@ -430,7 +431,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
   // value posts with the server's own timestamp — so the recap says nothing
   // rather than claiming a date the form does not hold.
   const dateReceivedEntered = watched.receivedAt
-    ? new Date(watched.receivedAt).toLocaleDateString('en-PH')
+    ? formatManilaDate(watched.receivedAt.slice(0, 10))
     : ''
 
   const openLineCount = poLines.filter((l) => remainingOf(l) > 0).length
@@ -632,11 +633,11 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
   )
 }
 
-/** Current local date+time in the `datetime-local` input format (YYYY-MM-DDTHH:mm). */
-function nowLocalInputValue() {
-  const d = new Date()
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
-  return d.toISOString().slice(0, 16)
+/** Current Manila date+time in the `datetime-local` input format (YYYY-MM-DDTHH:mm). */
+function nowLocalInputValue(): string {
+  // Manila is UTC+08:00 with no DST, so shifting the instant and reading it
+  // as UTC gives the Manila wall clock.
+  return new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16)
 }
 
 function LineTableHead() {

@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useState } from 'react'
 import { useForm, useWatch, Controller, useFieldArray, type Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -226,7 +227,7 @@ export default function DebitMemoDialog({
     defaultValues: {
       type: 'unit_replacement',
       reason: '',
-      memoDate: new Date().toISOString().slice(0, 10),
+      memoDate: manilaToday(),
       lines: [{ itemId: '', quantity: 1, unitPrice: 0, serialNumberId: '', additionAmount: 0 }],
     },
   })

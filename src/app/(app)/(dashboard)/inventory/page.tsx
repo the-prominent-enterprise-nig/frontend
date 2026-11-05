@@ -22,6 +22,7 @@ import {
 
 import { getInventoryDashboard } from '@/src/app/(app)/(dashboard)/inventory/_actions/get-inventory-dashboard'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import { formatManilaDate, formatManilaTime } from '@/src/libs/format/manila-date'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ function daysFromNow(dateStr?: string | null) {
 
 function fmtDate(dateStr?: string | null) {
   if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+  return formatManilaDate(dateStr, { month: 'short', day: 'numeric' })
 }
 
 const COLORS = [
@@ -246,7 +247,6 @@ const INIT = {
   negativeViolationsList: [] as any[],
   backordersList: [] as any[],
   purchasingActivityList: [] as any[],
-  pendingAdjustmentsList: [] as any[],
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -415,14 +415,6 @@ export default function InventoryPage() {
       .sort((a, b) => new Date(b.date ?? 0).getTime() - new Date(a.date ?? 0).getTime())
       .slice(0, 6)
 
-    // Stock Adjustments awaiting resolution — a real approve/reject/
-    // investigate workflow (Scenario 19) that had zero dashboard visibility.
-    // "Pending" = anywhere before the terminal approved/rejected states.
-    const adjustmentList = arr(15)
-    const pendingAdjustmentsList = adjustmentList.filter((a) =>
-      ['submitted', 'confirmed', 'investigating'].includes(a.status)
-    )
-
     return {
       loaded: true,
       lastUpdated: new Date(),
@@ -453,7 +445,6 @@ export default function InventoryPage() {
       negativeViolationsList: negativeList.slice(0, 6),
       backordersList: backorderList.slice(0, 8),
       purchasingActivityList,
-      pendingAdjustmentsList: pendingAdjustmentsList.slice(0, 8),
     }
   }, [])
 
@@ -479,7 +470,7 @@ export default function InventoryPage() {
             <h1 className="text-xl font-bold text-gray-900">Inventory Intelligence</h1>
             <p className="text-[11px] text-gray-400 mt-0.5">
               {s.lastUpdated
-                ? `Updated ${s.lastUpdated.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}`
+                ? `Updated ${formatManilaTime(s.lastUpdated, { hour: '2-digit', minute: '2-digit' })}`
                 : 'Loading…'}
             </p>
           </div>
@@ -523,11 +514,6 @@ export default function InventoryPage() {
                     label: 'Physical Inventory',
                     href: '/inventory/reports?tab=physical-inventory',
                     icon: Layers,
-                  },
-                  {
-                    label: 'Stock Adjustments',
-                    href: '/inventory/counting?tab=adjustments',
-                    icon: ClipboardCheck,
                   },
                   { label: 'Quality Hold', href: '/inventory/quality-hold', icon: ShieldAlert },
                   { label: 'Revaluation', href: '/inventory/revaluation', icon: TrendingUp },
@@ -1111,7 +1097,7 @@ export default function InventoryPage() {
             <Clock className="h-4 w-4 text-purple-500" />
             <h2 className="text-base font-semibold text-gray-900">Pending Actions</h2>
           </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4">
             <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
@@ -1171,55 +1157,6 @@ export default function InventoryPage() {
                       />
                     )
                   })}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                  <ClipboardCheck className="h-4 w-4 text-teal-500" />
-                  Adjustments Pending Investigation
-                </h3>
-                <Link
-                  href="/inventory/counting?tab=adjustments"
-                  className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
-                >
-                  View all <ArrowUpRight className="h-3 w-3" />
-                </Link>
-              </div>
-              {loading ? (
-                <div className="space-y-2">
-                  {[...Array(4)].map((_, i) => (
-                    <Sk key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : s.pendingAdjustmentsList.length === 0 ? (
-                <EmptyState message="No adjustments pending investigation" />
-              ) : (
-                <div className="space-y-2">
-                  {s.pendingAdjustmentsList.map((a, i) => (
-                    <AlertRow
-                      key={i}
-                      urgency={a.status === 'submitted' ? 'warning' : 'critical'}
-                      left={
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold text-gray-900 truncate">
-                            {a.adjustmentNumber ?? 'Unknown'}
-                          </p>
-                          <p className="text-[11px] text-gray-500 truncate">
-                            {locationLabel(a.warehouse)} ·{' '}
-                            {String(a.reasonCode ?? '').replace('_', ' ')}
-                          </p>
-                        </div>
-                      }
-                      right={
-                        <span className="text-[11px] font-medium capitalize text-teal-700">
-                          {a.status}
-                        </span>
-                      }
-                    />
-                  ))}
                 </div>
               )}
             </div>

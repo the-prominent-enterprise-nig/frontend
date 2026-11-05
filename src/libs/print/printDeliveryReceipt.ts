@@ -1,3 +1,4 @@
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import type { PrintDocumentEnvelope } from './printInventoryDocument'
 import {
   DR_PURPOSE_CONFIG,
@@ -53,7 +54,7 @@ const fmtDate = (v: unknown): string =>
         month: '2-digit',
         day: '2-digit',
         year: 'numeric',
-        timeZone: 'UTC',
+        timeZone: MANILA_TZ,
       })
     : ''
 

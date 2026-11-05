@@ -6,6 +6,7 @@ import {
   type TaxOverrideChange,
   type TaxOverrideEntry,
 } from '@/src/libs/tax/tax-override'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 // Scenario 69 Part I — a tax code changed away from its default, on a form and on
 // the document's own page. The server enforces the permission and the reason;
@@ -15,7 +16,12 @@ const when = (iso: string): string => {
   const d = new Date(iso)
   return Number.isNaN(d.getTime())
     ? ''
-    : d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })
+    : d.toLocaleDateString('en-PH', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        timeZone: MANILA_TZ,
+      })
 }
 
 /**

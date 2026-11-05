@@ -1,3 +1,4 @@
+import { manilaToday } from '@/src/libs/format/manila-date'
 import type { InstallmentScheduleLineWithInvoice } from '@/src/schema/pos'
 
 /** A plan's dues all hang off ONE ARInvoice — the receivable for the whole
@@ -16,8 +17,9 @@ import type { InstallmentScheduleLineWithInvoice } from '@/src/schema/pos'
  * Decimal columns arrive as JSON strings even though the types say number,
  * hence the Number() at every boundary. */
 
+/** Today's Manila business day — the same "today" the backend dates dues against. */
 export function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
+  return manilaToday()
 }
 
 /** What this month still owes. */

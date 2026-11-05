@@ -11,6 +11,7 @@ import {
 } from '@/src/schema/inventory/stock-counts'
 import type { ApiResponse } from '@/src/libs/api/client'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { manilaToday } from '@/src/libs/format/manila-date'
 
 type WarehouseOption = {
   id: string
@@ -46,7 +47,7 @@ export default function CreateCountModal({
     resolver: zodResolver(CreateCountFormSchema),
     defaultValues: {
       countType: 'full',
-      scheduledDate: new Date().toISOString().slice(0, 10),
+      scheduledDate: manilaToday(),
       warehouseId: '',
     },
   })
@@ -61,7 +62,7 @@ export default function CreateCountModal({
     if (isOpen) {
       reset({
         countType: 'full',
-        scheduledDate: new Date().toISOString().slice(0, 10),
+        scheduledDate: manilaToday(),
         warehouseId: onlyWarehouse?.id ?? '',
       })
     }

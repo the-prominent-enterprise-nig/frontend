@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useState } from 'react'
 import {
   useGiftCards,
@@ -26,6 +27,7 @@ function formatCurrency(n: number) {
 function formatDate(s?: string | null) {
   if (!s) return '—'
   return new Date(s).toLocaleDateString('en-PH', {
+    timeZone: MANILA_TZ,
     month: 'short',
     day: 'numeric',
     year: 'numeric',

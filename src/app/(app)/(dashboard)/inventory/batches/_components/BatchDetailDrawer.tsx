@@ -15,6 +15,7 @@ import {
   EXPIRY_STATUS_LABELS,
 } from '@/src/schema/inventory/batches'
 import type { ApiResponse } from '@/src/libs/api/client'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 type Props = {
   batch: BatchSummary | null
@@ -114,7 +115,9 @@ export default function BatchDetailDrawer({
                   </p>
                   <p className="mt-1 text-sm text-zinc-700">
                     {batch.manufactureDate
-                      ? new Date(batch.manufactureDate).toLocaleDateString()
+                      ? new Date(batch.manufactureDate).toLocaleDateString(undefined, {
+                          timeZone: MANILA_TZ,
+                        })
                       : '—'}
                   </p>
                 </div>
@@ -124,7 +127,11 @@ export default function BatchDetailDrawer({
                   </p>
                   <div className="mt-1 flex items-center gap-2">
                     <p className="text-sm text-zinc-700">
-                      {batch.expiryDate ? new Date(batch.expiryDate).toLocaleDateString() : '—'}
+                      {batch.expiryDate
+                        ? new Date(batch.expiryDate).toLocaleDateString(undefined, {
+                            timeZone: MANILA_TZ,
+                          })
+                        : '—'}
                     </p>
                     {batch.expiryDate && (
                       <span
@@ -151,7 +158,11 @@ export default function BatchDetailDrawer({
                   Created
                 </p>
                 <p className="mt-1 text-sm text-zinc-700">
-                  {batch.createdAt ? new Date(batch.createdAt).toLocaleDateString() : '—'}
+                  {batch.createdAt
+                    ? new Date(batch.createdAt).toLocaleDateString(undefined, {
+                        timeZone: MANILA_TZ,
+                      })
+                    : '—'}
                 </p>
               </div>
 

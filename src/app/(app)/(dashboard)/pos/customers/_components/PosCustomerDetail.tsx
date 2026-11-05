@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Pencil, Loader2, ShieldCheck, ShieldAlert } from 'lucide-react'
@@ -24,7 +25,12 @@ function formatDate(value?: string | null): string {
   if (!value) return '—'
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+  return d.toLocaleDateString('en-PH', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: MANILA_TZ,
+  })
 }
 
 /** One label/value pair. Renders an em dash rather than collapsing, so the

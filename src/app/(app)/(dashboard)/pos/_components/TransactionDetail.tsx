@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useVoidRequests, useSubmitVoidRequest, useSessions } from '../_hooks/usePos'
@@ -986,7 +987,7 @@ function Row({
 function installmentInvoiceLabel(inv: PosTransactionInvoice): string {
   const of = inv.totalLines ? ` of ${inv.totalLines}` : ''
   const payment = inv.lineNumber ? `Payment ${inv.lineNumber}${of}` : 'Installment'
-  return `${payment} · due ${new Date(inv.dueDate).toLocaleDateString()}`
+  return `${payment} · due ${new Date(inv.dueDate).toLocaleDateString(undefined, { timeZone: MANILA_TZ })}`
 }
 
 const INVOICE_STATUS_LABELS: Record<string, string> = {

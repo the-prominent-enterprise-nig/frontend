@@ -4,15 +4,27 @@ import { useEffect, useState } from 'react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { getTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { formatManilaDate, manilaDayStartIso, manilaMonthOf } from '@/src/libs/format/manila-date'
 
 type MonthData = { label: string; value: number }
 
+/** Months since year 0 for a 'YYYY-MM' (or longer) string — for month arithmetic. */
+function monthIndex(ym: string): number {
+  return Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1
+}
+
+/** 'YYYY-MM-01' for a month index from monthIndex(). */
+function firstDayOfIndex(idx: number): string {
+  const year = Math.floor(idx / 12)
+  const month = String((idx % 12) + 1).padStart(2, '0')
+  return `${year}-${month}-01`
+}
+
 function getRecentMonths(count: number): MonthData[] {
   const months: MonthData[] = []
-  const now = new Date()
+  const current = monthIndex(manilaMonthOf())
   for (let i = count - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const label = d.toLocaleDateString('en-PH', { month: 'short' })
+    const label = formatManilaDate(firstDayOfIndex(current - i), { month: 'short' })
     months.push({ label, value: 0 })
   }
   return months
@@ -30,12 +42,12 @@ export default function SalesTrendWidget() {
 
   useEffect(() => {
     let cancelled = false
-    const now = new Date()
-    const rangeStart = new Date(now.getFullYear(), now.getMonth() - (monthCount - 1), 1)
+    const current = monthIndex(manilaMonthOf())
+    const rangeStart = manilaDayStartIso(firstDayOfIndex(current - (monthCount - 1)))
 
     getTransactions({
       transactionType: 'sale',
-      dateFrom: rangeStart.toISOString(),
+      dateFrom: rangeStart,
       branchId: branchId ?? undefined,
     })
       .then((res) => {
@@ -44,9 +56,7 @@ export default function SalesTrendWidget() {
         const base = getRecentMonths(monthCount)
 
         for (const t of txns) {
-          const d = new Date(t.occurredAt)
-          const monthsAgo =
-            (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth())
+          const monthsAgo = current - monthIndex(manilaMonthOf(t.occurredAt))
           const idx = monthCount - 1 - monthsAgo
           if (idx >= 0 && idx < monthCount) {
             base[idx]!.value += Number(t.totalAmount ?? 0)

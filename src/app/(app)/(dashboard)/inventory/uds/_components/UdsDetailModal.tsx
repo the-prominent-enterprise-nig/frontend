@@ -12,6 +12,7 @@ import {
 } from '@/src/schema/inventory/uds'
 import DocumentTrail from './DocumentTrail'
 import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
+import { formatManilaDateTime } from '@/src/libs/format/manila-date'
 
 function formatCurrency(value?: number | null): string {
   if (value == null) return '—'
@@ -32,7 +33,7 @@ type Props = {
 
 function formatDate(iso?: string | null): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleString('en-PH', {
+  return formatManilaDateTime(iso, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

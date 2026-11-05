@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaDateOf, manilaToday, formatManilaDate } from '@/src/libs/format/manila-date'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -101,7 +102,7 @@ function isBlankDeduction(d: DeductionRow): boolean {
 
 /** MM/DD/YYYY, the format used across this module's date inputs. */
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
+  return manilaToday()
 }
 
 function outstandingOf(b: APBill): number {
@@ -157,8 +158,8 @@ function previewVoucher(
       .replace(/[^A-Za-z0-9]/g, '')
       .toUpperCase()
       .slice(0, 3) || 'CSH'
-  const d = paymentDate ? new Date(paymentDate) : new Date()
-  const mmyy = String(d.getMonth() + 1).padStart(2, '0') + String(d.getFullYear()).slice(-2)
+  const ymd = paymentDate ? manilaDateOf(paymentDate) : manilaToday()
+  const mmyy = ymd.slice(5, 7) + ymd.slice(2, 4)
   const tail = cheque
     .replace(/[^A-Za-z0-9]/g, '')
     .slice(-4)
@@ -1004,7 +1005,7 @@ export default function RecordPaymentForm() {
                               what this screen does, so it isn't a choice. */}
                           <td className="px-3 py-2 text-gray-500">Accounts Payable</td>
                           <td className="px-3 py-2 text-xs">
-                            {b.dueDate ? new Date(b.dueDate).toLocaleDateString('en-US') : '—'}
+                            {b.dueDate ? formatManilaDate(b.dueDate, {}, 'en-US') : '—'}
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(out)}</td>
                           <td className="px-3 py-2 text-right">

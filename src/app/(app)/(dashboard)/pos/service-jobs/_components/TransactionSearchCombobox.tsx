@@ -3,6 +3,7 @@
 import { SearchCombobox } from '@/src/components/ui/SearchCombobox'
 import { getTransactions } from '../../_actions/pos-actions'
 import { saleDocNo } from '@/src/libs/format/saleDocNo'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 type Props = {
   value: string
@@ -37,7 +38,7 @@ export function TransactionSearchCombobox({ value, onChange, error, initialLabel
         return (res.data ?? []).slice(0, 20).map((t) => ({
           id: t.id,
           primary: saleDocNo(t),
-          secondary: `₱${Number(t.totalAmount).toFixed(2)} — ${new Date(t.occurredAt).toLocaleDateString()}`,
+          secondary: `₱${Number(t.totalAmount).toFixed(2)} — ${new Date(t.occurredAt).toLocaleDateString(undefined, { timeZone: MANILA_TZ })}`,
         }))
       }}
     />

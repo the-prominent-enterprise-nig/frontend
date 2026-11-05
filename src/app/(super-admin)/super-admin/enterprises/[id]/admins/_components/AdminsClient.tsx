@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { UserPlus, X, KeyRound, UserX, Copy, Check } from 'lucide-react'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 interface UserRole {
   role: { name: string }
@@ -40,8 +41,8 @@ function displayName(admin: Admin) {
   return admin.email
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-PH', {
+function formatDate(iso: string): string {
+  return formatManilaDate(iso, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

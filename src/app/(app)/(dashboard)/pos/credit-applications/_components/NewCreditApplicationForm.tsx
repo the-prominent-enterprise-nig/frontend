@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -234,7 +235,9 @@ export default function NewCreditApplicationForm({
         applicant.phone,
         applicant.civilStatus,
         applicant.gender,
-        applicant.birthday ? new Date(applicant.birthday).toLocaleDateString('en-PH') : null,
+        applicant.birthday
+          ? new Date(applicant.birthday).toLocaleDateString('en-PH', { timeZone: MANILA_TZ })
+          : null,
       ]
         .filter(Boolean)
         .join(' · ')

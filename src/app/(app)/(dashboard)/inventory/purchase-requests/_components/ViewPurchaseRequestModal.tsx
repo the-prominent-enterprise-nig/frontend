@@ -7,6 +7,7 @@ import { NoDestinationWarning } from '../../purchase-orders/_components/NoDestin
 import { discountChainLabel } from '@/src/libs/format/discount-chain'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { StatusBadge, OutlineBtn, PrimaryBtn } from './PurchaseRequestList'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 type Props = {
   open: boolean
@@ -35,7 +36,7 @@ const fmtPHP = (n: number): string =>
 
 function fmtDate(iso?: string | null): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-PH', {
+  return formatManilaDate(iso, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',

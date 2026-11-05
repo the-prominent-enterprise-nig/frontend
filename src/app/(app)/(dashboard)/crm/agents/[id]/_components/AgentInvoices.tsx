@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -29,6 +30,7 @@ function fmtMoney(n: number): string {
 
 function fmtDate(d: string): string {
   return new Date(d).toLocaleDateString('en-PH', {
+    timeZone: MANILA_TZ,
     year: 'numeric',
     month: 'short',
     day: 'numeric',

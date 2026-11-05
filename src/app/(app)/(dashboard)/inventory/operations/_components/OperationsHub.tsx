@@ -8,9 +8,8 @@ import QualityHoldList from '../../quality-hold/_components/QualityHoldList'
 import BackordersPageView from '../../backorders/_components/BackordersPageView'
 import type { SessionUser } from '@/src/libs/guards/permission'
 
-// Stock Adjustments moved to the Counting hub (/inventory/counting?tab=adjustments)
-// — most adjustments originate from a count variance, so it lives next to
-// the count sessions that create them.
+// Stock Adjustments moved to the Counting hub, since retired (Scenario 87:
+// a count's variance now posts on submit, with no approval list).
 //
 // Receiving moved to the Stock hub. Its tab here was a second stock-balance
 // list over the same /inventory/stock/balances endpoint the Stock hub's

@@ -1,5 +1,6 @@
 'use client'
 
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 import { useEffect } from 'react'
 import Link from 'next/link'
 import {
@@ -264,7 +265,7 @@ export default function ExceptionsView({
                     {r.userName ?? <span className="text-gray-300">—</span>}
                     {r.at && (
                       <div className="text-[11px] text-gray-500">
-                        {new Date(r.at).toLocaleDateString('en-PH', {
+                        {formatManilaDate(r.at, {
                           year: 'numeric',
                           month: 'short',
                           day: 'numeric',

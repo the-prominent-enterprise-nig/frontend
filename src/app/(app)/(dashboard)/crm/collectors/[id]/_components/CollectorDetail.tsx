@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -148,7 +149,9 @@ export default function CollectorDetail({
               label="Last remittance"
               value={
                 collector.remittances[0]
-                  ? new Date(collector.remittances[0].remittedAt).toLocaleDateString()
+                  ? new Date(collector.remittances[0].remittedAt).toLocaleDateString(undefined, {
+                      timeZone: MANILA_TZ,
+                    })
                   : '—'
               }
             />
@@ -197,7 +200,9 @@ export default function CollectorDetail({
                   {r.notes ? <span className="text-gray-500"> — {r.notes}</span> : null}
                 </div>
                 <div className="flex items-center gap-2 text-[12px] text-gray-500">
-                  <span>{new Date(r.remittedAt).toLocaleString()}</span>
+                  <span>
+                    {new Date(r.remittedAt).toLocaleString(undefined, { timeZone: MANILA_TZ })}
+                  </span>
                   {r.collectionBatch && (
                     <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
                       {r.collectionBatch}

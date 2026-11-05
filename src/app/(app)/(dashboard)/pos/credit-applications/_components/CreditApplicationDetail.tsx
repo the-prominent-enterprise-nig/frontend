@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
@@ -637,6 +638,7 @@ export default function CreditApplicationDetail({
               <dd className="mt-0.5 text-zinc-900">
                 {applicant.birthday
                   ? new Date(applicant.birthday).toLocaleDateString('en-PH', {
+                      timeZone: MANILA_TZ,
                       year: 'numeric',
                       month: 'short',
                       day: 'numeric',
@@ -821,6 +823,7 @@ export default function CreditApplicationDetail({
                 <dd className="mt-0.5 text-zinc-900">
                   {application.firstDueDate
                     ? new Date(application.firstDueDate).toLocaleDateString('en-PH', {
+                        timeZone: MANILA_TZ,
                         year: 'numeric',
                         month: 'short',
                         day: 'numeric',
@@ -851,6 +854,7 @@ export default function CreditApplicationDetail({
                 <dd className="mt-0.5 text-zinc-900">
                   {application.transcribedAt
                     ? new Date(application.transcribedAt).toLocaleString('en-PH', {
+                        timeZone: MANILA_TZ,
                         year: 'numeric',
                         month: 'short',
                         day: 'numeric',

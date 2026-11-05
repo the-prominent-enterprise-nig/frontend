@@ -26,6 +26,7 @@ import {
   MONO,
 } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_components/procurementTokens'
 import { useSerialHistory } from './useSerialHistory'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 const TYPE_ICONS: Record<SerialMovementType, typeof Package> = {
   receipt: Package,
@@ -54,18 +55,22 @@ const TYPE_COLORS: Record<SerialMovementType, string> = {
 }
 
 // A date-only value is midnight UTC; reading it in UTC keeps its calendar
-// day wherever the browser is.
+// day wherever the browser is. An instant is shown on its Manila day.
 function formatDate(iso: string, dateOnly = false): string {
   return new Date(iso).toLocaleDateString('en-PH', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-    ...(dateOnly && { timeZone: 'UTC' }),
+    timeZone: dateOnly ? 'UTC' : MANILA_TZ,
   })
 }
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString('en-PH', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: MANILA_TZ,
+  })
 }
 
 /** "Oct 14, 2026 · 3:42 PM" — or just the date when the movement only has a

@@ -1,5 +1,6 @@
 'use client'
 
+import { addDaysIso, manilaDayEndIso, manilaToday } from '@/src/libs/format/manila-date'
 import { useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -381,9 +382,7 @@ function turnoverMatches(t: PosTurnover, term: string): boolean {
 }
 
 function daysAgo(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() - days)
-  return d.toLocaleDateString('en-CA')
+  return addDaysIso(manilaToday(), -days)
 }
 
 function matches(row: LedgerRow, term: string): boolean {
@@ -608,7 +607,7 @@ function useLedger(
     queryFn: () =>
       getCashInTransitHistory({
         dateFrom: range.from,
-        dateTo: `${range.to}T23:59:59.999`,
+        dateTo: manilaDayEndIso(range.to),
         ...(branchId ? { branchId } : {}),
       }),
     enabled: wantsDeposited,

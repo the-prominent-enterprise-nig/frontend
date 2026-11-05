@@ -17,12 +17,12 @@ import {
   summarizeRoles,
   type AccessMap,
 } from './module-map'
+import { manilaToday } from '@/src/libs/format/manila-date'
 
 const MARITAL_STATUSES = ['Single', 'Married', 'Widowed', 'Separated'] as const
 
-function todayIso() {
-  const d = new Date()
-  return d.toISOString().slice(0, 10)
+function todayIso(): string {
+  return manilaToday()
 }
 
 function genEmployeeCode() {

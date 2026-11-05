@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   useForm,
@@ -259,7 +260,7 @@ export default function CreditMemoDialog({
     defaultValues: {
       type: 'sales_return',
       reason: '',
-      memoDate: new Date().toISOString().slice(0, 10),
+      memoDate: manilaToday(),
       lines: [{ itemId: '', quantity: 1, unitPrice: 0, serialNumberId: '', deductionAmount: 0 }],
     },
   })

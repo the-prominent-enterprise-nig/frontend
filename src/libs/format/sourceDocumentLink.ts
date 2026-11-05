@@ -92,7 +92,11 @@ export function sourceDocumentLink(je: JournalSource): SourceLink | null {
       if (starts('Repair Transfer'))
         return { href: '/inventory/uds', kind: 'Unit Document Sheets', list: true }
       if (starts('Stock Adjustment'))
-        return { href: '/inventory/operations', kind: 'Stock Adjustments', list: true }
+        return {
+          href: '/inventory/reports?tab=physical-inventory',
+          kind: 'Physical Inventory',
+          list: true,
+        }
       if (starts('Item Revaluation'))
         return { href: '/inventory/revaluation', kind: 'Revaluations', list: true }
       if (starts('Landed Cost'))
