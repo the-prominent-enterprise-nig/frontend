@@ -126,7 +126,10 @@ export default function ScanToTick({
             type="search"
             value={query}
             onChange={(e) => onQuery(e.target.value)}
-            disabled={busy}
+            // Read-only, not disabled, during a lookup: a disabled box drops
+            // focus, and the scanner's next code would land nowhere.
+            readOnly={busy}
+            aria-busy={busy}
             placeholder="Scan a barcode, or search serial, brand, model or remark"
             aria-label="Scan or search the count sheet"
             className="w-full rounded-lg border border-prominent-purple-200 bg-white py-2.5 pr-3 pl-9 text-sm outline-none focus:border-prominent-purple-500"

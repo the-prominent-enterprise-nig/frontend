@@ -81,7 +81,18 @@ test.describe('Scenario 87 Part 3 — Count Sheet', () => {
       await expect(page.getByRole('columnheader', { name: header, exact: true })).toBeVisible()
     }
 
-    await page.getByLabel(`In store: ${shelfSerial}`).check()
+    // Scan to tick (Part 3b): the serial and Enter — what a barcode scanner
+    // sends — ticks it and clears the box for the next one.
+    const scanBox = page.getByLabel('Scan or search the count sheet')
+    await scanBox.fill(shelfSerial)
+    await scanBox.press('Enter')
+    await expect(page.getByLabel(`In store: ${shelfSerial}`)).toBeChecked()
+    await expect(scanBox).toHaveValue('')
+    await expect(page.getByRole('status').filter({ hasText: 'In store:' })).toBeVisible()
+    // Scanning it again doesn't count it twice.
+    await scanBox.fill(shelfSerial)
+    await scanBox.press('Enter')
+    await expect(page.getByRole('status').filter({ hasText: 'Already counted' })).toBeVisible()
 
     // Remarks is free text with the presets offered as you type: search
     // "shelf", pick the suggestion.
@@ -99,13 +110,30 @@ test.describe('Scenario 87 Part 3 — Count Sheet', () => {
     await expect(awayRemarks).toHaveValue('Defective — Service bay, DR-10293')
 
     // The search bar narrows the sheet without losing what was entered.
-    const search = page.getByLabel('Scan or search the count sheet')
+    const search = scanBox
     await search.fill(awaySerial)
     await expect(page.getByLabel(`In store: ${shelfSerial}`)).toHaveCount(0)
     await expect(awayRemarks).toHaveValue('Defective — Service bay, DR-10293')
     await search.fill('')
     await expect(page.getByLabel(`In store: ${shelfSerial}`)).toBeChecked()
     await expect(page.getByLabel(`In store: ${awaySerial}`)).not.toBeChecked()
+
+    // Save as you go (Part 3b): the tick and the remark are on the server
+    // before anything is submitted.
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible({ timeout: 10_000 })
+    const openCounts = await page.request.get(
+      `/api/inventory/counts?warehouseId=${warehouse.id}&limit=5`
+    )
+    const [openCount] = ((await openCounts.json()).data ?? []) as { id: string }[]
+    const savedRes = await page.request.get(`/api/inventory/counts/${openCount.id}/lines`)
+    const saved = (await savedRes.json()) as {
+      serialNumber: { serialNumber: string } | null
+      countedQty: string | null
+      remarks: string | null
+    }[]
+    const savedBySerial = new Map(saved.map((l) => [l.serialNumber?.serialNumber, l]))
+    expect(Number(savedBySerial.get(shelfSerial)!.countedQty)).toBe(1)
+    expect(savedBySerial.get(awaySerial)!.remarks).toBe('Defective — Service bay, DR-10293')
 
     await confirmCountAction(page, 'Submit Count', 'Physical inventory submitted')
 
