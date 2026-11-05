@@ -32,6 +32,15 @@ import {
   toLineInputs,
   type Slip,
 } from './SlipEditor'
+import {
+  TurnoverBlock,
+  TurnoverLineLabel,
+  toTurnoverLine,
+  turnoverAmount,
+  turnoverProblem,
+  turnoversFromLines,
+  type Turnover,
+} from './TurnoverFields'
 
 /**
  * Scenario 61 Part 5 — a POS deposit opened from the Undeposited Funds table:
@@ -158,7 +167,7 @@ export function DepositDetail({
   // reconciled: its entries are reversed and the corrected slips posted.
   const correcting = deposit.status === 'cleared'
   const canEditSlips =
-    !!deposit.lines?.length &&
+    correctableSlips(deposit) &&
     (isDraft ? canManage || canVerify : correcting && canCorrect && !deposit.reconciledAt)
   const [editing, setEditing] = useState(false)
 
@@ -176,7 +185,7 @@ export function DepositDetail({
                     bank is only the first slip's. */}
                 {deposit.lines?.length
                   ? `Deposit · ${fmtDate(deposit.depositDate)}`
-                  : `Deposit to ${deposit.bankAccount.name} · ${fmtDate(deposit.depositDate)}`}
+                  : `Deposit to ${deposit.bankAccount?.name ?? 'bank'} · ${fmtDate(deposit.depositDate)}`}
               </h3>
               <StatusChip status={deposit.status} />
             </div>
@@ -305,7 +314,13 @@ function SlipList({
           <tbody className="divide-y divide-gray-100">
             {lines.map((l) => (
               <tr key={l.id}>
-                <td className="px-3 py-2">{l.bankAccount.name}</td>
+                <td className="px-3 py-2">
+                  {l.turnoverToBranch ? (
+                    <TurnoverLineLabel line={l} />
+                  ) : (
+                    (l.bankAccount?.name ?? '—')
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(Number(l.amount))}</td>
                 <td className="px-3 py-2">
                   {l.clearsBankAccount
@@ -348,17 +363,28 @@ function SlipEdit({
   const [slips, setSlips] = useState<Slip[]>(() =>
     slipsFromLines(deposit.lines ?? [], deposit.depositDate)
   )
+  // Scenario 83 — its cash turnovers, editable while the receiving branch
+  // has yet to acknowledge them (an acknowledged one locks the deposit).
+  const [turnovers, setTurnovers] = useState<Turnover[]>(() =>
+    turnoversFromLines(deposit.lines ?? [], deposit.depositDate)
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const total = round2(slips.reduce((sum, s) => sum + slipAmount(s), 0))
+  const total = round2(
+    slips.reduce((sum, s) => sum + slipAmount(s), 0) +
+      turnovers.reduce((sum, t) => sum + turnoverAmount(t), 0)
+  )
   const problem =
+    turnovers.map(turnoverProblem).find(Boolean) ??
     slipsProblem(slips) ??
     (correcting && !reason.trim() ? 'Say why the deposit is being corrected.' : null)
+  const patchTurnover = (i: number, patch: Partial<Turnover>): void =>
+    setTurnovers((all) => all.map((t, n) => (n === i ? { ...t, ...patch } : t)))
 
   const save = async (): Promise<void> => {
     setSaving(true)
     setError(null)
-    const lines = toLineInputs(slips)
+    const lines = [...turnovers.map(toTurnoverLine), ...toLineInputs(slips)]
     const res = correcting
       ? await correctPosDeposit(deposit.id, lines, reason.trim())
       : await updatePosDeposit(deposit.id, lines)
@@ -381,7 +407,17 @@ function SlipEdit({
 
   return (
     <div className="space-y-3">
-      <SlipEditor slips={slips} onChange={setSlips} accounts={accounts} />
+      {turnovers.map((t, i) => (
+        <TurnoverBlock
+          key={i}
+          turnover={t}
+          senderId={deposit.branchId}
+          onChange={(patch) => patchTurnover(i, patch)}
+        />
+      ))}
+      {(slips.length > 0 || turnovers.length === 0) && (
+        <SlipEditor slips={slips} onChange={setSlips} accounts={accounts} />
+      )}
       <p className="text-sm text-gray-600">
         Total <strong className="tabular-nums">{fmtMoney(total)}</strong>
         {Math.abs(total - Number(deposit.amount)) >= 0.005 && (
@@ -429,12 +465,23 @@ function SlipEdit({
   )
 }
 
+/**
+ * Scenario 83 — whether a deposit can still be corrected: its bank slips and
+ * any cash turnover the receiving branch has yet to acknowledge. Once a
+ * turnover is acknowledged its cash is the receiving branch's, so the deposit
+ * is final — as reconciliation makes a bank deposit final.
+ */
+function correctableSlips(deposit: PosDeposit): boolean {
+  const lines = deposit.lines ?? []
+  return lines.length > 0 && !lines.some((l) => l.turnoverStatus === 'acknowledged')
+}
+
 /** What Clear & post will do, in one line: the amount, how many banks the
  * slips went to (one for a deposit recorded before slips existed), and the
  * date — or how many entries, when the slips were banked on different days. */
 function ClearSummary({ deposit }: { deposit: PosDeposit }): React.JSX.Element {
   const lines = deposit.lines ?? []
-  const banks = new Set(lines.map((l) => l.bankAccount.id)).size || 1
+  const banks = new Set(lines.flatMap((l) => (l.bankAccount ? [l.bankAccount.id] : []))).size || 1
   const days = new Set(lines.map((l) => (l.depositDate ?? deposit.depositDate).slice(0, 10)))
   return (
     <p>
