@@ -1,6 +1,14 @@
 import { test, expect, type Page } from '@playwright/test'
-import { fillStable, gotoReady } from './utils'
-
+import { fillStable } from './utils'
+import {
+  OWNER_STATE,
+  createInstallmentPlan,
+  createPlanFixtures,
+  deletePlanFixtures,
+  dueRow,
+  openCustomerOnCollections,
+  type PlanFixtures,
+} from './collections-plan'
 // Scenario 84 Part 1 (DC-01 / CL-04) — the Collections screen's Payment date
 // follows "Override current date", whenever the override is set.
 //
@@ -12,7 +20,13 @@ import { fillStable, gotoReady } from './utils'
 // lands on the right report and ledger is the backend's
 // scenario-84-part-1-collection-penalty e2e.
 //
-// Read-only: nothing is collected, so any customer with an open due will do.
+// The tests themselves are read-only: nothing is collected. The plan they
+// look at is built in beforeAll through checkout (collections-plan.ts), so a
+// freshly seeded test DB, which has no open due, still runs every test
+// instead of skipping. Building it also leaves Bago with an open session, so
+// S84-FE-1.4 always exercises the on-session branch.
+
+const PREFIX = 'E2E S84 Override'
 
 const localDay = (offsetDays = 0): string => {
   const d = new Date()
@@ -26,29 +40,32 @@ const paymentDateInput = (page: Page) => page.locator('input[type="date"][requir
 
 test.describe('Scenario 84 Part 1 — Payment date follows the date override', () => {
   let customerName: string
+  let fx: PlanFixtures | undefined
 
-  test.beforeAll(async ({ request }) => {
-    const res = await request.get('/api/pos/customers/collections')
-    expect(res.ok()).toBeTruthy()
-    const body = await res.json()
-    const rows: { name: string; outstandingCount?: number }[] = Array.isArray(body)
-      ? body
-      : (body.data ?? [])
-    const withDue = rows.find((r) => (r.outstandingCount ?? 0) > 0)
-    test.skip(!withDue, 'No customer with an open due on this database')
-    customerName = withDue!.name
+  test.beforeAll(async ({ browser }, testInfo) => {
+    test.setTimeout(180_000)
+    const context = await browser.newContext({
+      baseURL: testInfo.project.use.baseURL,
+      storageState: OWNER_STATE,
+    })
+    fx = await createPlanFixtures(context.request, PREFIX)
+    const page = await context.newPage()
+    customerName = (await createInstallmentPlan(page, fx, 'S84')).name
+    await context.close()
+  })
+
+  test.afterAll(async ({ playwright }, testInfo) => {
+    const request = await playwright.request.newContext({
+      baseURL: testInfo.project.use.baseURL,
+      storageState: OWNER_STATE,
+    })
+    await deletePlanFixtures(request, fx)
+    await request.dispose()
   })
 
   async function tickFirstDue(page: Page) {
-    await gotoReady(page, '/pos/collections')
-    await fillStable(page.getByPlaceholder('Filter by name or phone…'), customerName)
-    const row = page.locator('ul > li > button').filter({ hasText: customerName }).first()
-    await expect(row).toBeVisible({ timeout: 15_000 })
-    await row.click()
-    const due = page
-      .locator('li')
-      .filter({ has: page.getByRole('checkbox') })
-      .first()
+    await openCustomerOnCollections(page, customerName)
+    const due = dueRow(page, 1)
     await expect(due).toBeVisible({ timeout: 15_000 })
     await due.getByRole('checkbox').check()
     await expect(paymentDateInput(page)).toBeVisible({ timeout: 10_000 })
@@ -98,18 +115,19 @@ test.describe('Scenario 84 Part 1 — Payment date follows the date override', (
   test('S84-FE-1.4: on an open session the override only judges on time or late — the receipt stays today', async ({
     page,
   }) => {
-    // Option 1 (2026-11-05). Which branch applies depends on whether this
-    // database has an open session the screen can attach the collection to.
+    // Option 1 (2026-11-05). beforeAll opened a Bago session, so the screen
+    // attaches the collection to it: the receipt is today's, and the
+    // override only decides on time or late.
     await tickFirstDue(page)
-    await fillStable(overrideInput(page), localDay(-1))
-    const assessedLabel = page.getByText('Rebate / penalty as of')
-    if (await assessedLabel.isVisible()) {
-      await expect(page.getByTestId('collection-assessed-as-of')).toBeVisible()
-      await expect(page.getByTestId('collection-assessed-as-of')).toContainText('dated today')
-    } else {
-      // No session to count it: the picked day is the receipt's own date.
-      await expect(page.getByText('Payment date', { exact: false })).toBeVisible()
-      await expect(page.getByTestId('collection-assessed-as-of')).toHaveCount(0)
-    }
+    await expect(page.getByText('Rebate / penalty as of')).toBeVisible()
+    // On today itself there is nothing to assess as of: no note.
+    await expect(page.getByTestId('collection-assessed-as-of')).toHaveCount(0)
+
+    const yesterday = localDay(-1)
+    await fillStable(overrideInput(page), yesterday)
+    await expect(paymentDateInput(page)).toHaveValue(yesterday)
+    const note = page.getByTestId('collection-assessed-as-of')
+    await expect(note).toBeVisible()
+    await expect(note).toContainText('dated today')
   })
 })

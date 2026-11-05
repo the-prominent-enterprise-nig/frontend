@@ -248,6 +248,77 @@ export async function ensureItemStock(
   }
 }
 
+export type SellableItem = { id: string; name: string; sellingPrice: number }
+
+/**
+ * Creates an approved, non-serial-tracked item with a selling price and puts
+ * `quantity` of it in stock at `branchName`'s warehouse. For specs that sell
+ * something over the API (POST /api/pos/transactions) and only need "an item":
+ * the seed's own catalog is all serial-tracked now, so picking one from it is
+ * no longer reliable. Delete it in afterAll with `deleteItem`.
+ */
+export async function createSellableItem(
+  request: APIRequestContext,
+  opts: { prefix: string; branchName: string; sellingPrice: number; quantity?: number }
+): Promise<SellableItem> {
+  const stamp = Date.now()
+  const anyItem = ((await (await request.get('/api/inventory/items?limit=1')).json()).data ??
+    [])[0] as { baseUnit: { id: string } }
+  const name = `${opts.prefix} Item ${stamp}`
+  const itemRes = await request.post('/api/inventory/items', {
+    data: {
+      sku: `E2E-${stamp}`,
+      name,
+      baseUnitId: anyItem.baseUnit.id,
+      isSerialTracked: false,
+      sellingPrice: opts.sellingPrice,
+    },
+  })
+  expect(itemRes.ok(), await itemRes.text()).toBeTruthy()
+  const item = (await itemRes.json()) as { id: string }
+  await request.post(`/api/inventory/items/${item.id}/submit`)
+  await request.post(`/api/inventory/items/${item.id}/confirm-accounting`, { data: {} })
+  await request.post(`/api/inventory/items/${item.id}/approve`, { data: {} })
+  await stockItemAtBranch(request, item.id, opts.branchName, opts.quantity ?? 5)
+  return { id: item.id, name, sellingPrice: opts.sellingPrice }
+}
+
+async function stockItemAtBranch(
+  request: APIRequestContext,
+  itemId: string,
+  branchName: string,
+  quantity: number
+): Promise<void> {
+  const branches = ((await (await request.get('/api/branches?limit=200')).json()).data ?? []) as {
+    id: string
+    name: string
+  }[]
+  const branchId = branches.find((b) => b.name === branchName)!.id
+  const warehouses = ((await (await request.get('/api/inventory/warehouses?limit=200')).json())
+    .data ?? []) as { id: string; branchId: string | null }[]
+  const warehouse = warehouses.find((w) => w.branchId === branchId)!
+  const adjustRes = await request.post('/api/inventory/adjustments', {
+    data: {
+      warehouseId: warehouse.id,
+      adjustmentDate: new Date().toLocaleDateString('en-CA'),
+      reasonCode: 'found',
+      notes: 'E2E fixture stock',
+      lines: [{ itemId, expectedQty: 0, actualQty: quantity }],
+    },
+  })
+  expect(adjustRes.ok(), await adjustRes.text()).toBeTruthy()
+  const { id } = (await adjustRes.json()) as { id: string }
+  for (const step of ['confirm', 'investigate', 'approve']) {
+    const stepRes = await request.patch(`/api/inventory/adjustments/${id}/${step}`)
+    expect(stepRes.ok(), await stepRes.text()).toBeTruthy()
+  }
+}
+
+/** Best-effort delete of an item a spec created; one that has sales may refuse. */
+export async function deleteItem(request: APIRequestContext, id: string): Promise<void> {
+  await request.delete(`/api/inventory/items/${id}`).catch(() => {})
+}
+
 /**
  * Deletes CRM customers by id, ignoring individual failures — one already-
  * deleted or unreachable id shouldn't stop the rest of a cleanup batch from

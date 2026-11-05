@@ -276,6 +276,15 @@ const collect = (page: Page) => page.getByRole('button', { name: 'Collect paymen
 const addAnother = (page: Page) => page.getByTestId('add-another-collection-payment')
 const amount = (page: Page, i: number) => page.getByTestId(`collection-amount-${i}`)
 
+/** Payment `n`'s bank / acquirer / gateway picker is required whenever its
+ * method offers choices: take the first one. */
+async function pickFirstOption(page: Page, n: number, optionLabel: string): Promise<void> {
+  const picker = page.getByRole('combobox', { name: `Payment ${n} ${optionLabel}` })
+  await expect(picker).toBeVisible({ timeout: 10_000 })
+  await picker.click()
+  await page.getByRole('listbox').getByRole('option').first().click()
+}
+
 /** The plan's payments, read back through the API. */
 async function paymentsOf(request: APIRequestContext, customerId: string) {
   const schedules = (await (
@@ -402,6 +411,7 @@ test.describe('POS Collections — several payments in one collection', () => {
         exact: true,
       })
     ).toHaveAttribute('aria-pressed', 'true')
+    await pickFirstOption(page, 2, 'Card Acquirer')
     await fillMoney(amount(page, 1), String(card))
     await fillStable(page.getByTestId('collection-cr-number'), cr)
 
@@ -433,6 +443,7 @@ test.describe('POS Collections — several payments in one collection', () => {
       .getByTestId('collection-method-1')
       .getByRole('button', { name: 'Bank Transfer', exact: true })
       .click()
+    await pickFirstOption(page, 2, 'Bank')
     await fillMoney(amount(page, 1), '50')
     await fillStable(page.getByTestId('collection-cr-number'), 'CR-CM-F04')
 
