@@ -227,3 +227,48 @@ the document instead. That also drops the "Page N" number, which only the browse
 ## Related ClickUp Tickets
 
 _None yet._
+
+## Implementation Log — 2026-11-05
+
+**For this scenario, I have done:**
+
+- **Part 1 — Aging of Inventory:** the export is the client's sheet (bucket tables by Inbound and by In-store Age,
+  the filters block, the 15-column unit table, Total Cost). Filters are As of / Location / **Type** (item type) /
+  **Category** (the category tree, roots and subgroups, narrowed by the chosen Type) / **Classification**, applied on
+  **Process**; Export to Excel sits top right. Classification is the new stored `SerialNumber.receivedAs`, set by
+  Receive Stock from the receipt's reason (migration `20261105150000_serial_received_as`, with backfill). The aging
+  endpoints are now branch-scoped; `?parentCategoryId=null` and `?typeId=` work on the categories list.
+- **Part 2 — Physical Inventory under Stock Report:** tabs Aging of Inventory | Physical Inventory, each gated by
+  its own permission (page and sidebar too); Stock Count renamed throughout (the session modal keeps the mockup's
+  "Count Session" title); `/inventory/counting` and `?tab=counts` redirect; every dropdown searchable.
+- **Part 3 — Count Sheet:** Serial · Brand · Model · In Store? · Remarks (free text with the four presets offered
+  as you type; a preset at the start becomes `remarkTag`), migration `20261105160000_stock_count_line_remarks`; one
+  Add Found Item that searches a serial across every location; Cancel Count beside Submit Count, both with a
+  confirm; Submit off until something changed; 200 rows drawn at a time with only the edited row redrawn (a warehouse
+  holds up to ~9,000 units).
+- **Part 3b — faster counting:** save as you go (`PATCH`/`DELETE /inventory/counts/:id/lines/:lineId`; an
+  in-progress count is the draft, resumable anywhere); one Scan-or-search box (typing filters, Enter ticks the
+  serial, or adds it as found, or says it's unknown) with an "N of M in store" counter.
+- **Part 4 — Printout:** Monthly Physical Inventory cover + Stock Count Sheet + Items found but not listed, from a
+  completed count's row or session; no browser header/footer.
+
+**Worth flagging:**
+
+- **Decisions revised mid-run (all Karms, 2026-11-05):** Group → Type naming and the Type/Category swap on the
+  aging report (differs from the client's aging sample, which calls the item type "Category"); Classification stored
+  rather than derived; Create Adjustment removed from the session and **adjustments now only come from Physical
+  Inventory** (the unreachable New adjustment modal, `AdjustmentLineRow` and the frontend `create-adjustment` action
+  were deleted; backend `POST /inventory/adjustments` untouched).
+- **Classification gaps:** units moved by a transfer before the migration, and all imported stock, read Brand New.
+- **Data cleanup for the client:** item types Appliances / FurnitureNon3E / SplitType duplicate the real ones and
+  hold no stock.
+- **Not audit-logged:** per-line saves (a count is thousands of ticks); Submit remains the audited event.
+- **Page numbers dropped from the printout** to keep the browser header off.
+- **Another session (frontend-b6) edited the stock-count files in parallel** (Create Adjustment removal, the merged
+  scan/search bar); reviewed and consistent, but worth a look at the combined diff before merging.
+- **Tests:** backend `scenario-87-part-1-aging-export` 7/7, `scenario-87-part-3-count-sheet-remarks` 7/7,
+  `inventory-aging-report`, `repair-intake-sales`, count snapshot/serial specs pass. **No Playwright spec of this
+  scenario has run** — starting the e2e stack resets the test DB, which needs the developer's go-ahead. Pre-existing
+  failures, not from this work: `excel-pivot-exports` (3), `inventory-catalog-enrichment` (1),
+  `inventory-receiving-branch-serial-gl` cost visibility (1).
+- **Migrations applied** to the test DB and the developer's local dev DB; deploy needs both.
