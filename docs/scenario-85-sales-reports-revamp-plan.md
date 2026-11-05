@@ -149,7 +149,7 @@ Verified against `development` on 2026-11-05:
 ## Decisions taken (developer, 2026-11-05)
 
 1. **Q1 — Quotas**:
-   - A **Sales Quotas grid under POS Configuration** (year → branches × 12 months), gated on new `pos:sales-quotas:manage`, held by Business Owner and Accountant.
+   - A **Sales Quotas grid under POS Configuration** (year → branches × 12 months), gated on new `pos:sales-quotas:manage`. Originally Business Owner and Accountant; **narrowed to Business Owner only** later the same day (see decision 10).
    - **"AC Unit + Services"** is a non-branch line. Its sales are every **Split Type** item plus service lines, across all branches.
    - Those sales **leave their branch's row**, so nothing is counted twice. Total Branches therefore excludes them, and Grand Total includes them.
 2. **Q2 — LCP**:
@@ -161,6 +161,11 @@ Verified against `development` on 2026-11-05:
 6. **Q6 — Old reports**: removed in Part 7, meaning the Sales per Brand / per Branch view and the `sales-by-branch` and `sales-by-brand` endpoints.
 7. **Q7 — Naming**: **both keep "Daily Sales Monitoring"**. They live on different pages, and Scenario 61's sheet is not renamed.
 8. **Q8 — Refunds**: netted into the figures they reverse, dated on the refund date (plan default; not separately asked).
+9. **Quota page placement** (2026-11-05, Part 4): a **Sales Quotas tab in the POS Reports hub**, not POS Settings. POS Settings is gated by role (`canManagePosSettings`: Business Owner and Branch Manager), so the Accountant could never reach it. The new tab is gated on `pos:sales-quotas:manage`.
+
+- **Business Owner only** (developer, 2026-11-05, during Part 4): the Accountant grant was dropped from the migration and the seed. The backend and frontend check the role itself (`canManageQuotas` / `canManageSalesQuotas`), because Branch Manager's `pos:*:*` wildcard matches the permission.
+- **"AC Unit + Services"** is a fixed non-branch line (`SalesQuota.line = ac_unit_services`), not a free-text label. Part 5 needs a rule for which sales a line covers, and only this line has one.
+
 9. **Delivery**: 7 parts, one at a time, each confirmed before the next.
 
 ## Closing the gaps

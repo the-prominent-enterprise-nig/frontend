@@ -23,6 +23,7 @@ import {
   Star,
   Tag,
   Tags,
+  Target,
   Undo2,
   Users,
   Wallet,
@@ -33,7 +34,12 @@ import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { RESERVATION_ACCESS } from '@/src/libs/guards/shared-ownership'
-import { canManagePosSettings, canNavigate, type SessionUser } from '@/src/libs/guards/permission'
+import {
+  canManagePosSettings,
+  canManageSalesQuotas,
+  canNavigate,
+  type SessionUser,
+} from '@/src/libs/guards/permission'
 
 /**
  * POS's sidebar hubs — six groups, named and ordered as the client's "Proposed
@@ -95,6 +101,12 @@ export type PosHubTab = {
   branchSwitcher?: boolean
   /** Business Owner / Branch Manager only — hidden from everyone else (e.g. Cashier). */
   configOnly?: boolean
+  /**
+   * Business Owner only. For a capability (Sales Quotas) that a module
+   * wildcard like Branch Manager's 'pos:*:*' must not reach, so the tab's
+   * permission alone can't gate it.
+   */
+  ownerOnly?: boolean
   /**
    * The sidebar row lights on exactly this path, not on everything under it — for
    * a tab whose route is a prefix of another group's (Collections is
@@ -415,6 +427,17 @@ export const REPORTS_HUB: PosHub = {
   entryHref: '/pos/reporting',
   tabs: [
     {
+      // Scenario 53 — the client's own end-of-day document. Its own permission,
+      // so the cashier who closes the shift can print and sign it without the
+      // Branch-Manager-tier sales reports coming with it. Its page has its own
+      // branch selector. First tab, so it is where the Reports entry lands.
+      id: 'daily-collection',
+      label: 'Daily Collection',
+      href: '/pos/daily-collection',
+      icon: ClipboardList,
+      permissions: [POS_PERMISSIONS.DAILY_COLLECTION_READ],
+    },
+    {
       // Scenario 47 — gated like the page (pos:reports:read), deliberately not
       // pos:transactions:read: these reports expose unit cost and margin, so a
       // Cashier must not even see the tab.
@@ -425,15 +448,15 @@ export const REPORTS_HUB: PosHub = {
       permissions: [POS_PERMISSIONS.REPORTS_READ],
     },
     {
-      // Scenario 53 — the client's own end-of-day document. Its own permission,
-      // so the cashier who closes the shift can print and sign it without the
-      // Branch-Manager-tier sales reports coming with it. Its page has its own
-      // branch selector.
-      id: 'daily-collection',
-      label: 'Daily Collection',
-      href: '/pos/daily-collection',
-      icon: ClipboardList,
-      permissions: [POS_PERMISSIONS.DAILY_COLLECTION_READ],
+      // Scenario 85 — the monthly targets the Sales Reports' Branch Scorecard
+      // reads. Business Owner only; ownerOnly keeps it from Branch Manager,
+      // whose 'pos:*:*' would otherwise reach it.
+      id: 'sales-quotas',
+      label: 'Sales Quotas',
+      href: '/pos/sales-quotas',
+      icon: Target,
+      permissions: [POS_PERMISSIONS.SALES_QUOTAS_MANAGE],
+      ownerOnly: true,
     },
   ],
 }
@@ -587,6 +610,7 @@ export function visiblePosTabHrefs(session: SessionUser | null): string[] {
   const configurable = canManagePosSettings(session)
   return POS_HUBS.flatMap((hub) => hub.tabs).flatMap((tab) => {
     if (tab.configOnly && !configurable) return []
+    if (tab.ownerOnly && !canManageSalesQuotas(session)) return []
     if (tab.subTabs) {
       return tab.subTabs.filter((s) => holdsAny(session, s.permissions)).map((s) => s.href)
     }

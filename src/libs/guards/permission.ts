@@ -116,6 +116,17 @@ function matchesPermission(userPermission: string, requiredPermission: string): 
   return true
 }
 
+/**
+ * Scenario 85 — Sales Quotas are Business Owner only (developer decision
+ * 2026-11-05). can() isn't enough: Branch Manager's 'pos:*:*' wildcard matches
+ * every pos permission, so the role itself is checked. Mirrors the backend's
+ * canManageQuotas().
+ */
+export function canManageSalesQuotas(user: SessionUser | null | undefined): boolean {
+  if (!user) return false
+  return Boolean(user.isSuperAdmin || hasPrivilegedRole(user))
+}
+
 export function can(user: SessionUser, permission: Permission): boolean {
   if (hasPrivilegedRole(user)) return true
   return user.permissions.some((p) => matchesPermission(p, permission))

@@ -14,7 +14,7 @@ import { gotoReady, loginAs } from './utils'
 //                        New Receipts | Collected Funds History
 //   Approvals & Reviews  Override Review | Unit Release Approvals | Refund Approvals |
 //                        Void Requests | Cancellations
-//   Reports              Sales Reports | Daily Collection
+//   Reports              Daily Collection | Sales Reports | Sales Quotas
 //   Operations & Admin   Service Jobs | POS PIN | Settings
 //
 // The tab definitions and each page's permission live in pos/_shared/pos-hubs.ts.
@@ -232,12 +232,12 @@ test.describe('POS sidebar — Business Owner', () => {
     await clickTab(page, 'Refund Approvals', '/pos/return-refund-approvals')
   })
 
-  test('Reports opens on Sales Reports and also has Daily Collection', async ({ page }) => {
+  test('Reports opens on Daily Collection and also has Sales Reports', async ({ page }) => {
     await gotoReady(page, '/pos/customers')
-    await clickRow(page, 'Reports', '/pos/reports')
-    expect(await tabOrder(page)).toEqual(['Sales Reports', 'Daily Collection'])
+    await clickRow(page, 'Reports', '/pos/daily-collection')
+    expect(await tabOrder(page)).toEqual(['Daily Collection', 'Sales Reports', 'Sales Quotas'])
 
-    await clickTab(page, 'Daily Collection', '/pos/daily-collection')
+    await clickTab(page, 'Sales Reports', '/pos/reports')
   })
 
   test('Price Lists keeps the strip, and the Product Catalog row, on its list and upload pages', async ({
