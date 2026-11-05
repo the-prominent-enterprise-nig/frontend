@@ -9,8 +9,12 @@ import type { CreatePoFormValues } from '@/src/schema/inventory/purchase-orders'
 import type { SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 import { WarehouseSearchCombobox } from '@/src/components/inventory/WarehouseSearchCombobox'
-import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
+import {
+  ItemSearchCombobox,
+  type ItemSearchMeta,
+} from '../../purchase-requests/_components/ItemSearchCombobox'
 import { getSupplierItems } from '@/src/app/(app)/(dashboard)/accounting/suppliers/_actions/get-supplier-items'
+import { getItem } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-item'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from './procurementTokens'
 import { NoDestinationWarning } from './NoDestinationWarning'
@@ -47,6 +51,18 @@ const EMPTY_LINE = {
   srp: undefined,
   discounts: [] as { name?: string; type: 'percentage'; value: number }[],
   isFreebie: false,
+}
+
+/** Where a catalog-added line's Unit price started (Scenario 84, PR-01). */
+type PriceStart = { price: number; cost: number }
+
+/** The supplier's own price for an item, when it has one above zero. */
+function supplierPriceOf(
+  supplierItems: { itemId: string; unitPrice?: number | string | null }[] | undefined,
+  itemId: string
+): number | null {
+  const quoted = (supplierItems ?? []).find((m) => m.itemId === itemId)?.unitPrice
+  return quoted != null && Number(quoted) > 0 ? Number(Number(quoted).toFixed(2)) : null
 }
 
 const CARD = 'rounded-xl border border-[#e4e4e9] bg-white'
@@ -426,12 +442,36 @@ function LineItemsCard({
 
   const anyOpen = Object.values(openLines).some(Boolean)
 
-  const addFromCatalog = (option: SearchComboboxOption): void => {
+  // Scenario 84 (PR-01, client UAT 2026-10-29): "Cost shown for items in
+  // Purchase Requests must reflect the correct item cost." A new line's Unit
+  // Price used to start at 0. It starts at the chosen supplier's price for the
+  // item (ItemSupplier.unitPrice), else the item's own cost price, else 0 as
+  // before (Kian, 2026-11-04). Either is the buyer's starting point to type
+  // over, and SRP still drives it once entered.
+  const costPriceOf = async (option: SearchComboboxOption): Promise<number> => {
+    // A supplier-listed result carries no meta; read the item itself.
+    let cost = (option.meta as ItemSearchMeta | undefined)?.costPrice
+    if (option.meta === undefined) {
+      const res = await getItem(option.id)
+      cost = res.success && res.data?.costPrice != null ? Number(res.data.costPrice) : null
+    }
+    return cost != null && cost > 0 ? Number(cost.toFixed(2)) : 0
+  }
+
+  // The price each catalog-added item started at, and its cost price to fall
+  // back on — so a supplier picked AFTER the lines can still re-price the ones
+  // nobody has touched (see LineRow).
+  const priceStarts = useRef<Record<string, PriceStart>>({})
+
+  const addFromCatalog = async (option: SearchComboboxOption): Promise<void> => {
     setLabels((s) => ({ ...s, [option.id]: { name: option.primary, sku: option.secondary } }))
+    setNonce((n) => n + 1)
+    const cost = await costPriceOf(option)
+    const price = supplierPriceOf(supplierItemsQuery.data?.data, option.id) ?? cost
+    priceStarts.current[option.id] = { price, cost }
     // SRP is deliberately left blank — it is the price on THIS supplier's
     // quote, which the item's own last cost is not a safe stand-in for.
-    append({ ...EMPTY_LINE, itemId: option.id })
-    setNonce((n) => n + 1)
+    append({ ...EMPTY_LINE, itemId: option.id, unitPrice: price })
   }
 
   return (
@@ -455,7 +495,7 @@ function LineItemsCard({
             key={nonce}
             value=""
             onChange={() => {}}
-            onSelect={addFromCatalog}
+            onSelect={(o) => void addFromCatalog(o)}
             compact
             supplierId={supplierId || undefined}
             placeholder="Search item by name or SKU to add a line…"
@@ -541,6 +581,7 @@ function LineItemsCard({
                   index={index}
                   lineCount={fields.length}
                   labels={merged}
+                  priceStarts={priceStarts}
                   submitted={submitted}
                   open={!!openLines[String(index)]}
                   onToggle={() =>
@@ -566,6 +607,7 @@ function LineItemsCard({
                   index={index}
                   lineCount={fields.length}
                   labels={merged}
+                  priceStarts={priceStarts}
                   submitted={submitted}
                   open={!!openLines[String(index)]}
                   onToggle={() =>
@@ -595,6 +637,7 @@ type LineRowProps = {
   index: number
   lineCount: number
   labels: Record<string, ItemLabel>
+  priceStarts: React.RefObject<Record<string, PriceStart>>
   submitted?: boolean
   open: boolean
   onToggle: () => void
@@ -639,6 +682,28 @@ function LineRow(props: LineRowProps): React.ReactElement {
     const derived = unitFromChain(Number(srp) || 0, discounts ?? []).unit
     return Math.abs((Number(unitPrice) || 0) - derived) > 0.005
   })
+
+  // Scenario 84 Part 5 — a supplier picked (or changed) after the line was
+  // added re-prices it: to that supplier's price for the item, else back to
+  // the item's cost price. Only a line still on the price it started at —
+  // never one typed over, driven by an SRP, or a freebie.
+  const supplierId = useWatch({ control, name: 'supplierId' })
+  const supplierItems = useQuery({
+    queryKey: ['supplier-items', supplierId],
+    queryFn: () => getSupplierItems(supplierId),
+    enabled: !!supplierId,
+    staleTime: 5 * 60 * 1000,
+  }).data?.data
+  useEffect(() => {
+    const start = itemId ? props.priceStarts.current[itemId] : undefined
+    if (!start || manual || isFreebie || (Number(srp) || 0) > 0) return
+    if (Math.abs((Number(unitPrice) || 0) - start.price) > 0.005) return
+    const next = supplierPriceOf(supplierId ? supplierItems : undefined, itemId) ?? start.cost
+    if (next === start.price) return
+    start.price = next
+    setValue(`lines.${index}.unitPrice`, next)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supplierId, supplierItems])
 
   useEffect(() => {
     if (isFreebie) {
@@ -802,7 +867,10 @@ function MoneyInput({
       placeholder="0.00"
       inputMode="decimal"
       disabled={disabled}
-      value={draft ?? value ?? ''}
+      // Scenario 84 Part 5 — grouped like the Line total ("29,520.00") when
+      // not being typed into; the bare number while it is.
+      value={draft ?? (value ? peso(value) : (value ?? ''))}
+      onFocus={() => setDraft(value ? String(value) : '')}
       onChange={(e) => {
         const raw = e.target.value.replace(/[^\d.]/g, '')
         setDraft(raw)

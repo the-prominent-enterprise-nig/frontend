@@ -183,7 +183,11 @@ export function InstallmentLedgerBody({
         }
         figures={[
           { label: 'Tot. Amt. Out', value: fmtMoney(ledger.account.currentBalance), accent: true },
-          { label: 'Tot. Amt. Due', value: fmtMoney(ledger.account.totalDue) },
+          {
+            label: 'Tot. Amt. Due',
+            value: fmtMoney(ledger.account.totalDue),
+            negative: Number(ledger.account.totalDue) < 0,
+          },
           { label: 'Total Payments', value: fmtMoney(ledger.account.totalPayments) },
           { label: 'Total Billing', value: fmtMoney(ledger.account.totalBilling) },
           { label: 'Total Rebates', value: fmtMoney(ledger.account.totalRebates) },

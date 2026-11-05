@@ -51,7 +51,9 @@ export function LedgerHero({
   figures,
 }: {
   header: ReactNode
-  figures: { label: string; value: string; accent?: boolean }[]
+  /** `negative` shows the figure in red, as the Due column shows a negative
+   * due (Scenario 84, CL-07: an advance payment). */
+  figures: { label: string; value: string; accent?: boolean; negative?: boolean }[]
 }) {
   return (
     <div className={`${LEDGER_CARD} overflow-hidden`}>
@@ -68,7 +70,11 @@ export function LedgerHero({
             <p className="text-[12px] text-gray-600">{f.label}</p>
             <p
               className={`mt-0.5 text-xl font-semibold tracking-tight ${
-                f.accent ? 'text-prominent-orange-800' : 'text-prominent-purple-900'
+                f.negative
+                  ? 'text-red-600'
+                  : f.accent
+                    ? 'text-prominent-orange-800'
+                    : 'text-prominent-purple-900'
               }`}
             >
               {f.value}
