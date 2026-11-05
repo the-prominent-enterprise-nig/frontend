@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady } from './utils'
+import { gotoReady, loginAs } from './utils'
+
+const ROLE_PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
 
 // Scenario 85 Part 3 — Oct 29 UAT POS-01. With "All Branches" picked, the POS
 // Overview's Total Sales card is every branch combined; a "Total Sales by
@@ -81,4 +83,30 @@ test.describe('POS Overview — Total Sales per branch (POS-01)', () => {
     // Leave the switcher on All Branches for whatever runs next.
     await pickBranch(page, null)
   })
+
+  // Who gets the panel: everyone who sees every branch (Business Owner, above,
+  // and Head Office staff with no branch of their own), never branch staff —
+  // their card is already just their branch.
+  for (const who of [
+    { email: 'technova.cashier@test.com', label: 'Head Office cashier (no branch)', sees: true },
+    { email: 'technova.b1.manager@test.com', label: 'Bago branch manager', sees: false },
+  ]) {
+    test(`${who.label}: panel ${who.sees ? 'shown' : 'not shown'}`, async ({ browser }) => {
+      const context = await browser.newContext({ storageState: { cookies: [], origins: [] } })
+      const page = await context.newPage()
+      await loginAs(page, who.email, ROLE_PASSWORD)
+      await gotoReady(page, '/pos')
+      await expect(page.getByTestId('stat-total-sales').locator('p.text-2xl')).toBeVisible({
+        timeout: 20_000,
+      })
+      if (who.sees) {
+        await expect(page.getByTestId('total-sales-by-branch')).toBeVisible({ timeout: 20_000 })
+      } else {
+        // Give the session check time to settle before asserting absence.
+        await page.waitForLoadState('networkidle').catch(() => {})
+        await expect(page.getByTestId('total-sales-by-branch')).toHaveCount(0)
+      }
+      await context.close()
+    })
+  }
 })
