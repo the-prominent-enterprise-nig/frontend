@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowLeft, FileText, Loader2, Pencil, RefreshCw, Trash2, Upload, X } from 'lucide-react'
+import { ArrowLeft, FileText, Loader2, Pencil, Trash2, Upload, X } from 'lucide-react'
 import { useCreditApplication } from '../_hooks/useCreditApplication'
 import { uploadCreditApplicationFile } from '../_actions/upload-document-file'
 import { CreditApplicationItemFields } from './CreditApplicationItemFields'
@@ -98,8 +98,6 @@ export default function CreditApplicationDetail({
 
   const {
     application,
-    refetch: refetchApplication,
-    isRefetching: isRefetchingApplication,
     isLoading,
     update,
     isUpdating,
@@ -133,11 +131,7 @@ export default function CreditApplicationDetail({
   // with the other hooks: the component returns early when the application
   // has not loaded, and a hook below that runs on some renders and not
   // others.
-  const {
-    data: openSessionsData,
-    refetch: refetchSessions,
-    isFetching: isRefetchingSessions,
-  } = useSessions({ status: 'open' })
+  const { data: openSessionsData } = useSessions({ status: 'open' })
   const openSessions = openSessionsData?.data ?? []
   // ANY open till enables the button — the rule as asked: no session open, no
   // button. Deliberately not "a session I opened myself": a branch commonly
@@ -477,29 +471,6 @@ export default function CreditApplicationDetail({
           >
             <ArrowLeft className="h-4 w-4" /> Back to applications
           </button>
-
-          {/* Scenario 64 item 28 — a cashier sits on this page while the owner
-              approves in their own session. The page does poll every 10s, but
-              waiting out a poll (or reloading) to find out whether the answer
-              has come is not something anyone should have to do. This asks
-              now, and re-checks the open tills at the same time, so the
-              approval and the Continue to sale button appear together. */}
-          <button
-            type="button"
-            onClick={() => {
-              void refetchApplication()
-              void refetchSessions()
-            }}
-            disabled={isRefetchingApplication || isRefetchingSessions}
-            className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
-          >
-            <RefreshCw
-              className={`h-3.5 w-3.5 ${
-                isRefetchingApplication || isRefetchingSessions ? 'animate-spin' : ''
-              }`}
-            />
-            {isRefetchingApplication || isRefetchingSessions ? 'Refreshing…' : 'Refresh'}
-          </button>
         </div>
 
         {/* Scenario 64 item 28 — at the top of the page so it is in view the
@@ -512,7 +483,7 @@ export default function CreditApplicationDetail({
               <p className="mt-0.5 text-sm text-prominent-purple-700">
                 {hasOpenSession
                   ? 'Opens the till with this customer, these items and this application already selected.'
-                  : 'No till is open. Open a POS session at a terminal, then Refresh — this cannot open one for you.'}
+                  : 'No till is open. Open a POS session at a terminal — this cannot open one for you.'}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
