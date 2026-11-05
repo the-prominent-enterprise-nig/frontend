@@ -38,7 +38,7 @@ const PROTECTED_ROLE_NAMES = new Set([
   'Branch Manager',
   'Accountant',
   'Stock Controller',
-  'Cashier',
+  'Branch Cashier',
   'Marketing Manager',
 ])
 

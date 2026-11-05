@@ -69,128 +69,42 @@ export const ACCESS_MODULES: AccessModule[] = MODULES.map((appModule) => ({
   permissionModules: [appModule.key],
 }))
 
-const READ_ACTIONS = new Set([
-  'read',
-  'view',
-  'list',
-  'search',
-  'export',
-  'download',
-  'valuation',
-  'turnover',
-])
-
-const EDIT_ACTIONS = new Set([
-  'create',
-  'update',
-  'upload',
-  'edit',
-  'open',
-  'close',
-  'send',
-  'receive',
-  'dispatch',
-  'issue',
-  'call',
-  'serve',
-  'return',
-  'run',
-  'log',
-  'request',
-  'generate',
-  // Requesting a reservation cancellation is an operational step, not the
-  // destructive `cancel-approve` that follows it. Named explicitly because it
-  // used to qualify only by accident, through the substring match below.
-  'cancel-request',
-])
-
 function permissionKey(permission: Permission): string {
   return `${permission.module}:${permission.resource}:${permission.action}`
 }
 
 /**
- * Permissions the View Only and Manage / Edit presets never hand out, even when
- * the action name qualifies. They stay fully grantable — an admin just has to
- * tick them deliberately under Advanced permissions instead of picking them up
- * as an invisible side effect of a module-wide button.
+ * What each button hands out is decided by the backend, once, and arrives on
+ * every permission as `tier` (src/auth/permission-tiers.ts there):
  *
- * Two groups:
- *   - Enterprise-wide financial infrastructure and sensitive cost data. seed.ts
- *     already withholds this cluster from Branch Manager by hand ("deliberately
- *     excluded, not an oversight"); the presets were handing it to anyone set to
- *     Manage / Edit on Accounting regardless.
- *   - RBAC self-administration. `admin:roles:create` plus `admin:roles:update`
- *     let a role mint a new role and grant it anything, so Manage / Edit on
- *     Admin was a one-hop path to full access. Granting user administration
- *     must not imply granting permission administration.
+ *   view  what a screen needs to be read           -> View Only
+ *   edit  the day-to-day work on a screen          -> Edit (and View)
+ *   full  decisions, risk, settings, money moving  -> Full Access only
  *
- * Full Access still includes all of these: that button says what it does.
+ * This file used to keep its own list of action names (create, update, send…)
+ * and treat anything not on it as not part of Edit, so a role set to Edit could
+ * open a screen and still be refused the work on it: paying a bill, verifying a
+ * cashier PIN, recording an installment payment. Reading the tier removes the
+ * second list, so the buttons and the tests can't disagree.
+ *
+ * A permission that arrives without a tier is treated as Full, so a stale or
+ * partial response can never hand out more than the owner meant.
  */
-export const PRESET_EXCLUDED_PERMISSIONS = new Set([
-  'accounting:fiscal:create',
-  'accounting:fiscal:update',
-  'accounting:fiscal:close',
-  'accounting:fiscal:reopen',
-  'accounting:fiscal:delete',
-  'accounting:generalLedger:create',
-  'accounting:generalLedger:update',
-  'accounting:generalLedger:delete',
-  'accounting:account:create',
-  'accounting:account:update',
-  'accounting:account:delete',
-  'accounting:bir_export:generate',
-  // Tax setup (Scenario 69) is the same enterprise-wide infrastructure as the
-  // chart of accounts and fiscal periods above. seed.ts gives Branch Manager
-  // only tax-codes:override — departing from a defaulted code — never the
-  // setup or the period close itself.
-  'accounting:tax-codes:create',
-  'accounting:tax-codes:update',
-  'accounting:tax-closing:create',
+export type PermissionTier = 'view' | 'edit' | 'full'
 
-  // Data Query Center (Scenario 62): Business Owner only. seed.ts grants it to
-  // no other role, and both QueryCenterGuard and the sidebar require this exact
-  // row so no wildcard reaches it. As a plain `read` it would otherwise ride
-  // along with View Only on Accounting.
-  'accounting:query-center:read',
-
-  // inventory:receive:cost-view: redundant with the exact action-name match above
-  // for the one thing this list was built to prevent — actionMatches("cost-view",
-  // ...) is false against every READ_ACTIONS/EDIT_ACTIONS entry, so View Only and
-  // Manage / Edit never select it regardless of whether it's listed here.
-  // Kept anyway because isPresetExcluded also drives the "Sensitive" badge in
-  // AdvancedPermissionsSection, and that badge is correct information — this
-  // permission genuinely is restricted (see
-  // its own description in seed.ts) — even though the mechanism keeping it out of
-  // the module buttons is "never classified as read or edit" rather than "matched,
-  // then withheld" like every other entry in this list. #168 review (2026-09-14).
-  'inventory:receive:cost-view',
-
-  'admin:roles:create',
-  'admin:roles:update',
-  'admin:roles:delete',
-  'admin:roles:manage',
-  'admin:permissions:create',
-  'admin:permissions:update',
-  'admin:permissions:delete',
-  'admin:permissions:manage',
-])
-
-export function isPresetExcluded(permission: Permission): boolean {
-  return PRESET_EXCLUDED_PERMISSIONS.has(permissionKey(permission))
+export function tierOf(permission: Permission): PermissionTier {
+  return permission.tier ?? 'full'
 }
 
 /**
- * Exact membership only. This used to substring-match as well, which quietly
- * mis-tiered any action whose name happened to contain a shorter one:
- * `cost-view` counted as a read, leaking `inventory:receive:cost-view`
- * ("restricted to Business Owner/Accountant" per seed.ts) into every View Only
- * grant, and `reopen` counted as an edit, leaking `accounting:fiscal:reopen`
- * into every Manage / Edit grant. Action names are a closed set defined in
- * seed.ts — anything genuinely operational belongs in the sets above by name,
- * not by an accident of spelling.
+ * Permissions the View Only and Edit buttons withhold on purpose even though
+ * their action name would qualify: enterprise-wide financial set-up, sensitive
+ * cost data and permission administration. They stay fully grantable under
+ * Advanced permissions, where they carry a "Sensitive" badge, and Full Access
+ * includes them.
  */
-function actionMatches(action: string, actions: Set<string>): boolean {
-  return actions.has(action)
+export function isPresetExcluded(permission: Permission): boolean {
+  return permission.sensitive === true
 }
 
 export function getModulePermissions(
@@ -203,13 +117,11 @@ export function getModulePermissions(
 }
 
 export function isReadPermission(permission: Permission): boolean {
-  return actionMatches(permission.action, READ_ACTIONS)
+  return tierOf(permission) === 'view'
 }
 
 export function isManagePermission(permission: Permission): boolean {
-  return (
-    actionMatches(permission.action, READ_ACTIONS) || actionMatches(permission.action, EDIT_ACTIONS)
-  )
+  return tierOf(permission) !== 'full'
 }
 
 function groupByResource(permissions: Permission[]): Map<string, Permission[]> {
@@ -240,8 +152,11 @@ function getResourceLevel(
 ): Exclude<AccessLevel, 'mixed'> {
   if (selectedForResource.length === 0) return 'none'
   if (selectedForResource.length >= availableForResource.length) return 'full'
-  if (selectedForResource.some((permission) => actionMatches(permission.action, EDIT_ACTIONS)))
-    return 'manage'
+  // The role's own permission objects carry no tier, only the full list does,
+  // so a selected permission's tier is looked up by id.
+  const tierById = new Map(availableForResource.map((p) => [p.id, tierOf(p)]))
+  const tierFor = (p: Permission): PermissionTier => p.tier ?? tierById.get(p.id) ?? 'full'
+  if (selectedForResource.some((permission) => tierFor(permission) === 'edit')) return 'manage'
   return 'view'
 }
 
@@ -390,9 +305,7 @@ export function getPermissionsForLevel(
   if (level === 'full') return modulePermissions
 
   const predicate = level === 'view' ? isReadPermission : isManagePermission
-  return modulePermissions.filter(
-    (permission) => predicate(permission) && !isPresetExcluded(permission)
-  )
+  return modulePermissions.filter(predicate)
 }
 
 export function getSelectedPermissionIdsForLevel(
@@ -585,13 +498,6 @@ export function getResourceLevelAvailability(
       .sort()
       .join('|')
 
-  const candidatesFor = (level: Exclude<AccessLevel, 'mixed'>) => {
-    if (level === 'full') return resourcePermissions
-    if (level === 'manage') return resourcePermissions.filter(isManagePermission)
-    if (level === 'view') return resourcePermissions.filter(isReadPermission)
-    return []
-  }
-
   const grantsFor = (level: Exclude<AccessLevel, 'mixed'>) =>
     getPermissionsForLevel(resourcePermissions, level).map((permission) =>
       formatPermission(permission)
@@ -604,7 +510,7 @@ export function getResourceLevelAvailability(
     if (idsFor(level) !== idsFor(previous))
       return { level, enabled: true, grants: grantsFor(level) }
 
-    const withheld = candidatesFor(level).filter(isPresetExcluded)
+    const withheld = resourcePermissions.filter(isPresetExcluded)
     if (withheld.length > 0) {
       const actions = Array.from(new Set(withheld.map((permission) => permission.action)))
       return {

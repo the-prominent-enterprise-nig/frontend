@@ -10,6 +10,8 @@ import TransferStatusBadge from '../../_components/TransferStatusBadge'
 import { Select } from '@/src/components/ui/Select'
 import { CLEARED_OPTIONS, type ClearedType } from '../../_components/clearedOptions'
 import FundTransferAttachmentsPanel from '../../_components/FundTransferAttachmentsPanel'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
 
 const d = (v: string | null | undefined) => (v ? v.slice(0, 10) : '—')
 
@@ -21,6 +23,9 @@ const d = (v: string | null | undefined) => (v ? v.slice(0, 10) : '—')
 // The reason is typed on the page itself; there is no pop-up. `canEdit` is the
 // transfer permission, which is also what the backend asks of a void.
 export default function FundTransferDetail({ id, canEdit }: { id: string; canEdit: boolean }) {
+  // Shown only to those the backend lets through (UAT review 2026-11-04).
+  const { data: me } = useMe()
+  const canVoid = !!me && can(me, 'accounting:bank-accounts:transfer')
   const [transfer, setTransfer] = useState<FundTransfer | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -412,7 +417,7 @@ export default function FundTransferDetail({ id, canEdit }: { id: string; canEdi
                   </button>
                 </div>
               </form>
-            ) : (
+            ) : canVoid ? (
               <button
                 type="button"
                 onClick={() => setVoiding(true)}
@@ -420,7 +425,7 @@ export default function FundTransferDetail({ id, canEdit }: { id: string; canEdi
               >
                 <Ban className="h-4 w-4" /> Void this transfer
               </button>
-            )}
+            ) : null}
           </div>
         )}
       </div>

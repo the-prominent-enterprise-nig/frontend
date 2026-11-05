@@ -33,7 +33,15 @@ import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { RESERVATION_ACCESS } from '@/src/libs/guards/shared-ownership'
-import { canManagePosSettings, canNavigate, type SessionUser } from '@/src/libs/guards/permission'
+import {
+  ADMIN_ROLE_PERMISSIONS,
+  POS_SETTINGS_PERMISSIONS,
+  can,
+  canManagePosSettings,
+  canNavigate,
+  isAdmin,
+  type SessionUser,
+} from '@/src/libs/guards/permission'
 
 /**
  * POS's sidebar hubs — six groups, named and ordered as the client's "Proposed
@@ -149,7 +157,7 @@ export const SALES_COUNTER_HUB: PosHub = {
       href: '/pos/reservations',
       icon: BookmarkCheck,
       // The page and its routes take POS's or Inventory's reservation
-      // permission; a role with neither (Deposit Clerk, Stock Clerk) used to
+      // permission; a role with neither (Accounting Clerk - Deposits, Inventory Clerk) used to
       // see the tab and land on /403.
       permissions: RESERVATION_ACCESS.READ,
       branchSwitcher: true,
@@ -270,7 +278,7 @@ export const CREDIT_COLLECTIONS_HUB: PosHub = {
       label: 'Collections',
       href: '/pos/collections',
       icon: Coins,
-      permissions: [POS_PERMISSIONS.COLLECTIONS_MANAGE],
+      permissions: [POS_PERMISSIONS.COLLECTIONS_MANAGE, POS_PERMISSIONS.CUSTOMERS_READ],
       exactActive: true,
     },
     {
@@ -451,7 +459,7 @@ export const OPERATIONS_ADMIN_HUB: PosHub = {
     {
       // Every role that rings up or approves a sale holds cashier-pin:verify,
       // which the page and its API require. A role with only a corner of POS
-      // (Deposit Clerk's Daily Collection, Stock Clerk's catalog) doesn't, and
+      // (Accounting Clerk - Deposits's Daily Collection, Inventory Clerk's catalog) doesn't, and
       // used to see the tab and land on /403.
       id: 'pos-pin',
       label: 'POS PIN',
@@ -460,10 +468,10 @@ export const OPERATIONS_ADMIN_HUB: PosHub = {
       permissions: [POS_PERMISSIONS.CASHIER_PIN_VERIFY],
     },
     {
-      // Business Owner or Branch Manager only — the layout's guard is
-      // role-based (canManagePosSettings), not permission-based, and Cashier
-      // holds pos:config:manage too, so a permission here would show them a
-      // tab that redirects to /403. `configOnly` is that role check. Every
+      // Whoever may change POS settings (canManagePosSettings: the owner, the
+      // Branch Manager, any role given one of the POS "manage" toggles). The
+      // check is one of several permissions rather than a single one, which is
+      // why the tab lists none and `configOnly` carries it. Every
       // /pos/settings/* page shows the strip, over its own left-rail tabs.
       id: 'settings',
       label: 'Settings',
@@ -592,4 +600,46 @@ export function visiblePosTabHrefs(session: SessionUser | null): string[] {
     }
     return holdsAny(session, tab.permissions) ? [tab.href] : []
   })
+}
+
+/**
+ * What the sidebar row of a hub requires: any one permission of a tab the row
+ * can open. A configOnly tab (Settings) counts through the rows
+ * canManagePosSettings reads, so a role that holds only a settings toggle (say
+ * Terminals) still gets the Operations & Admin row, and so does an admin. An
+ * empty list means the hub is not gated by a permission.
+ */
+export function posHubNavPermissions(hub: PosHub): string[] {
+  const tabs = hub.tabs.filter((tab) => !tab.configOnly)
+  const ungated = !hub.permission && tabs.some((tab) => posTabPermissions(tab).length === 0)
+  if (ungated) return []
+  const settings = hub.tabs.some((tab) => tab.configOnly)
+    ? [...POS_SETTINGS_PERMISSIONS, ...ADMIN_ROLE_PERMISSIONS]
+    : []
+  return [...(hub.permission ?? tabs.flatMap((tab) => posTabPermissions(tab))), ...settings]
+}
+
+/**
+ * The POS Settings pages, in the order of the left rail, and what each page
+ * needs to open (its own guard). The Settings area itself opens for anyone
+ * canManagePosSettings; each page then shows only to a role that can open it, so
+ * a role with one settings toggle lands on its page, not on General.
+ */
+export const POS_SETTINGS_PAGES: { href: string; permissions: string[] }[] = [
+  { href: '/pos/settings/general', permissions: [POS_PERMISSIONS.CONFIG_READ] },
+  { href: '/pos/settings/payment-methods', permissions: [POS_PERMISSIONS.CONFIG_READ] },
+  { href: '/pos/settings/terminals', permissions: [POS_PERMISSIONS.TERMINALS_READ] },
+  { href: '/pos/settings/receipt-branding', permissions: [POS_PERMISSIONS.CONFIG_READ] },
+  { href: '/pos/settings/financing-terms', permissions: [POS_PERMISSIONS.FINANCING_TERMS_READ] },
+  { href: '/pos/settings/tpf-providers', permissions: [POS_PERMISSIONS.TPF_PROVIDERS_READ] },
+  { href: '/pos/settings/override-reasons', permissions: [POS_PERMISSIONS.CONFIG_MANAGE] },
+  { href: '/pos/settings/customer-display', permissions: [POS_PERMISSIONS.SESSIONS_READ] },
+]
+
+/** The Settings pages this person can open. An admin sees them all. */
+export function visiblePosSettingsHrefs(session: SessionUser): string[] {
+  if (isAdmin(session)) return POS_SETTINGS_PAGES.map((page) => page.href)
+  return POS_SETTINGS_PAGES.filter((page) => page.permissions.some((p) => can(session, p))).map(
+    (page) => page.href
+  )
 }

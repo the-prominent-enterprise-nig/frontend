@@ -42,7 +42,7 @@ import { BILLER_OPTION_NAMES, GCASH_OPTION_NAMES } from './_utils/qr-option-grou
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getSessionStateWithRetry } from '@/src/libs/auth/session-client'
 import { SessionUnavailableError } from '@/src/libs/auth/session-unavailable-error'
-import { can } from '@/src/libs/guards/permission'
+import { can, managesOwnBranch } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { useQueryClient } from '@tanstack/react-query'
 import { useSessions } from '../_hooks/usePos'
@@ -772,7 +772,7 @@ export default function CheckoutPage() {
         router.replace('/403')
         return
       }
-      setIsBranchManager(s.primaryRole === 'Branch Manager')
+      setIsBranchManager(managesOwnBranch(s))
       setAuthBranchId(s.branchId ?? null)
       setCanOverride(can(s, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE))
       setCanSignPromissoryNote(can(s, CREDIT_PERMISSIONS.PROMISSORY_NOTE_SIGN))
@@ -784,7 +784,8 @@ export default function CheckoutPage() {
   if (sessionUnavailable) throw sessionUnavailable
 
   const activeBranchId = useMemo(() => {
-    // Branch Managers: use their assigned branch (matches "My Branch" settings)
+    // Whoever manages their own branch's POS settings (the Branch Manager's
+    // position): use their assigned branch (matches "My Branch" settings)
     if (isBranchManager && authBranchId) return authBranchId
     // Everyone else: use the terminal's branch
     const session = openSessions.find((s) => s.id === sessionId)

@@ -44,7 +44,7 @@ const EMPTY_FILTERS = { search: '', status: [] as ReconStatus[], startDate: '', 
 
 // Opening a reconciliation, its transactions, and every button here need
 // bank-accounts:reconcile (Adjusting Entry needs :adjust). A role that only
-// reads bank accounts (Expense Clerk, Payables Clerk) gets the list alone,
+// reads bank accounts (Accounting Clerk - Expenses & Loans, Finance Clerk - Payables) gets the list alone,
 // instead of buttons that land on /403.
 export default function BankRecon({
   canReconcile,
