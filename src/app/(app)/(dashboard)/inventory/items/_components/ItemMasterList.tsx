@@ -16,6 +16,8 @@ import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import CategorySelect from '@/src/components/ui/CategorySelect'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { displayClassificationLabel } from '@/src/libs/format/text'
 import { useItemStockStatus } from '../_hooks/useItemStockStatus'
 
 export default function ItemMasterList({ session }: { session: SessionUser }) {
@@ -53,6 +55,8 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     setApprovalStatus,
     primaryCategoryId,
     setPrimaryCategoryId,
+    typeId,
+    setTypeId,
     region,
     setRegion,
     resetFilters,
@@ -182,7 +186,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, brand, model, category or serial number…"
+              placeholder="Search by name, brand, model, type, category or serial number…"
               className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-8 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
             />
             {search && (
@@ -234,12 +238,27 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
                 <option value="rejected">Rejected</option>
               </select>
             )}
+            {/* Type / Category = the sheet's TYPE / GROUP / SUBGROUP:
+                Type is the item type, Category/Subgroup the category tree. */}
+            <SearchableSelect
+              className="min-w-[170px]"
+              value={typeId ?? ''}
+              onChange={(v) => setTypeId(v || undefined)}
+              placeholder="All Types"
+              ariaLabel="Type"
+              clearable
+              options={typeOptions.map((t) => ({
+                value: t.id,
+                label: displayClassificationLabel(t.name) ?? t.name,
+              }))}
+            />
             {categories.length > 0 && (
               <CategorySelect
                 value={primaryCategoryId}
                 onChange={setPrimaryCategoryId}
                 options={categories}
                 placeholder="All Categories"
+                aria-label="Category or subgroup"
                 className="min-w-[180px]"
               />
             )}
@@ -269,6 +288,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
               lifecycle ||
               approvalStatus ||
               primaryCategoryId ||
+              typeId ||
               region ||
               sortBy !== 'name' ||
               sortOrder !== 'asc') && (

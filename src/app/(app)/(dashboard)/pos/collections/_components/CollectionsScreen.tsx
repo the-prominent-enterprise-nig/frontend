@@ -54,8 +54,11 @@ import {
   dueOutstanding,
   dueStatus,
   isDueOpen,
-  todayIso,
 } from '@/src/libs/pos/installment-dues'
+// Scenario 86 — the payment date is a Manila calendar day, the same "today"
+// the backend's future-date block and same-day guard use. installment-dues'
+// todayIso() is the UTC date and still drives due status; it is not used here.
+import { manilaToday } from '@/src/libs/tax/tax-reports'
 
 const STATUS_STYLES: Record<string, string> = {
   PAID: 'bg-emerald-100 text-emerald-700',
@@ -80,7 +83,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function isToday(dateIso: string): boolean {
-  return dateIso.slice(0, 10) === todayIso()
+  return dateIso.slice(0, 10) === manilaToday()
 }
 
 // Used to show an informational (non-blocking) note when the chosen payment
@@ -88,7 +91,9 @@ function isToday(dateIso: string): boolean {
 // this once the due is fully settled (isFullyPaid, handled separately).
 // Plan-wide, not per-due: payments hang off the shared invoice.
 function hasPaymentOnDate(line: InstallmentScheduleLineWithInvoice, dateIso: string): boolean {
-  return line.arInvoice.payments.some((p) => p.paymentDate.slice(0, 10) === dateIso.slice(0, 10))
+  return line.arInvoice.payments.some(
+    (p) => manilaToday(new Date(p.paymentDate)) === dateIso.slice(0, 10)
+  )
 }
 
 // Debounces the raw input so the collections list doesn't refetch on every keystroke.
@@ -423,7 +428,7 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
   // collection recorded — as of the simulated date, the only way a late
   // penalty can really be charged against a due that isn't late yet. With no
   // override this is real today and the Payment date field is capped there.
-  const effectivePaymentDateIso = overrideDateIso ?? todayIso()
+  const effectivePaymentDateIso = overrideDateIso ?? manilaToday()
   // Only `ppd` is carried here — NOT a precomputed suggestedRebate/
   // penaltyEligible. PaymentPanel's own Payment date field is freely
   // editable independently of effectivePaymentDateIso, and the backend
@@ -507,11 +512,11 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
           <input
             type="date"
             data-testid="collections-override-date"
-            max={todayIso()}
-            value={overrideDateIso ?? todayIso()}
+            max={manilaToday()}
+            value={overrideDateIso ?? manilaToday()}
             onChange={(e) => {
               const v = e.target.value
-              if (!v || v >= todayIso()) setOverrideDateIso(null)
+              if (!v || v >= manilaToday()) setOverrideDateIso(null)
               else setOverrideDateIso(v)
             }}
             className={`${fieldClass} w-auto`}
@@ -1084,8 +1089,8 @@ function PaymentPanel({
 
   // The field is capped at real today (the override can't go forward either —
   // Oct 29 UAT DC-02), so "not today" can only mean a prior day.
-  const isBackdated = form.paymentDate.slice(0, 10) < todayIso()
-  const maxPaymentDate = todayIso()
+  const isBackdated = form.paymentDate.slice(0, 10) < manilaToday()
+  const maxPaymentDate = manilaToday()
   // Informational only, not blocking — the backend only rejects a repeat
   // same-date payment once the invoice is already fully paid (isFullyPaid,
   // handled separately above). A due that's still open can be topped up

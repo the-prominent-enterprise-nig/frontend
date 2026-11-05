@@ -16,6 +16,9 @@ export const POS_PERMISSIONS = {
   // rather than riding on TRANSACTIONS_READ: these expose unit cost and
   // margin, so they're Branch-Manager tier and withheld from Cashier.
   REPORTS_READ: 'pos:reports:read',
+  // Scenario 85 — the monthly sales quotas the Branch Scorecard reads.
+  // Business Owner only: see canManageSalesQuotas().
+  SALES_QUOTAS_MANAGE: 'pos:sales-quotas:manage',
   // Scenario 53 — its own permission, not pos:reports:read. The sales reports
   // expose unit cost and margin (Branch-Manager tier, withheld from Cashier);
   // this one exposes neither, and the cashier closing the shift is the person
@@ -150,6 +153,8 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
     'Start the install step on a service job (assign a technician) and record actual materials used',
   'pos:service-drafts:complete':
     'Complete a service job: deduct actual materials used from stock and close the job',
+  'pos:sales-quotas:manage':
+    'Set the monthly sales quota for each branch and the AC Unit + Services line',
   'pos:*': 'Wildcard full POS access',
 }
 

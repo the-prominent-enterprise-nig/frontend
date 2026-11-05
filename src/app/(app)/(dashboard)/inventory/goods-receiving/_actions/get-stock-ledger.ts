@@ -18,6 +18,10 @@ type Params = {
   endDate?: string
   /** Serial number, receiving report code, or invoice number. */
   search?: string
+  /** The client sheet's TYPE — an item type. */
+  typeId?: string
+  /** Category (the client sheet's GROUP) — a root category; matches its Subgroups too. */
+  categoryId?: string
 }
 
 export async function getStockLedger(params: Params = {}) {
@@ -34,6 +38,8 @@ export async function getStockLedger(params: Params = {}) {
     startDate: params.startDate,
     endDate: params.endDate,
     search: params.search,
+    typeId: params.typeId,
+    categoryId: params.categoryId,
   }
 
   return api.get<StockLedgerListResponse>('/inventory/stock/ledger', query)

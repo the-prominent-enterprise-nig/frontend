@@ -82,7 +82,7 @@ const CreateItemFormBaseSchema = z.object({
   // Required since WH: an untyped item fell into the wrong report row and GL
   // line (a washing machine counted under IT Products), and the Edit form is
   // the only other place a Type can be set.
-  typeId: z.string().min(1, 'Item type is required'),
+  typeId: z.string().min(1, 'Type is required'),
   modelNumber: z.string().max(60).optional(),
   // Optional — record one already-in-hand unit at creation time (date in /
   // RR # / origin / cost / serial). Left blank, no initial stock is recorded.
@@ -322,6 +322,7 @@ export const CategoryOptionSchema = z.object({
   id: z.string(),
   name: z.string(),
   status: z.string().optional(),
+  parentCategoryId: z.string().nullable().optional(),
 })
 
 export const UomOptionSchema = z.object({

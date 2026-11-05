@@ -264,11 +264,17 @@ const navItemsBySegment: Record<string, NavConfig> = {
         label: 'Stock Report',
         href: '/inventory/reports',
         icon: FileBarChart,
-        requiredPermission: INVENTORY_PERMISSIONS.REPORTS_VALUATION,
+        // Its tabs: Aging of Inventory (turnover) and Physical Inventory
+        // (stock-count read) — Scenario 87. Same list as the page's own gate.
+        requiredPermission: [
+          INVENTORY_PERMISSIONS.REPORTS_TURNOVER,
+          INVENTORY_PERMISSIONS.STOCK_COUNT_READ,
+        ],
       },
       // Counting and Finance are hidden from the nav. Their routes still load:
       // /inventory/counting (Stock Adjustments is linked from Stock Transaction
-      // above), /inventory/finance.
+      // above; its old Stock Counts tab redirects to Stock Report → Physical
+      // Inventory), /inventory/finance.
     ],
     bottom: [],
   },
@@ -914,6 +920,11 @@ const MODULE_SECTION_LABELS: Record<string, string> = {
  * by the same rules, so a page only the menu hides from this user is never
  * offered — search is a shortcut through the menu, not around it.
  */
+/** Business Owner only — see PosHubTab.ownerOnly. */
+function isOwner(session: SessionUser | null): boolean {
+  return !!session && [session.primaryRole, ...session.roles].includes('Business Owner')
+}
+
 function buildSearchEntries(args: {
   session: SessionUser | null
   filterItem: (item: NavItem) => boolean
@@ -977,6 +988,7 @@ function buildSearchEntries(args: {
         permissions: string[]
         icon?: LucideIcon
         configOnly?: boolean
+        ownerOnly?: boolean
         /** A tab that fronts a second row (POS Management) — the pages are what is searchable. */
         subTabs?: ReadonlyArray<{
           label: string
@@ -991,6 +1003,8 @@ function buildSearchEntries(args: {
       if (!parent || !filterItem(parent)) continue
       for (const tab of hub.tabs) {
         if (tab.configOnly && !canConfigurePos) continue
+        // Sales Quotas: Branch Manager's pos:*:* would match its permission.
+        if (tab.ownerOnly && !isOwner(session)) continue
         for (const page of tab.subTabs ?? [tab]) {
           if (page.permissions.length > 0 && !hasAnyPermission(page.permissions)) continue
           add({

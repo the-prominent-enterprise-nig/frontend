@@ -1,11 +1,12 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, clickStable } from './utils'
+import { gotoReady, clickStable, pickSearchableOption, confirmCountAction } from './utils'
 
 // Scenario 19, Part 1 — expected quantity on a stock count now comes from a
 // server-side snapshot of StockBalance taken when the count starts, not
-// whatever the counter types in. This exercises the "found item" path (no
-// prior system balance) since it doesn't depend on the shared dev database
-// already having stock seeded for whichever warehouse gets picked.
+// whatever the counter types in. This exercises the "found item" path (a
+// unit the snapshot didn't list — since Scenario 87, searched by serial) so
+// it doesn't depend on the shared dev database having stock seeded for
+// whichever warehouse gets picked.
 //
 // The warehouse must be a fresh, dedicated one rather than whichever shared
 // WH-0x lands at dropdown index 1 — Scenario 19 Part 5 made start()/submit()
@@ -19,48 +20,62 @@ test.describe('Inventory — Stock Count Snapshot (Scenario 19, Part 1)', () => 
     page,
   }) => {
     const warehouseCode = `E2E-CNT19P1-${Date.now()}`
+    // Unique, so the Location picker's exact match can't hit an older run's.
+    const warehouseName = `E2E Isolated Count Warehouse ${warehouseCode}`
     const createWarehouseRes = await page.request.post('/api/inventory/warehouses', {
-      data: { code: warehouseCode, name: 'E2E Isolated Count Warehouse' },
+      data: { code: warehouseCode, name: warehouseName },
     })
     if (!createWarehouseRes.ok()) {
       throw new Error(`Failed to create isolated warehouse: ${await createWarehouseRes.text()}`)
     }
-    const warehouse = (await createWarehouseRes.json()) as { id: string }
 
-    await gotoReady(page, '/inventory/counting')
+    // The found unit: registered at a second fresh warehouse, so it is
+    // "elsewhere" as far as this count is concerned.
+    const elsewhereRes = await page.request.post('/api/inventory/warehouses', {
+      data: { code: `${warehouseCode}-X`, name: `${warehouseName} (elsewhere)` },
+    })
+    const elsewhere = (await elsewhereRes.json()) as { id: string }
+    const itemsRes = await page.request.get(
+      `/api/inventory/items?search=${encodeURIComponent('Split-Type Aircon')}&limit=20`
+    )
+    const items = ((await itemsRes.json()).data ?? []) as {
+      id: string
+      name: string
+      isSerialTracked: boolean
+    }[]
+    const item = items.find((i) => i.name.includes('Split-Type Aircon') && i.isSerialTracked)
+    if (!item) throw new Error('Split-Type Aircon fixture item not found')
+    const foundSerial = `E2E-S87-FOUND-${Date.now()}`
+    const registerRes = await page.request.post('/api/inventory/serial-numbers', {
+      data: { itemId: item.id, warehouseId: elsewhere.id, serialNumbers: [foundSerial] },
+    })
+    if (!registerRes.ok()) {
+      throw new Error(`Failed to register the found unit: ${await registerRes.text()}`)
+    }
 
-    const warehouseSelect = page
-      .locator('select')
-      .filter({ has: page.locator('option', { hasText: 'Select warehouse' }) })
-    await clickStable(page.getByRole('button', { name: 'New Count' }), warehouseSelect)
-    await warehouseSelect.selectOption({ value: warehouse.id })
+    await gotoReady(page, '/inventory/reports?tab=physical-inventory')
 
+    await clickStable(
+      page.getByRole('button', { name: 'New Physical Inventory' }),
+      page.getByLabel('Location', { exact: true })
+    )
+    // Options read the warehouse's branch name, else its own name.
+    await pickSearchableOption(page, 'Location', warehouseName)
+
+    // Dated today, so creating it starts it and opens its sheet straight away.
     await expect(async () => {
-      await page.getByRole('button', { name: 'Create Session' }).click()
-      await expect(page.getByText('Count session created').first()).toBeVisible({
+      await page.getByRole('button', { name: 'Create Physical Inventory' }).click()
+      await expect(page.getByText('Physical inventory started').first()).toBeVisible({
         timeout: 3_000,
       })
     }).toPass({ timeout: 15_000 })
 
-    // Scope every subsequent "Open" click to this session's own row — the
-    // shared dev database accumulates sessions across runs.
-    const freshRow = page.locator('tr').filter({ hasText: 'Scheduled' })
-    const sessionId = await freshRow.locator('td').first().innerText()
-    const ownRow = page.locator('tr').filter({ hasText: sessionId })
-
-    const sessionHeading = page.getByRole('heading', { name: 'Count Session' })
-    await clickStable(ownRow, sessionHeading)
-
-    const countSheetTab = page.getByRole('button', { name: 'Count Sheet' })
-    await expect(async () => {
-      await page.getByRole('button', { name: 'Start Count' }).click()
-      await expect(page.getByText('Count started').first()).toBeVisible({ timeout: 3_000 })
-    }).toPass({ timeout: 15_000 })
-
-    // The tab bar must appear immediately after starting, with no need to
-    // close and reopen the modal — Part 1 also fixed the stale
-    // `selectedCount` snapshot that used to require that workaround.
-    await expect(countSheetTab).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByRole('heading', { name: 'Count Session' })).toBeVisible({
+      timeout: 5_000,
+    })
+    await expect(page.getByLabel('Scan or search the count sheet')).toBeVisible({
+      timeout: 5_000,
+    })
 
     // No manual "Expected" input exists anywhere on the count sheet now —
     // it's always a read-only display sourced from the snapshot.
@@ -80,28 +95,24 @@ test.describe('Inventory — Stock Count Snapshot (Scenario 19, Part 1)', () => 
 
     // Scope everything to this one prepended row — the sheet shows
     // most-recently-added first, so a freshly added found row is always
-    // the first ".grid-cols-12" row on the count sheet, not the last.
-    const foundRow = page.locator('.grid-cols-12').first()
-    const itemSelect = foundRow
-      .locator('select')
-      .filter({ has: page.locator('option', { hasText: 'Select found item' }) })
-    await expect(itemSelect).toBeVisible({ timeout: 5_000 })
-    await itemSelect.selectOption({ index: 1 })
+    // the first row on the count sheet, not the last.
+    // Scenario 87: every NIG item is serialized, so Add Found Item searches
+    // a unit by serial — here one the system has at another warehouse.
+    const foundRow = page.locator('tbody tr').first()
+    const finder = foundRow.getByPlaceholder('Search the serial number…')
+    await expect(finder).toBeVisible({ timeout: 5_000 })
+    await expect(async () => {
+      await finder.fill(foundSerial)
+      await page.getByText(foundSerial, { exact: true }).last().click({ timeout: 3_000 })
+    }).toPass({ timeout: 20_000 })
 
-    // A newly-added found line shows "New find" in place of an expected qty
-    // — there was never a system balance for it to snapshot.
+    // A newly-added found line shows "New find" — there was never a system
+    // record of it here for the snapshot to list — and starts ticked.
     await expect(foundRow.getByText('New find')).toBeVisible()
-
-    await foundRow.locator('input[placeholder="Counted"]').fill('5')
-
-    // Variance is computed against the (zero) system baseline for a find.
-    await expect(foundRow.getByText('+5')).toBeVisible()
+    await expect(page.getByLabel(`In store: ${foundSerial}`)).toBeChecked()
 
     // Submitting completes the count — there's no UI delete/undo path, same
     // tradeoff the adjustment spec accepts for its own fixtures.
-    await expect(async () => {
-      await page.getByRole('button', { name: 'Submit Count' }).click()
-      await expect(page.getByText('Count submitted').first()).toBeVisible({ timeout: 3_000 })
-    }).toPass({ timeout: 15_000 })
+    await confirmCountAction(page, 'Submit Count', 'Physical inventory submitted')
   })
 })

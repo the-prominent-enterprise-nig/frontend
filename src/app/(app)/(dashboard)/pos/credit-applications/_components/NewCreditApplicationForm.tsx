@@ -505,7 +505,7 @@ export default function NewCreditApplicationForm({
         <div className="border-b border-zinc-200 px-6 py-4">
           <h1 className="text-lg font-semibold text-zinc-900">New Credit Application</h1>
           <p className="mt-0.5 text-sm text-zinc-500">
-            Saved as a draft — attach documents and submit for investigation next.
+            Saved as a draft — attach documents, then submit to approve it.
           </p>
         </div>
 

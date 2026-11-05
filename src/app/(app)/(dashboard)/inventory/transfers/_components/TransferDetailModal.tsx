@@ -2273,11 +2273,20 @@ export default function TransferDetailModal({
                             <p className="truncate text-sm font-medium text-zinc-800">
                               {lineField.itemLabel ?? '—'}
                             </p>
-                            <p className="truncate text-xs text-zinc-400">
-                              {lineField.isSerial
-                                ? (lineField.serialLabel ?? '—')
-                                : `Remaining: ${lineField.dispatchedQty}`}
-                            </p>
+                            {/* Oct 29 UAT STR-02 — the serial is as dark and
+                                prominent here as in the detail table above. */}
+                            {lineField.isSerial ? (
+                              <p
+                                data-testid="receive-line-serial"
+                                className="truncate font-mono text-[13px] font-semibold text-[#0b0b0f]"
+                              >
+                                {lineField.serialLabel ?? '—'}
+                              </p>
+                            ) : (
+                              <p className="truncate text-xs text-zinc-400">
+                                Remaining: {lineField.dispatchedQty}
+                              </p>
+                            )}
                           </div>
                           <div className="shrink-0">
                             {lineField.isSerial ? (

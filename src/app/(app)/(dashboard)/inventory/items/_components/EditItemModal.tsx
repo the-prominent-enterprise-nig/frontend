@@ -393,10 +393,10 @@ export default function EditItemModal({
               )}
             </div>
 
-            {/* Category */}
+            {/* Category — the category tree (the sheet's GROUP / SUBGROUP) */}
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Category <span className="text-red-500">*</span>
+                Category<span className="text-red-500">*</span>
               </label>
               <Controller
                 name="primaryCategoryId"
@@ -406,6 +406,7 @@ export default function EditItemModal({
                     value={field.value}
                     onChange={field.onChange}
                     options={categories}
+                    placeholder="Select category or subgroup…"
                   />
                 )}
               />
@@ -414,7 +415,7 @@ export default function EditItemModal({
               )}
             </div>
 
-            {/* empty second column for Category row */}
+            {/* empty second column for the Category row */}
             <div className="hidden sm:block" />
 
             {/* Description */}
@@ -453,9 +454,9 @@ export default function EditItemModal({
               />
             </div>
 
-            {/* Item Type */}
+            {/* Type — the client sheet's TYPE */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Item Type</label>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">Type</label>
               <Controller
                 name="typeId"
                 control={control}
@@ -468,7 +469,7 @@ export default function EditItemModal({
                       value: t.id,
                       label: formatClassificationLabel(t.name),
                     }))}
-                    placeholder="Select item type…"
+                    placeholder="Select type…"
                     clearable
                   />
                 )}

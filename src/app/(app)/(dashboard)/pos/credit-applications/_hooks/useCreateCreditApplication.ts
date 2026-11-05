@@ -13,7 +13,7 @@ import type { CreateCreditApplicationFormValues } from '@/src/schema/credit/appl
  * the page never renders.
  *
  * On success it lands the user on the application they just submitted, which
- * is where they attach documents and submit for investigation next.
+ * is where they attach documents and submit it, which approves it.
  */
 export function useCreateCreditApplication() {
   const router = useRouter()

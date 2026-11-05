@@ -23,7 +23,7 @@ export function SupplierSearchCombobox({ value, onChange, onSelect, error, initi
       error={error}
       initialLabel={initialLabel}
       queryKey="suppliers-search"
-      placeholder="Search supplier by name or code…"
+      placeholder="Search service center"
       typeToSearchMessage="Type to search suppliers…"
       emptyMessage="No suppliers found"
       search={async (query) => {

@@ -2,7 +2,6 @@
 
 import { useSearchParams } from 'next/navigation'
 import { InventoryTabNav } from '@/src/components/inventory/InventoryTabNav'
-import StockCountList from '../../stock-counts/_components/StockCountList'
 import MobileCountInterface from '../../mobile-count/_components/MobileCountInterface'
 import BatchList from '../../batches/_components/BatchList'
 import AdjustmentList from '../../adjustments/_components/AdjustmentList'
@@ -17,8 +16,9 @@ import type { SessionUser } from '@/src/libs/guards/permission'
 // Expiry was removed the same way as Cycle Schedules — it only ever read
 // /inventory/batches (the exact same endpoints Batches already calls),
 // with none of Batches' create/status/hold actions.
+// Stock Counts moved to Stock Report → Physical Inventory (Scenario 87);
+// counting/page.tsx redirects the bare hub and ?tab=counts there.
 const TABS = [
-  { id: 'counts', label: 'Stock Counts' },
   { id: 'adjustments', label: 'Stock Adjustments' },
   { id: 'mobile', label: 'Mobile Count' },
   { id: 'batches', label: 'Batches' },
@@ -33,19 +33,17 @@ const TABS = [
 
 export function CountingHub({ session }: { session: SessionUser }) {
   const searchParams = useSearchParams()
-  const tab = searchParams.get('tab') ?? 'counts'
+  const tab = searchParams.get('tab') ?? 'adjustments'
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50">
       <InventoryTabNav tabs={TABS} />
-      {tab === 'adjustments' ? (
-        <AdjustmentList session={session} />
-      ) : tab === 'mobile' ? (
+      {tab === 'mobile' ? (
         <MobileCountInterface session={session} />
       ) : tab === 'batches' ? (
         <BatchList session={session} />
       ) : (
-        <StockCountList session={session} />
+        <AdjustmentList session={session} />
       )}
     </div>
   )

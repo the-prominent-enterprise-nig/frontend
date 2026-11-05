@@ -8,16 +8,19 @@ import { getAgingReport } from '../_actions/get-aging-report'
 import { getReconciliationReport } from '../_actions/get-reconciliation-report'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getCategories, getItemTypes } from '../../items/_actions/get-lookup-data'
-import type { SerialAgingBucket } from '@/src/schema/inventory/reports'
+import type { SerialAgingBucket, UnitClassification } from '@/src/schema/inventory/reports'
+import type { CategoryOption } from '@/src/schema/inventory/items'
 
 export type ReportTab = 'valuation' | 'turnover' | 'aging' | 'reconciliation'
 
-/** The aging report's filter row; each change reloads the report. */
+/** The aging report's filters, as last processed. On screen `typeId` is the
+ * Type (item type) and `categoryId` the Category (a root matches its subgroups). */
 export interface AgingFilters {
   asOf: string
   warehouseId?: string
   categoryId?: string
   typeId?: string
+  classification?: UnitClassification
 }
 
 /** Today as YYYY-MM-DD in the viewer's own timezone. */
@@ -28,6 +31,33 @@ function todayIso(): string {
 }
 
 const PAGE_SIZE = 20
+
+/** Roots by name, subgroups as "Root › Subgroup", sorted so each root sits
+ * just above its own subgroups. */
+function withSubgroupLabels(categories: CategoryOption[]): { id: string; name: string }[] {
+  const nameById = new Map(categories.map((c) => [c.id, c.name]))
+  return categories
+    .map((c) => {
+      const parent = c.parentCategoryId ? nameById.get(c.parentCategoryId) : undefined
+      return { id: c.id, name: parent ? `${parent} › ${c.name}` : c.name }
+    })
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/**
+ * The aging report's Category options: every category (roots and their
+ * subgroups, ≈400, so past the lookup's default 200), narrowed to those
+ * holding items of the chosen Type (item type) when one is picked.
+ */
+export function useAgingCategoryOptions(typeId?: string): { id: string; name: string }[] {
+  const query = useQuery({
+    queryKey: ['inventory-categories-by-type-lookup', typeId ?? 'all'],
+    queryFn: () => getCategories({ limit: 1000, typeId }),
+    staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
+  })
+  return useMemo(() => withSubgroupLabels(query.data?.data?.data ?? []), [query.data])
+}
 
 export function useInventoryReports() {
   const [tab, setTab] = useState<ReportTab>('aging')
@@ -50,6 +80,9 @@ export function useInventoryReports() {
   )
   const [agingAsOf, setAgingAsOf] = useState<string>(todayIso)
   const [agingTypeId, setAgingTypeId] = useState<string | undefined>(undefined)
+  const [agingClassification, setAgingClassification] = useState<UnitClassification | undefined>(
+    undefined
+  )
 
   // Reconciliation-specific — no pagination (backend caps each section at
   // 50 sample rows server-side), just an optional date range.
@@ -107,11 +140,21 @@ export function useInventoryReports() {
       search: search || undefined,
       bucket: agingBucketFilter,
       typeId: agingTypeId,
+      classification: agingClassification,
       asOf: agingAsOf,
       page,
       limit: PAGE_SIZE,
     }),
-    [warehouseFilter, categoryFilter, search, agingBucketFilter, agingTypeId, agingAsOf, page]
+    [
+      warehouseFilter,
+      categoryFilter,
+      search,
+      agingBucketFilter,
+      agingTypeId,
+      agingClassification,
+      agingAsOf,
+      page,
+    ]
   )
 
   const agingQuery = useQuery({
@@ -138,12 +181,6 @@ export function useInventoryReports() {
   const warehousesQuery = useQuery({
     queryKey: ['inventory-warehouses-lookup'],
     queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const categoriesQuery = useQuery({
-    queryKey: ['inventory-categories-lookup'],
-    queryFn: () => getCategories(),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -184,6 +221,7 @@ export function useInventoryReports() {
       setAgingBucketFilter(undefined)
       setAgingAsOf(todayIso())
       setAgingTypeId(undefined)
+      setAgingClassification(undefined)
       setReconStartDate(undefined)
       setReconEndDate(undefined)
       resetPage()
@@ -224,12 +262,14 @@ export function useInventoryReports() {
       warehouseId: warehouseFilter,
       categoryId: categoryFilter,
       typeId: agingTypeId,
+      classification: agingClassification,
     } satisfies AgingFilters,
     applyAgingFilters: (next: AgingFilters) => {
       setAgingAsOf(next.asOf || todayIso())
       setWarehouseFilter(next.warehouseId)
       setCategoryFilter(next.categoryId)
       setAgingTypeId(next.typeId)
+      setAgingClassification(next.classification)
       resetPage()
     },
     agingData: agingQuery.data?.data,
@@ -250,7 +290,6 @@ export function useInventoryReports() {
     refetchReconciliation: () => reconciliationQuery.refetch(),
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
-    categoryOptions: categoriesQuery.data?.data?.data ?? [],
     typeOptions: typesQuery.data?.data ?? [],
   }
 }

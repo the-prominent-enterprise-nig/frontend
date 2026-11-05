@@ -10,6 +10,7 @@ import {
   COUNT_TYPE_LABELS,
 } from '@/src/schema/inventory/stock-counts'
 import type { ApiResponse } from '@/src/libs/api/client'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
 type WarehouseOption = {
   id: string
@@ -78,8 +79,10 @@ export default function CreateCountModal({
       <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900">New Count Session</h2>
-            <p className="mt-0.5 text-sm text-zinc-500">Schedule a stock count for a location.</p>
+            <h2 className="text-lg font-semibold text-zinc-900">New Physical Inventory</h2>
+            <p className="mt-0.5 text-sm text-zinc-500">
+              Schedule a physical inventory for a location.
+            </p>
           </div>
           <button
             type="button"
@@ -112,14 +115,17 @@ export default function CreateCountModal({
                   name="warehouseId"
                   control={control}
                   render={({ field }) => (
-                    <select {...field} className={`${fieldClass} bg-white`}>
-                      <option value="">Select location…</option>
-                      {warehouses.map((wh) => (
-                        <option key={wh.id} value={wh.id}>
-                          {wh.branch?.name ?? wh.name}
-                        </option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      value={field.value ?? ''}
+                      onChange={(v) => field.onChange(v)}
+                      placeholder="Select location…"
+                      ariaLabel="Location"
+                      portal
+                      options={warehouses.map((wh) => ({
+                        value: wh.id,
+                        label: wh.branch?.name ?? wh.name,
+                      }))}
+                    />
                   )}
                 />
               )}
@@ -137,13 +143,17 @@ export default function CreateCountModal({
                   name="countType"
                   control={control}
                   render={({ field }) => (
-                    <select {...field} className={`${fieldClass} bg-white`}>
-                      {(['full', 'cycle', 'spot'] as const).map((t) => (
-                        <option key={t} value={t}>
-                          {COUNT_TYPE_LABELS[t]}
-                        </option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      value={field.value ?? ''}
+                      onChange={(v) => field.onChange(v)}
+                      placeholder="Select count type…"
+                      ariaLabel="Count Type"
+                      portal
+                      options={(['full', 'cycle', 'spot'] as const).map((t) => ({
+                        value: t,
+                        label: COUNT_TYPE_LABELS[t],
+                      }))}
+                    />
                   )}
                 />
               </div>
@@ -178,7 +188,7 @@ export default function CreateCountModal({
               className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
             >
               {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isSubmitting ? 'Creating…' : 'Create Session'}
+              {isSubmitting ? 'Creating…' : 'Create Physical Inventory'}
             </button>
           </div>
         </form>
