@@ -7,6 +7,8 @@ import { FileAttachments } from '@/src/libs/data/AccountingV2Data'
 import { uploadExpenseAttachment } from '../_actions/upload-expense-attachment'
 import { showToast } from '@/src/components/ui/toast'
 import { ConfirmDialog } from '@/src/components/ui/Modal'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
 
 // FileAttachment is polymorphic on (entityType, entityId), so attaching to a
 // new record type needs no schema change — just a stable string here. Matches
@@ -48,6 +50,8 @@ export default function ExpenseAttachmentsPanel({
   staged = [],
   onStagedChange,
 }: Props) {
+  const { data: me } = useMe()
+  const canDetach = !!me && can(me, 'files:attachments:delete')
   const [uploading, setUploading] = useState(false)
   // The attachment awaiting its delete confirmation. Held by name as well as
   // id so the dialog can say which file it is about.
@@ -126,12 +130,15 @@ export default function ExpenseAttachmentsPanel({
         key: `staged-${i}`,
         name: file.name,
         onRemove: () => onStagedChange?.(staged.filter((_, j) => j !== i)),
+        removable: true,
         href: undefined,
       }))
     : attachments.map((a) => ({
         key: a.id,
         name: a.file.originalName,
         onRemove: () => setDetaching({ id: a.id, name: a.file.originalName }),
+        // Removing a saved attachment takes files:attachments:delete.
+        removable: canDetach,
         href: `/api/files/${a.file.id}/download`,
       }))
 
@@ -203,7 +210,7 @@ export default function ExpenseAttachmentsPanel({
                   <span className="text-zinc-400">(pending save)</span>
                 </span>
               )}
-              {!readOnly && (
+              {!readOnly && row.removable && (
                 <button
                   type="button"
                   onClick={row.onRemove}

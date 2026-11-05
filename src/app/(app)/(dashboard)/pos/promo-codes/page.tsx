@@ -12,6 +12,8 @@ import { PosDate } from '../_components/PosDate'
 import type { PromoCode, CreatePromoCodeInput, UpdatePromoCodeInput } from '@/src/schema/pos'
 import { useRequirePermission } from '@/src/libs/guards/useRequirePermission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
 
 const statusColor: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
@@ -32,6 +34,9 @@ type ModalState =
   | { type: 'delete'; promo: PromoCode }
 
 export default function PromoCodesPage() {
+  // Shown only to those the backend lets through (UAT review 2026-11-04).
+  const { data: me } = useMe()
+  const canManage = !!me && can(me, 'pos:promo-codes:manage')
   const { session, status } = useRequirePermission(POS_PERMISSIONS.PROMO_CODES_READ)
   const { data, isLoading, isFetching, refetch } = usePromoCodes()
   const createMutation = useCreatePromoCode()
@@ -189,15 +194,17 @@ export default function PromoCodesPage() {
                         >
                           <Pencil size={14} />
                         </button>
-                        <button
-                          onClick={() => {
-                            setError('')
-                            setModal({ type: 'delete', promo: p })
-                          }}
-                          className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        {canManage && (
+                          <button
+                            onClick={() => {
+                              setError('')
+                              setModal({ type: 'delete', promo: p })
+                            }}
+                            className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

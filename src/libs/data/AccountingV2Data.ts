@@ -1180,6 +1180,9 @@ export type CreditMemoType =
   | 'billing_adjustment'
   | 'goodwill'
   | 'x_deal'
+  // Waives an installment account's pending penalties; voided through
+  // PenaltyWaiverMemos.
+  | 'penalty_waiver'
   // Scenario 79 — the interest an early settlement forgives; issued with the
   // payoff from the CRM account page, voided through EarlySettlementMemos.
   | 'early_settlement'
@@ -1288,6 +1291,11 @@ export const XDealMemos = {
 /** Scenario 79 — voiding one reopens the installment account it settled. */
 export const EarlySettlementMemos = {
   void: (id: string) => api.post<CreditMemo>(`/credit-memos/early-settlement/${id}/void`, {}),
+}
+
+/** Voiding one makes the waived penalties apply again. */
+export const PenaltyWaiverMemos = {
+  void: (id: string) => api.post<CreditMemo>(`/credit-memos/penalty-waiver/${id}/void`, {}),
 }
 
 // ============ Debit Memos ============

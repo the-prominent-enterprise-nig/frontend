@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, loginAs } from './utils'
+import { clickStable, gotoReady, loginAs } from './utils'
 
 // Access Levels Part 2: the client sheet's limits, as each role sees them.
 // The server enforces them (backend test/access-level-limits.e2e-spec.ts);
@@ -19,8 +19,10 @@ async function sidebarHrefs(page: Page): Promise<string[]> {
 test.describe('Access Levels Part 2', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
-  test('Treasury Clerk: New Receipts offers acknowledgment only, no import', async ({ page }) => {
-    await loginAs(page, email('treasury-clerk'), PASSWORD)
+  test('Finance Clerk - Receipts: New Receipts offers acknowledgment only, no import', async ({
+    page,
+  }) => {
+    await loginAs(page, email('finance-clerk-receipts'), PASSWORD)
     await gotoReady(page, '/pos/collections/acknowledgement')
     await expect(page.getByRole('heading', { name: 'New Receipts' })).toBeVisible()
     await expect(page.getByRole('button', { name: /Import receipts/ })).toHaveCount(0)
@@ -30,12 +32,32 @@ test.describe('Access Levels Part 2', () => {
     await expect(page.getByRole('button', { name: 'Collection', exact: true })).toHaveCount(0)
   })
 
-  test('Receptionist: no Cash & Banking; "Paid from" is their branch petty cash', async ({
+  test('Branch Receptionist: no Cash & Banking; "Paid from" is their branch petty cash', async ({
     page,
   }) => {
-    await loginAs(page, branchEmail('receptionist'), PASSWORD)
+    await loginAs(page, branchEmail('branch-receptionist'), PASSWORD)
     await gotoReady(page, '/accounting/expenses')
     expect(await sidebarHrefs(page)).not.toContain('/accounting/cash-banking')
+    const res = await page.request.get('/api/bank-accounts/options?purpose=expense-fund')
+    expect(res.status()).toBe(200)
+    const funds = (await res.json()) as { name: string }[]
+    expect(funds.length).toBeGreaterThan(0)
+    expect(funds.every((f) => /^Petty Cash Fund - /.test(f.name))).toBe(true)
+  })
+
+  test('Cashier: Expenses, CRM and Stock Transaction open; "Paid from" is their branch petty cash', async ({
+    page,
+  }) => {
+    await loginAs(page, 'technova.b1.cashier@test.com', PASSWORD)
+    await gotoReady(page, '/pos')
+    const sidebar = await sidebarHrefs(page)
+    for (const href of ['/accounting', '/crm', '/inventory', '/pos']) {
+      expect(sidebar).toContain(href)
+    }
+    for (const path of ['/accounting/expenses', '/crm/customers', '/inventory/stock-transaction']) {
+      await gotoReady(page, path)
+      await expect(page).not.toHaveURL(/\/403/)
+    }
     const res = await page.request.get('/api/bank-accounts/options?purpose=expense-fund')
     expect(res.status()).toBe(200)
     const funds = (await res.json()) as { name: string }[]
@@ -46,7 +68,7 @@ test.describe('Access Levels Part 2', () => {
   test('Accounting opens on the first page a clerk can use, not the financial dashboard', async ({
     page,
   }) => {
-    await loginAs(page, email('expense-clerk'), PASSWORD)
+    await loginAs(page, email('accounting-clerk-expenses-loans'), PASSWORD)
     await gotoReady(page, '/accounting')
     await expect(page).not.toHaveURL(/\/accounting$/)
     await expect(page).not.toHaveURL(/\/403/)
@@ -55,26 +77,35 @@ test.describe('Access Levels Part 2', () => {
   test('POS Reservations opens for a POS role, and is hidden from a partial one', async ({
     page,
   }) => {
-    await loginAs(page, email('sales-support'), PASSWORD)
+    await loginAs(page, email('ar-clerks'), PASSWORD)
     await gotoReady(page, '/pos/reservations')
     await expect(page).not.toHaveURL(/\/403/)
     await page.context().clearCookies()
-    await loginAs(page, email('deposit-clerk'), PASSWORD)
+    await loginAs(page, email('accounting-clerk-deposits'), PASSWORD)
     await gotoReady(page, '/pos')
     expect(await sidebarHrefs(page)).not.toContain('/pos/reservations')
   })
 })
 
 // Business Owner (the default storage state): the Account limits page.
-test("Settings: Expense Clerk's account limits show the sheet's two accounts", async ({ page }) => {
+test("Settings: Accounting Clerk - Expenses & Loans's account limits show the sheet's two accounts", async ({
+  page,
+}) => {
   const roles = (await (await page.request.get('/api/roles')).json()) as
     | { id: string; name: string }[]
     | { data: { id: string; name: string }[] }
   const list = Array.isArray(roles) ? roles : roles.data
-  const role = list.find((r) => r.name === 'Expense Clerk')!
+  const role = list.find((r) => r.name === 'Accounting Clerk - Expenses & Loans')!
   await gotoReady(page, `/settings/roles/${role.id}`)
-  await page.getByRole('link', { name: /Account limits/ }).click()
-  await expect(page.getByRole('heading', { name: 'Expense Clerk' })).toBeVisible()
+  // Retried until the limits page shows: a click before hydration is lost.
+  await clickStable(
+    page.getByRole('link', { name: /Account limits/ }),
+    page.getByRole('button', { name: 'Save limits' }),
+    { timeout: 30_000 }
+  )
+  await expect(
+    page.getByRole('heading', { name: 'Accounting Clerk - Expenses & Loans' })
+  ).toBeVisible()
   await expect(page.getByText('Revolving Fund - Panay')).toBeVisible()
   await expect(page.getByText('Panay Special Fund - Construction')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Save limits' })).toBeVisible()

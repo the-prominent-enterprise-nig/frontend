@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
+import { can, canAny } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import CollectionsScreen from './_components/CollectionsScreen'
 
@@ -11,7 +11,9 @@ export const metadata = {
 export default async function CollectionsPage() {
   const session = await getSessionOrNull()
   if (!session) redirect('/login')
-  if (!can(session, POS_PERMISSIONS.COLLECTIONS_MANAGE)) redirect('/403')
+  // View Only (pos:customers:read) may look; collecting needs the collect permission.
+  if (!canAny(session, [POS_PERMISSIONS.COLLECTIONS_MANAGE, POS_PERMISSIONS.CUSTOMERS_READ]))
+    redirect('/403')
 
-  return <CollectionsScreen />
+  return <CollectionsScreen canCollect={can(session, POS_PERMISSIONS.COLLECTIONS_MANAGE)} />
 }

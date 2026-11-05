@@ -16,7 +16,7 @@ export const metadata = { title: 'Customer Ledger | POS' }
  * No new data is exposed by this page. `GET /crm/customers/:id/ledger` is
  * gated on `crm:customers:read`, which a Cashier has held since Scenario 23
  * — the block was never the data, only that the CRM *page* address bounces
- * off /403 for a role confined to the `pos` module by ROLE_MODULE_ACCESS.
+ * off /403 for a role that can't open the `crm` module.
  * Same one-component-two-doors treatment as CustomerForm and Customer360.
  *
  * Deliberately read-only (2026-09-21): `canEdit` is hardcoded false rather

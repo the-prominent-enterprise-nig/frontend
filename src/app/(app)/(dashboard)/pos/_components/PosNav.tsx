@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { usePosOverridePendingCount } from '../_hooks/usePosOverridePendingCount'
 import { isPosTabActive, posNavModel, resolvePosTabHref } from '../_shared/pos-hubs'
 
 // Where the tabs come from: _shared/pos-hubs.ts. Pages no hub owns — Product
@@ -22,9 +21,6 @@ const TAB_IDLE = 'border-transparent text-gray-500 hover:border-gray-300 hover:t
 export function PosNav({ canConfigurePos, visibleHrefs }: NavProps) {
   const pathname = usePathname()
   const model = posNavModel(pathname, visibleHrefs, canConfigurePos)
-
-  const overrideTab = model?.tabs.find((tab) => tab.id === 'override-review')
-  const overridePending = usePosOverridePendingCount(!!overrideTab)
 
   if (!model) return null
 
@@ -60,7 +56,6 @@ export function PosNav({ canConfigurePos, visibleHrefs }: NavProps) {
       {model.tabs.map((tab) => {
         const href = resolvePosTabHref(tab, visibleHrefs)
         if (!href) return null
-        const badge = tab === overrideTab && overridePending > 0 ? overridePending : 0
         return (
           <Link
             key={tab.id}
@@ -69,11 +64,6 @@ export function PosNav({ canConfigurePos, visibleHrefs }: NavProps) {
           >
             <tab.icon className="h-3.5 w-3.5" />
             {tab.label}
-            {badge > 0 && (
-              <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-semibold leading-none text-white">
-                {badge}
-              </span>
-            )}
           </Link>
         )
       })}

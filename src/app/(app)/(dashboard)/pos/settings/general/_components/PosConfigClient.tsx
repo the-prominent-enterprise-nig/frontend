@@ -125,7 +125,7 @@ export default function PosConfigClient() {
             </div>
           </div>
 
-          {/* Scenario 71 — where the end-of-day Override Review starts flagging */}
+          {/* Scenario 71 — where the Price Override Log starts flagging */}
           <div className="border-t border-gray-100 pt-4">
             <label
               htmlFor="price-override-flag-pct"
@@ -134,8 +134,8 @@ export default function PosConfigClient() {
               Price Override Flag Threshold (%)
             </label>
             <p className="mb-2 text-xs text-gray-500">
-              A price override charged further below list than this is flagged in the end-of-day
-              Override Review. It never blocks a sale.
+              A price override charged further below list than this is flagged in the Price Override
+              Log. It never blocks a sale.
             </p>
             <div className="flex items-center gap-2">
               <input

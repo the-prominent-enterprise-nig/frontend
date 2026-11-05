@@ -15,31 +15,27 @@ import {
   deleteCustomers,
 } from './utils'
 
-// Scenario 71 Part 4 — the end-of-day Override Review. Every price override
-// the floor took leaves an entry; a manager approves or rejects each (a
-// rejection needs a note and reverses nothing) and signs the branch's day off.
-// There is no PIN anywhere on the page. The backend rules are covered by
-// backend/test/pos-override-review.e2e-spec.ts (OR-01…16); this spec covers the
-// page that drives them. Case IDs (OR-F…) match
-// docs/scenario-71-price-override-end-of-day-review-plan.md.
+// Scenario 71 Part 4 — the Price Override Log (it was the Override Review).
+// Every price override the floor took leaves an entry, and the page is a record
+// of them: nothing is approved, rejected or signed off, and there is no PIN
+// anywhere (ticket "Remove approval in Override" / POS-22). Head Office reads
+// every branch over any period. The backend rules are covered by
+// backend/test/pos-override-review.e2e-spec.ts (OR-01…); this spec covers the
+// page. Case IDs (OR-F…) match
+// docs/scenario-71-price-override-end-of-day-review-plan.md where they survive.
 //
 // The sales are posted through the API so the page is exercised, not checkout
 // (Part 1's spec already covers the counter). Each sale is a price override on
 // a fresh item this spec builds and prices on its own list.
 
 const PREFIX = 'E2E OverrideReview'
-// Not Bago: signing a day off is permanent, and Bago is B1 — the branch
-// backend/test/pos-override-review.e2e-spec.ts reviews its own sales on. Nothing
-// else touches Sagay. Each run signs off one more day there (the sale rolls on
-// to the next open one), so the search for a sale's review day looks far ahead.
+// Not Bago: backend/test/pos-override-review.e2e-spec.ts runs its own sales there.
 const BRANCH = 'Sagay'
 const LIST_PRICE = 12000
 // 16.7% under list — past the default 10% flag threshold.
 const DEEP_PRICE = 10000
 // 0.8% under list — an override, but not flagged.
 const SHALLOW_PRICE = 11900
-// 25% under list — flagged, and the one this spec rejects.
-const REJECT_PRICE = 9000
 
 type Fixtures = {
   itemId: string
@@ -57,8 +53,7 @@ type Sale = { id: string; si: string }
 let fx: Fixtures
 let deepSale: Sale
 let shallowSale: Sale
-let rejectSale: Sale
-let reviewDay: string
+let today: string
 const createdCustomerIds: string[] = []
 
 async function ownerRequest(
@@ -223,33 +218,15 @@ async function sell(request: APIRequestContext, price: number, label: string): P
   return { id: (await res.json()).id as string, si }
 }
 
-function isoDayOffset(from: string, days: number): string {
-  const [y, m, d] = from.split('-').map(Number)
-  const at = new Date(y, m - 1, d + days)
+/** The local calendar day, the way the page keys it. */
+function isoDayOffset(days: number): string {
+  const now = new Date()
+  const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days)
   return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`
 }
 
-/** The review day a sale landed on — today, unless the branch already signed
- * that day off (an earlier run of this spec), which rolls it forward. */
-async function findReviewDay(request: APIRequestContext, si: string): Promise<string> {
-  const now = new Date()
-  const today = isoDayOffset(
-    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
-    0
-  )
-  for (let offset = 0; offset < 90; offset++) {
-    const day = isoDayOffset(today, offset)
-    const res = await request.get('/api/pos/override-review', {
-      params: { date: day, branchId: fx.branchId },
-    })
-    const body = (await res.json()) as { entries?: { salesInvoiceNumber: string | null }[] }
-    if (body.entries?.some((e) => e.salesInvoiceNumber === si)) return day
-  }
-  throw new Error(`No review day found for ${si}`)
-}
-
-const reviewUrl = (day: string) =>
-  `/pos/override-review?date=${day}&branchId=${fx.branchId}&branchName=${BRANCH}`
+const logUrl = (query = '') =>
+  `/pos/override-review?branchId=${fx.branchId}${query ? `&${query}` : ''}`
 
 const entryFor = (page: Page, si: string) =>
   page.getByTestId('override-entry').filter({ hasText: si })
@@ -263,7 +240,7 @@ async function openDetails(entry: Locator) {
 
 test.describe.configure({ mode: 'serial' })
 
-test.describe('POS Override Review — decide the day, sign it off (Scenario 71 Part 4)', () => {
+test.describe('POS Price Override Log — a record, nothing to approve (Scenario 71 Part 4)', () => {
   test.beforeAll(async ({ playwright }, testInfo) => {
     const request = await ownerRequest(playwright, testInfo.project.use.baseURL!)
     await sweepE2ECustomers(request, PREFIX)
@@ -272,8 +249,7 @@ test.describe('POS Override Review — decide the day, sign it off (Scenario 71 
     fx = await createFixtures(request)
     deepSale = await sell(request, DEEP_PRICE, 'deep')
     shallowSale = await sell(request, SHALLOW_PRICE, 'shallow')
-    rejectSale = await sell(request, REJECT_PRICE, 'reject')
-    reviewDay = await findReviewDay(request, deepSale.si)
+    today = isoDayOffset(0)
     await request.dispose()
   })
 
@@ -288,29 +264,27 @@ test.describe('POS Override Review — decide the day, sign it off (Scenario 71 
     await request.dispose()
   })
 
-  test("OR-F01: the page lists the day's overrides with the figures, and the sidebar item shows what is pending", async ({
+  test("OR-F01: the page lists the period's overrides with the figures, under the new name", async ({
     page,
   }) => {
-    await gotoReady(page, reviewUrl(reviewDay))
+    await gotoReady(page, logUrl())
 
-    await expect(page.getByRole('heading', { name: 'Override Review' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: 'Price Override Log' })).toBeVisible({
       timeout: 20_000,
     })
-    for (const sale of [deepSale, shallowSale, rejectSale]) {
+    for (const sale of [deepSale, shallowSale]) {
       await expect(entryFor(page, sale.si)).toBeVisible()
     }
 
     const deep = entryFor(page, deepSale.si)
-    await expect(deep).toHaveAttribute('data-status', 'pending')
     // The line itself: what was charged, the discount in pesos and percent, the
-    // branch always (this page is filtered to one), and the customer in place of
-    // the old Seller column.
+    // date it was rung up, its branch and customer, and who rang it.
     await expect(deep).toContainText('₱10,000.00')
     await expect(deep).toContainText('₱2,000.00')
+    await expect(deep.getByTestId('entry-date')).toContainText(/[A-Z][a-z]{2} \d{1,2} \d{2}:\d{2}/)
     await expect(deep.getByTestId('entry-branch')).toHaveText(BRANCH)
     await expect(deep.getByTestId('entry-customer')).toContainText(`${PREFIX} deep`)
     await expect(deep).toContainText('Over 10%')
-    await expect(deep).not.toContainText('Seller')
 
     // Opening it shows the whole receipt.
     await openDetails(deep)
@@ -319,23 +293,23 @@ test.describe('POS Override Review — decide the day, sign it off (Scenario 71 
     await expect(deep).toContainText('Kilala ni Boss deep')
     const details = deep.getByTestId('entry-details')
     await expect(details).toContainText('Sale total')
+    await expect(details).toContainText('Cashier')
     await expect(details).toContainText('₱10,000.00')
     // A cash sale has no installment account to open.
     await expect(deep.getByTestId('entry-ia-link')).toHaveCount(0)
 
     const entries = Number(await page.getByTestId('kpi-entries').locator('p').nth(1).textContent())
-    expect(entries).toBeGreaterThanOrEqual(3)
+    expect(entries).toBeGreaterThanOrEqual(2)
 
-    const nav = page.getByRole('link', { name: /Override Review/ }).first()
-    await expect(nav).toBeVisible()
-    // The pending count rides on the link as a badge.
-    await expect(nav).toContainText(/\d+/)
+    // The sidebar row and the tab carry the new name.
+    await expect(page.getByRole('link', { name: 'Price Override Log' }).first()).toBeVisible()
+    await expect(page.getByRole('link', { name: /^Override Review/ })).toHaveCount(0)
   })
 
-  test('OR-F02: Flagged shows only what crossed the threshold or skipped a rule; Pending shows what still waits', async ({
+  test('OR-F02: Flagged shows only what crossed the threshold or skipped a rule', async ({
     page,
   }) => {
-    await gotoReady(page, reviewUrl(reviewDay))
+    await gotoReady(page, logUrl())
     await expect(entryFor(page, deepSale.si)).toBeVisible({ timeout: 20_000 })
 
     await expect(entryFor(page, deepSale.si)).toContainText('Over 10%')
@@ -343,149 +317,104 @@ test.describe('POS Override Review — decide the day, sign it off (Scenario 71 
 
     await page.getByTestId('tab-flagged').click()
     await expect(entryFor(page, deepSale.si)).toBeVisible()
-    await expect(entryFor(page, rejectSale.si)).toBeVisible()
     await expect(entryFor(page, shallowSale.si)).toHaveCount(0)
 
-    await page.getByTestId('tab-pending').click()
+    await page.getByTestId('tab-all').click()
     await expect(entryFor(page, shallowSale.si)).toBeVisible()
   })
 
-  test('OR-F03: Approve is one click — no PIN, no note — and the page says who decided', async ({
+  test('OR-F03: nothing to approve — no Approve, Reject, Approve all or Sign off, no Pending, no PIN, no badge', async ({
     page,
   }) => {
-    await gotoReady(page, reviewUrl(reviewDay))
-    const deep = entryFor(page, deepSale.si)
-    await expect(deep).toBeVisible({ timeout: 20_000 })
+    await gotoReady(page, logUrl())
+    await expect(entryFor(page, deepSale.si)).toBeVisible({ timeout: 20_000 })
 
-    await deep.getByTestId('entry-approve').click()
-
-    await expect(deep).toHaveAttribute('data-status', 'approved')
-    // The Decision column: the status; the details say who and when.
-    await expect(deep).toContainText('Approved')
-    await openDetails(deep)
-    await expect(deep.getByTestId('entry-decision')).toContainText(/^by \S/)
-    // No PIN prompt came up at any point.
+    for (const id of ['entry-approve', 'entry-reject', 'entry-change', 'approve-all', 'sign-off']) {
+      await expect(page.getByTestId(id)).toHaveCount(0)
+    }
+    await expect(page.getByTestId('tab-pending')).toHaveCount(0)
+    await expect(page.getByTestId('kpi-pending')).toHaveCount(0)
+    await expect(page.getByTestId('kpi-rejected')).toHaveCount(0)
+    await expect(page.getByTestId('override-signoffs')).toHaveCount(0)
+    await expect(page.getByTestId('pending-days')).toHaveCount(0)
+    await expect(page.getByText(/Decision|Sign off|Approve all/)).toHaveCount(0)
     await expect(page.getByLabel(/PIN/i)).toHaveCount(0)
+
+    // No pending-count badge on the sidebar's Approvals & Reviews row.
+    await expect(
+      page.locator('aside').getByRole('link', { name: /^Approvals & Reviews$/ })
+    ).toBeVisible()
+
+    // And the old routes are gone.
+    for (const [method, url] of [
+      ['post', `/api/pos/override-review/${deepSale.id}/decide`],
+      ['post', '/api/pos/override-review/approve-all'],
+      ['post', '/api/pos/override-review/sign-off'],
+      ['get', '/api/pos/override-review/pending-count'],
+    ] as const) {
+      const res = await page.request[method](url, method === 'post' ? { data: {} } : undefined)
+      expect(res.status(), url).toBe(404)
+    }
   })
 
-  test('OR-F04: Reject needs a note, and only records the decision — the sale stays', async ({
+  test('OR-F04: the log reads a period — From and To keep in order, a single day is a day, and a link opens on one', async ({
     page,
   }) => {
-    await gotoReady(page, reviewUrl(reviewDay))
-    const entry = entryFor(page, rejectSale.si)
-    await expect(entry).toBeVisible({ timeout: 20_000 })
+    await gotoReady(page, logUrl())
+    await expect(entryFor(page, deepSale.si)).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByTestId('log-from')).toHaveValue(today)
+    await expect(page.getByTestId('log-to')).toHaveValue(today)
 
-    await entry.getByTestId('entry-reject').click()
-    const confirm = entry.getByTestId('reject-confirm')
-    await expect(confirm).toBeDisabled()
+    // A week up to today still has the sales (oldest first, so they sit at the end).
+    await page.getByTestId('log-from').fill(isoDayOffset(-7))
+    await expect(page.getByTestId('log-from')).toHaveValue(isoDayOffset(-7))
+    await expect(entryFor(page, deepSale.si)).toBeVisible({ timeout: 20_000 })
 
-    await entry.getByTestId('reject-note').fill('Discount too deep for this customer')
-    await expect(confirm).toBeEnabled()
-    await confirm.click()
+    // To moves freely after From; moved back before it, To drags From along.
+    await page.getByTestId('log-to').fill(isoDayOffset(-3))
+    await expect(page.getByTestId('log-to')).toHaveValue(isoDayOffset(-3))
+    await expect(page.getByTestId('log-from')).toHaveValue(isoDayOffset(-7))
+    await page.getByTestId('log-to').fill(isoDayOffset(-9))
+    await expect(page.getByTestId('log-from')).toHaveValue(isoDayOffset(-9))
+    // That window is before today's sales, so they are not in it.
+    await expect(entryFor(page, deepSale.si)).toHaveCount(0)
+    await expect(page.getByTestId('override-empty')).toContainText('No exceptions')
 
-    await expect(entry).toHaveAttribute('data-status', 'rejected')
-    await openDetails(entry)
-    await expect(entry.getByTestId('entry-decision')).toContainText(
-      'Discount too deep for this customer'
-    )
-
-    // Nothing was reversed — the sale is still a completed sale.
-    await page.waitForTimeout(500)
-    const request = page.request
-    const res = await request.get(`/api/pos/transactions/${rejectSale.id}`)
-    expect(res.ok()).toBeTruthy()
-    expect((await res.json()).status).not.toBe('voided')
+    // A link opens straight on a period.
+    await gotoReady(page, logUrl(`from=${isoDayOffset(-2)}&to=${today}`))
+    await expect(page.getByTestId('log-from')).toHaveValue(isoDayOffset(-2))
+    await expect(entryFor(page, deepSale.si)).toBeVisible({ timeout: 20_000 })
   })
 
-  test('OR-F05: sign-off waits for every decision; approve-all clears the rest; signing off locks the day', async ({
-    page,
-  }) => {
-    await gotoReady(page, reviewUrl(reviewDay))
-    await expect(entryFor(page, shallowSale.si)).toBeVisible({ timeout: 20_000 })
-
-    // shallowSale is still pending, so the day cannot be signed off yet.
-    await expect(entryFor(page, shallowSale.si)).toHaveAttribute('data-status', 'pending')
-    await expect(page.getByTestId('sign-off')).toBeDisabled()
-
-    await page.getByTestId('approve-all').click()
-    await expect(entryFor(page, shallowSale.si)).toHaveAttribute('data-status', 'approved')
-    await expect(page.getByTestId('approve-all')).toBeDisabled()
-
-    await expect(page.getByTestId('sign-off')).toBeEnabled()
-    await page.getByTestId('sign-off').click()
-
-    await expect(page.getByTestId('override-signoffs')).toContainText('signed off')
-    await expect(page.getByTestId('sign-off')).toBeDisabled()
-    await expect(page.getByTestId('sign-off')).toContainText('Signed off')
-    // Locked: nothing on the day can be decided any more.
-    await expect(page.getByTestId('entry-approve')).toHaveCount(0)
-    await expect(page.getByTestId('entry-reject')).toHaveCount(0)
-    await expect(page.getByTestId('entry-change')).toHaveCount(0)
-    await expect(page.getByLabel(/PIN/i)).toHaveCount(0)
-  })
-
-  test('OR-F06: a sale made after the sign-off lands on the next open day, not the locked one', async ({
-    page,
-    playwright,
-  }, testInfo) => {
-    const request = await ownerRequest(playwright, testInfo.project.use.baseURL!)
-    const late = await sell(request, SHALLOW_PRICE, 'late')
-    const lateDay = await findReviewDay(request, late.si)
-    await request.dispose()
-
-    expect(lateDay > reviewDay).toBeTruthy()
-
-    await gotoReady(page, reviewUrl(reviewDay))
-    await expect(page.getByTestId('override-signoffs')).toContainText('signed off', {
+  test('OR-F05: the owner reads every branch and can narrow to one', async ({ page }) => {
+    // No branch in the link: every branch together.
+    await gotoReady(page, '/pos/override-review')
+    await expect(page.getByRole('heading', { name: 'Price Override Log' })).toBeVisible({
       timeout: 20_000,
     })
-    await expect(entryFor(page, late.si)).toHaveCount(0)
+    await expect(page.getByText('— all branches')).toBeVisible()
+    await expect(entryFor(page, deepSale.si)).toBeVisible({ timeout: 20_000 })
 
-    // The sidebar badge counts that waiting entry, so the signed day says
-    // where it is — and the strip jumps there (latest day last).
-    await expect(page.getByTestId('pending-days')).toBeVisible()
-    await page.getByTestId('pending-day').last().click()
-    await expect(page.getByLabel('Business date')).toHaveValue(lateDay)
-    await expect(entryFor(page, late.si)).toBeVisible({ timeout: 20_000 })
-    await expect(entryFor(page, late.si)).toHaveAttribute('data-status', 'pending')
-    await expect(page.getByTestId('override-signoffs')).toHaveCount(0)
-
-    // The same day opened straight from a link.
-    await gotoReady(page, reviewUrl(lateDay))
-    await expect(entryFor(page, late.si)).toBeVisible({ timeout: 20_000 })
-  })
-  test('OR-F08: the sidebar badge counts the branch the page is on — not every branch — and drops the moment an entry is decided', async ({
-    page,
-    playwright,
-  }, testInfo) => {
-    const request = await ownerRequest(playwright, testInfo.project.use.baseURL!)
-    const sale = await sell(request, SHALLOW_PRICE, 'badge')
-    const day = await findReviewDay(request, sale.si)
-    const pending = async () =>
-      (
-        (await (
-          await request.get('/api/pos/override-review/pending-count', {
-            params: { branchId: fx.branchId },
-          })
-        ).json()) as { count: number }
-      ).count
-    const before = await pending()
-    expect(before).toBeGreaterThanOrEqual(1)
-
-    await gotoReady(page, reviewUrl(day))
-    const nav = page.getByRole('link', { name: /Override Review/ }).first()
-    await expect(entryFor(page, sale.si)).toBeVisible({ timeout: 20_000 })
-    await expect(nav).toContainText(String(before))
-
-    // No navigation: the page and the badge share one query.
-    await entryFor(page, sale.si).getByTestId('entry-approve').click()
-    await expect(entryFor(page, sale.si)).toHaveAttribute('data-status', 'approved')
-    if (before - 1 > 0) {
-      await expect(nav).toContainText(String(before - 1))
-    } else {
-      await expect(nav).not.toContainText(/\d/)
+    // Narrow to the branch the sales were rung up at.
+    const filter = page.getByTestId('branch-filter').getByRole('textbox')
+    const pickBranch = async (name: RegExp) => {
+      await filter.click()
+      await filter.fill(name.source.replace(/[\^$]/g, ''))
+      await page
+        .locator('[data-testid="searchable-select-option"]', { hasText: name })
+        .first()
+        .click()
     }
-    await request.dispose()
+    await pickBranch(new RegExp(`^${BRANCH}$`))
+    await expect(page.getByText(`— ${BRANCH}`)).toBeVisible()
+    await expect(entryFor(page, deepSale.si)).toBeVisible()
+    const branches = await page.getByTestId('entry-branch').allTextContents()
+    expect(branches.length).toBeGreaterThan(0)
+    expect(new Set(branches)).toEqual(new Set([BRANCH]))
+
+    // Another branch has none of these sales.
+    await pickBranch(/^Bago/)
+    await expect(entryFor(page, deepSale.si)).toHaveCount(0)
   })
 
   test('OR-F07: General settings carries the flag threshold, and a saved value is what the next sale is flagged against', async ({
@@ -514,10 +443,9 @@ test.describe('POS Override Review — decide the day, sign it off (Scenario 71 
 
       const request = await ownerRequest(playwright, testInfo.project.use.baseURL!)
       const sale = await sell(request, DEEP_PRICE, 'threshold')
-      const day = await findReviewDay(request, sale.si)
       await request.dispose()
 
-      await gotoReady(page, reviewUrl(day))
+      await gotoReady(page, logUrl())
       await expect(entryFor(page, sale.si)).toBeVisible({ timeout: 20_000 })
       await expect(entryFor(page, sale.si)).not.toContainText(/Over \d+%/)
     } finally {

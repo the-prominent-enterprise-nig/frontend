@@ -209,6 +209,8 @@ Replaces the earlier "one branch per entry, 1-01-047" approach.
 - Per branch: the receiver's Fund Transfers in Transit is +X on turnover and −X on
   acknowledgment, so it nets to 0; the sender's COH is −X.
 - **Auto-post, no manual encoding:** entry 1 posts on save; entry 2 posts on acknowledgment.
-- **Journal entry preview** in Record deposit (Turn over to branch), laid out as in the mockup.
+- ~~**Journal entry preview** in Record deposit (Turn over to branch)~~ — removed 2026-11-05:
+  the entries are real, auto-posted journal entries, so they are seen in Journal Entries, not
+  previewed in the modal.
 - **Pending turnover** on both branches' reports: the sender's "Turnover to X (pending
   acknowledgment)"; the receiver's "PENDING TURNOVER IN · not counted" (in no total or balance).

@@ -86,7 +86,7 @@ import type {
   CustomerAdvance,
   CreateCustomerAdvanceInput,
   CustomerAdvanceFilters,
-  OverrideReviewDay,
+  PriceOverrideLog,
 } from '@/src/schema/pos'
 import { isPendingApproval } from '@/src/schema/pos'
 import type { BranchPaymentMethod, PosPaymentMethod } from '@/src/schema/pos'
@@ -1923,78 +1923,25 @@ export async function updatePosOverrideReason(
   }
 }
 
-// ─── Override Review (Scenario 71 Part 4) ──────────────────────────────────────
+// ─── Price Override Log (Scenario 71 Part 4, was Override Review) ──────────────
 
-export async function getOverrideReview(
-  date: string,
+export async function getPriceOverrideLog(
+  from: string,
+  to: string,
   branchId?: string
-): Promise<ApiResponse<OverrideReviewDay>> {
+): Promise<ApiResponse<PriceOverrideLog>> {
   try {
-    const result = await api.get<OverrideReviewDay>('/pos/override-review', {
-      date,
+    const result = await api.get<PriceOverrideLog>('/pos/override-review', {
+      from,
+      to,
       ...(branchId ? { branchId } : {}),
     })
     if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to load the override review' }
+      return { success: false, error: result.error || 'Failed to load the price override log' }
     }
     return { success: true, data: result.data }
   } catch {
-    return { success: false, error: 'Failed to load the override review' }
-  }
-}
-
-export async function decideOverrideEntry(
-  id: string,
-  status: 'approved' | 'rejected',
-  note?: string
-): Promise<ApiResponse<{ id: string; status: string }>> {
-  try {
-    const result = await api.post<{ id: string; status: string }>(
-      `/pos/override-review/${id}/decide`,
-      { status, ...(note ? { note } : {}) }
-    )
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to save the decision' }
-    }
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to save the decision' }
-  }
-}
-
-export async function approveAllOverrideEntries(
-  date: string,
-  branchId?: string
-): Promise<ApiResponse<{ approved: number }>> {
-  try {
-    const result = await api.post<{ approved: number }>('/pos/override-review/approve-all', {
-      date,
-      ...(branchId ? { branchId } : {}),
-    })
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to approve the pending entries' }
-    }
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to approve the pending entries' }
-  }
-}
-
-export async function signOffOverrideDay(
-  date: string,
-  branchId?: string
-): Promise<ApiResponse<{ id: string }>> {
-  try {
-    const result = await api.post<{ id: string }>('/pos/override-review/sign-off', {
-      date,
-      ...(branchId ? { branchId } : {}),
-    })
-    if (!result.success || !result.data) {
-      return { success: false, error: result.error || 'Failed to sign off the day' }
-    }
-    return { success: true, data: result.data }
-  } catch {
-    return { success: false, error: 'Failed to sign off the day' }
+    return { success: false, error: 'Failed to load the price override log' }
   }
 }
 
