@@ -1,4 +1,4 @@
-import type { OverrideFlag, OverrideEntryStatus, OverridePlanKind } from '@/src/schema/pos'
+import type { OverrideFlag, OverridePlanKind } from '@/src/schema/pos'
 
 export function peso(amount: number | null | undefined): string {
   if (amount === null || amount === undefined || Number.isNaN(Number(amount))) return '—'
@@ -46,20 +46,6 @@ export const FLAG_STYLES: Record<OverrideFlag, string> = {
   credit_warning: 'bg-red-100 text-red-700',
 }
 
-export const STATUS_LABELS: Record<OverrideEntryStatus, string> = {
-  pending: 'Pending',
-  approved: 'Approved',
-  rejected: 'Rejected',
-  voided: 'Sale voided',
-}
-
-export const STATUS_STYLES: Record<OverrideEntryStatus, string> = {
-  pending: 'bg-orange-100 text-orange-700',
-  approved: 'bg-green-100 text-green-700',
-  rejected: 'bg-red-100 text-red-700',
-  voided: 'bg-gray-100 text-gray-500',
-}
-
 export const PLAN_LABELS: Record<OverridePlanKind, string> = {
   cash: 'Cash',
   installment_term: 'In-house installment',
@@ -76,17 +62,9 @@ export const PLAN_SHORT: Record<OverridePlanKind, string> = {
 }
 
 /** One column template for the header and every row, so they line up exactly.
- * Chevron, Sale, Branch, Customer, Item, Price, Discount, Payment, Flags, Decision. */
+ * Chevron, Sale, Date, Branch, Customer, Item, Price, Discount, Payment, Flags, Cashier. */
 export const ENTRY_GRID =
-  'grid grid-cols-[28px_132px_72px_minmax(0,1fr)_minmax(0,1.6fr)_84px_120px_88px_124px_148px] items-center gap-x-4 px-3'
-
-/** The row's left edge, so a day's worth reads by status before any text does. */
-export const STATUS_ACCENT: Record<OverrideEntryStatus, string> = {
-  pending: 'border-l-orange-400',
-  approved: 'border-l-green-500',
-  rejected: 'border-l-red-500',
-  voided: 'border-l-gray-300',
-}
+  'grid grid-cols-[28px_144px_88px_120px_minmax(0,1fr)_minmax(0,1.6fr)_84px_120px_88px_124px_128px] items-center gap-x-4 px-3'
 
 export function formatTime(iso: string): string {
   const at = new Date(iso)
@@ -101,7 +79,14 @@ export function formatDay(iso: string | null): string {
   return at.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-/** HH:mm on a 24-hour clock, as the review table reads. */
+/** "Nov 5" — the day alone, for a log row that already has its time beside it. */
+export function formatShortDay(iso: string): string {
+  const at = new Date(iso)
+  if (Number.isNaN(at.getTime())) return ''
+  return at.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+}
+
+/** HH:mm on a 24-hour clock, as the log table reads. */
 export function formatClock(iso: string): string {
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return ''

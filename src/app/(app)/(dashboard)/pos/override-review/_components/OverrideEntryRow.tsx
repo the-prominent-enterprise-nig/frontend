@@ -2,32 +2,27 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowUpRight, ChevronRight, Loader2 } from 'lucide-react'
-import type { OverrideReviewEntry } from '@/src/schema/pos'
+import { ArrowUpRight, ChevronRight } from 'lucide-react'
+import type { PriceOverrideLogEntry } from '@/src/schema/pos'
 import { creditOverrideLines } from '@/src/libs/pos/credit-override'
 import {
   ENTRY_GRID,
   FLAG_STYLES,
   PLAN_LABELS,
   PLAN_SHORT,
-  STATUS_ACCENT,
-  STATUS_LABELS,
-  STATUS_STYLES,
   flagLabel,
   formatClock,
   formatDay,
-  formatTime,
+  formatShortDay,
   peso,
 } from './override-review-format'
 
 interface Props {
-  entry: OverrideReviewEntry
+  entry: PriceOverrideLogEntry
   /** 1-based position among this sale's overridden lines, and how many there are. */
   itemNo: number
   itemsOnSale: number
   thresholdPct: number
-  busy: boolean
-  onDecide: (status: 'approved' | 'rejected', note?: string) => void
 }
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
@@ -61,32 +56,21 @@ function Field({
 }
 
 /**
- * One exception as a single line — sale, branch, customer, item, price,
- * discount, plan, flags and the decision — so a manager reads a day's worth down
- * the page. Clicking the row (or its chevron) opens the full receipt beneath it:
- * everything the line abbreviates, as labelled fields.
- *
- * Approve is one click; Reject opens a note row beneath first, because the note
- * is all a rejection records. Both work without opening the details.
+ * One exception as a single line — sale, date, branch, customer, item, price,
+ * discount, plan, flags and the cashier — so a period's worth reads down the
+ * page. Clicking the row (or its chevron) opens the full receipt beneath it:
+ * everything the line abbreviates, as labelled fields. Nothing here is acted on.
  */
 export default function OverrideEntryRow({
   entry,
   itemNo,
   itemsOnSale,
   thresholdPct,
-  busy,
-  onDecide,
 }: Props): React.JSX.Element {
   const [open, setOpen] = useState(false)
-  const [rejecting, setRejecting] = useState(false)
-  const [note, setNote] = useState('')
 
-  const decidable = !entry.locked && entry.status !== 'voided'
   const sale = entry.salesInvoiceNumber ?? entry.transactionNumber
   const below = entry.belowListPct
-  const decided = entry.status !== 'pending' && entry.status !== 'voided'
-  const showDecision = decided && !!entry.decidedByName
-  const canChange = decidable && entry.status !== 'pending' && !rejecting
   const customer = entry.customer?.name ?? 'Walk-in'
   const installment =
     entry.planKind === 'installment_term' || entry.planKind === 'installment_typed'
@@ -96,17 +80,19 @@ export default function OverrideEntryRow({
     <div
       className="border-t border-gray-200 text-xs text-gray-900 first:border-t-0"
       data-testid="override-entry"
-      data-status={entry.status}
+      data-voided={entry.voided}
       role="rowgroup"
     >
       <div
         role="row"
         // A click anywhere on the line opens the details — except on the things
-        // that do something else (the sale link, the decision buttons).
+        // that do something else (the sale link).
         onClick={(e) => {
           if (!(e.target as HTMLElement).closest('a,button,input')) setOpen((v) => !v)
         }}
-        className={`${ENTRY_GRID} min-h-10 cursor-pointer border-l-[3px] py-1.5 hover:bg-gray-50 ${STATUS_ACCENT[entry.status]}`}
+        className={`${ENTRY_GRID} min-h-10 cursor-pointer border-l-[3px] py-1.5 hover:bg-gray-50 ${
+          entry.voided ? 'border-l-gray-300 text-gray-500' : 'border-l-transparent'
+        }`}
       >
         <div role="cell">
           <button
@@ -121,15 +107,19 @@ export default function OverrideEntryRow({
           </button>
         </div>
 
-        <div role="cell" className="flex min-w-0 items-baseline gap-1.5">
+        <div role="cell" className="min-w-0">
           <Link
             href={`/pos/transactions?search=${encodeURIComponent(entry.transactionNumber)}`}
             title={entry.transactionNumber}
-            className="truncate font-semibold text-prominent-purple-900 hover:underline"
+            data-testid="entry-sale"
+            className="block truncate font-semibold text-prominent-purple-900 hover:underline"
           >
             {sale}
           </Link>
-          <span className="shrink-0 tabular-nums">{formatClock(entry.occurredAt)}</span>
+        </div>
+
+        <div role="cell" className="truncate tabular-nums" data-testid="entry-date">
+          {formatShortDay(entry.occurredAt)} {formatClock(entry.occurredAt)}
         </div>
 
         <div
@@ -174,109 +164,37 @@ export default function OverrideEntryRow({
         <div
           role="cell"
           className="flex min-w-0 items-center gap-1 overflow-hidden"
-          title={flagTitles.join(', ')}
+          title={entry.voided ? ['Sale voided', ...flagTitles].join(', ') : flagTitles.join(', ')}
         >
-          {entry.flags.length > 0 && (
-            <>
-              <span
-                className={`truncate whitespace-nowrap rounded-full px-1.5 py-px text-[10px] font-semibold ${FLAG_STYLES[entry.flags[0]]}`}
-              >
-                {flagTitles[0]}
-              </span>
-              {entry.flags.length > 1 && (
-                <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-px text-[10px] font-semibold text-gray-800">
-                  +{entry.flags.length - 1}
+          {entry.voided ? (
+            <span
+              data-testid="entry-voided"
+              className="truncate whitespace-nowrap rounded-full bg-gray-100 px-1.5 py-px text-[10px] font-semibold text-gray-600"
+            >
+              Sale voided
+            </span>
+          ) : (
+            entry.flags.length > 0 && (
+              <>
+                <span
+                  className={`truncate whitespace-nowrap rounded-full px-1.5 py-px text-[10px] font-semibold ${FLAG_STYLES[entry.flags[0]]}`}
+                >
+                  {flagTitles[0]}
                 </span>
-              )}
-            </>
+                {entry.flags.length > 1 && (
+                  <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-px text-[10px] font-semibold text-gray-800">
+                    +{entry.flags.length - 1}
+                  </span>
+                )}
+              </>
+            )
           )}
         </div>
 
-        <div role="cell" className="flex justify-end">
-          {entry.status === 'pending' && decidable && !rejecting ? (
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                data-testid="entry-approve"
-                disabled={busy}
-                onClick={() => onDecide('approved')}
-                className="flex h-6 items-center gap-1 rounded-md bg-purple-700 px-2.5 text-[11px] font-semibold text-white hover:bg-purple-800 disabled:opacity-40"
-              >
-                {busy && <Loader2 size={10} className="animate-spin" />}
-                Approve
-              </button>
-              <button
-                type="button"
-                data-testid="entry-reject"
-                disabled={busy}
-                onClick={() => setRejecting(true)}
-                className="h-6 rounded-md border border-red-300 bg-white px-2.5 text-[11px] font-semibold text-red-700 hover:bg-red-50 disabled:opacity-40"
-              >
-                Reject
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span
-                className={`inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${STATUS_STYLES[entry.status]}`}
-              >
-                {STATUS_LABELS[entry.status]}
-              </span>
-              {canChange && (
-                <button
-                  type="button"
-                  data-testid="entry-change"
-                  disabled={busy}
-                  title={entry.status === 'approved' ? 'Change to rejected' : 'Change to approved'}
-                  onClick={() =>
-                    entry.status === 'approved' ? setRejecting(true) : onDecide('approved')
-                  }
-                  className="text-[11px] font-medium text-purple-700 hover:underline disabled:opacity-40"
-                >
-                  Change
-                </button>
-              )}
-            </div>
-          )}
+        <div role="cell" className="truncate" title={entry.cashierName ?? undefined}>
+          {entry.cashierName ?? '—'}
         </div>
       </div>
-
-      {/* A rejection needs its note — it is all the rejection records. */}
-      {rejecting && (
-        <div className="flex flex-wrap items-center gap-2 border-l-[3px] border-l-red-500 bg-red-50/60 px-3 py-2">
-          <input
-            data-testid="reject-note"
-            autoFocus
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Why is this rejected? (required)"
-            className="h-8 min-w-72 flex-1 rounded-md border border-gray-300 bg-white px-3 text-xs outline-none focus:border-prominent-purple-500 focus:ring-2 focus:ring-prominent-purple-100"
-          />
-          <button
-            type="button"
-            data-testid="reject-confirm"
-            disabled={busy || note.trim().length === 0}
-            onClick={() => {
-              onDecide('rejected', note.trim())
-              setRejecting(false)
-              setNote('')
-            }}
-            className="flex h-8 items-center gap-1 rounded-md bg-red-600 px-3 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-40"
-          >
-            Reject entry
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setRejecting(false)
-              setNote('')
-            }}
-            className="h-8 px-2 text-xs font-medium text-gray-800 hover:text-gray-900"
-          >
-            Cancel
-          </button>
-        </div>
-      )}
 
       {/* The whole receipt */}
       {open && (
@@ -294,6 +212,7 @@ export default function OverrideEntryRow({
             <Field label="Date & time">
               {formatDay(entry.occurredAt)} · {formatClock(entry.occurredAt)}
             </Field>
+            {entry.voided && <Field label="Status">Sale voided</Field>}
             {entry.cashierName && <Field label="Cashier">{entry.cashierName}</Field>}
             <Field label="Sale total">{peso(entry.saleTotal)}</Field>
           </Group>
@@ -368,7 +287,7 @@ export default function OverrideEntryRow({
             )}
           </Group>
 
-          <Group title="Reason & decision">
+          <Group title="Reason">
             <Field label="Reason">{entry.reason?.name ?? '—'}</Field>
             {entry.note && <Field label="Note">{entry.note}</Field>}
             {entry.creditOverride && (
@@ -403,15 +322,6 @@ export default function OverrideEntryRow({
                 </div>
               </Field>
             )}
-            <Field label="Decision" testId="entry-decision">
-              {showDecision
-                ? `by ${entry.decidedByName}${
-                    entry.decidedAt
-                      ? ` · ${formatDay(entry.decidedAt)} ${formatTime(entry.decidedAt)}`
-                      : ''
-                  }${entry.decisionNote ? ` — ${entry.decisionNote}` : ''}`
-                : STATUS_LABELS[entry.status]}
-            </Field>
           </Group>
         </div>
       )}

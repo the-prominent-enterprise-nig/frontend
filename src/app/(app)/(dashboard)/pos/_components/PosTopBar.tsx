@@ -19,7 +19,7 @@ export function PosTopBar({
 
   // The branch switcher only belongs in this shared bar for the routes whose hub
   // tab is flagged for it (plus Product Catalog). Other routes either surface it
-  // inline with their own page title (e.g. /pos/settings/*, Override Review) or
+  // inline with their own page title (e.g. /pos/settings/*, Price Override Log) or
   // — like /pos/pin, which is pure per-user PIN self-service with nothing
   // branch-scoped on the page — don't need it at all.
   const showBranchSwitcher = showsPosBranchSwitcher(pathname)
