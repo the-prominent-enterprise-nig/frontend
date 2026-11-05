@@ -28,6 +28,9 @@ export default function HomePageField({ value, onChange, disabled }: HomePageFie
         options={HOME_MODULE_OPTIONS.map(({ value: v, label }) => ({ value: v, label }))}
         placeholder="Automatic"
         clearable
+        // The field sits in a card with overflow-hidden (and in a grid on Create
+        // Role); an in-flow list would be cut off by it.
+        portal
         disabled={disabled}
       />
       <p className="mt-1 text-xs text-zinc-400">{hint}</p>
