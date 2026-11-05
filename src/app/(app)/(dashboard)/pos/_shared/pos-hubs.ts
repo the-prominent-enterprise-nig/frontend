@@ -369,11 +369,12 @@ export const APPROVALS_REVIEWS_HUB: PosHub = {
   entryHref: '/pos/approvals',
   tabs: [
     {
-      // Scenario 71 Part 4 — the end-of-day look at every price override, typed
-      // term and waiver. Carries the pending-entry badge (see PosNav and
-      // SideBar). Its page has its own branch selector.
+      // Scenario 71 Part 4 — the log of every price override, typed term and
+      // waiver (it was the Override Review; nobody approves an entry any more, so
+      // there is no pending badge). The route keeps its old path. Its page has its
+      // own branch filter.
       id: 'override-review',
-      label: 'Override Review',
+      label: 'Price Override Log',
       href: '/pos/override-review',
       icon: ClipboardCheck,
       permissions: [POS_PERMISSIONS.TRANSACTIONS_OVERRIDE],
@@ -562,7 +563,7 @@ export function posNavModel(pathname: string, visibleHrefs: string[], canConfigu
 /**
  * Whether the shared branch switcher belongs in the top bar on `pathname`. Routes
  * without a tab flagged for it either surface the switcher inline with their own
- * page title (/pos/settings/*, Override Review, Daily Collection) or have
+ * page title (/pos/settings/*, Price Override Log, Daily Collection) or have
  * nothing branch-scoped on the page (/pos/pin).
  */
 export function showsPosBranchSwitcher(pathname: string): boolean {

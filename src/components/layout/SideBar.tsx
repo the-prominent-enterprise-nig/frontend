@@ -65,7 +65,6 @@ import {
 } from '@/src/app/(app)/(dashboard)/accounting/_shared/hubs'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
-import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import {
   APPROVALS_REVIEWS_HUB,
   CASH_RECEIPTS_HUB,
@@ -81,7 +80,6 @@ import {
   type PosHub,
 } from '@/src/app/(app)/(dashboard)/pos/_shared/pos-hubs'
 import SidebarSearch, { type SearchEntry } from './SidebarSearch'
-import { usePosOverridePendingCount } from '@/src/app/(app)/(dashboard)/pos/_hooks/usePosOverridePendingCount'
 
 type NavItem = {
   label: string
@@ -356,8 +354,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
       // item shows when any one is held. Entry route: /pos/cash-receipts.
       posHubNavItem(CASH_RECEIPTS_HUB, 'Cash & Receipts', Wallet),
       // The manager queues. Each tab is gated like its page, so Cashier (read,
-      // not override) gets Unit Release Approvals and Void Requests only. The
-      // pending-override badge is attached in SideBar below (withBadge). Entry
+      // not override) gets Unit Release Approvals and Void Requests only. Entry
       // route: /pos/approvals.
       posHubNavItem(APPROVALS_REVIEWS_HUB, 'Approvals & Reviews', ShieldCheck),
       // Sales Reports (Branch-Manager tier) and Daily Collection (the cashier's
@@ -1098,12 +1095,6 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     })
   }, [isOwner, pathname])
 
-  // The pending Override Review count, shown on the Approvals item (and on the
-  // Override Review tab inside it). Only fetched for someone who can open the
-  // review, and only inside POS where the item shows.
-  const canReviewOverrides = hasPermission(session, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
-  const overridePendingCount = usePosOverridePendingCount(canReviewOverrides && segment === 'pos')
-
   const workspaceItems: NavItem[] = WORKSPACE_ITEMS.map((item) =>
     item.href === '/settings/pending-invites' && pendingInviteCount > 0
       ? {
@@ -1191,14 +1182,6 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     mainItems = [...labeledModuleItems, ...workspaceGroup]
   }
 
-  const withBadge = (item: NavItem): NavItem =>
-    item.href === APPROVALS_REVIEWS_HUB.entryHref && overridePendingCount > 0
-      ? {
-          ...item,
-          badge: { text: String(overridePendingCount), variant: 'count', color: 'bg-orange-500' },
-        }
-      : item
-
   const withVisibleSubItems = (item: NavItem): NavItem =>
     item.subItems
       ? {
@@ -1224,7 +1207,7 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
   const rawMain = [
     DASHBOARD_ITEM,
     ...moduleNavItems,
-    ...mainItems.filter(filterItem).map(withVisibleSubItems).map(withBadge),
+    ...mainItems.filter(filterItem).map(withVisibleSubItems),
   ]
   const seen = new Set<string>()
   const main = rawMain.filter((item) => {
