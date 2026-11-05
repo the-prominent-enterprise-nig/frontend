@@ -14,6 +14,7 @@ import {
   Undo2,
   Receipt,
   MapPin,
+  ArrowLeft,
 } from 'lucide-react'
 import { getTransaction, getCustomerById, createTransaction } from '../_actions/pos-actions'
 import type { PosTransaction, PosTransactionInvoice, PosVoidRequest } from '@/src/schema/pos'
@@ -56,6 +57,7 @@ export function TransactionDetail({
   canRefund,
   onVoid,
   onRefunded,
+  variant = 'modal',
 }: {
   transaction: PosTransaction
   session: SessionUser
@@ -64,8 +66,17 @@ export function TransactionDetail({
   canRefund?: boolean
   onVoid?: () => void
   onRefunded?: () => void
+  /** 'page' lays the same content out as cards on a full page (the
+   * Transactions screen); 'modal' is the overlay Customer 360 and the POS
+   * dashboard still open. */
+  variant?: 'modal' | 'page'
 }) {
   const canRequestVoid = can(session, POS_PERMISSIONS.TRANSACTIONS_VOID)
+  const isPage = variant === 'page'
+  // On the page each section is its own card; in the modal they are plain
+  // blocks inside the one white box.
+  const card = 'rounded-xl border border-gray-200 bg-white p-5 shadow-sm'
+  const section = (modalClass: string): string => (isPage ? card : modalClass)
 
   const { data: detailRes, isLoading: detailLoading } = useQuery({
     queryKey: ['pos-transaction', summary.id],
@@ -89,6 +100,9 @@ export function TransactionDetail({
   const [activeTab, setActiveTab] = useState<'details' | 'void-requests'>('details')
   const [showRefund, setShowRefund] = useState(false)
   const isRefundable = tx.transactionType === 'sale' && tx.status === 'completed'
+  // Price Used and Credit are per-unit figures of an installment account, so
+  // only a sale that opened one has them — and only the page has room.
+  const showUnitFigures = isPage && !!tx.accountSummary
 
   const { data: voidReqRes, isLoading: voidReqLoading } = useVoidRequests(tx.id)
   const voidRequests: PosVoidRequest[] = voidReqRes?.data ?? []
@@ -115,37 +129,63 @@ export function TransactionDetail({
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
-          <button
-            onClick={onClose}
-            className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
-          >
-            <X size={18} />
-          </button>
-          {/* Lead with the Sales Invoice No. (or the Delivery Receipt No. on a
+      {!isPage && <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />}
+      <div className={isPage ? '' : 'fixed inset-0 z-50 flex items-center justify-center p-4'}>
+        <div
+          className={
+            isPage
+              ? 'relative w-full space-y-4'
+              : 'relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl'
+          }
+        >
+          {!isPage && (
+            <button
+              onClick={onClose}
+              className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
+            >
+              <X size={18} />
+            </button>
+          )}
+          {isPage && (
+            <Link
+              href="/pos/transactions"
+              className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800"
+            >
+              <ArrowLeft size={14} />
+              Transactions
+            </Link>
+          )}
+          <div className={isPage ? card : ''}>
+            {/* Lead with the Sales Invoice No. (or the Delivery Receipt No. on a
               DR sale, which is stored here too and labelled in the rows
               below) — that's the document anyone looking this up actually
               has in hand. Falls back to the internal transaction number for
               rows without one (refunds, and sales predating the
               required-SI rule). */}
-          <h2 className="mb-1 text-lg font-bold text-gray-900">
-            {tx.salesInvoiceNumber ?? tx.transactionNumber}
-          </h2>
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <p className="flex items-center gap-2 text-sm text-gray-500 capitalize">
-              {tx.transactionType} · {tx.status}
-              {tx.isXDeal && <XDealBadge reference={tx.xDealReference} />}
-            </p>
-            {/* Client-requested: the receipt is where someone notices a
+            <h2
+              className={
+                isPage
+                  ? 'mb-1 text-2xl font-bold text-prominent-purple-900'
+                  : 'mb-1 text-lg font-bold text-gray-900'
+              }
+            >
+              {tx.salesInvoiceNumber ?? tx.transactionNumber}
+            </h2>
+            <div
+              className={`flex flex-wrap items-center justify-between gap-3 ${isPage ? '' : 'mb-4'}`}
+            >
+              <p className="flex items-center gap-2 text-sm text-gray-500 capitalize">
+                {tx.transactionType} · {tx.status}
+                {tx.isXDeal && <XDealBadge reference={tx.xDealReference} />}
+              </p>
+              {/* Client-requested: the receipt is where someone notices a
                 figure they want to trace, and until now there was no way
                 through to the customer's ledger from here at all — for a
                 cash sale or an installment one. Narrowed to this sale by
                 `txn:`, the one key a receipt can produce: this screen knows
                 the transaction but not whether it became an installment
                 account, a charge invoice or neither. */}
-            {/* Scenario 59 — this hardcoded /crm/ and so bounced a Cashier
+              {/* Scenario 59 — this hardcoded /crm/ and so bounced a Cashier
                 off /403: they are confined to the `pos` module by
                 ROLE_MODULE_ACCESS, even though the ledger DATA is readable
                 to them (crm:customers:read). POS has had its own read-only
@@ -157,21 +197,22 @@ export function TransactionDetail({
                 dashboard and the POS transactions list — sending the viewer
                 wherever they can actually open is right in all three, and
                 needs no change at any call site. */}
-            {tx.customerId && (
-              <Link
-                href={`${
-                  canAccessModule(session, 'crm') ? '/crm/customers' : '/pos/customers'
-                }/${tx.customerId}/ledger?transactionId=txn:${tx.id}`}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50"
-              >
-                <Receipt size={13} />
-                View customer ledger →
-              </Link>
-            )}
+              {tx.customerId && (
+                <Link
+                  href={`${
+                    canAccessModule(session, 'crm') ? '/crm/customers' : '/pos/customers'
+                  }/${tx.customerId}/ledger?transactionId=txn:${tx.id}`}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50"
+                >
+                  <Receipt size={13} />
+                  View customer ledger →
+                </Link>
+              )}
+            </div>
           </div>
 
           {/* Tab switcher */}
-          <div className="mb-4 flex gap-1 rounded-lg bg-gray-100 p-1">
+          <div className={`flex gap-1 rounded-lg bg-gray-100 p-1 ${isPage ? '' : 'mb-4'}`}>
             <button
               onClick={() => setActiveTab('details')}
               className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition-colors ${
@@ -200,8 +241,18 @@ export function TransactionDetail({
           {/* ── Details tab ── */}
           {activeTab === 'details' && (
             <>
-              <div className="mb-4">
-                <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Items</p>
+              {isPage && (
+                <SaleAccountCards
+                  tx={tx}
+                  customerName={customerName}
+                  card={card}
+                  canSeeCommission={tx.accountSummary?.commission != null}
+                />
+              )}
+              <div className={section('mb-4')}>
+                <p className="mb-2 text-xs font-semibold uppercase text-gray-500">
+                  Items{isPage && tx.lines ? ` (${tx.lines.length})` : ''}
+                </p>
                 {detailLoading ? (
                   <div className="space-y-2">
                     {[...Array(3)].map((_, i) => (
@@ -217,9 +268,11 @@ export function TransactionDetail({
                     <thead>
                       <tr className="border-b text-left text-xs text-gray-500">
                         <th className="w-auto pb-1">Item</th>
+                        {showUnitFigures && <th className="w-28 pb-1 pl-2">Price Used</th>}
                         <th className="w-12 pb-1 pl-2 text-right">Qty</th>
                         <th className="w-24 pb-1 pl-2 text-right">Unit Price</th>
                         <th className="w-24 pb-1 pl-2 text-right">Total</th>
+                        {showUnitFigures && <th className="w-24 pb-1 pl-2 text-right">Credit</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -234,6 +287,15 @@ export function TransactionDetail({
                               </p>
                             )}
                           </td>
+                          {showUnitFigures && (
+                            <td className="py-1.5 pl-2">
+                              {l.priceUseName && (
+                                <span className="rounded-full bg-prominent-purple-50 px-2 py-0.5 text-[11px] font-medium text-prominent-purple-700">
+                                  {l.priceUseName}
+                                </span>
+                              )}
+                            </td>
+                          )}
                           <td className="py-1.5 pl-2 text-right text-gray-600">{l.quantity}</td>
                           <td className="py-1.5 pl-2 text-right text-gray-600">
                             {formatCurrency(l.unitPrice)}
@@ -241,6 +303,13 @@ export function TransactionDetail({
                           <td className="py-1.5 pl-2 text-right font-medium text-gray-900">
                             {formatCurrency(l.lineTotal)}
                           </td>
+                          {showUnitFigures && (
+                            <td className="py-1.5 pl-2 text-right text-gray-600">
+                              {tx.accountSummary?.lineCredits[l.id] != null
+                                ? formatCurrency(tx.accountSummary.lineCredits[l.id])
+                                : ''}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -254,7 +323,13 @@ export function TransactionDetail({
                   application, with its reason and note. */}
               {tx.exception && <PosExceptionPanel exception={tx.exception} />}
 
-              <div className="rounded-xl bg-gray-50 p-4 text-sm space-y-1">
+              <div
+                className={
+                  isPage
+                    ? `${card} space-y-1 text-sm`
+                    : 'rounded-xl bg-gray-50 p-4 text-sm space-y-1'
+                }
+              >
                 <Row label="Subtotal" value={formatCurrency(tx.subtotal)} />
                 {(() => {
                   const scPwd = tx.scPwdDiscountTotal ?? 0
@@ -322,11 +397,14 @@ export function TransactionDetail({
                     <TaxOverrideSummary entries={tx.taxOverride} testId="sale-override-summary" />
                   </div>
                 )}
-                {tx.session?.terminal?.branch?.name && (
+                {/* On the page these three are in the Sale and Agent cards above. */}
+                {!isPage && tx.session?.terminal?.branch?.name && (
                   <Row label="Branch" value={tx.session.terminal.branch.name} />
                 )}
-                {customerName && <Row label="Customer" value={customerName} />}
-                {tx.sellingAgent && <Row label="Selling Agent" value={tx.sellingAgent.name} />}
+                {!isPage && customerName && <Row label="Customer" value={customerName} />}
+                {!isPage && tx.sellingAgent && (
+                  <Row label="Selling Agent" value={tx.sellingAgent.name} />
+                )}
                 {tx.deliveryReceiptNumber && (
                   <Row label="Delivery Receipt No." value={tx.deliveryReceiptNumber} />
                 )}
@@ -339,7 +417,7 @@ export function TransactionDetail({
               </div>
 
               {tx.payments && tx.payments.length > 0 && (
-                <div className="mt-4">
+                <div className={section('mt-4')}>
                   <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Payments</p>
                   {tx.payments.map((p) => (
                     <div key={p.id} className="flex justify-between gap-2 py-1 text-sm">
@@ -365,7 +443,10 @@ export function TransactionDetail({
                   collection receipt: below the Total and the Payments,
                   neither of which ever includes it. */}
               {tx.deliverTo && (
-                <div className="mt-4 space-y-1 text-sm" data-testid="transaction-delivery">
+                <div
+                  className={`${section('mt-4')} space-y-1 text-sm`}
+                  data-testid="transaction-delivery"
+                >
                   <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Delivery</p>
                   <Row label="Deliver to" value={tx.deliverTo} />
                   {/* Its own two-line layout: a full address is too long for
@@ -416,7 +497,7 @@ export function TransactionDetail({
                   are InstallmentScheduleLine rows hanging off it, not
                   invoices of their own. */}
               {tx.invoices && tx.invoices.length > 0 && (
-                <div className="mt-4">
+                <div className={section('mt-4')}>
                   <p className="mb-2 text-xs font-semibold uppercase text-gray-500">
                     {tx.invoices.some((inv) => inv.source !== 'charge')
                       ? 'Statement of Account'
@@ -468,7 +549,7 @@ export function TransactionDetail({
               )}
 
               {canRefund && isRefundable && (
-                <div className="mt-4 flex gap-2">
+                <div className={`flex gap-2 ${isPage ? '' : 'mt-4'}`}>
                   <button
                     onClick={() => setShowRefund(true)}
                     className="flex items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-medium text-orange-700 hover:bg-orange-100"
@@ -483,7 +564,7 @@ export function TransactionDetail({
 
           {/* ── Void Requests tab ── */}
           {activeTab === 'void-requests' && (
-            <div className="space-y-3">
+            <div className={`space-y-3 ${isPage ? card : ''}`}>
               {voidReqLoading ? (
                 <div className="space-y-3 py-2">
                   {[...Array(2)].map((_, i) => (
@@ -787,6 +868,87 @@ function RefundModal({
           </div>
         </div>
       </div>
+    </>
+  )
+}
+
+function Field({ label, value }: { label: string; value: React.ReactNode }): React.JSX.Element {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs text-gray-500">{label}</p>
+      <p className="mt-0.5 break-words text-sm font-semibold text-gray-900">{value}</p>
+    </div>
+  )
+}
+
+function CardGrid({
+  title,
+  card,
+  children,
+}: {
+  title: string
+  card: string
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <div className={card}>
+      <p className="mb-3 text-xs font-semibold uppercase text-gray-500">{title}</p>
+      <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">{children}</div>
+    </div>
+  )
+}
+
+function termsLabel(months: number[]): string {
+  if (months.length === 1) return `${months[0]} month${months[0] === 1 ? '' : 's'}`
+  return `${months.join(' & ')} months`
+}
+
+/** Ticket #24 — who bought, where, and (for an installment sale) the account
+ * the sale opened: the figures a clerk reconciling branches reads off the
+ * receipt, each on the page itself instead of behind the ledger. */
+function SaleAccountCards({
+  tx,
+  customerName,
+  card,
+  canSeeCommission,
+}: {
+  tx: PosTransaction
+  customerName: string | null
+  card: string
+  canSeeCommission: boolean
+}): React.JSX.Element {
+  const account = tx.accountSummary
+  const priceUses = [...new Set((tx.lines ?? []).map((l) => l.priceUseName).filter(Boolean))]
+  const agentName = account?.agentName ?? tx.sellingAgent?.name ?? null
+
+  return (
+    <>
+      <CardGrid title="Sale" card={card}>
+        <Field label="SI / DR No." value={saleDocNo(tx)} />
+        <Field label="Customer" value={customerName ?? '—'} />
+        <Field label="Branch" value={tx.session?.terminal?.branch?.name ?? '—'} />
+      </CardGrid>
+
+      {account && (
+        <CardGrid title="Account details" card={card}>
+          <Field label="LCP" value={formatCurrency(account.listedCashPrice)} />
+          <Field label="Downpayment" value={formatCurrency(account.downPayment)} />
+          <Field label="Terms" value={termsLabel(account.termMonths)} />
+          <Field label="Monthly installment" value={formatCurrency(account.monthlyInstallment)} />
+          <Field label="Rebate" value={formatCurrency(account.rebate)} />
+          <Field label="Price used" value={priceUses.length ? priceUses.join(', ') : '—'} />
+        </CardGrid>
+      )}
+
+      {(account || agentName) && (
+        <CardGrid title={account ? 'Agent and credit' : 'Agent'} card={card}>
+          <Field label="Agent" value={agentName ?? '—'} />
+          {account && <Field label="Credit" value={formatCurrency(account.amountFinanced)} />}
+          {account && canSeeCommission && (
+            <Field label="Commission" value={formatCurrency(account.commission ?? 0)} />
+          )}
+        </CardGrid>
+      )}
     </>
   )
 }

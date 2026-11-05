@@ -305,6 +305,9 @@ export interface PosTransactionLine {
   /** Resolved from this line's own financingTerm — only set on installment
    * lines, and only by endpoints that include it (findOne, getCustomerHistory). */
   termMonths?: number | null
+  /** The Price Use (WIP / CR-BR / SSC…) this line was priced under — set by
+   * findOne only. */
+  priceUseName?: string | null
 }
 
 export interface PosPayment {
@@ -458,6 +461,29 @@ export interface PosTransaction {
    * the cart. Used to split the down payment's tendered rows across
    * schedules via addPayment's installmentScheduleId. */
   installmentSchedules?: { id: string; downPayment: number }[]
+  /** Set by GET /pos/transactions/:id only: the installment account figures
+   * printed beside the receipt. Null for a sale that opened no account
+   * (cash, charge, partner financing). */
+  accountSummary?: PosSaleAccountSummary | null
+}
+
+/** Decimals arrive as numbers here — the backend rounds them for display. */
+export interface PosSaleAccountSummary {
+  accountNumbers: string[]
+  /** LCP — the listed cash price. */
+  listedCashPrice: number
+  downPayment: number
+  /** The credit: LCP less the down payment. */
+  amountFinanced: number
+  monthlyInstallment: number
+  termMonths: number[]
+  /** Rebates applied against the account so far. */
+  rebate: number
+  agentName: string | null
+  /** Null when the viewer may not read agents. */
+  commission: number | null
+  /** Each unit's own share of the credit, keyed by line id. */
+  lineCredits: Record<string, number>
 }
 
 /** An installment-due payment collected later via POS Collections

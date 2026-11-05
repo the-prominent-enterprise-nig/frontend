@@ -1,33 +1,27 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
-import { useTransactions } from '../../_hooks/usePos'
+import { useState, useEffect, useMemo } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useTransactions, useBranches } from '../../_hooks/usePos'
 import {
   RefreshCw,
   ShoppingCart,
   Search,
   ChevronDown,
-  KeyRound,
-  ShieldCheck,
-  Loader2,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react'
-import {
-  validateManagerOverride,
-  submitVoidRequest,
-  approveReturnRefundRequest,
-  getTransaction,
-} from '../../_actions/pos-actions'
+import { getOwnReleaseFormRequests } from '../../_actions/pos-actions'
 import type { PosTransaction } from '@/src/schema/pos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { PosDateTime } from '../../_components/PosDate'
 import { Skeleton } from '@/src/components/ui/Skeleton'
-import { type SessionUser, can } from '@/src/libs/guards/permission'
-import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
-import { TransactionDetail } from '../../_components/TransactionDetail'
+import { type SessionUser } from '@/src/libs/guards/permission'
+import { saleDocNo } from '@/src/libs/format/saleDocNo'
 import Link from 'next/link'
-import { getOwnReleaseFormRequests } from '../../_actions/pos-actions'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
 const typeColor: Record<string, string> = {
   sale: 'bg-blue-100 text-blue-700',
@@ -44,7 +38,22 @@ function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
 }
 
-type DetailModal = { type: 'none' } | { type: 'detail'; transaction: PosTransaction }
+type SortDir = 'none' | 'asc' | 'desc'
+
+/** Sorts by the SI / DR No. the way a person reads it: 2 before 10, not after. */
+function sortByDocNo(list: PosTransaction[], dir: SortDir): PosTransaction[] {
+  if (dir === 'none') return list
+  const sign = dir === 'asc' ? 1 : -1
+  return [...list].sort(
+    (a, b) =>
+      sign *
+      saleDocNo(a).localeCompare(saleDocNo(b), undefined, { numeric: true, sensitivity: 'base' })
+  )
+}
+
+function nextSortDir(dir: SortDir): SortDir {
+  return dir === 'none' ? 'asc' : dir === 'asc' ? 'desc' : 'none'
+}
 
 interface Props {
   session: SessionUser
@@ -80,10 +89,28 @@ export default function TransactionsList({ session }: Props) {
     }
   }, [])
 
-  const canVoid = can(session, POS_PERMISSIONS.TRANSACTIONS_READ)
-  const canDirectVoid = can(session, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE)
-  const canRefund = can(session, POS_PERMISSIONS.TRANSACTIONS_CREATE)
+  const router = useRouter()
   const { branchId } = usePosBranchContext()
+  // Ticket #24 — a Sales Admin Clerk reconciles several branches, but the
+  // top-bar branch switcher only shows for privileged roles, so a clerk had no
+  // way to narrow the list. This page-level pick starts from the shared POS
+  // branch (so the switcher still works where it exists) and, unlike it,
+  // changes only this list — never the branch every other POS page filters by.
+  const [branchPick, setBranchPick] = useState<{ under: string | null; value: string } | null>(null)
+  // A pick lapses when the top-bar branch changes under it, so the switcher
+  // still wins whenever someone uses it.
+  const branchFilter =
+    branchPick && branchPick.under === branchId ? branchPick.value : (branchId ?? '')
+  const setBranchFilter = (value: string): void => setBranchPick({ under: branchId, value })
+  // A branch-assigned user is always served their own branch by the backend,
+  // whatever is asked for — so a picker would only pretend to filter.
+  const branchPickerVisible = !session.branchId
+  const branches = useBranches()
+  const branchOptions = [
+    { value: '', label: 'All branches' },
+    ...(branches.data?.data ?? []).map((b) => ({ value: b.id, label: b.name })),
+  ]
+  const [sortDir, setSortDir] = useState<SortDir>('none')
 
   const [filters, setFilters] = useState({
     transactionType: '',
@@ -105,125 +132,24 @@ export default function TransactionsList({ session }: Props) {
     const timer = setTimeout(() => setDebouncedSearch(search), 400)
     return () => clearTimeout(timer)
   }, [search])
-  const [detail, setDetail] = useState<DetailModal>({ type: 'none' })
-  // Deep-link from the POS Overview page's Recent Transactions list
-  // (?id=<transactionId>) — opens the detail modal directly instead of
-  // landing on the plain list. Fetched by id rather than matched against
-  // the loaded/filtered page of `transactions`, so it opens even if the
-  // target row wouldn't otherwise be on the first page of results.
+  // A link to /pos/transactions?id=<transactionId> (the POS Overview's Recent
+  // Transactions, a source-document link) lands on that transaction's own
+  // page now that it is no longer a modal over this list.
   useEffect(() => {
     const id = searchParams.get('id')
-    if (!id) return
-    let cancelled = false
-    getTransaction(id).then((res) => {
-      if (!cancelled && res.success && res.data) {
-        setDetail({ type: 'detail', transaction: res.data })
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  const [voidTarget, setVoidTarget] = useState<PosTransaction | null>(null)
-  const [voidError, setVoidError] = useState('')
-  const [voidReason, setVoidReason] = useState('')
-  const [voidMode, setVoidMode] = useState<'id-and-pin' | 'request'>('id-and-pin')
-  const [voidManagerId, setVoidManagerId] = useState('')
-  const [voidManagerPin, setVoidManagerPin] = useState('')
-  const [voidPending, setVoidPending] = useState(false)
-
-  useEffect(() => {
-    if (!voidTarget) setVoidError('')
-  }, [voidTarget])
-
-  useEffect(() => {
-    if (!voidTarget) setVoidError('')
-  }, [voidTarget])
-
+    if (id) router.replace(`/pos/transactions/${id}`)
+  }, [router, searchParams])
   const { data, isLoading, isFetching, refetch } = useTransactions(
     Object.fromEntries(
       Object.entries({
         ...applied,
         transactionNumber: debouncedSearch,
-        branchId: branchId ?? '',
+        branchId: branchFilter,
       }).filter(([, v]) => v !== '')
     ) as Record<string, string>
   )
 
-  const transactions: PosTransaction[] = data?.data ?? []
-
-  async function handleVoid() {
-    if (!voidTarget) return
-    if (!voidReason.trim()) {
-      setVoidError('A reason for the void is required.')
-      return
-    }
-    setVoidError('')
-    setVoidPending(true)
-
-    if (voidMode === 'request') {
-      const reqRes = await submitVoidRequest(voidTarget.id, { reason: voidReason.trim() })
-      setVoidPending(false)
-      if (!reqRes.success) {
-        setVoidError(reqRes.error ?? 'Failed to submit void request.')
-        return
-      }
-      setVoidTarget(null)
-      setVoidReason('')
-      return
-    }
-
-    // ID + PIN: manager or owner present
-    if (!voidManagerId.trim()) {
-      setVoidError('Manager ID is required.')
-      setVoidPending(false)
-      return
-    }
-    if (!voidManagerPin.trim()) {
-      setVoidError('PIN is required.')
-      setVoidPending(false)
-      return
-    }
-
-    const pinRes = await validateManagerOverride(voidManagerId.trim(), voidManagerPin.trim())
-    if (!pinRes.success || !pinRes.data?.valid) {
-      setVoidError(pinRes.error ?? 'Invalid ID or PIN. Please try again.')
-      setVoidPending(false)
-      return
-    }
-    const managerName = pinRes.data.managerName
-
-    const reqRes = await submitVoidRequest(voidTarget.id, { reason: voidReason.trim() })
-    if (!reqRes.success || !reqRes.data) {
-      setVoidError(reqRes.error ?? 'Failed to submit void request.')
-      setVoidPending(false)
-      return
-    }
-
-    const approveRes = await approveReturnRefundRequest(reqRes.data.id, {
-      reviewNotes: `Authorized by ${managerName}`,
-    })
-    setVoidPending(false)
-    if (!approveRes.success) {
-      setVoidError(approveRes.error ?? 'Failed to void.')
-      return
-    }
-    setVoidTarget(null)
-    setVoidReason('')
-    setVoidManagerId('')
-    setVoidManagerPin('')
-    refetch()
-  }
-
-  function openVoidModal(tx: PosTransaction) {
-    setVoidTarget(tx)
-    setVoidError('')
-    setVoidReason('')
-    setVoidMode('id-and-pin')
-    setVoidManagerId('')
-    setVoidManagerPin('')
-  }
+  const transactions = useMemo(() => sortByDocNo(data?.data ?? [], sortDir), [data?.data, sortDir])
 
   return (
     <div className="min-h-full bg-zinc-50 px-3 py-4 sm:px-6 sm:py-6">
@@ -305,6 +231,19 @@ export default function TransactionsList({ session }: Props) {
               />
             </div>
           </div>
+          {branchPickerVisible && (
+            <div className="w-48">
+              <label className="mb-1 block text-xs font-semibold text-gray-600">Branch</label>
+              <SearchableSelect
+                value={branchFilter}
+                onChange={(v) => setBranchFilter(v)}
+                options={branchOptions}
+                placeholder="All branches"
+                loading={branches.isLoading}
+                ariaLabel="Branch"
+              />
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-xs font-semibold text-gray-600">Status</label>
             <div className="relative">
@@ -354,6 +293,8 @@ export default function TransactionsList({ session }: Props) {
               setApplied(cleared)
               setSearch('')
               setDebouncedSearch('')
+              setBranchFilter('')
+              setSortDir('none')
             }}
             className="rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-100"
           >
@@ -384,6 +325,9 @@ export default function TransactionsList({ session }: Props) {
                     Type
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Branch
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                     Status
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
@@ -402,6 +346,9 @@ export default function TransactionsList({ session }: Props) {
                     </td>
                     <td className="px-5 py-3">
                       <Skeleton className="h-5 w-16 rounded-full" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-4 w-20" />
                     </td>
                     <td className="px-5 py-3">
                       <Skeleton className="h-5 w-20 rounded-full" />
@@ -425,11 +372,33 @@ export default function TransactionsList({ session }: Props) {
             <table className="min-w-full text-sm">
               <thead className="border-b border-gray-200 bg-gray-50">
                 <tr>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
-                    SI / DR No.
+                  <th
+                    className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500"
+                    aria-sort={
+                      sortDir === 'asc' ? 'ascending' : sortDir === 'desc' ? 'descending' : 'none'
+                    }
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSortDir(nextSortDir(sortDir))}
+                      title="Sort by SI / DR No."
+                      className="inline-flex items-center gap-1 font-semibold uppercase hover:text-gray-800"
+                    >
+                      SI / DR No.
+                      {sortDir === 'asc' ? (
+                        <ArrowUp size={12} />
+                      ) : sortDir === 'desc' ? (
+                        <ArrowDown size={12} />
+                      ) : (
+                        <ArrowUpDown size={12} className="text-gray-300" />
+                      )}
+                    </button>
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                     Type
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Branch
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                     Status
@@ -447,13 +416,21 @@ export default function TransactionsList({ session }: Props) {
                   <tr
                     key={tx.id}
                     className="cursor-pointer hover:bg-gray-50"
-                    onClick={() => setDetail({ type: 'detail', transaction: tx })}
+                    onClick={() => router.push(`/pos/transactions/${tx.id}`)}
                   >
                     {/* The Sales Invoice No. is what staff have in hand;
                         older sales and refunds carry none, so those fall
                         back to the internal transaction number. */}
                     <td className="px-5 py-3 font-mono text-sm font-medium text-gray-800">
-                      {tx.salesInvoiceNumber ?? tx.transactionNumber}
+                      {/* A real link, so the clerk can open it in a new tab; the
+                          row itself is clickable too. */}
+                      <Link
+                        href={`/pos/transactions/${tx.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="hover:text-purple-700 hover:underline"
+                      >
+                        {saleDocNo(tx)}
+                      </Link>
                     </td>
                     <td className="px-5 py-3">
                       <span className="inline-flex items-center gap-1.5">
@@ -464,6 +441,9 @@ export default function TransactionsList({ session }: Props) {
                         </span>
                         {tx.isXDeal && <XDealBadge reference={tx.xDealReference} />}
                       </span>
+                    </td>
+                    <td className="px-5 py-3 text-gray-600">
+                      {tx.session?.terminal?.branch?.name ?? '—'}
                     </td>
                     <td className="px-5 py-3">
                       <span
@@ -485,176 +465,6 @@ export default function TransactionsList({ session }: Props) {
           )}
         </div>
       </div>
-
-      {/* Detail Modal */}
-      {detail.type === 'detail' && (
-        <TransactionDetail
-          transaction={detail.transaction}
-          session={session}
-          onClose={() => setDetail({ type: 'none' })}
-          canVoid={canVoid}
-          canRefund={canRefund}
-          onVoid={() => {
-            setDetail({ type: 'none' })
-            openVoidModal(detail.transaction)
-          }}
-          onRefunded={() => refetch()}
-        />
-      )}
-
-      {/* Void Modal */}
-      {voidTarget && canVoid && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/30"
-            onClick={() => !voidPending && setVoidTarget(null)}
-          />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-              {/* Header */}
-              <div className="mb-4 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
-                  <KeyRound size={18} className="text-red-600" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900">Void Transaction</h2>
-                  <p className="font-mono text-xs text-gray-500">
-                    {voidTarget.salesInvoiceNumber ?? voidTarget.transactionNumber}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {/* Reason */}
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-gray-600">
-                    Reason <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    autoFocus
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
-                    placeholder="e.g. Incorrect item scanned"
-                    value={voidReason}
-                    onChange={(e) => setVoidReason(e.target.value)}
-                    disabled={voidPending}
-                  />
-                </div>
-
-                {/* Mode tabs — always shown so cashiers can offer manager override */}
-                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setVoidMode('request')
-                      setVoidManagerId('')
-                      setVoidManagerPin('')
-                    }}
-                    className={`flex-1 py-2 transition-colors ${voidMode === 'request' ? 'bg-gray-700 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    Request Approval
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setVoidMode('id-and-pin')
-                      setVoidManagerId('')
-                      setVoidManagerPin('')
-                    }}
-                    className={`flex-1 py-2 transition-colors ${voidMode === 'id-and-pin' ? 'bg-amber-500 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    Manager Override
-                  </button>
-                </div>
-
-                {voidMode === 'id-and-pin' ? (
-                  <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck size={13} className="text-amber-600" />
-                      <p className="text-xs font-semibold text-amber-700">
-                        Manager / Owner Authorization
-                      </p>
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-600">
-                        Employee ID
-                      </label>
-                      <input
-                        autoFocus
-                        type="text"
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
-                        placeholder="Manager or owner employee ID"
-                        value={voidManagerId}
-                        onChange={(e) => setVoidManagerId(e.target.value)}
-                        disabled={voidPending}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-600">PIN</label>
-                      <input
-                        type="password"
-                        inputMode="numeric"
-                        maxLength={6}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono tracking-widest text-sm outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
-                        placeholder="••••"
-                        value={voidManagerPin}
-                        onChange={(e) =>
-                          setVoidManagerPin(e.target.value.replace(/\D/g, '').slice(0, 6))
-                        }
-                        onKeyDown={(e) => e.key === 'Enter' && handleVoid()}
-                        disabled={voidPending}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <p className="text-xs text-gray-500">
-                      A void request will be sent for manager approval. The transaction will be
-                      voided once approved from the{' '}
-                      <span className="font-medium text-gray-700">Void Requests</span> page.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {voidError && (
-                <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
-                  {voidError}
-                </p>
-              )}
-
-              <div className="mt-5 flex justify-end gap-3">
-                <button
-                  onClick={() => setVoidTarget(null)}
-                  disabled={voidPending}
-                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleVoid}
-                  disabled={
-                    voidPending ||
-                    !voidReason.trim() ||
-                    (voidMode === 'id-and-pin' && (!voidManagerId.trim() || !voidManagerPin.trim()))
-                  }
-                  className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-                >
-                  {voidPending ? (
-                    <>
-                      <Loader2 size={13} className="animate-spin" />{' '}
-                      {voidMode === 'request' ? 'Submitting…' : 'Voiding…'}
-                    </>
-                  ) : voidMode === 'request' ? (
-                    'Submit Request'
-                  ) : (
-                    'Void Transaction'
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
     </div>
   )
 }
