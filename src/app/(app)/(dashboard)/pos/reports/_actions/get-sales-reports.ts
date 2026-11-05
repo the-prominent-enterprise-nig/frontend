@@ -2,6 +2,7 @@
 
 import { api, type ApiResponse } from '@/src/libs/api/client'
 import type {
+  DailyMonitoring,
   SalesByMonth,
   SalesFilterOptions,
   SalesLinesPage,
@@ -52,5 +53,14 @@ export async function getSalesScorecard(
 ): Promise<ApiResponse<Scorecard>> {
   return api.get<Scorecard>('/pos/reports/sales/scorecard', params, {
     tags: ['pos-sales-report-scorecard'],
+  })
+}
+
+/** Scenario 85 Part 6 — each branch day by day for the To date's month. */
+export async function getSalesDailyMonitoring(
+  params: SalesReportsParams
+): Promise<ApiResponse<DailyMonitoring>> {
+  return api.get<DailyMonitoring>('/pos/reports/sales/daily-monitoring', params, {
+    tags: ['pos-sales-report-daily-monitoring'],
   })
 }

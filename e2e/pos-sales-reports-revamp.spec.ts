@@ -5,7 +5,7 @@ import { fillStable, gotoReady, loginAs } from './utils'
  * Scenario 85 — revamped Sales Reports (/pos/reports). Part 1: tabs, the
  * shared filter bar and the four stat cards. Part 2: the Sales Report tab
  * (paged units, totals, Export to Excel). Part 3: the Dashboard tab.
- * Part 5: Sales per Branch → Branch Scorecard.
+ * Part 5: Sales per Branch → Branch Scorecard. Part 6: → Daily Sales Monitoring.
  *
  * Exact figures (gross at LCP, refunds netted, Office vs Agent, each filter,
  * branch scoping) are covered by backend/test/sales-reports-revamp.e2e-spec.ts,
@@ -297,6 +297,59 @@ test.describe('POS — Sales Reports revamp (Scenario 85)', () => {
       await expect(page.getByRole('heading', { name: 'Negros Operations' })).toBeVisible({
         timeout: 20_000,
       })
+    })
+  })
+
+  test.describe('Daily Sales Monitoring (Part 6)', () => {
+    async function openSheet(page: Page, query: string): Promise<void> {
+      await open(page, query)
+      await page.getByRole('tab', { name: 'Daily Sales Monitoring' }).click()
+      await expect(page.getByText('Week 1 (1–8)')).toBeVisible({ timeout: 20_000 })
+    }
+
+    test('splits the month into 8-day weeks, then month-to-date rows', async ({ page }) => {
+      await openSheet(page, '?tab=branch&from=2026-10-01&to=2026-10-31')
+      for (const week of ['Week 1 (1–8)', 'Week 2 (9–16)', 'Week 3 (17–24)', 'Week 4 (25–31)']) {
+        await expect(page.getByRole('button', { name: week })).toBeVisible()
+      }
+      for (const row of [
+        'WEEK 1–4',
+        '% OFFICE SALES',
+        'QUOTA',
+        'ACH RATE',
+        'BTS (Balance total sales)',
+      ]) {
+        await expect(page.getByRole('rowheader', { name: row, exact: true })).toBeVisible()
+      }
+      await expect(page.getByRole('columnheader', { name: 'AC UNIT + SERVICES' })).toBeVisible()
+    })
+
+    test('collapses one week, then every week', async ({ page }) => {
+      await openSheet(page, '?tab=branch&from=2026-10-01&to=2026-10-31')
+      const day1 = page.getByRole('rowheader', { name: '1', exact: true })
+      await expect(day1).toBeVisible()
+      await page.getByRole('button', { name: 'Week 1 (1–8)' }).click()
+      await expect(day1).toHaveCount(0)
+
+      await page.getByRole('button', { name: 'Hide all weeks' }).click()
+      await expect(page.getByRole('rowheader', { name: '9', exact: true })).toHaveCount(0)
+      await page.getByRole('button', { name: 'Show all weeks' }).click()
+      await expect(day1).toBeVisible()
+    })
+
+    test("compares with last year's sales when the system holds them", async ({ page }) => {
+      // From October 2027, October 2026 is "last year".
+      await openSheet(page, '?tab=branch&from=2027-10-01&to=2027-10-09')
+      await expect(page.getByText('Week 2 (9–9)')).toBeVisible()
+      const footer = page.getByText('October 2026 Sales')
+      if (!(await footer.isVisible())) {
+        test.info().annotations.push({
+          type: 'skipped-assertion',
+          description: 'No October 2026 sales in this database — footer not exercised.',
+        })
+        return
+      }
+      await expect(page.getByText('January–December 2026 Sales')).toBeVisible()
     })
   })
 

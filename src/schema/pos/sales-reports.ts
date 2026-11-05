@@ -145,3 +145,21 @@ export type PaceStatus = z.infer<typeof PaceStatusSchema>
 export type ScorecardFigures = z.infer<typeof ScorecardFiguresSchema>
 export type Scorecard = z.infer<typeof ScorecardSchema>
 export type ScorecardRow = Scorecard['rows'][number]
+
+/** Scenario 85 Part 6 — Daily Sales Monitoring: the scorecard read day by day,
+ * plus last-year and running-balance totals (system data only). */
+export const DailyMonitoringSchema = z.object({
+  scorecard: ScorecardSchema,
+  comparisons: z.array(
+    z.object({
+      key: z.string(),
+      label: z.string(),
+      from: z.string(),
+      to: z.string(),
+      total: z.number(),
+      hasData: z.boolean(),
+    })
+  ),
+})
+
+export type DailyMonitoring = z.infer<typeof DailyMonitoringSchema>

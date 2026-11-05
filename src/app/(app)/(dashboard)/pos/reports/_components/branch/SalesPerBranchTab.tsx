@@ -4,12 +4,13 @@ import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import type { SalesReportsParams, Scorecard } from '@/src/schema/pos/sales-reports'
 import { getSalesScorecard } from '../../_actions/get-sales-reports'
+import DailyMonitoringPanel from './DailyMonitoringPanel'
 import ScorecardTable from './ScorecardTable'
 import { peso, percent, periodLabel } from './scorecard-format'
 
 /**
- * Scenario 85 Part 5 — the Sales per Branch tab: Branch Scorecard, and (Part
- * 6) Daily Sales Monitoring. Both read the To date's month, to date.
+ * Scenario 85 Parts 5–6 — the Sales per Branch tab: Branch Scorecard and
+ * Daily Sales Monitoring. Both read the To date's month, to date.
  */
 
 type SubTab = 'scorecard' | 'daily'
@@ -56,9 +57,7 @@ export default function SalesPerBranchTab({
       {sub === 'scorecard' ? (
         <ScorecardPanel params={params} title={title} />
       ) : (
-        <p className="rounded-lg border border-dashed border-zinc-300 px-4 py-12 text-center text-sm text-zinc-500">
-          Daily Sales Monitoring is being rebuilt to the new layout.
-        </p>
+        <DailyMonitoringPanel params={params} title={title} />
       )}
     </section>
   )
