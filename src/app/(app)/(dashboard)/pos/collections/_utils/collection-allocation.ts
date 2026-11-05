@@ -89,6 +89,37 @@ export function allocateCash<T extends AllocationLine>(
   })
 }
 
+/** The allocation settles this due in full: its cash, rebate and any tax
+ * withheld reach what it still owes. */
+function clears(line: AllocationLine & { amount: number }, withholding: number): boolean {
+  return line.amount + line.rebateAmount + withholding >= line.outstanding - 0.004
+}
+
+/**
+ * allocateCash, with each rebate kept only where it is earned. A rebate (PPD)
+ * is earned per due the payment clears in full; a payment that leaves a due
+ * short earns none on it, and the server refuses one sent anyway
+ * (rebate_exceeds_ppd: its cap is ppd × the whole dues the payment clears).
+ * So a ticked rebate on a due the cash does not clear is dropped and the cash
+ * split again without it. Dues before it are unaffected (they were cleared),
+ * and the short due still takes all the cash left, so one more pass is final.
+ */
+export function allocateWithEarnedRebates<T extends AllocationLine>(
+  lines: T[],
+  totalCash: number,
+  withholding = 0
+): (T & { amount: number; penaltyAmount: number; rebateDropped: boolean })[] {
+  const first = allocateCash(lines, totalCash, withholding)
+  const earned = lines.map((line, i) => ({
+    ...line,
+    rebateAmount: clears(first[i], withholding) ? line.rebateAmount : 0,
+  }))
+  return allocateCash(earned, totalCash, withholding).map((a, i) => ({
+    ...a,
+    rebateDropped: lines[i].rebateAmount > 0 && a.rebateAmount === 0,
+  }))
+}
+
 /**
  * The tenders the cashier typed (cash handed over per method, penalty
  * included) in the principal terms the server cuts a collection along. Each

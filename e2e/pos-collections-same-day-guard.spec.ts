@@ -34,7 +34,8 @@ const collect = (page: Page) => page.getByRole('button', { name: 'Collect paymen
 const panelHeading = (page: Page) => page.getByRole('heading', { name: 'Collect Payment' })
 const previewRow = (page: Page) => page.locator('table tbody tr').first()
 const netCell = (page: Page) => previewRow(page).locator('td').nth(5)
-const rebateBox = (page: Page) => previewRow(page).locator('td').nth(3).getByRole('checkbox')
+const rebateCell = (page: Page) => previewRow(page).locator('td').nth(3)
+const rebateBox = (page: Page) => rebateCell(page).getByRole('checkbox')
 
 async function collectAmount(page: Page, amount: number): Promise<void> {
   await fillMoney(page.getByTestId('collection-amount-0'), amount)
@@ -75,8 +76,12 @@ test.describe('POS Collections — same-day payments on one due', () => {
     await openCustomerOnCollections(page, customerName)
     await tickDue(page, 1)
     // A payment that doesn't clear the whole due earns no rebate (the server
-    // refuses it as rebate_exceeds_ppd), so a partial payment goes without.
-    await rebateBox(page).uncheck()
+    // refuses one as rebate_exceeds_ppd). The rebate stays ticked, but at ₱1
+    // the panel applies none and says why, so the collection goes through.
+    await expect(rebateBox(page)).toBeChecked()
+    await fillMoney(page.getByTestId('collection-amount-0'), 1)
+    await expect(page.getByTestId('collection-rebate-not-earned')).toBeVisible()
+    expect(pesos(await rebateCell(page).innerText())).toBe(0)
     await collectAmount(page, 1)
     await expect(dueRow(page, 1)).toContainText('₱1.00 of', { timeout: 15_000 })
 

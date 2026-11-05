@@ -41,7 +41,11 @@ import {
   type CollectionPaymentRow,
   type CollectionsPaymentOption,
 } from '../_utils/collection-tenders'
-import { allocateCash, penaltyOn, tendersToPrincipal } from '../_utils/collection-allocation'
+import {
+  allocateWithEarnedRebates,
+  penaltyOn,
+  tendersToPrincipal,
+} from '../_utils/collection-allocation'
 import { ARInvoices, fmtMoney, fmtDate, type PaymentMethod } from '@/src/libs/data/AccountingV2Data'
 import type {
   PosCustomer,
@@ -312,7 +316,7 @@ function allocateBulkPayment(
   totalCash: number,
   withholding = 0
 ) {
-  return allocateCash(
+  return allocateWithEarnedRebates(
     lines.map((l) => ({ ...l, outstanding: dueOutstanding(l.line) })),
     totalCash,
     withholding
@@ -1120,7 +1124,12 @@ function PaymentPanel({
   const typedPenalty = anyAmountTyped
     ? Math.round(bulkAllocated.reduce((sum, p) => sum + p.penaltyAmount, 0) * 100) / 100
     : 0
-  const totalApplied = typedPrincipal + (Number(form.withholdingAmount) || 0) + rebateTotal
+  // The rebate this payment actually earns: a ticked rebate on a due the
+  // typed amount does not clear in full is dropped (see
+  // allocateWithEarnedRebates) — the server would refuse it.
+  const earnedRebateTotal = bulkAllocated.reduce((sum, p) => sum + p.rebateAmount, 0)
+  const rebateDropped = anyAmountTyped && bulkAllocated.some((p) => p.rebateDropped)
+  const totalApplied = typedPrincipal + (Number(form.withholdingAmount) || 0) + earnedRebateTotal
   const wouldOverpay = totalApplied > outstandingTotal + 0.01
 
   /**
@@ -1253,7 +1262,7 @@ function PaymentPanel({
         paymentDate: receiptDate,
         assessedAsOf,
         withholdingAmount: Number(form.withholdingAmount || 0),
-        rebateAmount: resolvedLines[0]?.rebateAmount ?? 0,
+        rebateAmount: bulkAllocated[0]?.rebateAmount ?? 0,
         penaltyAmount: bulkAllocated[0]?.penaltyAmount ?? 0,
         method: firstPayment.method,
         paymentMethodConfigId: firstPayment.option?.configId,
@@ -1484,7 +1493,11 @@ function PaymentPanel({
                   // Live per-due checkbox state — not just the cap — so
                   // Net reflects exactly what's about to be applied, same
                   // as resolvedLines/bulkAllocated below.
-                  const rowRebate = rebateAmountFor(line.id, suggestedRebate)
+                  // What this due earns at the typed amount, not just what is
+                  // ticked: a due left short earns no rebate.
+                  const rowRebate =
+                    bulkAllocated[rowIndex]?.rebateAmount ??
+                    rebateAmountFor(line.id, suggestedRebate)
                   // 5% of the part of this due the typed amount settles.
                   const rowPenalty = bulkAllocated[rowIndex]?.penaltyAmount ?? 0
                   const net = Math.max(Math.round((remaining - rowRebate) * 100) / 100, 0)
@@ -1558,6 +1571,16 @@ function PaymentPanel({
             <p className="text-[12px] text-zinc-400">
               Rebate is about {((rebateCapSum / outstandingSum) * 100).toFixed(1)}% of the amount
               due.
+            </p>
+          )}
+          {rebateDropped && (
+            <p
+              data-testid="collection-rebate-not-earned"
+              className="flex items-center gap-1.5 text-[12px] text-amber-700"
+            >
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              The rebate is only earned on a due paid in full. This amount leaves a due short, so no
+              rebate is applied to it.
             </p>
           )}
           {penaltyCapSum > 0 && (
