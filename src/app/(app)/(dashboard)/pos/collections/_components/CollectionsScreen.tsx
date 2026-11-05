@@ -55,7 +55,7 @@ import {
   dueStatus,
   isDueOpen,
 } from '@/src/libs/pos/installment-dues'
-// Scenario 85 — the payment date is a Manila calendar day, the same "today"
+// Scenario 86 — the payment date is a Manila calendar day, the same "today"
 // the backend's future-date block and same-day guard use. installment-dues'
 // todayIso() is the UTC date and still drives due status; it is not used here.
 import { manilaToday } from '@/src/libs/tax/tax-reports'

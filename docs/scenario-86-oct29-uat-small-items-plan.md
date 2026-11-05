@@ -1,11 +1,13 @@
-# Scenario 85 — Oct 29 UAT small items
+# Scenario 86 — Oct 29 UAT small items
 
 Source: the "NIG Marketing UAT Checklist" (consolidated UAT notes, Oct 29 2026), re-audited against
 `origin/development` on 2026-11-05 (BE 0d9507a, FE b560c54b). This scenario takes the small, clear items nobody
 had started, plus one bug in our own Scenario 80 work.
 
-Branch `feat/scenario-85-oct29-uat-small-items` in both repos, worktrees `backend/backend-scenario-85` and
-`frontend/frontend-scenario-85`.
+Branch `feat/scenario-86-oct29-uat-small-items` in both repos, worktrees `backend/backend-scenario-85` and
+`frontend/frontend-scenario-85`. Renumbered from 85 on 2026-11-05: 85 was taken by
+`feat/scenario-85-sales-reports-revamp`. The worktree folders keep the old number, and the earlier commits on this
+branch still say "Scenario 85".
 
 ## Decisions (Kian, 2026-11-05)
 
@@ -83,4 +85,4 @@ Branch `feat/scenario-85-oct29-uat-small-items` in both repos, worktrees `backen
 ## Tests
 
 Per part: backend e2e spec, Playwright spec, regression runs of the suites that touch the changed code, hard edge
-cases, and a click-by-click manual test in `NIG/Scenario-85-Manual-Test.md`.
+cases, and a click-by-click manual test in `NIG/Scenario-86-Manual-Test.md`.

@@ -3,7 +3,7 @@ import { gotoReady, loginAs } from './utils'
 
 const ROLE_PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
 
-// Scenario 85 Part 3 — Oct 29 UAT POS-01. With "All Branches" picked, the POS
+// Scenario 86 Part 3 — Oct 29 UAT POS-01. With "All Branches" picked, the POS
 // Overview's Total Sales card is every branch combined; a "Total Sales by
 // branch" breakdown now sits under it, and its total equals the card. With
 // one branch picked the card is already that branch, so no breakdown.
@@ -11,7 +11,7 @@ const ROLE_PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise
 // Works on whatever sales the DB has this month: either branches with sales
 // whose total matches the card, or "No sales in this period." with a ₱0 card.
 // The exact per-branch figures and branch scoping are covered by the backend
-// e2e scenario-85-sales-by-branch.
+// e2e scenario-86-sales-by-branch.
 
 const STORE_KEY = 'pos-branch-context' // zustand persist key of the branch switcher
 

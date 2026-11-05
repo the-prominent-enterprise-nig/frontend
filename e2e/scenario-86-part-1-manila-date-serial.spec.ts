@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { gotoReady, loginAs } from './utils'
 
-// Scenario 85 Part 1.
+// Scenario 86 Part 1.
 //
 // DC-02 follow-up — the collections screen's "today" is the Manila date. It
 // was the UTC date, so between 00:00 and 08:00 Manila the date fields topped
@@ -80,7 +80,7 @@ test.describe('Transfer Receive panel — serial number styling (STR-02)', () =>
       currentWarehouseId: string | null
     }[]
 
-    const reason = `E2E S85 STR-02 ${Date.now()}`
+    const reason = `E2E S86 STR-02 ${Date.now()}`
     let transfer: { id: string; transferNumber: string } | null = null
     let serial: (typeof serials)[number] | null = null
     for (const candidate of serials.filter((s) => s.currentWarehouseId)) {
@@ -117,7 +117,7 @@ test.describe('Transfer Receive panel — serial number styling (STR-02)', () =>
           serialAssignments: [{ lineId, serialNumberId: serial!.id }],
           driverName: 'E2E Driver',
           driverPhone: '09170001111',
-          vehiclePlate: 'E2E 085',
+          vehiclePlate: 'E2E 086',
           carrierName: 'E2E Carrier',
         },
       }
@@ -147,7 +147,7 @@ test.describe('Transfer Receive panel — serial number styling (STR-02)', () =>
       {
         data: {
           receivedDate: manilaToday(),
-          notes: 'E2E S85 clean-up',
+          notes: 'E2E S86 clean-up',
           lines: [{ stockTransferLineId: lineId, quantityReceived: 1 }],
         },
       }
