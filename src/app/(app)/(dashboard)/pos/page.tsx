@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   useTransactions,
+  useSalesByBranch,
   useSessions,
   useTerminals,
   usePendingVoidRequests,
@@ -17,11 +18,12 @@ import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { Skeleton } from '@/src/components/ui/Skeleton'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
-import { type SessionUser } from '@/src/libs/guards/permission'
+import { type SessionUser, hasPrivilegedRole } from '@/src/libs/guards/permission'
 import { TransactionDetail } from './_components/TransactionDetail'
 import { MonthStepper } from './_components/MonthStepper'
 import { DatePickerButton } from './_components/DatePickerButton'
 import type { PosTransaction } from '@/src/schema/pos'
+import type { SalesByBranch } from './_actions/pos-actions'
 import {
   ShoppingCart,
   Monitor,
@@ -142,6 +144,19 @@ export default function PosOverviewPage() {
     refetch,
     isFetching,
   } = useTransactions(txFilter, autoRefresh)
+  // Oct 29 UAT POS-01 — with no branch picked, Total Sales is every branch
+  // combined, so it's broken down per branch underneath. Same period bounds
+  // and sale rule (non-voided sales) as the card. Only for users who see
+  // every branch — the Business Owner, or anyone (Head Office) with no branch
+  // of their own: a branch user's card is already their own branch, which the
+  // server scopes the summary to anyway.
+  const showSalesByBranch =
+    !branchId && !!session && (hasPrivilegedRole(session) || !session.branchId)
+  const { data: byBranchData, isLoading: byBranchLoading } = useSalesByBranch(
+    periodBounds(period),
+    showSalesByBranch,
+    autoRefresh
+  )
   const { data: sessData, isLoading: sessLoading } = useSessions(branchFilter, autoRefresh)
   const { data: termData, isLoading: termLoading } = useTerminals(branchFilter, autoRefresh)
 
@@ -398,6 +413,7 @@ export default function PosOverviewPage() {
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <StatCard
             label="Total Sales"
+            testId="stat-total-sales"
             value={isLoading ? null : formatCurrency(totalSales)}
             icon={<TrendingUp className="h-5 w-5 text-green-600" />}
             bg="bg-green-50"
@@ -421,6 +437,14 @@ export default function PosOverviewPage() {
             bg="bg-orange-50"
           />
         </div>
+
+        {showSalesByBranch && (
+          <SalesByBranchBreakdown
+            rows={byBranchData?.data ?? null}
+            loading={byBranchLoading}
+            failed={!!byBranchData && !byBranchData.success}
+          />
+        )}
 
         {/* Quick Links */}
         <div>
@@ -547,19 +571,101 @@ export default function PosOverviewPage() {
   )
 }
 
+/** Oct 29 UAT POS-01 — Total Sales per branch, under the combined card.
+ * Branches with no sales in the period are left out, so the list is only as
+ * long as it needs to be. */
+function SalesByBranchBreakdown({
+  rows,
+  loading,
+  failed,
+}: {
+  rows: SalesByBranch[] | null
+  loading: boolean
+  failed: boolean
+}) {
+  const withSales = (rows ?? []).filter((r) => r.transactionCount > 0)
+  const total = withSales.reduce((sum, r) => sum + r.totalSales, 0)
+  return (
+    <div
+      className="rounded-xl border border-gray-200 bg-white shadow-sm"
+      data-testid="total-sales-by-branch"
+    >
+      <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3">
+        <h2 className="text-sm font-semibold text-gray-900">Total Sales by branch</h2>
+        {!loading && !failed && withSales.length > 0 && (
+          <span className="text-xs text-gray-500">
+            {withSales.length} branch{withSales.length === 1 ? '' : 'es'} with sales
+          </span>
+        )}
+      </div>
+      {loading ? (
+        <div className="space-y-2 p-5">
+          <Skeleton className="h-5 w-full" />
+          <Skeleton className="h-5 w-full" />
+        </div>
+      ) : failed ? (
+        <p className="px-5 py-4 text-sm text-red-600">Couldn&apos;t load sales by branch.</p>
+      ) : withSales.length === 0 ? (
+        <p className="px-5 py-4 text-sm text-gray-500">No sales in this period.</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+              <th className="px-5 py-2 font-medium">Branch</th>
+              <th className="px-5 py-2 text-right font-medium">No. of sales</th>
+              <th className="px-5 py-2 text-right font-medium">Total Sales</th>
+            </tr>
+          </thead>
+          <tbody>
+            {withSales.map((r) => (
+              <tr
+                key={r.branchId}
+                className="border-t border-gray-100"
+                data-testid="total-sales-branch-row"
+              >
+                <td className="px-5 py-2 text-gray-900">{r.branchName}</td>
+                <td className="px-5 py-2 text-right text-gray-600">{r.transactionCount}</td>
+                <td className="px-5 py-2 text-right font-medium text-gray-900">
+                  {formatCurrency(r.totalSales)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-gray-200 bg-gray-50">
+              <td className="px-5 py-2 font-semibold text-gray-900">All branches</td>
+              <td className="px-5 py-2 text-right font-semibold text-gray-900">
+                {withSales.reduce((n, r) => n + r.transactionCount, 0)}
+              </td>
+              <td
+                className="px-5 py-2 text-right font-semibold text-gray-900"
+                data-testid="total-sales-by-branch-total"
+              >
+                {formatCurrency(total)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
+    </div>
+  )
+}
+
 function StatCard({
   label,
   value,
   icon,
   bg,
+  testId,
 }: {
   label: string
   value: string | null
   icon: React.ReactNode
   bg: string
+  testId?: string
 }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm" data-testid={testId}>
       <div className="flex items-center justify-between">
         <p className="text-sm text-gray-500">{label}</p>
         <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${bg}`}>{icon}</span>
