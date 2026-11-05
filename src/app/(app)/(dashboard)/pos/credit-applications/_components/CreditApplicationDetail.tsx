@@ -1310,6 +1310,24 @@ export default function CreditApplicationDetail({
             </p>
           </div>
         )}
+
+        {/* The same "Continue to sale" as the banner at the top, repeated at
+            the very end. The banner stays where it is; this is for the seller
+            who has just scrolled through the documents and the approval notice
+            and is looking for what to do next. Same condition, same handler,
+            same disabled state — it is the one action, offered twice. */}
+        {canSell && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={continueToSale}
+              disabled={!hasOpenSession}
+              className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {hasOpenSession ? 'Continue to sale' : 'No open POS session'}
+            </button>
+          </div>
+        )}
       </div>
 
       {isCancelOpen && (
