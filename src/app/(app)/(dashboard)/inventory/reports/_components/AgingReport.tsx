@@ -2,12 +2,15 @@
 import ExportButton from '@/src/components/common/ExportButton'
 import TablePagination from '@/src/components/common/TablePagination'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
-import type { ReactElement } from 'react'
-import type { AgingFilters } from '../_hooks/useInventoryReports'
+import { useState, type ReactElement } from 'react'
+import { useAgingCategoryOptions, type AgingFilters } from '../_hooks/useInventoryReports'
 import {
   type AgingReportItem,
   type AgingReportResponse,
   type SerialAgingBucket,
+  type UnitClassification,
+  UnitClassificationSchema,
+  UNIT_CLASSIFICATION_LABELS,
 } from '@/src/schema/inventory/reports'
 
 type Option = { id: string; name: string }
@@ -22,7 +25,7 @@ interface Props {
   filters: AgingFilters
   onFiltersChange: (filters: AgingFilters) => void
   warehouses: Option[]
-  categoryOptions: Option[]
+  /** Item types: the report's Types. */
   typeOptions: Option[]
 }
 
@@ -142,41 +145,61 @@ function OptionSelect({
   )
 }
 
-function FilterBar({
-  filters,
-  onFiltersChange,
-  warehouses,
-  categoryOptions,
-  typeOptions,
-  canExport,
-}: Pick<Props, 'filters' | 'onFiltersChange' | 'warehouses' | 'categoryOptions' | 'typeOptions'> & {
-  canExport: boolean
-}): ReactElement {
-  // Every change reloads the report, so the export always matches the screen.
-  const set = (patch: Partial<AgingFilters>): void => onFiltersChange({ ...filters, ...patch })
+/** Static: the three ways a unit can come into stock (SerialNumber.receivedAs). */
+const CLASSIFICATION_OPTIONS: Option[] = UnitClassificationSchema.options.map((id) => ({
+  id,
+  name: UNIT_CLASSIFICATION_LABELS[id],
+}))
 
+type FilterBarProps = Pick<Props, 'warehouses' | 'typeOptions'> & {
+  draft: AgingFilters
+  onDraftChange: (patch: Partial<AgingFilters>) => void
+  onProcess: () => void
+  isDirty: boolean
+}
+
+/** The staged filters; they only reach the report on Process. */
+function FilterBar({
+  draft,
+  onDraftChange: set,
+  onProcess,
+  isDirty,
+  warehouses,
+  typeOptions,
+}: FilterBarProps): ReactElement {
+  // Category follows the Type picked here, before Process.
+  const categoryOptions = useAgingCategoryOptions(draft.typeId)
   return (
     <div className="flex flex-wrap items-end gap-4">
       <FilterField label="As of date">
         <input
           type="date"
           aria-label="As of date"
-          value={filters.asOf}
+          value={draft.asOf}
           onChange={(e) => set({ asOf: e.target.value })}
           className="h-10 rounded-lg border border-zinc-300 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-prominent-purple-600"
         />
       </FilterField>
       <FilterField label="Location">
         <OptionSelect
-          value={filters.warehouseId}
+          value={draft.warehouseId}
           onChange={(warehouseId) => set({ warehouseId })}
           placeholder="All locations"
           options={warehouses.map((w) => ({ id: w.id, name: locationLabel(w.name) }))}
         />
       </FilterField>
+      <FilterField label="Type">
+        <OptionSelect
+          value={draft.typeId}
+          // A Category picked under the old Type may not exist under the new one.
+          onChange={(typeId) => set({ typeId, categoryId: undefined })}
+          placeholder="All types"
+          options={typeOptions}
+        />
+      </FilterField>
       <FilterField label="Category">
         <OptionSelect
-          value={filters.categoryId}
+          value={draft.categoryId}
           onChange={(categoryId) => set({ categoryId })}
           placeholder="All categories"
           options={categoryOptions}
@@ -184,18 +207,21 @@ function FilterBar({
       </FilterField>
       <FilterField label="Classification">
         <OptionSelect
-          value={filters.typeId}
-          onChange={(typeId) => set({ typeId })}
+          value={draft.classification}
+          onChange={(classification) =>
+            set({ classification: classification as UnitClassification | undefined })
+          }
           placeholder="All classifications"
-          options={typeOptions}
+          options={CLASSIFICATION_OPTIONS}
         />
       </FilterField>
-      <ExportButton
-        endpoint="/inventory/reports/aging/export"
-        params={{ ...filters }}
-        fallbackFilename="inventory-aging.xlsx"
-        disabled={!canExport}
-      />
+      <button
+        type="button"
+        onClick={onProcess}
+        className="inline-flex h-10 items-center justify-center rounded-xl bg-prominent-purple-700 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-prominent-purple-800"
+      >
+        {isDirty ? 'Process' : 'Refresh'}
+      </button>
     </div>
   )
 }
@@ -294,28 +320,41 @@ export default function AgingReport({
   filters,
   onFiltersChange,
   warehouses,
-  categoryOptions,
   typeOptions,
 }: Props): ReactElement {
   const meta = data?.meta
   const pageSize = meta?.limit ?? 20
+  const [draft, setDraft] = useState<AgingFilters>(filters)
+  // Export is held back while the staged filters differ from the table's,
+  // so the file can never disagree with the screen.
+  const isDirty = JSON.stringify(draft) !== JSON.stringify(filters)
 
   return (
     <div className="flex flex-col gap-6 rounded-2xl border border-zinc-200 bg-white p-5 md:p-8">
-      <div>
-        <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Inventory Aging Report</h1>
-        <p className="mt-1 text-sm text-zinc-500">How long each in-stock unit has been on hand.</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Inventory Aging Report</h1>
+          <p className="mt-1 text-sm text-ink-muted">
+            How long each in-stock unit has been on hand.
+          </p>
+        </div>
+        <ExportButton
+          endpoint="/inventory/reports/aging/export"
+          params={{ ...filters }}
+          fallbackFilename="inventory-aging.xlsx"
+          disabled={!data?.data.length || isDirty}
+        />
       </div>
 
       {data && <SummaryCards data={data} />}
 
       <FilterBar
-        filters={filters}
-        onFiltersChange={onFiltersChange}
+        draft={draft}
+        onDraftChange={(patch) => setDraft((d) => ({ ...d, ...patch }))}
+        onProcess={() => onFiltersChange({ ...draft, asOf: draft.asOf || filters.asOf })}
+        isDirty={isDirty}
         warehouses={warehouses}
-        categoryOptions={categoryOptions}
         typeOptions={typeOptions}
-        canExport={Boolean(data?.data.length)}
       />
 
       <div className={`transition-opacity ${isFetching ? 'opacity-60' : ''}`}>

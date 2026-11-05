@@ -88,8 +88,9 @@ export default function OverviewTab({ item }: { item: ItemSummary }) {
 
       {/* Identity */}
       <div className="grid grid-cols-2 gap-4">
+        {/* The category tree: Category (the sheet's GROUP / SUBGROUP). */}
         <Field label="Category" value={displayClassificationLabel(categoryName)} />
-        <Field label="Subcategory" value={displayClassificationLabel(subcategoryName)} />
+        <Field label="Subgroup" value={displayClassificationLabel(subcategoryName)} />
         <Field label="Unit of Measure" value={item.baseUnit?.name} />
         <Field label="Costing Method" value={COSTING_LABELS[(item as any).costingMethod] ?? '—'} />
       </div>
@@ -103,7 +104,7 @@ export default function OverviewTab({ item }: { item: ItemSummary }) {
           <div className="grid grid-cols-2 gap-4">
             <Field label="Brand" value={displayClassificationLabel(item.brand?.name)} />
             <Field label="Model Number" value={item.modelNumber} />
-            <Field label="Item Type" value={displayClassificationLabel(item.type?.name)} />
+            <Field label="Type" value={displayClassificationLabel(item.type?.name)} />
           </div>
         </div>
       )}

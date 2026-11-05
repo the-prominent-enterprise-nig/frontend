@@ -20,13 +20,13 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
 // Serial Numbers moved to Stock (StockHub) — it's operational data (physical
 // units on hand), not a product definition like the rest of this hub's tabs.
-// Order follows the Item Master sketch: the onboarding lists first, then
-// Barcodes. Items is hidden for now — it moves to POS. Its component and route
+// Order: Brands, Types, Categories (the client sheet's BRAND / TYPE /
+// GROUP), then the other onboarding lists, then Barcodes. Items is hidden for now — it moves to POS. Its component and route
 // are untouched; set hidden to false to show it again.
 const TABS: (NavTab & { hidden?: boolean })[] = [
-  { id: 'categories', label: 'Categories' },
   { id: 'brands', label: 'Brands' },
   { id: 'types', label: 'Types' },
+  { id: 'categories', label: 'Categories' },
   { id: 'attributes', label: 'Attributes' },
   { id: 'units', label: 'Units of Measure' },
   { id: 'items', label: 'Items', hidden: true },
@@ -40,10 +40,11 @@ export function CatalogHub({ session }: { session: SessionUser }) {
   const visible = TABS.filter((t) => !t.hidden)
   const canAddItem = can(session, INVENTORY_PERMISSIONS.ITEMS_CREATE)
   const [addItemOpen, setAddItemOpen] = useState(false)
-  const requested = searchParams.get('tab') ?? 'categories'
-  const tab = visible.some((t) => t.id === requested) ? requested : 'categories'
+  const defaultTab = visible[0].id
+  const requested = searchParams.get('tab') ?? defaultTab
+  const tab = visible.some((t) => t.id === requested) ? requested : defaultTab
 
-  // A hidden ?tab= would show Categories with no tab highlighted, so rewrite
+  // A hidden ?tab= would show the first tab with none highlighted, so rewrite
   // the URL to the tab that is actually shown.
   useEffect(() => {
     if (tab !== requested) router.replace(`${pathname}?tab=${tab}`)
@@ -67,9 +68,7 @@ export function CatalogHub({ session }: { session: SessionUser }) {
           )
         }
       />
-      {tab === 'brands' ? (
-        <BrandsPageView session={session} />
-      ) : tab === 'types' ? (
+      {tab === 'types' ? (
         <TypesPageView session={session} />
       ) : tab === 'attributes' ? (
         <AttributesPageView session={session} />
@@ -79,8 +78,10 @@ export function CatalogHub({ session }: { session: SessionUser }) {
         <ItemMasterList session={session} />
       ) : tab === 'barcodes' ? (
         <BarcodesPageView session={session} />
-      ) : (
+      ) : tab === 'categories' ? (
         <CategoryManager session={session} />
+      ) : (
+        <BrandsPageView session={session} />
       )}
       {/* Rendered here, not beside its button: the modal fills its nearest
           positioned ancestor, which inside the sticky tab strip is the strip. */}

@@ -412,12 +412,11 @@ export default function CreateItemModal({
               )}
             </div>
 
-            {/* Category */}
-            {/* Item Type — required: it routes the item's GL lines and its
-                report row (Appliances, Furniture, IT…). */}
+            {/* Type — required: it routes the item's GL
+                lines and its report row (Appliances, Furniture, IT…). */}
             <div>
               <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Item Type <span className="text-red-500">*</span>
+                Type <span className="text-red-500">*</span>
               </label>
               <Controller
                 name="typeId"
@@ -428,9 +427,9 @@ export default function CreateItemModal({
                     value={field.value ?? ''}
                     onChange={field.onChange}
                     options={typeOptions.map((t) => ({ value: t.id, label: t.name }))}
-                    placeholder="Select item type…"
+                    placeholder="Select type…"
                     loading={typeOptions.length === 0}
-                    loadingLabel="Loading item types…"
+                    loadingLabel="Loading types…"
                   />
                 )}
               />
@@ -451,6 +450,7 @@ export default function CreateItemModal({
                     value={field.value}
                     onChange={field.onChange}
                     options={categories}
+                    placeholder="Select category or subgroup…"
                   />
                 )}
               />

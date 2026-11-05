@@ -4,6 +4,7 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 import { STALE } from '@/src/libs/query/stale-times'
 import { getStockLedger } from '../_actions/get-stock-ledger'
+import { getCategories, getItemTypes } from '../../items/_actions/get-lookup-data'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
 import { useLocationFilter } from '@/src/libs/inventory/useLocationFilter'
 
@@ -23,6 +24,20 @@ export function useStockLedger(initialLocations?: LocationToken[]) {
   const [startDate, setStartDate] = useState<string | undefined>()
   const [endDate, setEndDate] = useState<string | undefined>()
   const [search, setSearchState] = useState('')
+  // Type = item type; Category = the client sheet's GROUP (a root category).
+  const [typeId, setTypeId] = useState<string | undefined>()
+  const [categoryId, setCategoryId] = useState<string | undefined>()
+
+  const groupsQuery = useQuery({
+    queryKey: ['inventory-category-groups-lookup'],
+    queryFn: () => getCategories({ parentCategoryId: 'null' }),
+    staleTime: STALE.LOOKUP,
+  })
+  const typesQuery = useQuery({
+    queryKey: ['inventory-item-types-lookup'],
+    queryFn: () => getItemTypes(),
+    staleTime: STALE.LOOKUP,
+  })
 
   const params = useMemo(
     () => ({
@@ -35,8 +50,22 @@ export function useStockLedger(initialLocations?: LocationToken[]) {
       startDate,
       endDate,
       search: search.trim() || undefined,
+      typeId,
+      categoryId,
     }),
-    [page, limit, branchIds, warehouseIds, region, transactionType, startDate, endDate, search]
+    [
+      page,
+      limit,
+      branchIds,
+      warehouseIds,
+      region,
+      transactionType,
+      startDate,
+      endDate,
+      search,
+      typeId,
+      categoryId,
+    ]
   )
 
   const ledgerQuery = useQuery({
@@ -55,6 +84,8 @@ export function useStockLedger(initialLocations?: LocationToken[]) {
     setTransactionType(undefined)
     setStartDate(undefined)
     setEndDate(undefined)
+    setTypeId(undefined)
+    setCategoryId(undefined)
     setSearchState('')
     setPage(1)
   }
@@ -75,6 +106,18 @@ export function useStockLedger(initialLocations?: LocationToken[]) {
     startDate,
     endDate,
     search,
+    typeId,
+    categoryId,
+    groupOptions: groupsQuery.data?.data?.data ?? [],
+    typeOptions: typesQuery.data?.data ?? [],
+    setTypeId: (v: string | undefined) => {
+      setTypeId(v)
+      setPage(1)
+    },
+    setCategoryId: (v: string | undefined) => {
+      setCategoryId(v)
+      setPage(1)
+    },
     setSearch: (v: string) => {
       setSearchState(v)
       setPage(1)

@@ -21,7 +21,6 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
     agingData,
     isAgingLoading,
     isAgingFetching,
-    categoryOptions,
     typeOptions,
   } = useInventoryReports()
 
@@ -38,7 +37,6 @@ export default function ReportsDashboard({ session }: { session: SessionUser }) 
             filters={agingFilters}
             onFiltersChange={applyAgingFilters}
             warehouses={warehouseOptions}
-            categoryOptions={categoryOptions}
             typeOptions={typeOptions}
           />
         )}

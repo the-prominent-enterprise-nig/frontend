@@ -190,6 +190,12 @@ export default function StockLedgerTab({
     endDate,
     search,
     setSearch,
+    typeId,
+    categoryId,
+    groupOptions,
+    typeOptions,
+    setTypeId,
+    setCategoryId,
     setTransactionType,
     setStartDate,
     setEndDate,
@@ -202,6 +208,8 @@ export default function StockLedgerTab({
     !!locationFilter.region,
     locationFilter.locations.length > 0,
     !!transactionType,
+    !!typeId,
+    !!categoryId,
     !!startDate || !!endDate,
   ].filter(Boolean).length
   const hasFilters = activeFilterCount > 0 || !!search
@@ -260,7 +268,7 @@ export default function StockLedgerTab({
             onChange={(e) => setSearch(e.target.value)}
             onFocus={() => setSearchFocus(true)}
             onBlur={() => setSearchFocus(false)}
-            placeholder="Search unit, brand, model, category, RR, ST, SI or DR…"
+            placeholder="Search unit, brand, model, type, category, RR, ST, SI or DR…"
             className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-ink-faint"
           />
           {search !== '' && (
@@ -280,10 +288,32 @@ export default function StockLedgerTab({
         <LocationFilters filter={locationFilter} chrome={CONTROL_CHROME} />
 
         <SearchableSelect
+          className="w-[170px]"
+          value={typeId ?? ''}
+          onChange={(v) => setTypeId(v || undefined)}
+          placeholder="All types"
+          ariaLabel="Type"
+          chrome={CONTROL_CHROME}
+          clearable
+          options={typeOptions.map((t) => ({ value: t.id, label: t.name }))}
+        />
+
+        <SearchableSelect
+          className="w-[170px]"
+          value={categoryId ?? ''}
+          onChange={(v) => setCategoryId(v || undefined)}
+          placeholder="All categories"
+          ariaLabel="Category"
+          chrome={CONTROL_CHROME}
+          clearable
+          options={groupOptions.map((g) => ({ value: g.id, label: g.name }))}
+        />
+
+        <SearchableSelect
           className="w-[190px]"
           value={transactionType ?? ''}
           onChange={(v) => setTransactionType(v || undefined)}
-          placeholder="All Types"
+          placeholder="All movements"
           chrome={CONTROL_CHROME}
           clearable
           options={TRANSACTION_TYPE_OPTIONS}

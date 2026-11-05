@@ -12,6 +12,12 @@ import {
 export async function getCategories(params?: {
   search?: string
   status?: 'active' | 'inactive'
+  /** `'null'` lists root categories only. */
+  parentCategoryId?: string
+  /** Defaults to 200. */
+  limit?: number
+  /** Only categories holding items of this item type, and the root over each. */
+  typeId?: string
 }): Promise<ApiResponse<{ data: CategoryOption[] }>> {
   try {
     const result = await api.get(
