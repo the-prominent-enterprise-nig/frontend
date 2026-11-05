@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { RefreshCw, X, ClipboardList } from 'lucide-react'
-import { useStockCounts } from '../_hooks/useStockCounts'
+import { useStockCounts, isDue } from '../_hooks/useStockCounts'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
@@ -15,6 +15,7 @@ import {
 } from '@/src/schema/inventory/stock-counts'
 import CreateCountModal from './CreateCountModal'
 import CountSessionView from './CountSessionView'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
 const STATUS_COLORS: Record<CountStatus, string> = {
   scheduled: 'bg-zinc-100 text-zinc-600',
@@ -25,7 +26,6 @@ const STATUS_COLORS: Record<CountStatus, string> = {
 
 export default function StockCountList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.STOCK_COUNT_CREATE)
-  const canAdjust = hasPermission(session, INVENTORY_PERMISSIONS.STOCK_ADJUST)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
   const {
@@ -46,9 +46,6 @@ export default function StockCountList({ session }: { session: SessionUser }) {
     selectedCount,
     setSelectedCount,
     warehouseOptions,
-    itemOptions,
-    batchOptions,
-    serialOptions,
     countLines,
     isCountLinesLoading,
     createCount,
@@ -59,8 +56,6 @@ export default function StockCountList({ session }: { session: SessionUser }) {
     isSubmitting,
     cancelCount,
     isCancelling,
-    createAdjustment,
-    isAdjusting,
     refetch,
   } = useStockCounts()
 
@@ -73,9 +68,10 @@ export default function StockCountList({ session }: { session: SessionUser }) {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Stock Counts</h1>
+            <h1 className="text-2xl font-bold text-zinc-900 md:text-3xl">Physical Inventory</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              Manage count sessions, review variances, and post adjustments.
+              Count each location&apos;s stock against the system, review variances, and post
+              adjustments.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -95,7 +91,7 @@ export default function StockCountList({ session }: { session: SessionUser }) {
                 className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
               >
                 <ClipboardList className="h-4 w-4" />
-                New Count
+                New Physical Inventory
               </button>
             )}
           </div>
@@ -109,45 +105,43 @@ export default function StockCountList({ session }: { session: SessionUser }) {
               filter adds nothing. HQ/Business Owner sees every location and
               keeps it. */}
           {warehouseOptions.length > 1 && (
-            <select
-              value={warehouseFilter ?? ''}
-              onChange={(e) => setWarehouseFilter(e.target.value || undefined)}
-              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-            >
-              <option value="">All Locations</option>
-              {warehouseOptions.map((wh) => (
-                <option key={wh.id} value={wh.id}>
-                  {wh.branch?.name ?? wh.name}
-                </option>
-              ))}
-            </select>
+            <div className="w-56">
+              <SearchableSelect
+                value={warehouseFilter ?? ''}
+                onChange={(v) => setWarehouseFilter(v || undefined)}
+                placeholder="All Locations"
+                ariaLabel="Filter by location"
+                clearable
+                options={warehouseOptions.map((wh) => ({
+                  value: wh.id,
+                  label: wh.branch?.name ?? wh.name,
+                }))}
+              />
+            </div>
           )}
-          <select
-            value={countTypeFilter ?? ''}
-            onChange={(e) => setCountTypeFilter(e.target.value || undefined)}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">All Types</option>
-            {(['full', 'cycle', 'spot'] as const).map((t) => (
-              <option key={t} value={t}>
-                {COUNT_TYPE_LABELS[t]}
-              </option>
-            ))}
-          </select>
-          <select
-            value={statusFilter ?? ''}
-            onChange={(e) =>
-              setStatusFilter((e.target.value || undefined) as CountStatus | undefined)
-            }
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">All Statuses</option>
-            {statusOptions.map((s) => (
-              <option key={s} value={s}>
-                {COUNT_STATUS_LABELS[s]}
-              </option>
-            ))}
-          </select>
+          <div className="w-44">
+            <SearchableSelect
+              value={countTypeFilter ?? ''}
+              onChange={(v) => setCountTypeFilter(v || undefined)}
+              placeholder="All Types"
+              ariaLabel="Filter by count type"
+              clearable
+              options={(['full', 'cycle', 'spot'] as const).map((t) => ({
+                value: t,
+                label: COUNT_TYPE_LABELS[t],
+              }))}
+            />
+          </div>
+          <div className="w-44">
+            <SearchableSelect
+              value={statusFilter ?? ''}
+              onChange={(v) => setStatusFilter((v || undefined) as CountStatus | undefined)}
+              placeholder="All Statuses"
+              ariaLabel="Filter by status"
+              clearable
+              options={statusOptions.map((s) => ({ value: s, label: COUNT_STATUS_LABELS[s] }))}
+            />
+          </div>
           {hasFilters && (
             <button
               type="button"
@@ -161,7 +155,7 @@ export default function StockCountList({ session }: { session: SessionUser }) {
 
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-            <p className="text-sm font-medium text-red-800">Failed to load count sessions</p>
+            <p className="text-sm font-medium text-red-800">Failed to load physical inventories</p>
           </div>
         )}
 
@@ -185,10 +179,10 @@ export default function StockCountList({ session }: { session: SessionUser }) {
           ) : counts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16">
               <ClipboardList className="mb-3 h-10 w-10 text-zinc-300" />
-              <p className="text-sm font-medium text-zinc-500">No count sessions found</p>
+              <p className="text-sm font-medium text-zinc-500">No physical inventories found</p>
               {canCreate && (
                 <p className="mt-1 text-xs text-zinc-400">
-                  Create a count session to begin tracking inventory accuracy.
+                  Start a physical inventory to check stock against the system.
                 </p>
               )}
             </div>
@@ -221,7 +215,12 @@ export default function StockCountList({ session }: { session: SessionUser }) {
                   {counts.map((count: CountSummary) => (
                     <tr
                       key={count.id}
-                      onClick={() => setSelectedCount(count)}
+                      onClick={() =>
+                        // A scheduled count that's due opens already started.
+                        count.status === 'scheduled' && isDue(count.scheduledDate)
+                          ? void startCount(count.id)
+                          : setSelectedCount(count)
+                      }
                       className="cursor-pointer hover:bg-zinc-50"
                     >
                       <td className="px-4 py-3 font-mono text-xs font-semibold text-zinc-500">
@@ -307,15 +306,9 @@ export default function StockCountList({ session }: { session: SessionUser }) {
         onStart={startCount}
         onSubmit={submitCount}
         onCancel={cancelCount}
-        onAdjust={createAdjustment}
         isStarting={isStarting}
         isSubmitting={isSubmitting}
         isCancelling={isCancelling}
-        isAdjusting={isAdjusting}
-        items={itemOptions}
-        batches={batchOptions}
-        serials={serialOptions}
-        canAdjust={canAdjust}
         countLines={countLines}
         isCountLinesLoading={isCountLinesLoading}
       />

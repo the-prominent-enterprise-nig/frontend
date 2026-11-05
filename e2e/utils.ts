@@ -64,6 +64,49 @@ export async function clickStable(
 }
 
 /**
+ * Submit Count / Cancel Count on a Physical Inventory session (Scenario 87):
+ * clicks the footer button, confirms in the dialog that follows (its button
+ * has the same name, rendered after it), and waits for the toast.
+ */
+export async function confirmCountAction(
+  page: Page,
+  action: 'Submit Count' | 'Cancel Count',
+  toast: string
+): Promise<void> {
+  const buttons = page.getByRole('button', { name: action, exact: true })
+  await expect(async () => {
+    if ((await buttons.count()) < 2) await buttons.first().click()
+    await buttons.last().click({ timeout: 3_000 })
+    await expect(page.getByText(toast).first()).toBeVisible({ timeout: 3_000 })
+  }).toPass({ timeout: 15_000 })
+}
+
+/**
+ * Picks an option in a SearchableSelect found by its aria-label: types the
+ * option's label to filter, then clicks the exact match (or, with no label,
+ * the first option offered). Retried as a unit because a click that lands
+ * before hydration opens nothing.
+ */
+export async function pickSearchableOption(
+  page: Page,
+  ariaLabel: string,
+  optionLabel?: string
+): Promise<void> {
+  const input = page.getByLabel(ariaLabel, { exact: true })
+  const options = page.getByTestId('searchable-select-option')
+  await expect(async () => {
+    await input.click()
+    if (optionLabel === undefined) {
+      await options.first().click({ timeout: 3_000 })
+      return
+    }
+    await input.fill(optionLabel)
+    const exact = new RegExp(`^${optionLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
+    await options.filter({ hasText: exact }).click({ timeout: 3_000 })
+  }).toPass({ timeout: 20_000 })
+}
+
+/**
  * Opens the custom Select component (src/components/ui/Select.tsx) —
  * combobox/listbox/option ARIA roles, not a native <select>. Not
  * clickStable: that helper retries by clicking again on failure, but this

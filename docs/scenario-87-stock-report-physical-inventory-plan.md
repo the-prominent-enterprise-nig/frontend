@@ -27,13 +27,27 @@ Branch `feat/scenario-87-stock-report-physical-inventory` in both repos, branche
    the top right of the report header (Karms, 2026-11-05).
 3. **Process button** on the Aging screen: filters are staged and the report reloads only when Process is clicked. The
    export uses the last processed filters.
-4. **Remarks** = a preset tag (Found on main shelf / Defective / Yellowish / Lacking parts) **plus** free-text detail
-   (location / ref. no.).
+4. **Remarks** = one free-text box with the four presets (Found on main shelf / Defective / Yellowish / Lacking
+   parts) offered as you type (Karms, 2026-11-05: "should be able to input on remarks", "add search"). Pick one and
+   keep typing the location / ref. no. after it. A remark that starts with a preset is stored with that preset as
+   `remarkTag`; the whole text is `remarks`.
+   4b. **One "Add Found Item"** (Karms, 2026-11-05: "all their items is serialized"): it adds a found **unit**, searched
+   by serial across every location the user can see (it used to list only the count's own warehouse, capped at 200,
+   so a unit recorded elsewhere could never be picked). The non-serial "found item" path and the separate "Add Found
+   Serial" button are gone. A unit the system has never registered still has to be registered first.
 5. **Submit is allowed** with an unchecked line that has no remark. That line is an unaccounted reconciling item, and
    the printout flags it.
 6. **Non-serial lines** keep counted-qty entry, plus Remarks. Serial lines get the In Store? checkbox.
 7. `/inventory/counting?tab=counts` **redirects** to Stock Report → Physical Inventory. Stock Adjustments, Mobile
-   Count and Batches stay there. The **Create Adjustment** tab stays inside the session.
+   Count and Batches stay there. ~~The Create Adjustment tab stays inside the session.~~ **Revised (Karms,
+   2026-11-05): Create Adjustment is removed from the Count Session.** Submit Count already raises one stock
+   adjustment for review from every line that differs. **Adjustments only come from Physical Inventory** (Karms,
+   2026-11-05, option 2): the New adjustment modal (only reachable from a Stock Ledger tab no page rendered),
+   `AdjustmentLineRow`, the `create-adjustment` action and `CreateAdjustmentFormSchema` were removed. Stock
+   Adjustments keeps its list and approval chain. The backend `POST /inventory/adjustments` endpoint is untouched.
+   6b. **Save as you go** (Part 3b): every tick, remark and found unit is saved as it's made
+   (`PATCH`/`DELETE /inventory/counts/:id/lines/:lineId`), so an in-progress count is the draft; no separate Save
+   button. Scan and search are one box: typing filters, Enter ticks the serial (or adds it as found).
 8. **Printout:** As Of = the date the count **started** (the snapshot). Sign-off uses the sample's fixed slots
    (Prepared by, Approved by, 4 Witness).
 9. **Scope:** all 4 parts, one at a time, each manually confirmed before the next.

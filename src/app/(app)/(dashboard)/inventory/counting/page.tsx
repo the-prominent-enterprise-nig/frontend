@@ -7,13 +7,24 @@ import { CountingHub } from './_components/CountingHub'
 
 export const metadata = {
   title: 'Counting | NIG Central',
-  description: 'Stock counts, stock adjustments, mobile counting, batches, and serial numbers',
+  description: 'Stock adjustments, mobile counting and batches',
 }
 
-export default async function CountingPage() {
+/** Where Stock Counts lives now: Stock Report → Physical Inventory (Scenario 87). */
+const PHYSICAL_INVENTORY_HREF = '/inventory/reports?tab=physical-inventory'
+
+export default async function CountingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>
+}) {
   const session = await getSessionOrNull()
 
   if (!session) redirect('/login')
+
+  // Old links: the bare hub and its Stock Counts tab both meant the count list.
+  const { tab } = await searchParams
+  if (!tab || tab === 'counts') redirect(PHYSICAL_INVENTORY_HREF)
 
   const hasAccess = canAny(session, [
     INVENTORY_PERMISSIONS.STOCK_COUNT_READ,

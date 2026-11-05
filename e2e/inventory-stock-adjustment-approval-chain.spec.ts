@@ -12,10 +12,9 @@ import { gotoReady, loginAs } from './utils'
 // separate "HO Inventory" or "Accountant" role in the chain, unlike the
 // PDF's generic description.
 //
-// The adjustment itself is created directly via the API (not through the
-// Stock Counts "Create Adjustment" tab — already covered by
-// inventory-stock-adjustment.spec.ts) so this spec can focus purely on the
-// approval-chain controls.
+// The adjustment itself is created directly via the API — in the app it
+// only comes from a Physical Inventory's Submit Count (Scenario 87) — so
+// this spec can focus purely on the approval-chain controls.
 
 const DEV_PASSWORD = 'dev-prominent-enterprise-2026'
 const STOCK_EMAIL = 'technova.b1.stock@test.com'

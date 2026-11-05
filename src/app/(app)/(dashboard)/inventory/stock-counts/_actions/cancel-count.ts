@@ -30,6 +30,7 @@ export async function cancelCount(id: string): Promise<ApiResponse<unknown>> {
   }
 
   revalidatePath('/inventory/counting')
+  revalidatePath('/inventory/reports')
 
   return { success: true, data: result.data, message: 'Count session cancelled' }
 }
