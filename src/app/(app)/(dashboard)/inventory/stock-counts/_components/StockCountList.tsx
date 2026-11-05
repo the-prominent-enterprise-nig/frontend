@@ -16,6 +16,7 @@ import {
 import CreateCountModal from './CreateCountModal'
 import CountSessionView from './CountSessionView'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import PrintPhysicalInventoryButton from './PrintPhysicalInventoryButton'
 
 const STATUS_COLORS: Record<CountStatus, string> = {
   scheduled: 'bg-zinc-100 text-zinc-600',
@@ -209,6 +210,9 @@ export default function StockCountList({ session }: { session: SessionUser }) {
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 hidden lg:table-cell">
                       Created By
                     </th>
+                    <th className="w-12 px-2 py-3">
+                      <span className="sr-only">Print</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
@@ -252,6 +256,11 @@ export default function StockCountList({ session }: { session: SessionUser }) {
                       </td>
                       <td className="px-4 py-3 text-zinc-500 hidden lg:table-cell">
                         {count.createdBy?.name ?? '—'}
+                      </td>
+                      <td className="px-2 py-3 text-right">
+                        {count.status === 'completed' && (
+                          <PrintPhysicalInventoryButton count={count} variant="icon" />
+                        )}
                       </td>
                     </tr>
                   ))}

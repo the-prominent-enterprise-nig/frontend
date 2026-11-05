@@ -13,6 +13,7 @@ import type { ApiResponse } from '@/src/libs/api/client'
 import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 import { ConfirmDialog } from '@/src/components/ui/Modal'
 import ScanToTick from './ScanToTick'
+import PrintPhysicalInventoryButton from './PrintPhysicalInventoryButton'
 import { useCountAutosave, type AutosaveStatus } from '../_hooks/useCountAutosave'
 import { addCountLine } from '../_actions/add-count-line'
 import { removeCountLine } from '../_actions/remove-count-line'
@@ -409,6 +410,14 @@ export default function CountSessionView({
                 <p className="mt-1">
                   Completed: {new Date(count.completedAt).toLocaleDateString()}
                 </p>
+              )}
+              {isCompleted && (
+                <div className="mt-4 flex items-center justify-between gap-3 border-t border-zinc-200 pt-4">
+                  <p className="text-xs text-ink-muted">
+                    The Monthly Physical Inventory and its Stock Count Sheet, for signing.
+                  </p>
+                  <PrintPhysicalInventoryButton count={count} />
+                </div>
               )}
             </div>
           )}

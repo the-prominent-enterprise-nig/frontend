@@ -185,6 +185,18 @@ Branch `feat/scenario-87-stock-report-physical-inventory` in both repos, branche
 - Reuse the existing print pattern (the CRM aging report's `PrintButton` / print CSS) rather than a PDF library.
 - Company name, branch and As Of come from the count (warehouse, `completedAt` or the start date; see decision 5).
 
+## Part 4 as built (2026-11-05)
+
+`src/libs/print/printPhysicalInventory.ts` builds the printout (its own file, not the 3,300-line
+`printInventoryDocument.ts`); `PrintPhysicalInventoryButton` opens it from a completed count's row (printer icon) and
+from the completed Count Session. Page 1: Monthly Physical Inventory (note, certification, Prepared by / Approved by
+/ 4 Witness). Page 2+: Stock Count Sheet in shelf order (brand, model, serial) with a summary line, ☑/☐, remarks, an
+unticked unit with no remark printed **UNACCOUNTED** (decision 5), 3 blank numbered rows, then "Items found but not
+listed" filled with the count's finds plus 3 ruled lines. As Of = the count's start date (decision 8). The footer
+repeats on every page and so does the table header. The page has no browser margin (`@page { margin: 0 }`), so the
+browser's own date / title header and URL footer have nowhere to print (Karms, 2026-11-05); the margins are drawn by
+the document instead. That also drops the "Page N" number, which only the browser margin could carry.
+
 ## Re-verification (2026-11-05)
 
 - **Category / Group / Subgroup** (corrects Part 1 above): there are no `ItemGroup`/`ItemSubgroup` tables any more
