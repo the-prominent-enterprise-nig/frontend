@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -538,7 +539,7 @@ function ExpenseFormFields({
   const initialPayeeType: PayeeType | '' = initial?.payeeType ?? (initial ? 'SUPPLIER' : '')
 
   const [form, setForm] = useState({
-    expenseDate: initial?.expenseDate?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+    expenseDate: initial?.expenseDate?.slice(0, 10) ?? manilaToday(),
     clearedType: (initial?.clearedType ?? 'SAME_DATE') as ClearedType,
     clearedDate: initial?.clearedDate?.slice(0, 10) ?? '',
     payeeType: initialPayeeType,

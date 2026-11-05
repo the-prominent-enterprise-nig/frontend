@@ -18,6 +18,7 @@ import { LocationName, STATUS_CONFIG, StatusChip, branchLabel } from './transfer
 import Tooltip from '@/src/components/ui/Tooltip'
 import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
 import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 const PRIMARY_PILL_STATUSES: TransferStatus[] = [
   'requested',
@@ -693,7 +694,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                             </span>
                             <span className="text-[11px] text-[#3d3d4a]">
                               {tr.transferDate
-                                ? new Date(tr.transferDate).toLocaleDateString('en-PH', {
+                                ? formatManilaDate(tr.transferDate, {
                                     month: 'short',
                                     day: 'numeric',
                                     year: 'numeric',

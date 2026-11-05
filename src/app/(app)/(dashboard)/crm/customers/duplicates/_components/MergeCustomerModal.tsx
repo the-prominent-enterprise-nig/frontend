@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import { X, ArrowRight } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
@@ -158,7 +159,8 @@ export default function MergeCustomerModal({
                     </div>
                     <div className="mt-1 font-medium text-gray-900">{c.name}</div>
                     <div className="mt-0.5 text-[12px] text-gray-500">
-                      Created {new Date(c.createdAt).toLocaleDateString()}
+                      Created{' '}
+                      {new Date(c.createdAt).toLocaleDateString(undefined, { timeZone: MANILA_TZ })}
                     </div>
                   </button>
                 )

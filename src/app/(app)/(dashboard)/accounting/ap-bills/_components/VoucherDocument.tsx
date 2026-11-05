@@ -1,5 +1,6 @@
 'use client'
 
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 import { fmtMoney } from '@/src/libs/data/AccountingV2Data'
 
 /**
@@ -77,7 +78,7 @@ const TH = 'border border-gray-300 bg-gray-100 px-2.5 py-[7px] text-left font-bo
 const TD = 'border border-gray-300 px-2.5 py-[7px] align-top'
 
 function docDate(v: string | Date | undefined | null): string {
-  return v ? new Date(v).toLocaleDateString('en-PH') : '—'
+  return v ? formatManilaDate(v) : '—'
 }
 
 function MetaPair({ label, value }: { label: string; value: React.ReactNode }) {

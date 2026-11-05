@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { X } from 'lucide-react'
 import { CreateProcurementQuotaSchema } from '@/src/schema/inventory/procurement-quotas'
 import type { CreateProcurementQuotaValues } from '@/src/schema/inventory/procurement-quotas'
+import { manilaToday } from '@/src/libs/format/manila-date'
 
 type Props = {
   onClose: () => void
@@ -26,7 +27,7 @@ export function CreateQuotaModal({ onClose, onSubmit, isSubmitting }: Props) {
     formState: { errors },
   } = useForm<CreateProcurementQuotaValues>({
     resolver: zodResolver(CreateProcurementQuotaSchema),
-    defaultValues: { fiscalYear: new Date().getFullYear(), grain: 'annual' },
+    defaultValues: { fiscalYear: Number(manilaToday().slice(0, 4)), grain: 'annual' },
   })
 
   const handleFormSubmit = async (data: CreateProcurementQuotaValues) => {

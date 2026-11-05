@@ -1,5 +1,6 @@
 'use client'
 
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw, TrendingUp, TrendingDown, Sliders } from 'lucide-react'
 import { CashForecast, type CashForecastResult, fmtMoney } from '@/src/libs/data/AccountingV2Data'
@@ -121,7 +122,7 @@ export default function CashForecastView() {
                   <tr key={w.label}>
                     <td className="px-3 py-2 font-mono text-xs">
                       W{i + 1} ·{' '}
-                      {new Date(w.weekStart).toLocaleDateString('en-PH', {
+                      {formatManilaDate(w.weekStart, {
                         month: 'short',
                         day: 'numeric',
                       })}

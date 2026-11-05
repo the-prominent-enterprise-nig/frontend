@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
@@ -35,7 +36,12 @@ function deductionAccountLabel(account: AcknowledgementReceipt['account'], fallb
 
 function longDate(v: string | null | undefined) {
   return v
-    ? new Date(v).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+    ? new Date(v).toLocaleDateString('en-PH', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        timeZone: MANILA_TZ,
+      })
     : '—'
 }
 

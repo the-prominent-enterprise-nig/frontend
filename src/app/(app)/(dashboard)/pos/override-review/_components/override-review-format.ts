@@ -1,3 +1,4 @@
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import type { OverrideFlag, OverridePlanKind } from '@/src/schema/pos'
 
 export function peso(amount: number | null | undefined): string {
@@ -69,26 +70,36 @@ export const ENTRY_GRID =
 export function formatTime(iso: string): string {
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return ''
-  return at.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
+  return at.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', timeZone: MANILA_TZ })
 }
 
 export function formatDay(iso: string | null): string {
   if (!iso) return '—'
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return '—'
-  return at.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+  return at.toLocaleDateString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: MANILA_TZ,
+  })
 }
 
 /** "Nov 5" — the day alone, for a log row that already has its time beside it. */
 export function formatShortDay(iso: string): string {
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return ''
-  return at.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+  return at.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: MANILA_TZ })
 }
 
 /** HH:mm on a 24-hour clock, as the log table reads. */
 export function formatClock(iso: string): string {
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return ''
-  return at.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return at.toLocaleTimeString('en-PH', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: MANILA_TZ,
+  })
 }

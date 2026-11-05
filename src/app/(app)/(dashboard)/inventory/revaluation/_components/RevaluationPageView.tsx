@@ -8,6 +8,7 @@ import type { SessionUser } from '@/src/libs/guards/permission'
 import { useRevaluation } from '../_hooks/useRevaluation'
 import { REASON_CODE_LABELS, REASON_CODES } from '@/src/schema/inventory/revaluation'
 import type { CreateRevaluationFormValues } from '@/src/schema/inventory/revaluation'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 function formatCurrency(value?: number): string {
   if (value == null) return '—'
@@ -24,6 +25,7 @@ function formatDate(iso: string): string {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
+      timeZone: MANILA_TZ,
     })
   } catch {
     return iso

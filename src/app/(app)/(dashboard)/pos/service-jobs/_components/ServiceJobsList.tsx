@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useState } from 'react'
 import { Plus, Loader2 } from 'lucide-react'
 import { useServiceDrafts, useServiceDraft } from '../_hooks/useServiceDrafts'
@@ -217,7 +218,9 @@ export function ServiceJobsList({ session }: { session: SessionUser }) {
                       <StatusBadge status={draft.status} />
                     </td>
                     <td className="px-4 py-3 text-zinc-500">
-                      {new Date(draft.createdAt).toLocaleDateString()}
+                      {new Date(draft.createdAt).toLocaleDateString(undefined, {
+                        timeZone: MANILA_TZ,
+                      })}
                     </td>
                   </tr>
                 ))}

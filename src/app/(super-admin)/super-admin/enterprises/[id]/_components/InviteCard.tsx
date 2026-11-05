@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Copy, Check, RefreshCw, Clock, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { formatManilaDate, formatManilaDateTime } from '@/src/libs/format/manila-date'
 
 interface Invite {
   id: string
@@ -28,8 +29,8 @@ function formatExpiry(expiresAt: string): string {
   return `Expires in ${m}m`
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-PH', {
+function formatDate(iso: string): string {
+  return formatManilaDate(iso, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -134,7 +135,7 @@ export function InviteCard({ enterpriseId, invite: initial }: Props) {
             <p className="text-xs text-zinc-500">
               Share this link with the business owner. It expires{' '}
               <span className="font-medium text-zinc-700">
-                {new Date(invite.expiresAt).toLocaleString('en-PH', {
+                {formatManilaDateTime(invite.expiresAt, {
                   month: 'short',
                   day: 'numeric',
                   hour: '2-digit',

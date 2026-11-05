@@ -11,6 +11,7 @@ import type {
 } from '@/src/schema/settings/audit-logs'
 import type { BranchDetail } from '@/src/app/(app)/(dashboard)/settings/_actions/get-branches'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 const ACTION_COLORS: Record<string, string> = {
   CREATE: 'bg-green-100 text-green-700',
@@ -512,7 +513,9 @@ export default function AuditLogsSection({
                           <ScopeBadge log={log} branchNameById={branchNameById} />
                         </td>
                         <td className="px-4 py-3 text-zinc-500" suppressHydrationWarning>
-                          {new Date(log.createdAt).toLocaleString()}
+                          {new Date(log.createdAt).toLocaleString(undefined, {
+                            timeZone: MANILA_TZ,
+                          })}
                         </td>
                       </tr>
                       {isExpanded && (

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { ChevronDown, Truck, Wrench, PackageCheck, HandCoins, ReceiptText } from 'lucide-react'
 import type { Uds, UdsStatus } from '@/src/schema/inventory/uds'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 /**
  * What an empty document means. `missing` is the only one anybody has to act
@@ -261,7 +262,7 @@ export function outstandingTrailCount(uds: Uds): number {
 
 function formatDate(iso?: string | null): string | null {
   if (!iso) return null
-  return new Date(iso).toLocaleDateString('en-PH', {
+  return formatManilaDate(iso, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

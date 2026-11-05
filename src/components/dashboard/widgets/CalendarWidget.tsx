@@ -11,6 +11,7 @@ import {
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { GRID_ROW_HEIGHT, GRID_MARGIN_Y } from '@/src/libs/dashboardWidgets'
 import { useEmployeeBirthdays } from './dashboardQueries'
+import { manilaToday } from '@/src/libs/format/manila-date'
 
 // Must match the `h` set for the 'calendar' widget in every role's
 // defaultLayoutsByRole (dashboardWidgets.ts) — Calendar opts out of
@@ -63,17 +64,20 @@ type View = 'calendar' | 'events'
 
 export default function CalendarWidget() {
   const { variant } = useWidgetSize()
-  const now = new Date()
-  const [month, setMonth] = useState(now.getMonth())
-  const [year, setYear] = useState(now.getFullYear())
+  // Today in Manila, as 0-based month / full year / day of month.
+  const todayIso = manilaToday()
+  const nowYear = Number(todayIso.slice(0, 4))
+  const nowMonth = Number(todayIso.slice(5, 7)) - 1
+  const [month, setMonth] = useState(nowMonth)
+  const [year, setYear] = useState(nowYear)
   const [view, setView] = useState<View>('calendar')
   const [events, setEvents] = useState<Record<string, CalendarEvent[]>>({})
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [popoverAnchor, setPopoverAnchor] = useState<{ top: number; left: number } | null>(null)
   const { data: employeeBirthdays = [] } = useEmployeeBirthdays()
 
-  const today = now.getDate()
-  const isCurrentMonth = month === now.getMonth() && year === now.getFullYear()
+  const today = Number(todayIso.slice(8, 10))
+  const isCurrentMonth = month === nowMonth && year === nowYear
   const branchId = usePosBranchContext((s) => s.branchId)
 
   // Measures the nav row's real rendered height so the content area below

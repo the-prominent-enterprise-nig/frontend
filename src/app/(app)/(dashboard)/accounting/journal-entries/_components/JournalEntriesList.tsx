@@ -1,5 +1,6 @@
 'use client'
 
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, RefreshCw, Search, Pencil, Trash2, CheckCircle, Undo2 } from 'lucide-react'
@@ -180,7 +181,7 @@ export default function JournalEntriesList({ session }: { session: SessionUser |
                         className="cursor-pointer hover:bg-gray-50"
                       >
                         <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">
-                          {new Date(entry.date).toLocaleDateString('en-PH', {
+                          {formatManilaDate(entry.date, {
                             year: 'numeric',
                             month: 'short',
                             day: 'numeric',

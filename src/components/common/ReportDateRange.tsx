@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
+import { manilaDateOf } from '@/src/libs/format/manila-date'
 
 export interface DateRange {
   from: string
@@ -26,35 +27,37 @@ const PRESET_LABELS: Record<PresetKey, string> = {
   lastMonth: 'Last Month',
 }
 
-function iso(d: Date): string {
-  // Local-date ISO — toISOString() would shift a PH-local date back a day.
-  const offset = d.getTimezoneOffset() * 60_000
-  return new Date(d.getTime() - offset).toISOString().slice(0, 10)
+/** 'YYYY-MM-DD' for a calendar date — UTC maths on a date-only value, so no
+ * clock or timezone is involved. Month/day overflow rolls over like Date. */
+function iso(y: number, m: number, d: number): string {
+  return new Date(Date.UTC(y, m, d)).toISOString().slice(0, 10)
 }
 
 /** Resolves a preset against `now`, which the caller never passes in
  * production — it exists so the range maths stays unit-testable. */
 export function resolvePreset(key: PresetKey, now = new Date()): DateRange {
-  const y = now.getFullYear()
-  const m = now.getMonth()
+  // The business day in Manila, whatever the browser's timezone.
+  const today = manilaDateOf(now)
+  const y = Number(today.slice(0, 4))
+  const m = Number(today.slice(5, 7)) - 1
+  const d = Number(today.slice(8, 10))
 
   switch (key) {
     case 'today':
-      return { from: iso(now), to: iso(now) }
+      return { from: today, to: today }
     case 'week': {
       // Week starts Monday, matching PH business convention.
-      const day = (now.getDay() + 6) % 7
-      const monday = new Date(y, m, now.getDate() - day)
-      return { from: iso(monday), to: iso(now) }
+      const day = (new Date(Date.UTC(y, m, d)).getUTCDay() + 6) % 7
+      return { from: iso(y, m, d - day), to: today }
     }
     case 'mtd':
-      return { from: iso(new Date(y, m, 1)), to: iso(now) }
+      return { from: iso(y, m, 1), to: today }
     case 'qtd':
-      return { from: iso(new Date(y, Math.floor(m / 3) * 3, 1)), to: iso(now) }
+      return { from: iso(y, Math.floor(m / 3) * 3, 1), to: today }
     case 'ytd':
-      return { from: iso(new Date(y, 0, 1)), to: iso(now) }
+      return { from: iso(y, 0, 1), to: today }
     case 'lastMonth':
-      return { from: iso(new Date(y, m - 1, 1)), to: iso(new Date(y, m, 0)) }
+      return { from: iso(y, m - 1, 1), to: iso(y, m, 0) }
   }
 }
 

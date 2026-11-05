@@ -26,10 +26,11 @@ import {
   type ReturnStatusNote,
 } from './list/returnDisplay'
 import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
+import { formatManilaDate, formatManilaTime } from '@/src/libs/format/manila-date'
 
 function formatDay(dateStr?: string) {
   if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-PH', {
+  return formatManilaDate(dateStr, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -38,7 +39,7 @@ function formatDay(dateStr?: string) {
 
 function formatTime(dateStr?: string) {
   if (!dateStr) return ''
-  return new Date(dateStr).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })
+  return formatManilaTime(dateStr, { hour: '2-digit', minute: '2-digit' })
 }
 
 function formatDate(dateStr?: string) {

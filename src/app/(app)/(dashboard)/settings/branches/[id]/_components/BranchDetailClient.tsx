@@ -33,6 +33,7 @@ import { BRANCH_TYPES } from '@/src/schema/settings/create-branch'
 import { BranchPaymentMethod } from '@/src/schema/pos'
 import { BranchPaymentMethodsSection } from '@/src/components/settings/BranchPaymentMethodsSection'
 import AssignManagerModal from './AssignManagerModal'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 const BRANCH_TYPE_LABELS: Record<string, string> = {
   retail: 'Retail',
@@ -47,12 +48,8 @@ const STATUS_STYLES: Record<string, string> = {
   closed: 'bg-red-100 text-red-600',
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
+function formatDate(iso: string): string {
+  return formatManilaDate(iso, { year: 'numeric', month: 'long', day: 'numeric' }, 'en-US')
 }
 
 function formatCurrency(amount: number) {

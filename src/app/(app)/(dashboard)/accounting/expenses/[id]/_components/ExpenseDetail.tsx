@@ -1,5 +1,6 @@
 'use client'
 
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -47,11 +48,7 @@ const TAX_CODE_LABELS: Record<string, string> = {
 /** MM/DD/YYYY — the format the form's date inputs and the printed voucher use. */
 function fmtDoc(v: string | null | undefined): string {
   return v
-    ? new Date(v).toLocaleDateString('en-US', {
-        month: '2-digit',
-        day: '2-digit',
-        year: 'numeric',
-      })
+    ? formatManilaDate(v, { month: '2-digit', day: '2-digit', year: 'numeric' }, 'en-US')
     : '—'
 }
 

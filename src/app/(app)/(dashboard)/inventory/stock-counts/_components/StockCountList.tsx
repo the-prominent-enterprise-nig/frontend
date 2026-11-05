@@ -17,6 +17,7 @@ import CreateCountModal from './CreateCountModal'
 import CountSessionView from './CountSessionView'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import PrintPhysicalInventoryButton from './PrintPhysicalInventoryButton'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 const STATUS_COLORS: Record<CountStatus, string> = {
   scheduled: 'bg-zinc-100 text-zinc-600',
@@ -247,7 +248,7 @@ export default function StockCountList({ session }: { session: SessionUser }) {
                       </td>
                       <td className="px-4 py-3 text-zinc-500 hidden md:table-cell">
                         {count.scheduledDate
-                          ? new Date(count.scheduledDate).toLocaleDateString('en-PH', {
+                          ? formatManilaDate(count.scheduledDate, {
                               month: 'short',
                               day: 'numeric',
                               year: 'numeric',

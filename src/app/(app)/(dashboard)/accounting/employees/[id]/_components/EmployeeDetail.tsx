@@ -1,5 +1,6 @@
 'use client'
 
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -17,7 +18,7 @@ function fullName(e: { firstName: string; lastName: string; middleName?: string 
 }
 
 function fmtDate(d?: string | null) {
-  return d ? new Date(d).toLocaleDateString('en-PH') : undefined
+  return d ? formatManilaDate(d) : undefined
 }
 
 export default function EmployeeDetail({ id, session }: { id: string; session: SessionUser }) {

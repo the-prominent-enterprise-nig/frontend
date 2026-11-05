@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import Link from 'next/link'
 
 import { useEffect, useState } from 'react'
@@ -49,8 +50,8 @@ const VALID_TABS: Tab[] = [
   'reconciliation',
 ]
 
-const TODAY = new Date().toISOString().slice(0, 10)
-const YEAR_START = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10)
+const TODAY = manilaToday()
+const YEAR_START = `${TODAY.slice(0, 4)}-01-01`
 
 export default function ReportsHub() {
   const searchParams = useSearchParams()

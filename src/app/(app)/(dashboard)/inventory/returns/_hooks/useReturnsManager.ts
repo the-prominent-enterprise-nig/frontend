@@ -16,14 +16,13 @@ import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { OUTCOME_ORDER } from '../_components/list/returnDisplay'
 import type { CustomerReturnFormValues } from '@/src/schema/inventory/returns'
+import { manilaToday, addDaysIso } from '@/src/libs/format/manila-date'
 
 /** What the date filter is set to, rather than the pair of dates behind it. */
 export type DateRange = 'all' | 'last7' | 'last30' | 'custom'
 
 function isoDaysAgo(days: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() - days)
-  return d.toISOString().slice(0, 10)
+  return addDaysIso(manilaToday(), -days)
 }
 
 /** The two dates a preset stands for. `custom` keeps whatever was typed. */

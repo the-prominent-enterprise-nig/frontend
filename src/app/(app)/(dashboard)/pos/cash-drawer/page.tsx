@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useState } from 'react'
 import { useCashDrawerEvents, useCreateCashDrawerEvent, useSessions } from '../_hooks/usePos'
 import { Wallet, RefreshCw, Plus, X, ChevronDown } from 'lucide-react'
@@ -123,6 +124,7 @@ export default function CashDrawerPage() {
                   const cashierName = s.cashier?.name || 'Unknown cashier'
                   const terminalName = s.terminal?.name ?? 'Unknown terminal'
                   const date = new Date(s.openedAt).toLocaleString('en-PH', {
+                    timeZone: MANILA_TZ,
                     month: 'short',
                     day: 'numeric',
                     hour: '2-digit',

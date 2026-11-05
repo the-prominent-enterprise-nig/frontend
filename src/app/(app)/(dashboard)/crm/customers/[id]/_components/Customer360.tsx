@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ, manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -269,7 +270,7 @@ export default function Customer360({
             </span>{' '}
             was merged into this record
             {data.mergedFrom.mergedAt
-              ? ` on ${new Date(data.mergedFrom.mergedAt).toLocaleDateString()}`
+              ? ` on ${new Date(data.mergedFrom.mergedAt).toLocaleDateString(undefined, { timeZone: MANILA_TZ })}`
               : ''}
             . That old profile is no longer active on its own.
           </div>
@@ -288,7 +289,9 @@ export default function Customer360({
             {data.customerType === 'employee' && data.employeeNumber
               ? `Employee ID: ${data.employeeNumber} · `
               : ''}
-            {data.birthday ? `Birthday: ${new Date(data.birthday).toLocaleDateString()} · ` : ''}
+            {data.birthday
+              ? `Birthday: ${new Date(data.birthday).toLocaleDateString(undefined, { timeZone: MANILA_TZ })} · `
+              : ''}
             Source: {data.sourceChannel} · Status: {data.status}
           </div>
         </div>
@@ -553,7 +556,7 @@ export default function Customer360({
                 <li key={r.id} className="py-2.5 text-[13px]">
                   <div className="text-gray-800">{r.note ?? r.reminderType}</div>
                   <div className="text-[12px] text-gray-500">
-                    Due {new Date(r.dueAt).toLocaleString()}
+                    Due {new Date(r.dueAt).toLocaleString(undefined, { timeZone: MANILA_TZ })}
                   </div>
                 </li>
               ))}
@@ -594,7 +597,9 @@ export default function Customer360({
                         {' · '}
                         Payment {p.lineNumber} of {p.totalLines} · due{' '}
                         <span className={URGENCY_TEXT_CLASSES[payableUrgency(p.status, p.dueDate)]}>
-                          {new Date(p.dueDate).toLocaleDateString()}
+                          {new Date(p.dueDate).toLocaleDateString(undefined, {
+                            timeZone: MANILA_TZ,
+                          })}
                         </span>
                       </span>
                       <span className="flex shrink-0 items-center gap-2">
@@ -767,6 +772,7 @@ function PurchaseRow({ tx, onOpen }: { tx: PosTransaction; onOpen: () => void })
       </td>
       <td className="whitespace-nowrap px-2 py-2.5 text-gray-600">
         {new Date(tx.occurredAt ?? tx.createdAt).toLocaleDateString('en-PH', {
+          timeZone: MANILA_TZ,
           year: 'numeric',
           month: 'short',
           day: 'numeric',
@@ -917,7 +923,9 @@ type PayableUrgency = 'overdue' | 'dueSoon' | 'upcoming'
 
 function payableUrgency(status: string, dueDate: string): PayableUrgency {
   if (status === 'OVERDUE') return 'overdue'
-  const daysUntilDue = (new Date(dueDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  // Whole Manila calendar days from today to the due day.
+  const daysUntilDue =
+    (Date.parse(manilaDateOf(dueDate)) - Date.parse(manilaToday())) / (1000 * 60 * 60 * 24)
   return daysUntilDue <= 7 ? 'dueSoon' : 'upcoming'
 }
 
@@ -1177,7 +1185,9 @@ function InstallmentScheduleDetailModal({
                       </span>
                       {' · '}
                       Payment {line.lineNumber} of {schedule.lines.length} · due{' '}
-                      {new Date(line.dueDate).toLocaleDateString()}
+                      {new Date(line.dueDate).toLocaleDateString(undefined, {
+                        timeZone: MANILA_TZ,
+                      })}
                       {isPartial && (
                         <span className="block text-[11px] text-amber-600">
                           {formatPeso(paid)} paid · {formatPeso(dueOutstanding(line))} remaining

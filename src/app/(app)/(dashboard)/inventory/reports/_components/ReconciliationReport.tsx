@@ -3,6 +3,7 @@
 import { AlertOctagon, PackageSearch, Truck, ClipboardList, X } from 'lucide-react'
 import type { ReconciliationReportResponse } from '@/src/schema/inventory/reports'
 import { saleDocNo } from '@/src/libs/format/saleDocNo'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 interface Props {
   data: ReconciliationReportResponse | null | undefined
@@ -108,8 +109,8 @@ export default function ReconciliationReport({
         )}
         {data?.dateRange && (
           <p className="text-xs text-zinc-400">
-            Showing {new Date(data.dateRange.startDate).toLocaleDateString('en-PH')} –{' '}
-            {new Date(data.dateRange.endDate).toLocaleDateString('en-PH')}
+            Showing {formatManilaDate(data.dateRange.startDate)} –{' '}
+            {formatManilaDate(data.dateRange.endDate)}
           </p>
         )}
       </div>
@@ -158,7 +159,7 @@ export default function ReconciliationReport({
                           {r.referenceType ?? '—'} / {r.referenceId ?? '—'}
                         </td>
                         <td className="px-4 py-2 text-zinc-500">
-                          {new Date(r.occurredAt).toLocaleDateString('en-PH')}
+                          {formatManilaDate(r.occurredAt)}
                         </td>
                       </tr>
                     ))}
@@ -195,7 +196,7 @@ export default function ReconciliationReport({
                         </td>
                         <td className="px-4 py-2 text-zinc-600">{t.transactionType}</td>
                         <td className="px-4 py-2 text-zinc-500">
-                          {new Date(t.occurredAt).toLocaleDateString('en-PH')}
+                          {formatManilaDate(t.occurredAt)}
                         </td>
                       </tr>
                     ))}
@@ -236,7 +237,7 @@ export default function ReconciliationReport({
                           {t.fromWarehouseName} → {t.toWarehouseName}
                         </td>
                         <td className="px-4 py-2 text-zinc-500">
-                          {new Date(t.transferDate).toLocaleDateString('en-PH')}
+                          {formatManilaDate(t.transferDate)}
                         </td>
                       </tr>
                     ))}
@@ -275,7 +276,7 @@ export default function ReconciliationReport({
                         <td className="px-4 py-2 text-zinc-600">{a.reasonCode}</td>
                         <td className="px-4 py-2 text-zinc-600">{a.warehouseName}</td>
                         <td className="px-4 py-2 text-zinc-500">
-                          {a.approvedAt ? new Date(a.approvedAt).toLocaleDateString('en-PH') : '—'}
+                          {a.approvedAt ? formatManilaDate(a.approvedAt) : '—'}
                         </td>
                       </tr>
                     ))}

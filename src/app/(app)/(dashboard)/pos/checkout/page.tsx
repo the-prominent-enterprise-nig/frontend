@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { Fragment, useState, useEffect, useRef, useMemo } from 'react'
 import {
   Search,
@@ -9372,6 +9373,7 @@ function SuccessScreen({
   const headerLines = (branding?.receiptHeaderText ?? '').split('\n').filter(Boolean)
 
   const receiptDate = new Date().toLocaleDateString('en-PH', {
+    timeZone: MANILA_TZ,
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -9885,13 +9887,15 @@ function SuccessScreen({
  * ReleaseApprovalsList.tsx::handlePrint — no server-side PDF generation,
  * just a styled, printable HTML document opened in a new tab. */
 function handlePrintPromissoryNote(note: PromissoryNote, fmt: (n: number) => string) {
-  const generatedDate = new Date(note.generatedAt).toLocaleString('en-PH')
-  const signedDate = note.signedAt ? new Date(note.signedAt).toLocaleString('en-PH') : null
+  const generatedDate = new Date(note.generatedAt).toLocaleString('en-PH', { timeZone: MANILA_TZ })
+  const signedDate = note.signedAt
+    ? new Date(note.signedAt).toLocaleString('en-PH', { timeZone: MANILA_TZ })
+    : null
 
   const lineRows = note.scheduleLines
     .map(
       (l) =>
-        `<tr><td>${l.lineNumber}</td><td>${new Date(l.dueDate).toLocaleDateString('en-PH')}</td><td style="text-align:right">${fmt(l.amount)}</td></tr>`
+        `<tr><td>${l.lineNumber}</td><td>${new Date(l.dueDate).toLocaleDateString('en-PH', { timeZone: MANILA_TZ })}</td><td style="text-align:right">${fmt(l.amount)}</td></tr>`
     )
     .join('')
 

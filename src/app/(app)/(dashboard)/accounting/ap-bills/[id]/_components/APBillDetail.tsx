@@ -1,5 +1,6 @@
 'use client'
 
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -58,7 +59,7 @@ const TOTAL_VALUE = 'border-b border-gray-100 px-2.5 py-[5px] text-right tabular
 
 /** en-PH numeric date (09/02/2026) — the format the printed document uses. */
 function docDate(v: string | Date | undefined | null): string {
-  return v ? new Date(v).toLocaleDateString('en-PH') : '—'
+  return v ? formatManilaDate(v) : '—'
 }
 
 function MetaPair({ label, value }: { label: string; value: React.ReactNode }) {

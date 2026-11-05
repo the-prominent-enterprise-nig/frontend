@@ -7,6 +7,7 @@ import { customersApi } from '@/src/libs/api/crm'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import type { PosTransaction } from '@/src/schema/pos'
 import { saleDocNo } from '@/src/libs/format/saleDocNo'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 const STATUS_STYLES: Record<string, string> = {
   completed: 'bg-emerald-100 text-emerald-700',
@@ -15,7 +16,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 function fmtDate(dateStr?: string): string {
   if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+  return formatManilaDate(dateStr, { month: 'short', day: 'numeric' })
 }
 
 function fmtMoney(n: number | string | null | undefined): string {

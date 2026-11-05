@@ -18,6 +18,7 @@ import {
   SERIAL_STATUS_COLORS,
   NON_SALEABLE_SERIAL_STATUSES,
 } from '@/src/schema/inventory/serial-numbers'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 const NON_SALEABLE_BATCH_STATUSES = ['quarantine', 'expired', 'recalled'] as const
 
@@ -101,7 +102,9 @@ export default function AdjustmentDetailView({
             </h2>
             <p className="mt-0.5 text-sm text-zinc-500">
               {adjustment.warehouse?.branch?.name ?? adjustment.warehouse?.name ?? '—'} &bull;{' '}
-              {new Date(adjustment.adjustmentDate).toLocaleDateString()}
+              {new Date(adjustment.adjustmentDate).toLocaleDateString(undefined, {
+                timeZone: MANILA_TZ,
+              })}
             </p>
           </div>
           <div className="flex items-center gap-2">

@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -18,7 +19,7 @@ export default function NewReconciliationForm() {
   const [accounts, setAccounts] = useState<BankAccount[]>([])
   const [form, setForm] = useState({
     bankAccountId: '',
-    statementDate: new Date().toISOString().slice(0, 10),
+    statementDate: manilaToday(),
     statementBalance: '',
     notes: '',
   })

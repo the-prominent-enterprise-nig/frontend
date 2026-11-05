@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
@@ -9,8 +10,8 @@ import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import { sourceDocumentLink } from '@/src/libs/format/sourceDocumentLink'
 
-const TODAY = new Date().toISOString().slice(0, 10)
-const YEAR_START = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10)
+const TODAY = manilaToday()
+const YEAR_START = `${TODAY.slice(0, 4)}-01-01`
 
 export default function GeneralLedgerView() {
   const searchParams = useSearchParams()

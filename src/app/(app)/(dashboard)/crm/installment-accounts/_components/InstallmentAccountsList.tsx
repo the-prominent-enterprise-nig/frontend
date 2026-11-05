@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ, manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -65,6 +66,7 @@ function peso(amount: number | string): string {
 
 function shortDate(value: string): string {
   return new Date(value).toLocaleDateString('en-PH', {
+    timeZone: MANILA_TZ,
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -73,7 +75,7 @@ function shortDate(value: string): string {
 
 /** A due date already behind us on an account that is still being collected. */
 function isPastDue(dueDate: string | null | undefined): boolean {
-  return !!dueDate && new Date(dueDate).getTime() < Date.now()
+  return !!dueDate && manilaDateOf(dueDate) < manilaToday()
 }
 
 const FILTER_CLASS = 'rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-sm'

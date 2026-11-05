@@ -1,5 +1,6 @@
 'use client'
 
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
@@ -27,7 +28,7 @@ function addCalendarMonths(dateStr: string, months: number): Date | null {
   if (!dateStr) return null
   const d = new Date(dateStr)
   if (Number.isNaN(d.getTime())) return null
-  d.setMonth(d.getMonth() + months)
+  d.setUTCMonth(d.getUTCMonth() + months)
   return d
 }
 
@@ -463,11 +464,11 @@ export default function EditLoanForm({ id }: { id: string }) {
                 />
                 <Row
                   label="First Due Date"
-                  value={firstDueDate ? firstDueDate.toLocaleDateString('en-PH') : '—'}
+                  value={firstDueDate ? formatManilaDate(firstDueDate) : '—'}
                 />
                 <Row
                   label="Final Due Date"
-                  value={finalDueDate ? finalDueDate.toLocaleDateString('en-PH') : '—'}
+                  value={finalDueDate ? formatManilaDate(finalDueDate) : '—'}
                 />
               </dl>
             ) : (

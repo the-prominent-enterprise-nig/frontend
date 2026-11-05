@@ -1,6 +1,7 @@
 import { api } from '@/src/libs/api/client'
 import Link from 'next/link'
 import { Building2, Plus, Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 interface Enterprise {
   id: string
@@ -214,7 +215,7 @@ export default async function EnterprisesPage({
                         : 0}
                     </td>
                     <td className="whitespace-nowrap px-5 py-3.5 text-xs text-zinc-400">
-                      {new Date(e.createdAt).toLocaleDateString('en-PH', {
+                      {formatManilaDate(e.createdAt, {
                         month: 'short',
                         day: 'numeric',
                         year: 'numeric',

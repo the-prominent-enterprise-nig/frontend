@@ -20,6 +20,7 @@ import { removeCountLine } from '../_actions/remove-count-line'
 import Tooltip from '@/src/components/ui/Tooltip'
 import CountSheetTable, { isUnaccounted, type CountSheetLine } from './CountSheetTable'
 import { tagFor } from './RemarksInput'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 type Props = {
   count: CountSummary | null
@@ -142,12 +143,13 @@ function SubmitSummary({ lines }: { lines: CountSheetLine[] }) {
       {unaccounted > 0 && (
         <p>
           <strong className="text-amber-700">{unaccounted}</strong> units not in store have no
-          remark saying where they are. They&apos;ll be reported as unaccounted for.
+          remark saying where they are. They&apos;ll be written off as missing.
         </p>
       )}
       <p>
-        Anything that doesn&apos;t match the system goes into one stock adjustment for review. You
-        can&apos;t edit this count after you submit it.
+        Stock on hand will be updated to match what you counted. Units not in store that have a
+        remark stay in stock (Defective ones are flagged defective). You can&apos;t edit this count
+        after you submit it.
       </p>
     </>
   )
@@ -355,7 +357,9 @@ export default function CountSessionView({
             <h2 className="text-lg font-semibold text-zinc-900">Count Session</h2>
             <p className="mt-0.5 text-sm text-zinc-500">
               {count.warehouse?.branch?.name ?? count.warehouse?.name ?? '—'} &bull;{' '}
-              {new Date(count.scheduledDate ?? '').toLocaleDateString()}
+              {new Date(count.scheduledDate ?? '').toLocaleDateString(undefined, {
+                timeZone: MANILA_TZ,
+              })}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -400,15 +404,24 @@ export default function CountSessionView({
               </p>
               {count.scheduledDate && (
                 <p className="mt-1">
-                  Scheduled: {new Date(count.scheduledDate).toLocaleDateString()}
+                  Scheduled:{' '}
+                  {new Date(count.scheduledDate).toLocaleDateString(undefined, {
+                    timeZone: MANILA_TZ,
+                  })}
                 </p>
               )}
               {count.startedAt && (
-                <p className="mt-1">Started: {new Date(count.startedAt).toLocaleDateString()}</p>
+                <p className="mt-1">
+                  Started:{' '}
+                  {new Date(count.startedAt).toLocaleDateString(undefined, { timeZone: MANILA_TZ })}
+                </p>
               )}
               {count.completedAt && (
                 <p className="mt-1">
-                  Completed: {new Date(count.completedAt).toLocaleDateString()}
+                  Completed:{' '}
+                  {new Date(count.completedAt).toLocaleDateString(undefined, {
+                    timeZone: MANILA_TZ,
+                  })}
                 </p>
               )}
               {isCompleted && (
@@ -437,7 +450,7 @@ export default function CountSessionView({
                   <p className="text-xs text-amber-800">
                     {variantLines.length} line(s) differ from the system.
                     {unaccountedCount > 0 &&
-                      ` ${unaccountedCount} not in store have no remark saying where they are — they'll be reported as unaccounted for.`}
+                      ` ${unaccountedCount} not in store have no remark saying where they are — they'll be written off as missing.`}
                   </p>
                 </div>
               )}

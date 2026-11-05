@@ -10,6 +10,7 @@ import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getCategories, getItemTypes } from '../../items/_actions/get-lookup-data'
 import type { SerialAgingBucket, UnitClassification } from '@/src/schema/inventory/reports'
 import type { CategoryOption } from '@/src/schema/inventory/items'
+import { manilaToday } from '@/src/libs/format/manila-date'
 
 export type ReportTab = 'valuation' | 'turnover' | 'aging' | 'reconciliation'
 
@@ -23,11 +24,9 @@ export interface AgingFilters {
   classification?: UnitClassification
 }
 
-/** Today as YYYY-MM-DD in the viewer's own timezone. */
+/** Today as YYYY-MM-DD in Manila. */
 function todayIso(): string {
-  const now = new Date()
-  const offset = now.getTimezoneOffset() * 60 * 1000
-  return new Date(now.getTime() - offset).toISOString().slice(0, 10)
+  return manilaToday()
 }
 
 const PAGE_SIZE = 20

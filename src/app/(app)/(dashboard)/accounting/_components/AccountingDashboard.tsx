@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday, formatManilaDate, formatManilaTime } from '@/src/libs/format/manila-date'
 import { useState, useCallback, useMemo } from 'react'
 import { useVisiblePolling } from '@/src/hooks/useVisiblePolling'
 import Link from 'next/link'
@@ -50,7 +51,7 @@ function fmtNum(n: number) {
 
 function fmtDate(dateStr?: string | null) {
   if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+  return formatManilaDate(dateStr, { month: 'short', day: 'numeric' })
 }
 
 function daysOverdue(dueDate?: string | null) {
@@ -310,9 +311,9 @@ export default function AccountingDashboard({
   const [s, setS] = useState(INIT)
 
   const load = useCallback(async () => {
-    const today = new Date().toISOString().slice(0, 10)
-    const yearStart = `${new Date().getFullYear()}-01-01`
-    const fiscalYear = new Date().getFullYear()
+    const today = manilaToday()
+    const yearStart = `${today.slice(0, 4)}-01-01`
+    const fiscalYear = Number(today.slice(0, 4))
 
     const settled = await Promise.allSettled([
       // A widget the caller can't read isn't requested (Access Levels): it
@@ -492,7 +493,7 @@ export default function AccountingDashboard({
             <h1 className="text-xl font-bold text-gray-900">Financial Intelligence</h1>
             <p className="text-[11px] text-gray-400 mt-0.5">
               {s.lastUpdated
-                ? `Updated ${s.lastUpdated.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}`
+                ? `Updated ${formatManilaTime(s.lastUpdated, { hour: '2-digit', minute: '2-digit' })}`
                 : 'Loading…'}
             </p>
           </div>

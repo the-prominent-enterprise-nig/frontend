@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
 
 export const BatchStatusSchema = z.enum(['active', 'quarantine', 'expired', 'recalled'])
 export type BatchStatus = z.infer<typeof BatchStatusSchema>
@@ -64,9 +65,10 @@ export function getExpiryStatus(
   expiryDate: string | null | undefined
 ): 'safe' | 'expiring_soon' | 'expired' {
   if (!expiryDate) return 'safe'
-  const expiry = new Date(expiryDate)
-  const now = new Date()
-  const daysUntilExpiry = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+  // Whole Manila calendar days between today and the expiry day.
+  const daysUntilExpiry = Math.round(
+    (Date.parse(manilaDateOf(expiryDate)) - Date.parse(manilaToday())) / (1000 * 60 * 60 * 24)
+  )
   if (daysUntilExpiry < 0) return 'expired'
   if (daysUntilExpiry <= 30) return 'expiring_soon'
   return 'safe'

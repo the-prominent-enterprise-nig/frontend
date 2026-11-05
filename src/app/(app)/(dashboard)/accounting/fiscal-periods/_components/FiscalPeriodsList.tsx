@@ -1,5 +1,6 @@
 'use client'
 
+import { formatManilaDateTime } from '@/src/libs/format/manila-date'
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
@@ -480,7 +481,7 @@ function ChecklistDialog({ period, onClose }: { period: FiscalPeriod; onClose: (
                         </div>
                         {done && item?.completedAt && (
                           <div className="text-[10px] text-gray-500">
-                            Completed {new Date(item.completedAt).toLocaleString('en-PH')} by{' '}
+                            Completed {formatManilaDateTime(item.completedAt)} by{' '}
                             {item.completedBy ?? '—'}
                           </div>
                         )}
@@ -625,7 +626,7 @@ function ReopenLogsDialog({ period, onClose }: { period: FiscalPeriod; onClose: 
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-sm font-medium text-gray-900">{l.reopenedBy}</span>
                     <span className="text-xs text-gray-500">
-                      {new Date(l.reopenedAt).toLocaleString('en-PH')}
+                      {formatManilaDateTime(l.reopenedAt)}
                     </span>
                   </div>
                   <div className="text-xs text-gray-500 mb-2">

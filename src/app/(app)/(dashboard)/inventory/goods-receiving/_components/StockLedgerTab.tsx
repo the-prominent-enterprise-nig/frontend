@@ -10,6 +10,7 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
 import type { StockLedgerEntry } from '@/src/schema/inventory/goods-receiving'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // Follows Stock Balance's own #5b21b6 palette (PLEX/MONO imported
@@ -470,7 +471,7 @@ export default function StockLedgerTab({
                           className={`${MONO} hidden px-4 py-[11px] text-[13.5px] text-ink-muted md:table-cell`}
                         >
                           {date
-                            ? new Date(date).toLocaleDateString('en-PH', {
+                            ? formatManilaDate(date, {
                                 month: 'short',
                                 day: 'numeric',
                                 year: 'numeric',

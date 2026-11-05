@@ -74,6 +74,7 @@ import { warehouseLabel } from '@/src/schema/inventory/warehouses'
 import { LocationName } from './transferStatus'
 import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
 import { formatAge } from '@/src/libs/format/date'
+import { manilaToday, formatManilaDate, formatManilaDateTime } from '@/src/libs/format/manila-date'
 
 /** A transfer line's unit, opening its history when the line has one. */
 /** Statuses in which a serial-tracked line has no unit yet because the
@@ -171,7 +172,7 @@ const EDITABLE_STATUSES = CANCELLABLE_STATUSES
 
 function formatDate(iso?: string | null) {
   if (!iso) return '—'
-  return new Date(iso).toLocaleString('en-PH', {
+  return formatManilaDateTime(iso, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -182,7 +183,7 @@ function formatDate(iso?: string | null) {
 
 function formatDateOnly(iso?: string | null) {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-PH', {
+  return formatManilaDate(iso, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -948,7 +949,7 @@ export default function TransferDetailModal({
   const receiveForm = useForm<ReceiveTransferFormValues>({
     resolver: zodResolver(ReceiveTransferFormSchema),
     defaultValues: {
-      receivedDate: new Date().toISOString().split('T')[0],
+      receivedDate: manilaToday(),
       notes: '',
       lines: [],
       extraLines: [],
@@ -1238,7 +1239,7 @@ export default function TransferDetailModal({
     )
     const labelByLineId = new Map(serialOutstanding.map((line, i) => [line.id, serialLabels[i]]))
     receiveForm.reset({
-      receivedDate: new Date().toISOString().split('T')[0],
+      receivedDate: manilaToday(),
       notes: '',
       lines: outstanding.map((line) => ({
         stockTransferLineId: line.id ?? '',

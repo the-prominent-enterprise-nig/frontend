@@ -1,5 +1,6 @@
 'use client'
 
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 import { Fragment, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, CheckCircle2 } from 'lucide-react'
@@ -29,7 +30,7 @@ function bankLabel(b: { name: string; bankName: string; accountNumber: string })
 
 function formatDate(v: string | undefined | null) {
   if (!v) return '—'
-  return new Date(v).toLocaleDateString('en-PH', {
+  return formatManilaDate(v, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { caravanLabelWithPlace } from '@/src/libs/format/locationLabel'
+import { manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
 
 export const WarehouseStatusSchema = z.enum(['active', 'inactive'])
 export const LocationTypeSchema = z.enum(['shelf', 'bin', 'zone', 'dock'])
@@ -71,7 +72,7 @@ export function isCaravanEnded(branch: WarehouseBranch | null | undefined): bool
   if (!branch?.isTemporary) return false
   if (branch.closedAt) return true
   if (!branch.endDate) return false
-  return branch.endDate.slice(0, 10) < new Date().toISOString().slice(0, 10)
+  return branch.endDate.slice(0, 10) < manilaToday()
 }
 
 // Scenario 60 Part 3 — a caravan that needs attention: running (counting
@@ -88,7 +89,7 @@ export type CaravanAlert = z.infer<typeof CaravanAlertSchema>
  * negative once it has ended. Null when it has no end date. */
 export function caravanDaysLeft(endDate: string | null | undefined): number | null {
   if (!endDate) return null
-  const today = Date.parse(new Date().toISOString().slice(0, 10))
+  const today = Date.parse(manilaToday())
   return Math.round((Date.parse(endDate.slice(0, 10)) - today) / 86_400_000)
 }
 
@@ -106,11 +107,12 @@ export function caravanCountdown(
   return `Ended ${ago === 1 ? 'yesterday' : `${ago} days ago`}`
 }
 
-// closedAt is a full timestamp, so compare local calendar days — a close at
+// closedAt is a full timestamp, so compare Manila calendar days — a close at
 // 7 AM in Manila is still "today", though it is yesterday in UTC.
 function closedText(closedAt: string): string {
-  const localDay = (d: Date): number => Date.parse(d.toLocaleDateString('en-CA'))
-  const ago = Math.round((localDay(new Date()) - localDay(new Date(closedAt))) / 86_400_000)
+  const ago = Math.round(
+    (Date.parse(manilaToday()) - Date.parse(manilaDateOf(closedAt))) / 86_400_000
+  )
   if (ago <= 0) return 'Closed today'
   return `Closed ${ago === 1 ? 'yesterday' : `${ago} days ago`}`
 }

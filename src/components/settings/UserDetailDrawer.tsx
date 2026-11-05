@@ -18,6 +18,7 @@ import {
   KeyRound,
 } from 'lucide-react'
 import { type User } from '@/src/schema/settings/list'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 type UserDetailDrawerProps = {
   user: User | null
@@ -118,7 +119,7 @@ export default function UserDetailDrawer({
             <Field
               icon={<Calendar className="h-4 w-4" />}
               label="Created"
-              value={new Date(user.createdAt).toLocaleDateString('en-PH', {
+              value={formatManilaDate(user.createdAt, {
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric',
@@ -127,7 +128,7 @@ export default function UserDetailDrawer({
             <Field
               icon={<Calendar className="h-4 w-4" />}
               label="Last updated"
-              value={new Date(user.updatedAt).toLocaleDateString('en-PH', {
+              value={formatManilaDate(user.updatedAt, {
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric',
@@ -167,7 +168,7 @@ export default function UserDetailDrawer({
                 <Field
                   icon={<Calendar className="h-4 w-4" />}
                   label="Date of Birth"
-                  value={new Date(user.employee.dateOfBirth).toLocaleDateString('en-PH', {
+                  value={formatManilaDate(user.employee.dateOfBirth, {
                     year: 'numeric',
                     month: 'long',
                     day: 'numeric',
@@ -185,7 +186,7 @@ export default function UserDetailDrawer({
                 <Field
                   icon={<Briefcase className="h-4 w-4" />}
                   label="Hire Date"
-                  value={new Date(user.employee.hireDate).toLocaleDateString('en-PH', {
+                  value={formatManilaDate(user.employee.hireDate, {
                     year: 'numeric',
                     month: 'long',
                     day: 'numeric',

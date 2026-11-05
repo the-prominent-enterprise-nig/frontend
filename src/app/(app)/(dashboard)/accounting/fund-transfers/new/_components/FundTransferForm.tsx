@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -20,7 +21,7 @@ import {
   fmtMoney,
 } from '@/src/libs/data/AccountingV2Data'
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = (): string => manilaToday()
 const emptyForm = () => ({
   date: today(),
   clearedType: 'SAME_DATE' as ClearedType,

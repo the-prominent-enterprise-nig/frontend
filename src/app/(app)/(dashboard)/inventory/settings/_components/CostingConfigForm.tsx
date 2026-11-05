@@ -12,6 +12,7 @@ import {
 import type { SessionUser } from '@/src/libs/guards/permission'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 export default function CostingConfigForm({ session }: { session: SessionUser }) {
   const canConfigure = hasPermission(session, INVENTORY_PERMISSIONS.COSTING_CONFIGURE)
@@ -210,7 +211,7 @@ export default function CostingConfigForm({ session }: { session: SessionUser })
       {config?.updatedAt && (
         <p className="text-xs text-zinc-400">
           Last updated:{' '}
-          {new Date(config.updatedAt).toLocaleDateString('en-PH', {
+          {formatManilaDate(config.updatedAt, {
             year: 'numeric',
             month: 'long',
             day: 'numeric',

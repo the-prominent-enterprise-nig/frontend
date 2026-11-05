@@ -1,6 +1,7 @@
 'use client'
 
 import { Loader2 } from 'lucide-react'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { coveringMonthly, dateInputFromToday, typedPlanProblem } from '../_utils/typed-plan'
 
 type PlanFields = {
@@ -167,7 +168,7 @@ export default function TypedPlanPanel({
               <div className="text-xs text-prominent-purple-500">
                 First due{' '}
                 {new Date(preview.lines[0].dueDate).toLocaleDateString('en-PH', {
-                  timeZone: 'UTC',
+                  timeZone: MANILA_TZ,
                   year: 'numeric',
                   month: 'short',
                   day: 'numeric',

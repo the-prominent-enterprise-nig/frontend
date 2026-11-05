@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { useMobileCount } from '../_hooks/useMobileCount'
 import type { SessionUser } from '@/src/libs/guards/permission'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 export default function MobileCountInterface({ session: _ }: { session: SessionUser }) {
   const barcodeInputRef = useRef<HTMLInputElement>(null)
@@ -89,7 +90,9 @@ export default function MobileCountInterface({ session: _ }: { session: SessionU
                         <>{session.warehouse.code} &bull; </>
                       )}
                       {session.scheduledDate
-                        ? new Date(session.scheduledDate).toLocaleDateString()
+                        ? new Date(session.scheduledDate).toLocaleDateString(undefined, {
+                            timeZone: MANILA_TZ,
+                          })
                         : 'No date'}
                     </p>
                     <p className="mt-1 font-mono text-xs text-zinc-600">

@@ -15,6 +15,7 @@ import {
   compactLayoutVertically,
   type DashboardRole,
 } from '@/src/libs/dashboardWidgets'
+import { formatManilaDate, manilaToday } from '@/src/libs/format/manila-date'
 
 // Dynamically import the grid (avoids SSR issues with WidthProvider).
 const EditableDashboard = dynamic(() => import('@/src/components/dashboard/EditableDashboard'), {
@@ -47,7 +48,8 @@ function resolveDashboardRole(
 }
 
 function timeOfDayGreeting(): string {
-  const hour = new Date().getHours()
+  // Manila is UTC+08:00 with no daylight saving.
+  const hour = (new Date().getUTCHours() + 8) % 24
   if (hour < 12) return 'Good morning'
   if (hour < 18) return 'Good afternoon'
   return 'Good evening'
@@ -127,7 +129,7 @@ export default function DashboardClient({
                     <span className="text-zinc-300">•</span>
                   </>
                 )}
-                {new Date().toLocaleDateString('en-PH', {
+                {formatManilaDate(manilaToday(), {
                   weekday: 'long',
                   month: 'long',
                   day: 'numeric',

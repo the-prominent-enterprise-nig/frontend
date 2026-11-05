@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -27,9 +28,7 @@ export default function XDealMemoForm() {
   const [reason, setReason] = useState('')
   // Today in the Philippines, not UTC — before 8 AM the UTC date is still
   // yesterday, which would book the memo to the previous day (or month).
-  const [memoDate, setMemoDate] = useState(() =>
-    new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
-  )
+  const [memoDate, setMemoDate] = useState(() => manilaToday())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 

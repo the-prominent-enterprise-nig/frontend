@@ -3,18 +3,19 @@
 // .prepareManualPlanLine and its coverage check), so the cashier hears it at
 // the till and not at Confirm.
 
+import { manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
+
 export const toCents = (n: number) => Math.round(n * 100)
 
 const money = (n: number) =>
   new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
 
-/** yyyy-mm-dd in the browser's own calendar — what an <input type="date"> holds. */
+/** yyyy-mm-dd of an instant on the Manila calendar — what an <input type="date"> holds. */
 export function dateInputValue(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+  return manilaDateOf(d)
 }
 
-/** A date `months` months and `days` days from today, as yyyy-mm-dd. */
+/** A date `months` months and `days` days from today (Manila), as yyyy-mm-dd. */
 export function dateInputFromToday({
   months = 0,
   days = 0,
@@ -22,11 +23,11 @@ export function dateInputFromToday({
   months?: number
   days?: number
 }): string {
-  const d = new Date()
-  d.setHours(12, 0, 0, 0)
-  d.setMonth(d.getMonth() + months)
-  d.setDate(d.getDate() + days)
-  return dateInputValue(d)
+  const [y, m, day] = manilaToday().split('-').map(Number)
+  const d = new Date(Date.UTC(y, m - 1, day))
+  d.setUTCMonth(d.getUTCMonth() + months)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
 }
 
 /** The monthly installment that, with the down payment, covers a sale over a

@@ -38,6 +38,7 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { getCrossBranchStock } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import { PLEX, MONO, CONTROL_CHROME } from '../../purchase-orders/_components/procurementTokens'
+import { manilaToday } from '@/src/libs/format/manila-date'
 
 type Props = {
   isOpen: boolean
@@ -379,7 +380,7 @@ export default function CreateTransferModal({
   editing = null,
   variant = 'overlay',
 }: Props) {
-  const today = new Date().toISOString().split('T')[0]
+  const today = manilaToday()
   const isEditing = !!editing
   const isPage = variant === 'page'
   const editingCaravan = isCaravanBranch(editing?.toWarehouse?.branch)

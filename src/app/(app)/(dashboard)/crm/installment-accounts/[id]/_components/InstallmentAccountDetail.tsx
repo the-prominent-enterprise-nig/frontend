@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
@@ -118,7 +119,11 @@ function Badge({ value, colors }: { value?: string | null; colors: Record<string
 }
 
 function fmtDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('en-PH', { dateStyle: 'long', timeStyle: 'short' })
+  return new Date(iso).toLocaleString('en-PH', {
+    dateStyle: 'long',
+    timeStyle: 'short',
+    timeZone: MANILA_TZ,
+  })
 }
 
 /** How the sale was paid for at the register: the method, with the bank or
@@ -519,7 +524,9 @@ export default function InstallmentAccountDetail({
                     Math.round((Number(bill.totalAmount) - paid) * 100) / 100,
                     0
                   )
-                  const paidOn = bill.paidOn ? new Date(bill.paidOn).toLocaleDateString() : null
+                  const paidOn = bill.paidOn
+                    ? new Date(bill.paidOn).toLocaleDateString(undefined, { timeZone: MANILA_TZ })
+                    : null
                   const isNext = bill.lineNumber === nextBillLine
                   return (
                     <li key={bill.lineNumber}>
@@ -545,7 +552,10 @@ export default function InstallmentAccountDetail({
                               </span>
                             )}
                             <span className="font-normal text-gray-600">
-                              {' · '}due {new Date(bill.dueDate).toLocaleDateString()}
+                              {' · '}due{' '}
+                              {new Date(bill.dueDate).toLocaleDateString(undefined, {
+                                timeZone: MANILA_TZ,
+                              })}
                             </span>
                             {bill.status === 'PAID' && paidOn && (
                               <span className="font-normal text-emerald-600"> · paid {paidOn}</span>
@@ -631,6 +641,7 @@ export default function InstallmentAccountDetail({
                           <p className="mt-0.5 flex items-center gap-1 text-[12px] text-gray-500">
                             <CalendarClock className="h-3 w-3" />
                             {new Date(r.dueAt).toLocaleString('en-PH', {
+                              timeZone: MANILA_TZ,
                               month: 'short',
                               day: 'numeric',
                               hour: '2-digit',
@@ -728,7 +739,10 @@ export default function InstallmentAccountDetail({
               )}
               {account.legalEscalationUpdatedAt && (
                 <p className="mt-2 text-[12px] text-gray-500">
-                  Last updated {new Date(account.legalEscalationUpdatedAt).toLocaleString()}
+                  Last updated{' '}
+                  {new Date(account.legalEscalationUpdatedAt).toLocaleString(undefined, {
+                    timeZone: MANILA_TZ,
+                  })}
                 </p>
               )}
             </Section>
@@ -817,7 +831,11 @@ export default function InstallmentAccountDetail({
               <Row
                 label="DAM entered"
                 value={
-                  account.damEnteredAt ? new Date(account.damEnteredAt).toLocaleDateString() : '—'
+                  account.damEnteredAt
+                    ? new Date(account.damEnteredAt).toLocaleDateString(undefined, {
+                        timeZone: MANILA_TZ,
+                      })
+                    : '—'
                 }
               />
               <Row label="Months run" value={String(account.monthsRun)} />

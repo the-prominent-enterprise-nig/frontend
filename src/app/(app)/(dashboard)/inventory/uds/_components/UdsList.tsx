@@ -43,6 +43,7 @@ import type {
   WriteOffUdsFormValues,
 } from '@/src/schema/inventory/uds'
 import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 // Same control chrome as the Stock Returns filter row, so the two screens'
 // narrowings look and focus alike.
@@ -520,7 +521,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
                         </td>
 
                         <td className="px-4 py-3 text-zinc-500 hidden sm:table-cell">
-                          {new Date(uds.createdAt).toLocaleDateString('en-PH', {
+                          {formatManilaDate(uds.createdAt, {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric',

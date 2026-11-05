@@ -1,5 +1,6 @@
 'use client'
 
+import { formatManilaDateTime } from '@/src/libs/format/manila-date'
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
@@ -128,7 +129,7 @@ export default function TaxClosingDetail({ id, canReverse }: { id: string; canRe
           </>
         )}
         <Item label="Posted by" value={run.createdByName ?? '—'} />
-        <Item label="Posted at" value={new Date(run.createdAt).toLocaleString('en-PH')} />
+        <Item label="Posted at" value={formatManilaDateTime(run.createdAt)} />
         {run.notes && <Item label="Notes" value={run.notes} />}
       </dl>
 
@@ -146,7 +147,7 @@ export default function TaxClosingDetail({ id, canReverse }: { id: string; canRe
           <h2 className="mb-2 text-sm font-semibold text-prominent-purple-900">Reversed</h2>
           <p className="mb-2 text-sm text-gray-600">
             {run.reversedByName ?? 'Someone'} reversed it on{' '}
-            {run.reversedAt ? new Date(run.reversedAt).toLocaleString('en-PH') : '—'}:{' '}
+            {run.reversedAt ? formatManilaDateTime(run.reversedAt) : '—'}:{' '}
             <i>{run.reversalReason}</i>
           </p>
           {run.reversalEntry && (

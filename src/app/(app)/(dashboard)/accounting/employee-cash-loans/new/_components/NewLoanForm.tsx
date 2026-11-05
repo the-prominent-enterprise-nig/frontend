@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday, formatManilaDate } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
@@ -26,7 +27,7 @@ function addCalendarMonths(dateStr: string, months: number): Date | null {
   if (!dateStr) return null
   const d = new Date(dateStr)
   if (Number.isNaN(d.getTime())) return null
-  d.setMonth(d.getMonth() + months)
+  d.setUTCMonth(d.getUTCMonth() + months)
   return d
 }
 
@@ -66,7 +67,7 @@ export default function NewLoanForm() {
     // Scenario 56 — default monthly add-on rate is 3%, still editable.
     interestRate: '0.03',
     chargeInterest: false,
-    loanDate: new Date().toISOString().slice(0, 10),
+    loanDate: manilaToday(),
     firstDeductionDate: '',
     disbursementMethod: 'CASH' as 'CASH' | 'BANK_TRANSFER' | 'CHECK',
     bankAccountId: '',
@@ -412,11 +413,11 @@ export default function NewLoanForm() {
                 />
                 <Row
                   label="First Due Date"
-                  value={firstDueDate ? firstDueDate.toLocaleDateString('en-PH') : '—'}
+                  value={firstDueDate ? formatManilaDate(firstDueDate) : '—'}
                 />
                 <Row
                   label="Final Due Date"
-                  value={finalDueDate ? finalDueDate.toLocaleDateString('en-PH') : '—'}
+                  value={finalDueDate ? formatManilaDate(finalDueDate) : '—'}
                 />
               </dl>
             ) : (

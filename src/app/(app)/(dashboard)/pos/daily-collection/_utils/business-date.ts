@@ -6,25 +6,23 @@
  * up a timezone on the way.
  */
 
-/** Local date, not toISOString() — that shifts a PH evening back a day. */
+import { formatManilaTime, manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
+
+/** Today's Manila business day — not toISOString() (UTC, a PH morning lands on
+ * yesterday) and not the browser's clock (a device set to another zone). */
 export function todayIso(): string {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
-    now.getDate()
-  ).padStart(2, '0')}`
+  return manilaToday()
 }
 
 /**
- * The local calendar day a timestamp fell on — a shift that opened at 10pm
+ * The Manila calendar day a timestamp fell on — a shift that opened at 10pm
  * belongs to that evening's business date, not to the UTC day the instant
  * happens to land in.
  */
 export function isoDateOf(timestamp: string): string {
   const at = new Date(timestamp)
   if (Number.isNaN(at.getTime())) return ''
-  return `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(
-    at.getDate()
-  ).padStart(2, '0')}`
+  return manilaDateOf(at)
 }
 
 /**
@@ -45,14 +43,14 @@ export function shiftIsoDate(iso: string, days: number): string {
 /**
  * `5:48 PM` — when a form was filed, for an owner who has been waiting on it.
  *
- * Read in the viewer's own timezone, which is the branch's: this is a
- * single-country business and "when did Mabini file" means the clock on the
- * wall there. Returns an empty string on anything unparseable rather than
- * printing `Invalid Date` onto a report.
+ * Read in Manila time, the branch's: this is a single-country business and
+ * "when did Mabini file" means the clock on the wall there. Returns an empty
+ * string on anything unparseable rather than printing `Invalid Date` onto a
+ * report.
  */
 export function formatFiledTime(iso: string | null): string {
   if (!iso) return ''
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return ''
-  return at.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
+  return formatManilaTime(at, { hour: 'numeric', minute: '2-digit' })
 }

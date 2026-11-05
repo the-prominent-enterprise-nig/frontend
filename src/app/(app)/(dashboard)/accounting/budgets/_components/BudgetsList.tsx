@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, RefreshCw, BarChart3, Trash2, X, AlertTriangle, AlertOctagon } from 'lucide-react'
 import {
@@ -13,7 +14,7 @@ import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
 import { useMe } from '@/src/hooks/useMe'
 import { can } from '@/src/libs/guards/permission'
 
-const CURRENT_YEAR = new Date().getFullYear()
+const CURRENT_YEAR = Number(manilaToday().slice(0, 4))
 
 export default function BudgetsList() {
   // Shown only to those the backend lets through (UAT review 2026-11-04).

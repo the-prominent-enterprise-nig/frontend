@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { TrendingUp } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { api } from '@/src/libs/api/client'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 type PayslipRow = {
   employee?: {
@@ -133,12 +134,12 @@ export default function PayrollSummaryWidget() {
           <p className="text-sm font-bold text-purple-900">{periodLabel}</p>
           {period.startDate && period.endDate && (
             <p className="text-[10px] text-purple-600">
-              {new Date(period.startDate).toLocaleDateString('en-PH', {
+              {formatManilaDate(period.startDate, {
                 month: 'short',
                 day: 'numeric',
               })}
               –
-              {new Date(period.endDate).toLocaleDateString('en-PH', {
+              {formatManilaDate(period.endDate, {
                 month: 'short',
                 day: 'numeric',
               })}

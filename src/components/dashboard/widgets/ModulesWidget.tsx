@@ -14,6 +14,7 @@ import { customersApi } from '@/src/libs/api/crm'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { resolveBranchWarehouseIds } from '../resolveBranchWarehouses'
 import { fetchArStats } from './arStats'
+import { manilaDayStartIso, manilaMonthOf } from '@/src/libs/format/manila-date'
 
 interface ModuleStat {
   label: string
@@ -124,7 +125,7 @@ export default function ModulesWidget() {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+      const monthStart = new Date(manilaDayStartIso(`${manilaMonthOf()}-01`))
       const [items, arStats, inventoryStatsResult, txRes, customersRes] = await Promise.all([
         // HR: see the commented-out hrStats state above — /employees and
         // /leave-management/summary both 404, no HR backend module exists.

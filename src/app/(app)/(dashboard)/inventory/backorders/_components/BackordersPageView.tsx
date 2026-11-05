@@ -13,6 +13,7 @@ import type {
   BackorderUpdateFormValues,
   Backorder,
 } from '@/src/schema/inventory/backorders'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 function statusBadge(status: string) {
   const map: Record<string, string> = {
@@ -27,7 +28,7 @@ function statusBadge(status: string) {
 function formatDate(date?: string | null) {
   if (!date) return '—'
   try {
-    return new Date(date).toLocaleDateString()
+    return new Date(date).toLocaleDateString(undefined, { timeZone: MANILA_TZ })
   } catch {
     return date
   }
