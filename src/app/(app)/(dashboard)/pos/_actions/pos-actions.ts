@@ -3068,6 +3068,27 @@ export async function rejectReturnRefundRequest(
   }
 }
 
+/** One bank slip of a posted deposit: where a session's cash was banked. */
+export interface SessionBankSlip {
+  depositId: string
+  bankName: string
+  /** Last four digits of the account number. */
+  accountLast4: string | null
+  reference: string | null
+  amount: number
+}
+
+/** Scenario 83 — a session's cash handed to another branch, not a bank. */
+export interface SessionTurnover {
+  id: string
+  depositId: string
+  toBranchName: string
+  /** The turnover slip number. */
+  reference: string | null
+  amount: number
+  status: 'pending' | 'acknowledged'
+}
+
 export interface CashInTransitSessionRow {
   sessionId: string
   branchId: string | null
@@ -3100,6 +3121,10 @@ export interface CashInTransitSessionRow {
   pendingDeposits?: { id: string; depositDate: string; bankName: string; amount: number }[]
   /** The posted deposits that banked part of it, latest first. */
   bankedDeposits?: { id: string; depositDate: string; bankName: string; amount: number }[]
+  /** Scenario 83 — what posted deposits turned over to another branch. */
+  turnovers?: SessionTurnover[]
+  /** The bank slips of the same posted deposits. */
+  bankSlips?: SessionBankSlip[]
 }
 
 /** A session already banked — Scenario 61's Undeposited Funds table lists
@@ -3134,6 +3159,10 @@ export interface CashInTransitHistoryRow {
   depositedAmount?: number | null
   /** Whether its deposit has a slip or other proof attached yet. */
   hasProof?: boolean
+  /** Scenario 83 — its cash handed to another branch instead of a bank. */
+  turnovers?: SessionTurnover[]
+  /** The bank slips of the same posted deposits. */
+  bankSlips?: SessionBankSlip[]
 }
 
 export async function getCashInTransitHistory(filters?: {

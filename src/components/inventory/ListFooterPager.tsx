@@ -1,7 +1,7 @@
 'use client'
 
 const pagerButtonClass =
-  'rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-[6px] text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:border-[#e4e4e9] disabled:text-[#a3a3b2]'
+  'rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-[6px] text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:border-[#e4e4e9] disabled:text-ink-faint'
 
 /**
  * The footer bar the Stock Transactions tables share (Stock Transfer's

@@ -106,7 +106,7 @@ function CopyButton({ code }: { code: string }): React.ReactElement {
       type="button"
       onClick={copy}
       title="Copy PO code"
-      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[#8e8e9d] hover:bg-[#f1ebfb] hover:text-[#3f1490]"
+      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-ink-subtle hover:bg-[#f1ebfb] hover:text-[#3f1490]"
     >
       <svg
         width="11"
@@ -644,14 +644,14 @@ export function PurchaseOrderList({
                 searchFocus ? CONTROL_CHROME.focused : CONTROL_CHROME.idle
               }`}
             >
-              <Search className="h-3.25 w-3.25 shrink-0 text-[#6f6f7f]" />
+              <Search className="h-3.25 w-3.25 shrink-0 text-ink-muted" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onFocus={() => setSearchFocus(true)}
                 onBlur={() => setSearchFocus(false)}
                 placeholder="Search PO number, supplier, or PR number…"
-                className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
+                className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-ink-faint"
               />
               {search !== '' && (
                 <Tooltip label="Clear search" side="bottom" align="end">
@@ -659,7 +659,7 @@ export function PurchaseOrderList({
                     type="button"
                     onClick={() => setSearch('')}
                     aria-label="Clear search"
-                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[#6f6f7f] hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
+                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-ink-muted hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -701,7 +701,7 @@ export function PurchaseOrderList({
             />
 
             <div className="ml-auto flex items-center gap-2">
-              <span className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
+              <span className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-ink-subtle`}>
                 Sort
               </span>
               <div className="relative">
@@ -714,7 +714,7 @@ export function PurchaseOrderList({
                   <option value="desc">Newest first</option>
                   <option value="asc">Oldest first</option>
                 </select>
-                <ChevronDown className="pointer-events-none absolute right-[9px] top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6f6f7f]" />
+                <ChevronDown className="pointer-events-none absolute right-[9px] top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
               </div>
             </div>
           </div>
@@ -851,7 +851,7 @@ export function PurchaseOrderList({
                           </span>
                           <CopyButton code={po.code} />
                         </div>
-                        <span className="text-[11px] text-[#6f6f7f]">{fmtDate(po.createdAt)}</span>
+                        <span className="text-[11px] text-ink-muted">{fmtDate(po.createdAt)}</span>
                       </div>
 
                       <div role="cell" className="flex min-w-0 items-center gap-[9px] pl-1.5">
@@ -861,7 +861,7 @@ export function PurchaseOrderList({
                             {po.supplier.name}
                           </span>
                           {po.supplier.taxId && (
-                            <span className={`${MONO} truncate text-[10.5px] text-[#6f6f7f]`}>
+                            <span className={`${MONO} truncate text-[10.5px] text-ink-muted`}>
                               TIN {po.supplier.taxId}
                             </span>
                           )}
@@ -897,7 +897,7 @@ export function PurchaseOrderList({
                             {po.fromPr.code}
                           </button>
                         ) : (
-                          <span className={`${MONO} truncate text-[11.5px] text-[#6f6f7f]`}>
+                          <span className={`${MONO} truncate text-[11.5px] text-ink-muted`}>
                             Direct
                           </span>
                         )}
@@ -916,7 +916,7 @@ export function PurchaseOrderList({
               })}
 
               <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
-                <span className="text-[11.5px] text-[#6f6f7f]">
+                <span className="text-[11.5px] text-ink-muted">
                   {/* Requests alone can fill the table, so 0 orders is possible. */}
                   {pagination.total === 0
                     ? 'No orders yet'
@@ -925,7 +925,7 @@ export function PurchaseOrderList({
                     ` · ${inlineRequests.length} open ${inlineRequests.length === 1 ? 'request' : 'requests'}`}
                 </span>
                 <div className="flex items-center gap-[10px]">
-                  <span className="text-[11.5px] text-[#6f6f7f]">Rows</span>
+                  <span className="text-[11.5px] text-ink-muted">Rows</span>
                   <select
                     value={limit}
                     onChange={(e) => setLimit(Number(e.target.value))}
@@ -940,7 +940,7 @@ export function PurchaseOrderList({
                       type="button"
                       onClick={() => setPage(page - 1)}
                       disabled={page <= 1}
-                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-[#a3a3b2]"
+                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-ink-faint"
                     >
                       Previous
                     </button>
@@ -948,7 +948,7 @@ export function PurchaseOrderList({
                       type="button"
                       onClick={() => setPage(page + 1)}
                       disabled={page >= pagination.totalPages}
-                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-[#a3a3b2]"
+                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-ink-faint"
                     >
                       Next
                     </button>
@@ -980,7 +980,7 @@ export function PurchaseOrderList({
                           <span className={`${MONO} text-[13px] font-medium`}>{po.code}</span>
                           <CopyButton code={po.code} />
                         </div>
-                        <span className="text-[11.5px] text-[#6f6f7f]">
+                        <span className="text-[11.5px] text-ink-muted">
                           {fmtDate(po.createdAt)}
                         </span>
                       </div>
@@ -992,7 +992,7 @@ export function PurchaseOrderList({
                       <div className="flex min-w-0 flex-col gap-px">
                         <span className="truncate text-[13px] font-medium">{po.supplier.name}</span>
                         {po.supplier.taxId && (
-                          <span className={`${MONO} text-[10.5px] text-[#6f6f7f]`}>
+                          <span className={`${MONO} text-[10.5px] text-ink-muted`}>
                             TIN {po.supplier.taxId}
                           </span>
                         )}
@@ -1004,7 +1004,7 @@ export function PurchaseOrderList({
 
                     <div className="flex flex-col gap-[5px]">
                       <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-[11.5px] text-[#6f6f7f]">
+                        <span className="text-[11.5px] text-ink-muted">
                           Received {received} / {ordered}
                         </span>
                         <span
@@ -1045,7 +1045,7 @@ export function PurchaseOrderList({
                             {po.fromPr.code}
                           </button>
                         ) : (
-                          <span className={`${MONO} truncate text-[11.5px] text-[#6f6f7f]`}>
+                          <span className={`${MONO} truncate text-[11.5px] text-ink-muted`}>
                             Direct
                           </span>
                         )}
@@ -1090,7 +1090,7 @@ export function PurchaseOrderList({
                   <SkeletonBar wide />
                 </div>
               ))}
-              <div className="border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px] text-[11.5px] text-[#6f6f7f]">
+              <div className="border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px] text-[11.5px] text-ink-muted">
                 Loading purchase orders…
               </div>
             </div>

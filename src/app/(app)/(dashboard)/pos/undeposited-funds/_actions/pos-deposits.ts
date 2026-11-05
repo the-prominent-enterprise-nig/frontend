@@ -10,6 +10,9 @@ import { api, type ApiResponse } from '@/src/libs/api/client'
 
 export type PosDepositStatus = 'draft' | 'cleared' | 'cancelled'
 
+/** Scenario 83 — a cash turnover: awaiting the receiving branch, or taken in. */
+export type PosTurnoverStatus = 'pending' | 'acknowledged'
+
 export interface PosDepositSession {
   id: string
   openedAt: string
@@ -26,8 +29,9 @@ export interface PosDeposit {
   id: string
   branchId: string
   branchName?: string | null
-  bankAccountId: string
-  bankAccount: { id: string; name: string }
+  /** Null for a settlement of cash turnovers alone (Scenario 83). */
+  bankAccountId: string | null
+  bankAccount: { id: string; name: string } | null
   depositDate: string
   reference: string | null
   amount: string | number
@@ -62,7 +66,13 @@ export interface PosDepositLine {
   /** The day this slip was banked; null on a slip recorded before slips had
    * dates, which reads as the deposit's own date. */
   depositDate: string | null
-  bankAccount: { id: string; name: string; accountNumber: string | null }
+  /** Null on a cash turnover. */
+  bankAccount: { id: string; name: string; accountNumber: string | null } | null
+  /** Scenario 83 — the branch this cash was handed to instead of a bank. */
+  turnoverToBranch?: { id: string; name: string } | null
+  turnoverReceivedBy?: string | null
+  turnoverStatus?: PosTurnoverStatus | null
+  turnoverAcknowledgedAt?: string | null
   /** Null for the branch's own cash (1-01-010). */
   clearsAccount: { id: string; number: string | null; name: string } | null
   /** A 1-01-010 sub-ledger fund the slip emptied instead of an account. */
@@ -71,7 +81,12 @@ export interface PosDepositLine {
 
 /** Scenario 70 G8 — one slip: a bank, an amount, and what it empties. */
 export interface PosDepositLineInput {
-  bankAccountId: string
+  /** Omitted on a cash turnover (turnoverToBranchId). */
+  bankAccountId?: string
+  /** Scenario 83 — hand this cash to another branch instead of a bank. */
+  turnoverToBranchId?: string
+  /** Who at the receiving branch took the cash. */
+  turnoverReceivedBy?: string
   amount: number
   /** A processor's clearing account; omitted for the branch's own cash. */
   clearsAccountId?: string
@@ -86,8 +101,9 @@ export interface PosDepositLineInput {
 }
 
 export interface CreatePosDepositInput {
-  /** The header's own bank. With slips it is the first slip's. */
-  bankAccountId: string
+  /** The header's own bank. With slips it is the first bank slip's; omitted
+   * for a settlement of cash turnovers alone. */
+  bankAccountId?: string
   sessionIds: string[]
   /** Scenario 70 G11 — New Receipts banked with the sessions. */
   newReceiptIds?: string[]
@@ -195,4 +211,86 @@ export async function cancelPosDeposit(id: string): Promise<ApiResponse<PosDepos
   const result = await api.post<PosDeposit>(`/pos-deposits/${id}/cancel`, {})
   if (result.success) revalidate()
   return result
+}
+
+/** Scenario 83 — a cash turnover, as either branch reads it. */
+export interface PosTurnover {
+  id: string
+  amount: string | number
+  /** The turnover slip number. */
+  reference: string | null
+  depositDate: string | null
+  createdAt: string
+  turnoverReceivedBy: string | null
+  turnoverStatus: PosTurnoverStatus
+  turnoverAcknowledgedAt: string | null
+  acknowledgedByName: string | null
+  turnoverToBranch: { id: string; name: string }
+  /** The receiving branch's New Receipt, once acknowledged. */
+  turnoverReceipt: { id: string; number: string | null } | null
+  /** createdById: who recorded it — they may not acknowledge or reject it. */
+  posDeposit: {
+    id: string
+    branchId: string
+    createdById: string
+    /** The first session it settled, for the sender's own list. */
+    allocations?: {
+      posSession: {
+        terminal: { terminalCode: string | null; caravanBranch: { name: string } | null }
+        cashier: { name: string | null; email: string | null } | null
+      } | null
+    }[]
+  }
+  /** The caravan or branch that handed the cash over. */
+  senderName: string
+}
+
+export interface PosTurnoverListParams {
+  direction?: 'incoming' | 'outgoing'
+  status?: PosTurnoverStatus
+  branchId?: string
+}
+
+export async function listPosTurnovers(
+  params: PosTurnoverListParams = {}
+): Promise<ApiResponse<PosTurnover[]>> {
+  return api.get<PosTurnover[]>('/pos-deposits/turnovers', compact(params as PosDepositListParams))
+}
+
+/** The receiving branch has the cash: it becomes a New Receipt there, banked
+ * with the branch's next deposit. */
+export async function acknowledgePosTurnover(lineId: string): Promise<ApiResponse<PosTurnover>> {
+  const result = await api.post<PosTurnover>(`/pos-deposits/turnovers/${lineId}/acknowledge`, {})
+  if (result.success) revalidate()
+  return result
+}
+
+/** The receiving branch never got the cash: it goes back to the sender's
+ * undeposited funds. */
+export async function rejectPosTurnover(
+  lineId: string,
+  reason: string
+): Promise<ApiResponse<{ rejected: boolean }>> {
+  const result = await api.post<{ rejected: boolean }>(`/pos-deposits/turnovers/${lineId}/reject`, {
+    reason,
+  })
+  if (result.success) revalidate()
+  return result
+}
+
+/** A branch cash can be turned over to. */
+export interface TurnoverBranchOption {
+  id: string
+  name: string
+  type?: string
+  status?: string
+  isActive?: boolean
+}
+
+/** Every branch, for the Receiving branch pick — a branch-assigned cashier
+ * still turns cash over to branches other than their own. */
+export async function listTurnoverBranches(): Promise<
+  ApiResponse<{ data: TurnoverBranchOption[] }>
+> {
+  return api.get<{ data: TurnoverBranchOption[] }>('/branches')
 }

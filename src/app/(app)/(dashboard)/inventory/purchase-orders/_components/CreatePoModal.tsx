@@ -236,7 +236,7 @@ export function CreatePoModal({
       {/* Sticky action bar */}
       <div className="sticky top-0 z-40 flex flex-wrap items-center justify-between gap-5 border-b border-[#e4e4e9] bg-white px-5 py-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
+          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-ink-subtle`}>
             {breadcrumb}
           </div>
           <div className="flex flex-wrap items-center gap-2.5">

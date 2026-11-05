@@ -119,6 +119,28 @@ function collectionLines(report: DailyCollectionReport): {
       sourceCounter: r.sourceCounter ?? undefined,
     }
   })
+  // Scenario 83 — another branch's cash, acknowledged here: not a sale of
+  // this branch's, so its own line, but held here now, so it adds up.
+  for (const t of report.turnoversIn ?? []) {
+    running += t.amount
+    lines.push({
+      type: 'collection',
+      creditLabel: '',
+      si: '',
+      customer: `Turnover in from ${t.fromName}`,
+      desc: 'TURNOVER',
+      office: t.reference ?? '',
+      field: '',
+      others: '',
+      cashInvoice: '',
+      ppd: 0,
+      penalty: 0,
+      debit: t.amount,
+      credit: null,
+      balance: running,
+      span: 1,
+    })
+  }
   return { lines, running }
 }
 
@@ -162,7 +184,12 @@ function creditLines(report: DailyCollectionReport, opening: number): FormLine[]
     const balance = Math.abs(running) < 0.005 ? 0 : running
     if (!c.bankName) return creditLine('UNDEPOSITED', c.label, c.amount, balance)
     const bank = `${c.bankName} ${formatFormDate(c.depositedAt ?? '')}`
-    return creditLine('DEPOSIT', [c.label, bank].filter(Boolean).join(' · '), c.amount, balance)
+    return creditLine(
+      creditLabelOf(c.bankName),
+      [c.label, bank].filter(Boolean).join(' · '),
+      c.amount,
+      balance
+    )
   })
 }
 
@@ -173,10 +200,16 @@ function legacyCreditLines(report: DailyCollectionReport, opening: number): Form
   const lines = report.deposits.map((d) => {
     running -= d.amount
     const text = `${d.bankName} ${formatFormDate(d.depositedAt)}`
-    return creditLine('DEPOSIT', text, d.amount, running)
+    return creditLine(creditLabelOf(d.bankName), text, d.amount, running)
   })
   if (running > 0.005) lines.push(creditLine('UNDEPOSITED', 'UNDEPOSITED FUNDS', running, 0))
   return lines
+}
+
+/** Scenario 83 — cash handed to another branch leaves the balance like a
+ * deposit, but it is a TURNOVER, not a trip to the bank. */
+function creditLabelOf(bankName: string): string {
+  return bankName.startsWith('Turnover to ') ? 'TURNOVER' : 'DEPOSIT'
 }
 
 function creditLine(label: string, text: string, credit: number, balance: number): FormLine {
@@ -257,6 +290,11 @@ function othersNote(deliveryCharges: number, newReceipts: number): string | unde
  * The non-cash providers are not itemised here: the ledger's CREDIT column
  * already names each bank they were banked to.
  */
+/** Scenario 83 — turnovers sent to the branch that day, still pending. */
+function pendingTurnoverIn(report: DailyCollectionReport): number {
+  return (report.pendingTurnoversIn ?? []).reduce((sum, t) => sum + t.amount, 0)
+}
+
 export function buildCollectionRecapLines(report: DailyCollectionReport): FooterLine[] {
   const totals = kindTotals(report)
   const kind = (k: CollectionKind): number => totals.get(k) ?? 0
@@ -283,15 +321,37 @@ export function buildCollectionRecapLines(report: DailyCollectionReport): Footer
       note: othersNote(kind('DC'), kind('OTHERS')),
       group: 'cash',
     }),
+    // Scenario 83 — another branch's cash, acknowledged here, mirroring the
+    // backend form sheet: its own line, and in this branch's total.
+    // Only on a day that has one: the client's own form has no such row.
+    ...((report.turnoverInTotal ?? 0) > 0.005
+      ? [
+          line('TURNOVER IN', report.turnoverInTotal, {
+            note: 'Cash turned over by another branch',
+            group: 'cash',
+          }),
+        ]
+      : []),
     line(
       'TOTAL COLLECTION',
-      [...totals.values()].reduce((sum, v) => sum + v, 0),
+      [...totals.values()].reduce((sum, v) => sum + v, 0) + (report.turnoverInTotal ?? 0),
       {
         emphasis: true,
         highlight: true,
         group: 'cash',
       }
     ),
+    // Scenario 83 — sent to this branch, not acknowledged yet: shown so the
+    // branch knows it is coming, in no total until it confirms the cash.
+    ...(pendingTurnoverIn(report) > 0.005
+      ? [
+          line('PENDING TURNOVER IN', pendingTurnoverIn(report), {
+            sub: 'not counted',
+            note: 'Sent by another branch, awaiting your acknowledgment',
+            group: 'cash',
+          }),
+        ]
+      : []),
     // Mirrors the backend form sheet's own line (daily-collection.form-sheet.ts)
     // — this recap and that one must never print different figures for the
     // same day. Only drawn while a session is still open, so a final form is
@@ -391,13 +451,20 @@ export interface CashPosition {
   balanced: boolean
 }
 
+/** What the denomination count has to come to: the closed sessions' cash
+ * and (Scenario 83) any turnover from another branch acknowledged that day,
+ * which is in the same cash on hand. Mirrors the backend's expectedCount. */
+export function expectedCount(report: DailyCollectionReport): number {
+  return report.settledCashCollection + (report.turnoverInTotal ?? 0)
+}
+
 export function cashPosition(
   report: DailyCollectionReport,
   counts: Record<string, number> = report.denominations ?? {}
 ): CashPosition {
   const denominationTotal = sumDenominations(counts)
   const cashCollected = denominationTotal - report.openingFloat
-  const variance = cashCollected - report.settledCashCollection
+  const variance = cashCollected - expectedCount(report)
 
   return {
     denominationTotal,

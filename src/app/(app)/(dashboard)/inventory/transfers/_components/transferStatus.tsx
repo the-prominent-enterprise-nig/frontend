@@ -79,7 +79,7 @@ export const STATUS_CONFIG: Record<
   cancelled: {
     label: 'Cancelled',
     badge: 'bg-[#f6f6f8] text-[#4b4b5a]',
-    tone: 'text-[#6f6f7f]',
+    tone: 'text-ink-muted',
     icon: XCircle,
   },
   pending_substitution_confirmation: {
@@ -106,7 +106,7 @@ export function branchLabel(wh: Parameters<typeof warehouseLabel>[0]): string {
 export function LocationName({
   wh,
   className = '',
-  subtitleClassName = 'text-[11px] text-[#6f6f7f]',
+  subtitleClassName = 'text-[11px] text-ink-muted',
 }: {
   wh: Parameters<typeof warehouseLabel>[0]
   className?: string

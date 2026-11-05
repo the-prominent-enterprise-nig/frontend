@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { X, ArrowRight, Search } from 'lucide-react'
+import { X, CornerDownRight, Search } from 'lucide-react'
 import { useTransferManager } from '../_hooks/useTransferManager'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -46,30 +46,9 @@ function lineTotals(lines: TransferSummary['lines']): { total: number; received:
   }
 }
 
-/** Scenario 71 item 19 — the units a transfer carries, by serial, so the
- * list answers "which unit went where" without opening each one. Shows the
- * first two; the full set is in the hover title and the detail drawer. */
-function TransferSerials({ lines }: { lines: TransferSummary['lines'] }) {
-  const serials = (lines ?? [])
-    .map((l) => l.serialNumber?.serialNumber)
-    .filter((sn): sn is string => !!sn)
-  if (serials.length === 0) return null
-  const shown = serials.slice(0, 2).join(', ')
-  const more = serials.length - 2
-  return (
-    <p
-      title={serials.join(', ')}
-      className={`${MONO} mt-1 truncate text-[12px] font-semibold text-[#0b0b0f]`}
-    >
-      {shown}
-      {more > 0 && <span className="text-[#4b4b5a]"> +{more} more</span>}
-    </p>
-  )
-}
-
 function TransferProgress({ lines }: { lines: TransferSummary['lines'] }) {
   const { total, received } = lineTotals(lines)
-  if (!total) return <span className="text-[#8e8e9d]">—</span>
+  if (!total) return <span className="text-ink-subtle">—</span>
   const pct = Math.min((received / total) * 100, 100)
   const fill = pct >= 100 ? 'bg-[#0f7b52]' : pct > 0 ? 'bg-[#d18b1d]' : 'bg-[#e4e4e9]'
   const tone = pct >= 100 ? 'text-[#0b6644]' : pct > 0 ? 'text-[#8a4b06]' : 'text-[#4b4b5a]'
@@ -108,7 +87,7 @@ function daysSince(iso: string | undefined): number | null {
 
 function TransferAge({ transfer }: { transfer: TransferSummary }) {
   const days = daysSince(transfer.transferDate ?? transfer.createdAt)
-  if (days === null) return <span className="text-[#8e8e9d]">—</span>
+  if (days === null) return <span className="text-ink-subtle">—</span>
   const threshold = STALE_AFTER_DAYS[transfer.status]
   const stale = threshold !== undefined && days >= threshold
   return (
@@ -458,7 +437,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
 
   return (
     <div className={`${PLEX} min-h-full w-full bg-zinc-50 text-[#17171c] antialiased`}>
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-[14px] p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
+      <div className="mx-auto flex max-w-[1560px] flex-col gap-[14px] p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="flex min-w-0 flex-col gap-1">
@@ -480,7 +459,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
               searchFocused ? `border ${CONTROL_CHROME.focused}` : `border ${CONTROL_CHROME.idle}`
             }`}
           >
-            <Search className="h-[13px] w-[13px] shrink-0 text-[#6f6f7f]" />
+            <Search className="h-[13px] w-[13px] shrink-0 text-ink-muted" />
             <input
               type="text"
               placeholder="Search transfer #, item, SKU, or serial…"
@@ -488,7 +467,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
               onChange={(e) => setSearch(e.target.value)}
               onFocus={() => setSearchFocused(true)}
               onBlur={() => setSearchFocused(false)}
-              className="w-full min-w-0 border-none bg-transparent text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
+              className="w-full min-w-0 border-none bg-transparent text-[13px] text-[#17171c] outline-none placeholder:text-ink-faint"
             />
             {!!search && (
               <button
@@ -599,7 +578,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                   active
                     ? 'border border-[#5b21b6] bg-[#5b21b6] font-medium text-white'
                     : `border border-[#e4e4e9] bg-white hover:bg-[#fbfbfc] ${
-                        count === 0 ? 'text-[#6f6f7f]' : 'text-[#17171c]'
+                        count === 0 ? 'text-ink-muted' : 'text-[#17171c]'
                       }`
                 }`}
               >
@@ -685,7 +664,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                 <thead>
                   <tr className="border-b border-[#eeeef1] bg-[#fbfbfc]">
                     <th className={`${th} text-left`}>Transfer</th>
-                    <th className={`${th} text-left`}>Supplying → Requesting</th>
+                    <th className={`${th} w-[280px] text-left`}>Supplying → Requesting</th>
                     <th className={`${th} text-right`}>Items</th>
                     <th className={`${th} hidden text-left md:table-cell`}>Progress</th>
                     <th className={`${th} text-left`}>Status</th>
@@ -725,19 +704,20 @@ export default function TransferList({ session }: { session: SessionUser }) {
                           </div>
                         </td>
                         <td className="px-[18px] py-[13px]">
-                          <div className="flex min-w-0 items-center gap-2">
+                          <div className="flex w-[280px] flex-col gap-1">
                             <LocationName
                               wh={tr.fromWarehouse}
-                              className="text-[12.5px] text-[#3d3d4a]"
+                              className="min-w-0 text-[12.5px] text-[#3d3d4a]"
                             />
-                            <ArrowRight className="h-3 w-3 shrink-0 text-[#b0b0bc]" />
-                            <LocationName
-                              wh={tr.toWarehouse}
-                              className="text-[12.5px] font-semibold"
-                            />
-                            <DirectionTag direction={directionFor(tr, session.branchId)} />
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <CornerDownRight className="h-3 w-3 shrink-0 text-ink-faint" />
+                              <LocationName
+                                wh={tr.toWarehouse}
+                                className="min-w-0 text-[12.5px] font-semibold"
+                              />
+                              <DirectionTag direction={directionFor(tr, session.branchId)} />
+                            </div>
                           </div>
-                          <TransferSerials lines={tr.lines} />
                         </td>
                         <td className="px-[18px] py-[13px]">
                           <div className="flex flex-col items-end gap-px">
@@ -795,7 +775,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                     type="button"
                     onClick={() => setPage(Math.max(1, page - 1))}
                     disabled={page <= 1}
-                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-[6px] text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:border-[#e4e4e9] disabled:text-[#a3a3b2]"
+                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-[6px] text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:border-[#e4e4e9] disabled:text-ink-faint"
                   >
                     Previous
                   </button>
@@ -806,7 +786,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                     type="button"
                     onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
                     disabled={page >= pagination.totalPages}
-                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-[6px] text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:border-[#e4e4e9] disabled:text-[#a3a3b2]"
+                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-[6px] text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:border-[#e4e4e9] disabled:text-ink-faint"
                   >
                     Next
                   </button>

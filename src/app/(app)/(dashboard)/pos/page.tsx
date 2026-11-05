@@ -19,6 +19,8 @@ import { Skeleton } from '@/src/components/ui/Skeleton'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { type SessionUser } from '@/src/libs/guards/permission'
 import { TransactionDetail } from './_components/TransactionDetail'
+import { MonthStepper } from './_components/MonthStepper'
+import { DatePickerButton } from './_components/DatePickerButton'
 import type { PosTransaction } from '@/src/schema/pos'
 import {
   ShoppingCart,
@@ -357,34 +359,33 @@ export default function PosOverviewPage() {
             ))}
           </div>
           {period.mode === 'month' ? (
-            <input
-              type="month"
-              aria-label="Month"
+            <MonthStepper
               value={period.month}
               max={todayIso.slice(0, 7)}
-              onChange={(e) =>
-                e.target.value && setPeriod({ mode: 'month', month: e.target.value })
-              }
-              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800"
+              onChange={(month) => setPeriod({ mode: 'month', month })}
             />
           ) : (
             <div className="flex items-center gap-2 text-sm text-gray-600">
-              <input
-                type="date"
-                aria-label="From"
+              {/* From can't pass To, nor To come before From. */}
+              <DatePickerButton
+                label="From"
                 value={period.from}
-                max={todayIso}
-                onChange={(e) => e.target.value && setPeriod({ ...period, from: e.target.value })}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800"
+                max={period.to}
+                today={todayIso}
+                rangeFrom={period.from}
+                rangeTo={period.to}
+                onChange={(from) => setPeriod({ ...period, from })}
               />
               to
-              <input
-                type="date"
-                aria-label="To"
+              <DatePickerButton
+                label="To"
                 value={period.to}
+                min={period.from}
                 max={todayIso}
-                onChange={(e) => e.target.value && setPeriod({ ...period, to: e.target.value })}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-800"
+                today={todayIso}
+                rangeFrom={period.from}
+                rangeTo={period.to}
+                onChange={(to) => setPeriod({ ...period, to })}
               />
             </div>
           )}

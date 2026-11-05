@@ -110,6 +110,10 @@ export default function DailyCollectionForm({
             {Array.from({ length: fillerCount }, (_, i) => (
               <FillerRow key={`filler-${i}`} />
             ))}
+            {/* Print only: one empty ruled line between the ledger's last line
+                and the TOTAL COLLECTION / DENOMINATION blocks — the grid stays
+                whole, the blocks just don't sit right on the last credit. */}
+            <FillerRow className="hidden print:table-row" />
             <FooterBlocks recap={recap} denominations={denominations} edit={edit} />
           </tbody>
         </table>
@@ -238,9 +242,9 @@ function DepositRow({ line }: { line: FormLine }): React.JSX.Element {
   )
 }
 
-function FillerRow(): React.JSX.Element {
+function FillerRow({ className }: { className?: string }): React.JSX.Element {
   return (
-    <tr>
+    <tr className={className}>
       {Array.from({ length: 13 }, (_, c) => (
         <td key={c} className={`${CELL} h-4.75`} />
       ))}

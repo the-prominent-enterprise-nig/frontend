@@ -73,7 +73,7 @@ export function ApprovePriceListModal({ open, onClose, priceList, onApprove, isA
 
             <div>
               <label className="mb-1 block text-sm font-medium text-[#3d3d4a]">
-                Remarks <span className="font-normal text-[#6f6f7f]">(optional)</span>
+                Remarks <span className="font-normal text-ink-muted">(optional)</span>
               </label>
               <Controller
                 name="remarks"

@@ -168,7 +168,7 @@ export function RrDeliveryPanel({
             Linked to {linkedPo.code}
           </span>
         ) : (
-          <span className="text-[11.5px] text-[#6f6f7f]">
+          <span className="text-[11.5px] text-ink-muted">
             Direct delivery, no purchase order linked
           </span>
         )}
@@ -618,10 +618,10 @@ function Field({
       <span className="flex items-center gap-1 text-[12px] font-medium text-[#3d3d4a]">
         {label}
         {required && <span className="text-[#b42318]"> *</span>}
-        {hint && <span className="ml-1 font-normal text-[#6f6f7f]">{hint}</span>}
+        {hint && <span className="ml-1 font-normal text-ink-muted">{hint}</span>}
         {tooltip && (
           <Tooltip label={tooltip}>
-            <Info className="h-3 w-3 text-[#8e8e9d]" />
+            <Info className="h-3 w-3 text-ink-subtle" />
           </Tooltip>
         )}
       </span>
@@ -637,7 +637,7 @@ function Field({
 }
 
 function Hint({ children }: { children: React.ReactNode }): React.ReactElement {
-  return <span className="text-[11px] leading-[1.4] text-[#6f6f7f]">{children}</span>
+  return <span className="text-[11px] leading-[1.4] text-ink-muted">{children}</span>
 }
 
 function FieldError({ text }: { text?: string }): React.ReactElement {

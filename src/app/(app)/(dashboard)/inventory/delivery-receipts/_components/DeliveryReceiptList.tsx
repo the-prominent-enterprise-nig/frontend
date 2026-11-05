@@ -55,11 +55,11 @@ export default function DeliveryReceiptList({
     <div
       className={`min-h-full w-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px] ${PLEX}`}
     >
-      <div className="mx-auto max-w-7xl space-y-5">
+      <div className="mx-auto max-w-[1520px] space-y-5">
         <ListHeader canCreate={canCreate} />
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[220px] flex-1 sm:max-w-md">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f6f7f]" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
             <input
               type="search"
               value={search}
@@ -88,7 +88,7 @@ export default function DeliveryReceiptList({
           className={`overflow-hidden rounded-xl border border-[#e4e4e9] bg-white shadow-sm transition-opacity ${query.isFetching ? 'opacity-60' : ''}`}
         >
           {query.isLoading ? (
-            <div className="p-8 text-center text-sm text-[#6f6f7f]">Loading delivery receipts…</div>
+            <div className="p-8 text-center text-sm text-ink-muted">Loading delivery receipts…</div>
           ) : rows.length === 0 ? (
             <EmptyState filtered={status !== 'all' || !!search.trim()} canCreate={canCreate} />
           ) : (
@@ -179,9 +179,9 @@ function EmptyState({
   return (
     <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
       {filtered ? (
-        <Search className="mb-3 h-8 w-8 text-[#b0b0bc]" />
+        <Search className="mb-3 h-8 w-8 text-ink-faint" />
       ) : (
-        <Truck className="mb-3 h-10 w-10 text-[#b0b0bc]" />
+        <Truck className="mb-3 h-10 w-10 text-ink-faint" />
       )}
       <p className="text-sm font-medium text-[#3d3d4a]">
         {filtered ? 'No delivery receipts match' : 'No delivery receipts yet'}

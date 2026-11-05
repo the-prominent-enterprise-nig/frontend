@@ -105,12 +105,12 @@ export function ReturnedUnitsPanel({
               {isRepo ? 'Repossessed Items' : 'Units for Repair/Return'}{' '}
               <span className="text-[#b42318]">*</span>
             </span>
-            <span className="text-[11px] text-[#6f6f7f]">
+            <span className="text-[11px] text-ink-muted">
               {checkedCount} {checkedCount === 1 ? 'unit' : 'units'} checked
             </span>
           </div>
           <span
-            className={`text-[11.5px] ${showErrors && noneChecked ? 'text-[#b42318]' : 'text-[#6f6f7f]'}`}
+            className={`text-[11.5px] ${showErrors && noneChecked ? 'text-[#b42318]' : 'text-ink-muted'}`}
           >
             {showErrors && noneChecked
               ? 'Check at least one unit.'
@@ -150,7 +150,7 @@ export function ReturnedUnitsPanel({
 
       {isRepo && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[#e4e4e9] bg-[#fbfbfc] px-4.5 py-3">
-          <span className="text-[11.5px] text-[#6f6f7f]">
+          <span className="text-[11.5px] text-ink-muted">
             Repo cost = list price − payments received (monthly + down payment) + the sales
             commission encoded in Expenses for the sale — the value each unit re-enters stock at.
           </span>
@@ -273,7 +273,7 @@ function Block({
                         type="button"
                         onClick={() => onPickCustomer(block.key, '')}
                         aria-label="Change customer"
-                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[#8e8e9d] hover:bg-[#eeeef1] hover:text-[#17171c]"
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-subtle hover:bg-[#eeeef1] hover:text-[#17171c]"
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -294,7 +294,7 @@ function Block({
               <span className={CAPTION}>Customer ID</span>
               <div
                 className={`${MONO} flex h-9.5 items-center rounded-lg border border-[#e4e4e9] bg-[#f5f5f7] px-3 text-[12.5px] ${
-                  block.customerCode ? 'text-[#17171c]' : 'text-[#8e8e9d]'
+                  block.customerCode ? 'text-[#17171c]' : 'text-ink-subtle'
                 }`}
               >
                 {block.customerCode ?? 'Fills in from the customer'}
@@ -309,7 +309,7 @@ function Block({
               type="button"
               onClick={() => onRemoveBlock(block.key)}
               aria-label="Remove invoice"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#6f6f7f] hover:bg-[#fdeceb] hover:text-[#b42318]"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-[#fdeceb] hover:text-[#b42318]"
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -318,7 +318,7 @@ function Block({
       </div>
 
       {hasInvoice && block.loading && (
-        <div className="mt-2.5 text-[11px] text-[#6f6f7f]">Loading this invoice&rsquo;s units…</div>
+        <div className="mt-2.5 text-[11px] text-ink-muted">Loading this invoice&rsquo;s units…</div>
       )}
 
       {units.length > 0 && (
@@ -344,11 +344,11 @@ function Block({
                     <span className={`${MONO} text-[12.5px] text-[#17171c]`}>
                       {unit.serialNumber ?? '—'}
                     </span>
-                    <span className="text-[#a9a9b6]">–</span>
+                    <span className="text-ink-faint">–</span>
                     <span className="min-w-0 flex-1 truncate text-[12.5px] text-[#17171c]">
                       {unit.modelNumber || unit.itemName || '—'}
                     </span>
-                    <span className="text-[#a9a9b6]">–</span>
+                    <span className="text-ink-faint">–</span>
                     <span className="text-[12.5px] text-[#4b4b5a]">{unit.brand || '—'}</span>
                     {isRepo && canViewCost && checked && unit.repoCost > 0 && (
                       <span className={`${MONO} text-[12px] text-[#0b6644]`}>

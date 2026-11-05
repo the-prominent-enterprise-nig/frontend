@@ -277,7 +277,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
 
   return (
     <div className="w-full min-h-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
-      <div className="mx-auto max-w-7xl space-y-6">
+      <div className="mx-auto max-w-[1520px] space-y-6">
         {/* Same header chrome as Stock Returns and Stock Transfers — these
             three inventory movement screens share one surface. */}
         <div className="flex flex-wrap items-start justify-between gap-5">

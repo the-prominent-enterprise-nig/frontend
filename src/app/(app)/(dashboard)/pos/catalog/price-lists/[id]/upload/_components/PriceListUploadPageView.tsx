@@ -46,7 +46,7 @@ export function PriceListUploadPageView({ priceListId }: { priceListId: string }
 
   if (isLoading) {
     return (
-      <div className="flex min-h-full items-center justify-center py-24 text-[#6f6f7f]">
+      <div className="flex min-h-full items-center justify-center py-24 text-ink-muted">
         <Loader2 className="h-6 w-6 animate-spin" />
       </div>
     )
