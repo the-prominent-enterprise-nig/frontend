@@ -143,12 +143,13 @@ function SubmitSummary({ lines }: { lines: CountSheetLine[] }) {
       {unaccounted > 0 && (
         <p>
           <strong className="text-amber-700">{unaccounted}</strong> units not in store have no
-          remark saying where they are. They&apos;ll be reported as unaccounted for.
+          remark saying where they are. They&apos;ll be written off as missing.
         </p>
       )}
       <p>
-        Anything that doesn&apos;t match the system goes into one stock adjustment for review. You
-        can&apos;t edit this count after you submit it.
+        Stock on hand will be updated to match what you counted. Units not in store that have a
+        remark stay in stock (Defective ones are flagged defective). You can&apos;t edit this count
+        after you submit it.
       </p>
     </>
   )
@@ -449,7 +450,7 @@ export default function CountSessionView({
                   <p className="text-xs text-amber-800">
                     {variantLines.length} line(s) differ from the system.
                     {unaccountedCount > 0 &&
-                      ` ${unaccountedCount} not in store have no remark saying where they are — they'll be reported as unaccounted for.`}
+                      ` ${unaccountedCount} not in store have no remark saying where they are — they'll be written off as missing.`}
                   </p>
                 </div>
               )}

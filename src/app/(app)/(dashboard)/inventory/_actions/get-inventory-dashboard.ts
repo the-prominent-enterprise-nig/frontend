@@ -15,7 +15,6 @@ import { getBackorders } from '@/src/app/(app)/(dashboard)/inventory/backorders/
 import { getReturns } from '@/src/app/(app)/(dashboard)/inventory/returns/_actions/get-returns'
 import { getPurchaseRequests } from '@/src/app/(app)/(dashboard)/inventory/purchase-requests/_actions/get-purchase-requests'
 import { getPurchaseOrders } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_actions/get-purchase-orders'
-import { getAdjustments } from '@/src/app/(app)/(dashboard)/inventory/adjustments/_actions/get-adjustments'
 
 /** One dashboard read: the action's own result, or null when the call itself threw. */
 export type InventoryDashboardRead = { success?: boolean; data?: unknown } | null
@@ -53,7 +52,6 @@ export async function getInventoryDashboard(): Promise<InventoryDashboardRead[]>
     getAgingSummary(), // 12 — only `summary` is used; the summary view skips the unit rows and their joins
     getPurchaseRequests({ limit: 50 }), // 13
     getPurchaseOrders({ limit: 50 }), // 14
-    getAdjustments({ limit: 50 }), // 15
   ]
   return Promise.all(reads.map((read) => read.catch(() => null)))
 }

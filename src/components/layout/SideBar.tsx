@@ -271,10 +271,9 @@ const navItemsBySegment: Record<string, NavConfig> = {
           INVENTORY_PERMISSIONS.STOCK_COUNT_READ,
         ],
       },
-      // Counting and Finance are hidden from the nav. Their routes still load:
-      // /inventory/counting (Stock Adjustments is linked from Stock Transaction
-      // above; its old Stock Counts tab redirects to Stock Report → Physical
-      // Inventory), /inventory/finance.
+      // Counting and Finance are hidden from the nav. /inventory/counting now
+      // redirects to Stock Report → Physical Inventory; /inventory/finance
+      // still loads.
     ],
     bottom: [],
   },
