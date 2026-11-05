@@ -24,13 +24,6 @@ export function isDue(scheduledDate: string | null | undefined): boolean {
   return manilaDateOf(scheduledDate) <= manilaToday()
 }
 
-/** Whether a count's date has come — such a count skips Scheduled and starts. */
-export function isDue(scheduledDate: string | null | undefined): boolean {
-  if (!scheduledDate) return true
-  const day = (d: Date): string => d.toLocaleDateString('en-CA')
-  return day(new Date(scheduledDate)) <= day(new Date())
-}
-
 export function useStockCounts() {
   const queryClient = useQueryClient()
 
