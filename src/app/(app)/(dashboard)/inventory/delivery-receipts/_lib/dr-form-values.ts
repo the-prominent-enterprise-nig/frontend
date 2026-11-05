@@ -4,12 +4,11 @@ import {
   type DrFormValues,
   type DrLineFormValues,
 } from '@/src/schema/inventory/delivery-receipts'
+import { manilaToday } from '@/src/libs/format/manila-date'
 
-/** Today in the user's own timezone, as the date input wants it. */
+/** Today in Manila, as the date input wants it. */
 export function todayIso(): string {
-  const d = new Date()
-  const pad = (n: number): string => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return manilaToday()
 }
 
 export function emptyDrForm(): DrFormValues {

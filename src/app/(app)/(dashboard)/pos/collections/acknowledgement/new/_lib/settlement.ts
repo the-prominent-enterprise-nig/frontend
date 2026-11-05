@@ -1,3 +1,5 @@
+import { manilaDateOf } from '@/src/libs/format/manila-date'
+
 export type ClearedType = 'SAME_DATE' | 'LATER_DATE' | 'PAST_DATE'
 
 export const CLEARED_OPTIONS: { value: ClearedType; label: string }[] = [
@@ -31,12 +33,9 @@ export function computeSettlementNet(gross: number, subsidy: number, withholding
   return round2(gross - subsidy + withholding)
 }
 
-/** Today as YYYY-MM-DD in the user's own timezone. */
+/** Today as YYYY-MM-DD on the Manila business calendar. */
 export function todayLocalIso(now: Date = new Date()): string {
-  const y = now.getFullYear()
-  const m = String(now.getMonth() + 1).padStart(2, '0')
-  const d = String(now.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
+  return manilaDateOf(now)
 }
 
 /**

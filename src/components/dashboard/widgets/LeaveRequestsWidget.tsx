@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { api } from '@/src/libs/api/client'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 type LeaveRequest = {
   id: string
@@ -27,7 +28,7 @@ function fmtDateRange(start?: string, end?: string): string {
   if (!start) return '—'
   const s = new Date(start)
   const e = end ? new Date(end) : null
-  const fmt = (d: Date) => d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+  const fmt = (d: Date): string => formatManilaDate(d, { month: 'short', day: 'numeric' })
   return e && e.getTime() !== s.getTime() ? `${fmt(s)}–${fmt(e)}` : fmt(s)
 }
 

@@ -8,6 +8,7 @@ import type { SessionUser } from '@/src/libs/guards/permission'
 import { useReservations } from '../_hooks/useReservations'
 import ReservationModal from './ReservationModal'
 import type { ReservationFormValues } from '@/src/schema/inventory/reservations'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 function statusBadge(status?: string | null) {
   if (status === 'active') return 'bg-green-100 text-green-700'
@@ -19,7 +20,7 @@ function statusBadge(status?: string | null) {
 function formatDateTime(dt?: string | null) {
   if (!dt) return '—'
   try {
-    return new Date(dt).toLocaleString()
+    return new Date(dt).toLocaleString(undefined, { timeZone: MANILA_TZ })
   } catch {
     return dt
   }

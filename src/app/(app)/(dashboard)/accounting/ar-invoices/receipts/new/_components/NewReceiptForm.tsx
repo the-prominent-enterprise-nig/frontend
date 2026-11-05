@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -70,7 +71,7 @@ export default function NewReceiptForm({
     withholdingAmount: '0',
     withholdingCertificateNo: '',
     withholdingCertificateStatus: '' as '' | 'pending' | 'received',
-    paymentDate: new Date().toISOString().slice(0, 10),
+    paymentDate: manilaToday(),
     method: 'CASH' as PaymentMethod,
     reference: '',
     notes: '',

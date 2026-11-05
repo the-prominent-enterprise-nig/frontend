@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
@@ -46,6 +47,7 @@ function fmtRelative(dateStr: string) {
 
 function fmtDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('en-PH', {
+    timeZone: MANILA_TZ,
     month: 'short',
     day: 'numeric',
     year: 'numeric',

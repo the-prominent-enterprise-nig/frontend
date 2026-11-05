@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -535,7 +536,7 @@ export default function PriceListModal({
                           setValue('effectiveFrom', '')
                           setValue('effectiveTo', '')
                         } else {
-                          setValue('effectiveFrom', new Date().toISOString().slice(0, 10))
+                          setValue('effectiveFrom', manilaToday())
                         }
                       }}
                       options={[

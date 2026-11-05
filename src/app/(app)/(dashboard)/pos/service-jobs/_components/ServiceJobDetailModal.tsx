@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import { X, Wrench, Loader2, PackageSearch } from 'lucide-react'
 import type { ServiceDraft, RecordActualsFormValues } from '@/src/schema/pos/service-drafts'
@@ -158,7 +159,7 @@ export function ServiceJobDetailModal({
                     Created
                   </p>
                   <p className="mt-0.5 text-zinc-800">
-                    {new Date(draft.createdAt).toLocaleString()}
+                    {new Date(draft.createdAt).toLocaleString(undefined, { timeZone: MANILA_TZ })}
                   </p>
                 </div>
                 <div>

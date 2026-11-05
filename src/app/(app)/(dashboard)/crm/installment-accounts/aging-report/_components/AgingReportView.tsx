@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import { Printer } from 'lucide-react'
 import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
@@ -34,7 +35,7 @@ function fmt(n: number | null): string {
 }
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
+  return manilaToday()
 }
 
 export default function AgingReportView() {

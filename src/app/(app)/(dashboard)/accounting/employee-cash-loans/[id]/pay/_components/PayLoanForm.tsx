@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
@@ -26,7 +27,7 @@ export default function PayLoanForm({ id }: { id: string }) {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [amount, setAmount] = useState('')
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10))
+  const [paymentDate, setPaymentDate] = useState(manilaToday())
   const [bankAccountId, setBankAccountId] = useState('')
   const [referenceNumber, setReferenceNumber] = useState('')
   const [note, setNote] = useState('')

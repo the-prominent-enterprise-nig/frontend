@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { api } from '@/src/libs/api/client'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 type OvertimeRequest = {
   id: string
@@ -30,9 +31,7 @@ const INITIALS = (name: string) =>
 const titleCase = (value?: string | null) =>
   value ? value.charAt(0).toUpperCase() + value.slice(1).toLowerCase() : 'Pending'
 const formatDate = (value?: string | null) =>
-  value
-    ? new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric' }).format(new Date(value))
-    : 'No date'
+  value ? formatManilaDate(value, { month: 'short', day: 'numeric' }) : 'No date'
 
 export default function OvertimeRequestsWidget() {
   const { variant } = useWidgetSize()

@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday, addDaysIso } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -36,8 +37,8 @@ import Field from '../../_shared/Field'
 const inputClass =
   'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100 disabled:bg-gray-50 disabled:text-gray-500'
 
-const today = () => new Date().toISOString().slice(0, 10)
-const inThirtyDays = () => new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+const today = (): string => manilaToday()
+const inThirtyDays = (): string => addDaysIso(manilaToday(), 30)
 
 /**
  * Raise or edit a draft AR invoice — its own page (the client does not want

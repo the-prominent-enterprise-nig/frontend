@@ -1,4 +1,5 @@
 'use client'
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, CheckCircle, Printer } from 'lucide-react'
@@ -123,7 +124,7 @@ export function AdjustingForm({
     bankAccountId: '',
     type: 'BANK_CHARGE' as 'BANK_CHARGE' | 'INTEREST_INCOME',
     amount: '',
-    date: new Date().toISOString().slice(0, 10),
+    date: manilaToday(),
     description: '',
     voucherControlNo: '',
   })
@@ -258,7 +259,7 @@ export function UnidentifiedCreditForm({
   const [form, setForm] = useState({
     bankAccountId: '',
     amount: '',
-    creditDate: new Date().toISOString().slice(0, 10),
+    creditDate: manilaToday(),
     bankRef: '',
     voucherControlNo: '',
   })

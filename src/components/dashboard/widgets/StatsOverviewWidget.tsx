@@ -8,6 +8,7 @@ import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { useMe } from '@/src/hooks/useMe'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import { manilaToday } from '@/src/libs/format/manila-date'
 
 interface Stat {
   label: string
@@ -89,9 +90,8 @@ export default function StatsOverviewWidget() {
     if (!canReadReports) return
     let cancelled = false
     ;(async () => {
-      const now = new Date()
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
-      const today = now.toISOString().slice(0, 10)
+      const today = manilaToday()
+      const monthStart = `${today.slice(0, 7)}-01`
       const [pnl, bi] = await Promise.all([
         Reports.pnl(monthStart, today, branchId ?? undefined),
         Reports.biSummary(),

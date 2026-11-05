@@ -3,6 +3,7 @@
 import { Cake } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { useEmployeeBirthdays } from './dashboardQueries'
+import { manilaToday } from '@/src/libs/format/manila-date'
 
 export default function EmployeeBirthdaysWidget() {
   const { variant } = useWidgetSize()
@@ -10,9 +11,10 @@ export default function EmployeeBirthdaysWidget() {
 
   const { data: employees = [], isLoading: loading } = useEmployeeBirthdays()
 
-  const now = new Date()
-  const month = now.getMonth()
-  const today = now.getDate()
+  // Today in Manila: 0-based month and day of month.
+  const todayIso = manilaToday()
+  const month = Number(todayIso.slice(5, 7)) - 1
+  const today = Number(todayIso.slice(8, 10))
 
   const birthdays = employees
     .filter((emp) => new Date(emp.dateOfBirth + 'T00:00:00').getMonth() === month)

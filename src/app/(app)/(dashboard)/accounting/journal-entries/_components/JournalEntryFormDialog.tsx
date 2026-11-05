@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useMemo, useState } from 'react'
 import { X, Plus, Trash2 } from 'lucide-react'
 import {
@@ -55,11 +56,7 @@ export default function JournalEntryFormDialog({ initial, onClose, onSaved }: Pr
   const isEdit = !!initial
 
   const [reference, setReference] = useState((initial as any)?.reference ?? '')
-  const [date, setDate] = useState(
-    initial?.date
-      ? new Date(initial.date).toISOString().slice(0, 10)
-      : new Date().toISOString().slice(0, 10)
-  )
+  const [date, setDate] = useState(initial?.date ? manilaDateOf(initial.date) : manilaToday())
   const [description, setDescription] = useState(initial?.description ?? '')
   const [journalType, setJournalType] = useState(
     (initial?.journalType as string) ?? 'GeneralJournal'

@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
@@ -632,7 +633,11 @@ const STATUS_CHIP: Record<string, { label: string; chip: string; dot: string }> 
 }
 
 function shiftTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString('en-PH', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: MANILA_TZ,
+  })
 }
 
 /** "2h 14m" between two moments — how long the till has been, or was, open.
@@ -1227,6 +1232,7 @@ function CloseSessionModal({
   // format inline: this screen only ever mounts on a click, so it is never
   // server-rendered and cannot mismatch on hydration.
   const openedAtTime = new Date(session.openedAt).toLocaleTimeString('en-PH', {
+    timeZone: MANILA_TZ,
     hour: 'numeric',
     minute: '2-digit',
   })

@@ -4,6 +4,7 @@ import { useWidgetSize } from '../WidgetSizeContext'
 import type { ARInvoiceDashboardRow } from '@/src/libs/data/AccountingV2Data'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { useDashboardArStats } from './dashboardQueries'
+import { formatManilaDate, manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
 
 const STATUS_STYLES: Record<string, string> = {
   SENT: 'bg-amber-100 text-amber-700',
@@ -18,12 +19,15 @@ function fmtMoney(n: number): string {
 
 function dueLabel(invoice: ARInvoiceDashboardRow): string {
   if (!invoice.dueDate) return ''
-  const due = new Date(invoice.dueDate)
-  const diffDays = Math.round((due.getTime() - Date.now()) / 86400000)
+  if (Number.isNaN(new Date(invoice.dueDate).getTime())) return ''
+  // Whole Manila business days between today and the due date.
+  const diffDays = Math.round(
+    (Date.parse(manilaDateOf(invoice.dueDate)) - Date.parse(manilaToday())) / 86400000
+  )
   if (diffDays < 0) return `Overdue ${Math.abs(diffDays)}d`
   if (diffDays === 0) return 'Due today'
   if (diffDays <= 7) return `Due in ${diffDays}d`
-  return `Due ${due.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`
+  return `Due ${formatManilaDate(invoice.dueDate, { month: 'short', day: 'numeric' })}`
 }
 
 export default function OutstandingInvoicesWidget() {

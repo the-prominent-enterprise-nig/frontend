@@ -7,6 +7,7 @@ import { BUSINESS_CATEGORY_OPTIONS, CIVIL_STATUS_OPTIONS } from '@/src/schema/cr
 import PhilippineAddressPicker from '@/src/components/common/PhilippineAddressPicker'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { Select } from '@/src/components/ui/Select'
+import { manilaToday } from '@/src/libs/format/manila-date'
 
 const MONTH_LABELS = [
   'January',
@@ -88,7 +89,7 @@ function BirthdayPicker({
   }, [value])
 
   const { year, month, day } = parts
-  const thisYear = new Date().getFullYear()
+  const thisYear = Number(manilaToday().slice(0, 4))
   const years = Array.from({ length: 100 }, (_, i) => thisYear - i)
 
   function emit(nextYear: number, nextMonth: number, nextDay: number) {

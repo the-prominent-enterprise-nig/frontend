@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -219,7 +220,9 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
                         <StatusBadge status={c.status} />
                       </td>
                       <td className="px-4 py-3 text-[12px] text-gray-500">
-                        {new Date(c.createdAt).toLocaleDateString()}
+                        {new Date(c.createdAt).toLocaleDateString(undefined, {
+                          timeZone: MANILA_TZ,
+                        })}
                       </td>
                     </tr>
                   ))}

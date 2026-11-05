@@ -11,6 +11,7 @@
  * converted their create/detail modals to full pages for the same reason.
  */
 
+import { formatManilaDate, formatManilaDateTime } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Loader2 } from 'lucide-react'
@@ -155,10 +156,7 @@ export default function ManualRrDetail({ id }: { id: string }) {
               value={report.warehouse.branch?.name ?? report.warehouse.name}
             />
             {report.receivedAt && (
-              <InfoRow
-                label="Date Received"
-                value={new Date(report.receivedAt).toLocaleDateString('en-PH')}
-              />
+              <InfoRow label="Date Received" value={formatManilaDate(report.receivedAt)} />
             )}
             {report.deliveryReceiptNumber && (
               <InfoRow label="Delivery Receipt No." value={report.deliveryReceiptNumber} mono />
@@ -253,10 +251,7 @@ export default function ManualRrDetail({ id }: { id: string }) {
             <div className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
               <InfoRow label="Posted By" value={report.postedByName ?? report.postedById ?? '—'} />
               {report.postedAt && (
-                <InfoRow
-                  label="Posted At"
-                  value={new Date(report.postedAt).toLocaleString('en-PH')}
-                />
+                <InfoRow label="Posted At" value={formatManilaDateTime(report.postedAt)} />
               )}
               {report.vatAmount != null && (
                 <InfoRow label="Input VAT" mono value={money(report.vatAmount)} />

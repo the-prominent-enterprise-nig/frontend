@@ -25,7 +25,7 @@ const QUARTERS = [
 export default function IncomeTaxClosingForm() {
   const router = useRouter()
   const today = manilaToday()
-  const [taxYear, setTaxYear] = useState(String(new Date().getFullYear()))
+  const [taxYear, setTaxYear] = useState(manilaToday().slice(0, 4))
   const [quarter, setQuarter] = useState('')
   const [asOf, setAsOf] = useState(today)
   const [taxDue, setTaxDue] = useState('')

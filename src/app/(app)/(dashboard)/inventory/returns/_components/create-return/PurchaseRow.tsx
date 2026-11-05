@@ -14,6 +14,7 @@ import ReplacementPicker from './ReplacementPicker'
 import FaultNoteCard from './FaultNoteCard'
 import { useReplacementUnits } from './useReplacementUnits'
 import { INPUT, INPUT_BAD, LABEL, MONO, fmtPeso } from './returnTokens'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 type Props = {
   purchase: CustomerPurchase
@@ -157,7 +158,7 @@ export default function PurchaseRow({
             >
               {outside
                 ? `${days} days ago — outside window`
-                : `Sold ${new Date(purchase.occurredAt).toLocaleDateString('en-PH', {
+                : `Sold ${formatManilaDate(purchase.occurredAt, {
                     month: 'short',
                     day: 'numeric',
                     year: 'numeric',

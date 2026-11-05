@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -201,7 +202,9 @@ export default function LeadDetail({
               <li key={i.id} className="py-3">
                 <div className="flex items-center justify-between text-[12px] text-gray-500">
                   <span className="font-medium text-gray-700">{i.interactionType}</span>
-                  <span>{new Date(i.occurredAt).toLocaleString()}</span>
+                  <span>
+                    {new Date(i.occurredAt).toLocaleString(undefined, { timeZone: MANILA_TZ })}
+                  </span>
                 </div>
                 <p className="mt-1 text-[13px] text-gray-800">{i.summary}</p>
                 {i.outcome && <p className="mt-0.5 text-[12px] text-gray-500">→ {i.outcome}</p>}
@@ -223,7 +226,8 @@ export default function LeadDetail({
                 <div>
                   <div className="text-[13px] text-gray-800">{r.note ?? r.reminderType}</div>
                   <div className="text-[12px] text-gray-500">
-                    Due {new Date(r.dueAt).toLocaleString()} · {r.status}
+                    Due {new Date(r.dueAt).toLocaleString(undefined, { timeZone: MANILA_TZ })} ·{' '}
+                    {r.status}
                   </div>
                 </div>
               </li>

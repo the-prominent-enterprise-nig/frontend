@@ -7,6 +7,7 @@
  * stock and posts this journal entry together. Same full-screen shell as the
  * Delivery Receipt. */
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -72,7 +73,7 @@ function toFormValues(memo: IdmDetail | null): IdmFormValues {
   const day = (iso: string | null | undefined): string => (iso ? iso.slice(0, 10) : '')
   if (!memo) {
     return {
-      memoDate: new Date().toISOString().slice(0, 10),
+      memoDate: manilaToday(),
       purpose: '',
       referenceNo: '',
       referenceDate: '',

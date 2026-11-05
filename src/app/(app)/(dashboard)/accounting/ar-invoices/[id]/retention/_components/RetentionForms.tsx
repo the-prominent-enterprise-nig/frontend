@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -18,7 +19,7 @@ import Field from '../../../../_shared/Field'
 
 const inputClass =
   'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100 disabled:bg-gray-50'
-const today = () => new Date().toISOString().slice(0, 10)
+const today = (): string => manilaToday()
 
 /** Loads the invoice's retention so each form can say how much is still held. */
 function useRetention(id: string) {

@@ -1,5 +1,6 @@
 'use client'
 
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 import {
   receivingReportBranchLine,
   receivingReportMetaSlots,
@@ -106,7 +107,7 @@ function fmtAmount(n: number): string {
 
 /** en-PH numeric date (09/02/2026) — the format the printed document uses. */
 function docDate(v: string | Date | undefined | null): string {
-  return v ? new Date(v).toLocaleDateString('en-PH') : '—'
+  return v ? formatManilaDate(v) : '—'
 }
 
 function MetaPair({ label, value }: { label: string; value: React.ReactNode }) {

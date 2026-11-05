@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react'
 import {
@@ -46,7 +47,7 @@ function TrendBadge({ trend }: { trend: EwalletClearingTrend['trend'] }) {
 }
 
 export default function GlReconciliationView() {
-  const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10))
+  const [asOf, setAsOf] = useState(manilaToday())
   const [days, setDays] = useState(30)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

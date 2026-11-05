@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
@@ -287,8 +288,10 @@ export default function ReleaseApprovalsList({ isManager }: Props) {
 
     const warningRows = (req.creditWarnings ?? []).map((w) => `<li>${w}</li>`).join('')
 
-    const date = new Date(req.createdAt).toLocaleString('en-PH')
-    const reviewedDate = req.reviewedAt ? new Date(req.reviewedAt).toLocaleString('en-PH') : null
+    const date = new Date(req.createdAt).toLocaleString('en-PH', { timeZone: MANILA_TZ })
+    const reviewedDate = req.reviewedAt
+      ? new Date(req.reviewedAt).toLocaleString('en-PH', { timeZone: MANILA_TZ })
+      : null
 
     const html = `<!DOCTYPE html><html><head><title>${title} — ${req.id}</title>
 <style>
@@ -344,11 +347,15 @@ ${req.reviewNotes ? `<div class="row"><span>Notes</span><span>${req.reviewNotes}
     const lineRows = note.scheduleLines
       .map(
         (l) =>
-          `<tr><td>${l.lineNumber}</td><td>${new Date(l.dueDate).toLocaleDateString('en-PH')}</td><td style="text-align:right">${formatCurrency(l.amount)}</td></tr>`
+          `<tr><td>${l.lineNumber}</td><td>${new Date(l.dueDate).toLocaleDateString('en-PH', { timeZone: MANILA_TZ })}</td><td style="text-align:right">${formatCurrency(l.amount)}</td></tr>`
       )
       .join('')
-    const generatedDate = new Date(note.generatedAt).toLocaleString('en-PH')
-    const signedDate = note.signedAt ? new Date(note.signedAt).toLocaleString('en-PH') : null
+    const generatedDate = new Date(note.generatedAt).toLocaleString('en-PH', {
+      timeZone: MANILA_TZ,
+    })
+    const signedDate = note.signedAt
+      ? new Date(note.signedAt).toLocaleString('en-PH', { timeZone: MANILA_TZ })
+      : null
 
     const html = `<!DOCTYPE html><html><head><title>PROMISSORY NOTE — ${note.id}</title>
 <style>

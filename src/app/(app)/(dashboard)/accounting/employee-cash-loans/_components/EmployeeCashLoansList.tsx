@@ -1,5 +1,6 @@
 'use client'
 
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 import Link from 'next/link'
 import { HandCoins, Search } from 'lucide-react'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -166,7 +167,7 @@ export default function EmployeeCashLoansList({
                           {loan.monthlyDeduction ? fmt(loan.monthlyDeduction) : '—'}
                         </td>
                         <td className="px-4 py-3 text-zinc-500 hidden md:table-cell">
-                          {nextDue ? new Date(nextDue.dueDate).toLocaleDateString('en-PH') : '—'}
+                          {nextDue ? formatManilaDate(nextDue.dueDate) : '—'}
                         </td>
                         <td className="px-4 py-3 text-right font-semibold text-zinc-900">
                           {fmt(loan.currentBalance)}

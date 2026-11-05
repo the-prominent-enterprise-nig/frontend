@@ -1,5 +1,6 @@
 import type { DrPurpose, DrStatus } from '@/src/schema/inventory/delivery-receipts'
 import { DR_PURPOSE_CONFIG } from '@/src/libs/inventory/delivery-receipt-purposes'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 export const DR_STATUS_META: Record<DrStatus, { label: string; badge: string }> = {
   draft: { label: 'Draft', badge: 'bg-[#f1f1f4] text-[#3d3d4a]' },
@@ -24,7 +25,7 @@ export function fmtDrDate(iso: string | null | undefined): string {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-    timeZone: 'UTC',
+    timeZone: MANILA_TZ,
   })
 }
 

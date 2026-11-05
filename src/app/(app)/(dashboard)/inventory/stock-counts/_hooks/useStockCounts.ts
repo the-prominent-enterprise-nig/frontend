@@ -16,12 +16,12 @@ import type {
   CountSummary,
   CountStatus,
 } from '@/src/schema/inventory/stock-counts'
+import { manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
 
 /** Whether a count's date has come — such a count skips Scheduled and starts. */
 export function isDue(scheduledDate: string | null | undefined): boolean {
   if (!scheduledDate) return true
-  const day = (d: Date): string => d.toLocaleDateString('en-CA')
-  return day(new Date(scheduledDate)) <= day(new Date())
+  return manilaDateOf(scheduledDate) <= manilaToday()
 }
 
 export function useStockCounts() {

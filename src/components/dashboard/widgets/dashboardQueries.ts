@@ -16,6 +16,7 @@ import { resolveBranchWarehouseIds } from '../resolveBranchWarehouses'
 import { getNeedsAttentionItems } from './needsAttentionData'
 import { fetchArStats, loadArStats } from './arStats'
 import { arStatsKey, salesByBranchKey, needsAttentionKey } from './dashboardQueryKeys'
+import { manilaDayStartIso, manilaMonthOf } from '@/src/libs/format/manila-date'
 
 export type EmployeeBirthday = {
   id: string
@@ -206,7 +207,7 @@ export function useModuleStats(branchId: string | null) {
       // reuses txRes/arStats already fetched above instead of asking again.
       const branchIds = branchId ? branchCustomerIds(allTxns, arStats.customerIds ?? []) : null
       const totalCustomers = branchIds ? branchIds.size : (customersRes.data?.meta?.total ?? 0)
-      const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+      const monthStart = new Date(manilaDayStartIso(`${manilaMonthOf()}-01`))
       const newThisMonth = (customersRes.data?.data ?? []).filter(
         (c) =>
           new Date(c.createdAt).getTime() >= monthStart.getTime() &&

@@ -25,6 +25,7 @@ import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-order
 import type { ReceivingReport } from '@/src/schema/inventory/goods-receiving'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { PLEX, MONO, receiptTotals } from './procurementTokens'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 type Props = {
   po: PurchaseOrderSummary | null
@@ -187,7 +188,7 @@ function ReceiptListItem({
       <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-ink-muted">
         <span className="flex items-center gap-1">
           <CalendarDays className="h-3 w-3" />
-          {new Date(grn.receivedAt).toLocaleDateString('en-PH', {
+          {formatManilaDate(grn.receivedAt, {
             year: 'numeric',
             month: 'short',
             day: 'numeric',

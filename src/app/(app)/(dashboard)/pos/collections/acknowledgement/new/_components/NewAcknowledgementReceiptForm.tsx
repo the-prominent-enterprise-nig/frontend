@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -122,7 +123,7 @@ export default function NewAcknowledgementReceiptForm({
     : null
 
   const [form, setForm] = useState({
-    paymentDate: new Date().toISOString().slice(0, 10),
+    paymentDate: manilaToday(),
     reference: '',
     bankAccountId: '',
     receivedInAccountId: '',

@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { AlertTriangle, ArrowLeft, CheckCircle2, Download, Loader2, Upload } from 'lucide-react'
@@ -51,11 +52,7 @@ const STATUS_STYLES: Record<
   },
 }
 
-const todayIso = () => {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
+const todayIso = (): string => manilaToday()
 
 function useEquityAccounts() {
   const [options, setOptions] = useState<SearchableSelectOption[]>([])

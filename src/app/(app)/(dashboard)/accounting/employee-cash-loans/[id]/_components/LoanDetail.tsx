@@ -1,5 +1,6 @@
 'use client'
 
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, HandCoins, Pencil, Printer } from 'lucide-react'
@@ -25,7 +26,7 @@ function fmt(n: number) {
 }
 
 function fmtDate(d: string) {
-  return new Date(d).toLocaleDateString('en-PH')
+  return formatManilaDate(d)
 }
 
 function borrowerLabel(loan: EmployeeCashLoan): string {

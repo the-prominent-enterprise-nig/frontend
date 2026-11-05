@@ -1,3 +1,4 @@
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { api } from '@/src/libs/api/client'
 import type { TaxOverrideEntry } from '@/src/libs/tax/tax-override'
 import {
@@ -3224,5 +3225,6 @@ export function fmtDate(d: string | Date | undefined | null): string {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
+    timeZone: MANILA_TZ,
   })
 }

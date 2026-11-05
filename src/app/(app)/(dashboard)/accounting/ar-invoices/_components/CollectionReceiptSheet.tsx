@@ -1,5 +1,6 @@
 'use client'
 
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 import { fmtMoney } from '@/src/libs/data/AccountingV2Data'
 
 // Same cell chrome as buildCollectionReceiptHtml()'s `th, td { border: 1px
@@ -12,7 +13,7 @@ const TD = 'border border-gray-300 px-2.5 py-[7px] align-top'
 
 /** en-PH numeric date (09/02/2026) — the format the printed document uses. */
 function docDate(v: string | Date | undefined | null): string {
-  return v ? new Date(v).toLocaleDateString('en-PH') : '—'
+  return v ? formatManilaDate(v) : '—'
 }
 
 function MetaPair({ label, value }: { label: string; value: React.ReactNode }) {
@@ -200,7 +201,7 @@ export function CollectionReceiptDocumentSheet({ doc }: { doc: CollectionReceipt
     n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP', minimumFractionDigits: 2 })
   const longDate = (v: string | null | undefined) =>
     v
-      ? new Date(v).toLocaleDateString('en-PH', {
+      ? formatManilaDate(v, {
           year: 'numeric',
           month: 'long',
           day: 'numeric',

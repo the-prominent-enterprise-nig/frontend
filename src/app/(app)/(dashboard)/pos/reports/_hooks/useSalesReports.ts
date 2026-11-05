@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useState } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { getSalesByBranch, getSalesByBrand } from '../_actions/get-sales-report'
@@ -14,10 +15,8 @@ export type SalesReportTab = 'branch' | 'brand'
 export const SUMMARY_PAGE_SIZE = 10
 
 function monthToDate(): DateRange {
-  const now = new Date()
-  const offset = now.getTimezoneOffset() * 60_000
-  const iso = (d: Date): string => new Date(d.getTime() - offset).toISOString().slice(0, 10)
-  return { from: iso(new Date(now.getFullYear(), now.getMonth(), 1)), to: iso(now) }
+  const today = manilaToday()
+  return { from: `${today.slice(0, 7)}-01`, to: today }
 }
 
 export function useSalesReports() {

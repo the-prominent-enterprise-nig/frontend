@@ -1,3 +1,4 @@
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import type { Branch } from '../_actions/get-branches'
 
 // Editing an 'active' list is allowed too — it drops back to
@@ -45,7 +46,7 @@ export function formatDate(date?: string | null) {
   if (!date) return '—'
   const d = new Date(date)
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString()
+  return d.toLocaleDateString(undefined, { timeZone: MANILA_TZ })
 }
 
 export function formatEffectiveRange(from?: string | null, to?: string | null) {

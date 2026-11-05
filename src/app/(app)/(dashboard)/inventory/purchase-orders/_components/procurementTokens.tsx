@@ -13,6 +13,7 @@
 // quietly drift apart.
 
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 // Re-exported so existing procurement call sites keep importing from here;
 // price lists share the same language, so the definitions moved to
@@ -46,7 +47,7 @@ export function fmtPeso(n: number): string {
 
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-PH', {
+  return formatManilaDate(iso, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',

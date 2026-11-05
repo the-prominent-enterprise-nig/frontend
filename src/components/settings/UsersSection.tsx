@@ -26,6 +26,7 @@ import { ConfirmDialog } from '@/src/components/ui/Modal'
 import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
 import { adminResetUserPassword } from '@/src/libs/auth/actions/admin-reset-password'
 import { showToast } from '@/src/components/ui/toast'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 /** Delete and Deactivate ask first; they used to act on the first click. */
 type PendingConfirm = { kind: 'delete' | 'deactivate'; user: User } | null
@@ -325,7 +326,9 @@ export default function UsersSection({
                       'N/A'
                     const userRoles = user.userRoles.map((ur) => ur.role.name)
                     const rolesDisplay = userRoles.length > 0 ? userRoles.join(', ') : 'No roles'
-                    const createdDate = new Date(user.createdAt).toLocaleDateString()
+                    const createdDate = new Date(user.createdAt).toLocaleDateString(undefined, {
+                      timeZone: MANILA_TZ,
+                    })
 
                     const isSelf = currentUserId === user.id
                     const isProtectedFounder = user.isFounder && !isSelf

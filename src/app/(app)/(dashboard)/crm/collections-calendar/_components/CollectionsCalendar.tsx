@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
 import { useEffect, useRef, useState } from 'react'
 import { useVisiblePolling } from '@/src/hooks/useVisiblePolling'
 import {
@@ -300,9 +301,10 @@ function DayDetailPanel({
 // section heading. The standalone /crm/collections-calendar route renders
 // with compact=false (the default) so it's unaffected.
 export default function CollectionsCalendar({ compact = false }: { compact?: boolean } = {}) {
-  const now = new Date()
-  const [month, setMonth] = useState(now.getMonth())
-  const [year, setYear] = useState(now.getFullYear())
+  // Today on the Manila calendar — [year, 1-based month, day].
+  const [nowYear, nowMonth1, nowDay] = manilaToday().split('-').map(Number)
+  const [month, setMonth] = useState(nowMonth1 - 1)
+  const [year, setYear] = useState(nowYear)
   const [view, setView] = useState<View>('calendar')
   const [branchId, setBranchId] = useState('')
   const [collectorId, setCollectorId] = useState('')
@@ -332,8 +334,8 @@ export default function CollectionsCalendar({ compact = false }: { compact?: boo
     return () => document.removeEventListener('mousedown', handleClick)
   }, [compact, selectedDate])
 
-  const today = now.getDate()
-  const isCurrentMonth = month === now.getMonth() && year === now.getFullYear()
+  const today = nowDay
+  const isCurrentMonth = month === nowMonth1 - 1 && year === nowYear
   const monthName = new Date(year, month).toLocaleString('default', { month: 'long' })
 
   useEffect(() => {
@@ -389,7 +391,7 @@ export default function CollectionsCalendar({ compact = false }: { compact?: boo
       (p): CalendarItem => ({ kind: 'payment', date: p.dueDate.slice(0, 10), data: p })
     ),
     ...(REMINDERS_ENABLED ? (data?.reminders ?? []) : []).map(
-      (r): CalendarItem => ({ kind: 'reminder', date: r.dueAt.slice(0, 10), data: r })
+      (r): CalendarItem => ({ kind: 'reminder', date: manilaDateOf(r.dueAt), data: r })
     ),
   ]
   const grouped: Record<string, CalendarItem[]> = {}

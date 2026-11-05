@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import Link from 'next/link'
 import { AlertTriangle, Building2, CheckCircle2, Plus, Users } from 'lucide-react'
 import { api } from '@/src/libs/api/client'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 interface DashboardStats {
   totalEnterprises: number
@@ -32,8 +33,8 @@ function statusBadge(status: string) {
   return STATUS_BADGE[status.toLowerCase()] ?? STATUS_BADGE.pending
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-PH', {
+function formatDate(iso: string): string {
+  return formatManilaDate(iso, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

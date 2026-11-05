@@ -1,5 +1,6 @@
 ﻿'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useEffect, useState } from 'react'
 import { RefreshCcw } from 'lucide-react'
 import { segmentsApi } from '@/src/libs/api/crm'
@@ -76,7 +77,8 @@ export default function SegmentsList() {
             </div>
             {s.lastRefreshedAt && (
               <p className="mt-2 text-[11px] text-gray-400">
-                Refreshed {new Date(s.lastRefreshedAt).toLocaleString()}
+                Refreshed{' '}
+                {new Date(s.lastRefreshedAt).toLocaleString(undefined, { timeZone: MANILA_TZ })}
               </p>
             )}
           </div>

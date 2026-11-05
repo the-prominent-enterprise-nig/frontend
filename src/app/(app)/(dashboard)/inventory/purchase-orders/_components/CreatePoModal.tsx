@@ -11,6 +11,7 @@ import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-order
 import { ConfirmActionModal } from '@/src/components/inventory/ConfirmActionModal'
 import { PurchaseOrderFormFields } from './PurchaseOrderFormFields'
 import { PLEX, MONO } from './procurementTokens'
+import { manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
 
 // The action bar sits outside the <form> (it is sticky, the form scrolls),
 // so its buttons reach the form by id rather than by nesting.
@@ -73,11 +74,9 @@ function getDefaultValues(
       supplierId: source.supplierId ?? '',
       branchId: (po ? po.branchId : pr?.branchId) ?? undefined,
       warehouseId: source.warehouseId ?? '',
-      // Local calendar day, not the UTC slice — a PO stamped before 8am in
+      // Manila calendar day, not the UTC slice — a PO stamped before 8am in
       // Manila is still "yesterday" in UTC.
-      orderDate: source.orderDate
-        ? new Date(source.orderDate).toLocaleDateString('en-CA')
-        : undefined,
+      orderDate: source.orderDate ? manilaDateOf(source.orderDate) : undefined,
       expectedDeliveryDate: source.expectedDeliveryDate
         ? source.expectedDeliveryDate.slice(0, 10)
         : undefined,
@@ -101,8 +100,8 @@ function getDefaultValues(
     supplierId: initialSupplier?.id ?? '',
     branchId: currentUserBranchId ?? undefined,
     warehouseId: '',
-    // en-CA formats as YYYY-MM-DD in the local timezone.
-    orderDate: new Date().toLocaleDateString('en-CA'),
+    // Today in Manila, as YYYY-MM-DD.
+    orderDate: manilaToday(),
     expectedDeliveryDate: undefined,
     deliveryInstructions: undefined,
     paymentTerms: undefined,

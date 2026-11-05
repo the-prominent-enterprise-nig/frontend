@@ -31,6 +31,7 @@ import {
 } from '@/src/libs/format/receiving-report'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
+import { manilaToday, formatManilaDate } from '@/src/libs/format/manila-date'
 
 // ─── Design tokens ──────────────────────────────────────────────────────────
 // Same #5b21b6 palette as the sibling Stock Ledger/Stock Balance
@@ -139,7 +140,7 @@ function reportUnits(report: ReceivingReport): number {
 }
 
 function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-PH', {
+  return formatManilaDate(iso, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -468,7 +469,7 @@ export default function ReceivingReportsTab({
         ...(showAmounts ? [reportAmount(r) ?? ''] : []),
       ])
       downloadCsv(
-        `receiving-reports-${new Date().toISOString().slice(0, 10)}.csv`,
+        `receiving-reports-${manilaToday()}.csv`,
         [
           'Receipt No.',
           'Date',

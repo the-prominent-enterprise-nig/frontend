@@ -1,4 +1,5 @@
 'use client'
+import { manilaToday, formatManilaDateTime } from '@/src/libs/format/manila-date'
 import { useCallback, useEffect, useState } from 'react'
 import {
   Plus,
@@ -230,8 +231,7 @@ function AssetForm({
     name: initial?.name ?? '',
     description: initial?.description ?? '',
     category: initial?.category ?? '',
-    acquisitionDate:
-      initial?.acquisitionDate?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+    acquisitionDate: initial?.acquisitionDate?.slice(0, 10) ?? manilaToday(),
     acquisitionCost: String(initial?.acquisitionCost ?? ''),
     salvageValue: String(initial?.salvageValue ?? 0),
     usefulLifeMonths: String(initial?.usefulLifeMonths ?? 60),
@@ -430,7 +430,7 @@ function DisposeDialog({
   onSaved: () => void
 }) {
   const [proceeds, setProceeds] = useState('0')
-  const [disposalDate, setDisposalDate] = useState(new Date().toISOString().slice(0, 10))
+  const [disposalDate, setDisposalDate] = useState(manilaToday())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const nbv = asset.bookValue
@@ -557,7 +557,7 @@ function HistoryDialog({ asset, onClose }: { asset: FixedAssetV2; onClose: () =>
                       {l.type}
                     </span>
                     <span className="text-xs text-gray-500">
-                      {new Date(l.occurredAt).toLocaleString('en-PH')}
+                      {formatManilaDateTime(l.occurredAt)}
                     </span>
                   </div>
                   {l.amount != null && (

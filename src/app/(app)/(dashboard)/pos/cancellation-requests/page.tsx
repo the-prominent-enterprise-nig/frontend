@@ -1,5 +1,6 @@
 'use client'
 
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { useState, useEffect, useCallback } from 'react'
 import { ClipboardX, CheckCircle2, XCircle, Loader2, AlertTriangle, Clock } from 'lucide-react'
 import {
@@ -134,6 +135,7 @@ export default function CancellationRequestsPage() {
               const branchName = req.session?.terminal?.branch?.name
               const terminal = req.session?.terminal?.terminalCode
               const submittedAt = new Date(req.createdAt).toLocaleString('en-PH', {
+                timeZone: MANILA_TZ,
                 month: 'short',
                 day: 'numeric',
                 hour: '2-digit',

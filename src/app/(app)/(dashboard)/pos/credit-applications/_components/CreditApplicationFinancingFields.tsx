@@ -1,5 +1,6 @@
 'use client'
 
+import { manilaDateOf } from '@/src/libs/format/manila-date'
 import { useEffect, useRef, useState } from 'react'
 import {
   Controller,
@@ -41,13 +42,12 @@ const PAPER_AUTO_FILL = 'paperRecordAutoFill'
 
 // The preview's due dates are full timestamps — the sale time plus N months.
 // Cutting the ISO string at 10 characters takes the UTC date, which before
-// 8am in the Philippines is still yesterday's. The local date is the one the
+// 8am in the Philippines is still yesterday's. The Manila date is the one the
 // customer is told.
 function toDateInputValue(iso: string): string {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return iso.slice(0, 10)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+  return manilaDateOf(date)
 }
 
 const fieldClass =

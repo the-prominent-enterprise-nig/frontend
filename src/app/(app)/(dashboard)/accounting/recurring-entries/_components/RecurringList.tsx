@@ -1,4 +1,5 @@
 'use client'
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, RefreshCw, Play, Trash2, X } from 'lucide-react'
 import { RecurringEntries, type RecurringEntry, fmtDate } from '@/src/libs/data/AccountingV2Data'
@@ -157,8 +158,8 @@ function RecForm({
     name: '',
     description: '',
     frequency: 'MONTHLY',
-    startDate: new Date().toISOString().slice(0, 10),
-    nextRunDate: new Date().toISOString().slice(0, 10),
+    startDate: manilaToday(),
+    nextRunDate: manilaToday(),
   })
   const [lines, setLines] = useState([
     { accountId: '', debit: '', credit: '', description: '' },

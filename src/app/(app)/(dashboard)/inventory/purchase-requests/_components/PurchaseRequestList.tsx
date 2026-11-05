@@ -15,6 +15,7 @@ import type { SessionUser } from '@/src/libs/guards/permission'
 import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-requests'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // Same #5b21b6 palette as procurementTokens/PurchaseOrderList —
@@ -180,7 +181,7 @@ export const fmtPHP = (n: number): string =>
 
 /** en-PH numeric date — same short form the PO list's fmtDate uses. */
 export function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-PH', {
+  return formatManilaDate(iso, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',

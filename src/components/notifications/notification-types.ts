@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import type { ComponentType } from 'react'
 import type { NotificationItem, NotificationType } from '@/src/schema/notifications/notification'
+import { manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
 
 type NotificationStatus = 'needs-action' | 'resolved' | 'rejected' | 'alert'
 
@@ -234,10 +235,8 @@ export function getNotificationHref(notification: {
  */
 /** "Today" / "Earlier" — matches the Facebook-style notification panel this UI mirrors. */
 export function dateBucket(iso: string): 'Today' | 'Earlier' {
-  const date = new Date(iso)
-  const startOfDay = (d: Date): number =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  return startOfDay(date) >= startOfDay(new Date()) ? 'Today' : 'Earlier'
+  if (Number.isNaN(new Date(iso).getTime())) return 'Earlier'
+  return manilaDateOf(iso) >= manilaToday() ? 'Today' : 'Earlier'
 }
 
 /** Buckets are computed per-page (not globally) — good enough for a page-sized slice. */

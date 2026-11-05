@@ -25,6 +25,14 @@ import {
 import { customersApi, remindersApi, interactionsApi, segmentsApi } from '@/src/libs/api/crm'
 import CollectionsCalendar from '../collections-calendar/_components/CollectionsCalendar'
 import { REMINDERS_ENABLED } from '@/src/libs/features'
+import {
+  MANILA_TZ,
+  formatManilaDate,
+  formatManilaTime,
+  manilaDayEndIso,
+  manilaDayStartIso,
+  manilaToday,
+} from '@/src/libs/format/manila-date'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -35,12 +43,13 @@ function fmtNum(n: number) {
 
 function fmtDateShort(dateStr?: string | null) {
   if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+  return formatManilaDate(dateStr, { month: 'short', day: 'numeric' })
 }
 
 function fmtDateTime(dateStr?: string | null) {
   if (!dateStr) return '—'
   return new Date(dateStr).toLocaleDateString('en-PH', {
+    timeZone: MANILA_TZ,
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
@@ -252,10 +261,10 @@ export default function CrmDashboard() {
   const load = useCallback(async () => {
     setSpinning(true)
     const now = new Date()
-    const todayStart = new Date(now)
-    todayStart.setHours(0, 0, 0, 0)
-    const todayEnd = new Date(now)
-    todayEnd.setHours(23, 59, 59, 999)
+    // Today's Manila business day, whatever clock the browser is on.
+    const today = manilaToday()
+    const todayStart = new Date(manilaDayStartIso(today))
+    const todayEnd = new Date(manilaDayEndIso(today))
 
     const settled = await Promise.allSettled([
       customersApi.list({ limit: 1 }), // 0 — only meta.total is read; see below
@@ -404,7 +413,7 @@ export default function CrmDashboard() {
             <h1 className="text-xl font-bold text-gray-900">CRM Intelligence</h1>
             <p className="text-[11px] text-gray-400 mt-0.5">
               {s.lastUpdated
-                ? `Updated ${s.lastUpdated.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}`
+                ? `Updated ${formatManilaTime(s.lastUpdated, { hour: '2-digit', minute: '2-digit' })}`
                 : 'Loading…'}
             </p>
           </div>

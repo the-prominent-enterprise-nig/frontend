@@ -9,6 +9,7 @@
  * their data source — the hook below — and nothing of their layout.
  */
 
+import { formatManilaDate } from '@/src/libs/format/manila-date'
 import { useRouter } from 'next/navigation'
 import { X, AlertTriangle, CheckCircle2, ChevronRight, RefreshCw, Search } from 'lucide-react'
 import { useReceivingReports } from '../../../inventory/goods-receiving/_hooks/useReceivingReports'
@@ -252,7 +253,7 @@ export default function ReceivingReportsTable({
                         {report.lines.length}
                       </td>
                       <td className="px-4 py-3 text-zinc-500 hidden md:table-cell">
-                        {new Date(report.receivedAt).toLocaleDateString('en-PH', {
+                        {formatManilaDate(report.receivedAt, {
                           month: 'short',
                           day: 'numeric',
                           year: 'numeric',

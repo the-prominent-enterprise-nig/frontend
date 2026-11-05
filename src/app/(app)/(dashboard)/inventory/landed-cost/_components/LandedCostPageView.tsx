@@ -8,6 +8,7 @@ import type { SessionUser } from '@/src/libs/guards/permission'
 import { useLandedCosts } from '../_hooks/useLandedCosts'
 import LandedCostModal from './LandedCostModal'
 import type { LandedCostFormValues } from '@/src/schema/inventory/landed-cost'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 function allocationMethodLabel(method: string) {
   const map: Record<string, string> = {
@@ -21,7 +22,7 @@ function allocationMethodLabel(method: string) {
 function formatDate(date?: string | null) {
   if (!date) return '—'
   try {
-    return new Date(date).toLocaleDateString()
+    return new Date(date).toLocaleDateString(undefined, { timeZone: MANILA_TZ })
   } catch {
     return date
   }

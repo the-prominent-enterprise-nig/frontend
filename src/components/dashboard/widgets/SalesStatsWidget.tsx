@@ -5,6 +5,7 @@ import { ShoppingCart, Receipt, RotateCcw, TrendingUp, ArrowUpRight } from 'luci
 import { useWidgetSize } from '../WidgetSizeContext'
 import { getTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
+import { manilaDayStartIso, manilaMonthOf } from '@/src/libs/format/manila-date'
 
 function fmtMoney(n: number): string {
   if (!Number.isFinite(n)) return '—'
@@ -69,7 +70,7 @@ export default function SalesStatsWidget() {
 
   useEffect(() => {
     let cancelled = false
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+    const monthStart = new Date(manilaDayStartIso(`${manilaMonthOf()}-01`))
     getTransactions({
       dateFrom: monthStart.toISOString(),
       branchId: branchId ?? undefined,

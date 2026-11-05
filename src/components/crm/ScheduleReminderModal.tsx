@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { X } from 'lucide-react'
 import { remindersApi } from '@/src/libs/api/crm'
 import type { ReminderType } from '@/src/schema/crm/types'
+import { MANILA_OFFSET, addDaysIso, manilaToday } from '@/src/libs/format/manila-date'
 
 type Target =
   | { leadId: string }
@@ -27,11 +28,8 @@ export default function ScheduleReminderModal({
 }) {
   const [reminderType, setReminderType] = useState<ReminderType>('call')
   const [dueAt, setDueAt] = useState(() => {
-    // Default to tomorrow 9am local
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    d.setHours(9, 0, 0, 0)
-    return toDatetimeLocal(d)
+    // Default to tomorrow 9am Manila
+    return `${addDaysIso(manilaToday(), 1)}T09:00`
   })
   const [note, setNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -47,7 +45,8 @@ export default function ScheduleReminderModal({
       tenantId,
       assignedTo,
       reminderType,
-      dueAt: new Date(dueAt).toISOString(),
+      // The picker holds Manila wall-clock time.
+      dueAt: new Date(`${dueAt}${MANILA_OFFSET}`).toISOString(),
       note: note || undefined,
       ...target,
     })
@@ -151,10 +150,4 @@ export default function ScheduleReminderModal({
       </div>
     </div>
   )
-}
-
-// HTML datetime-local needs YYYY-MM-DDTHH:mm in the user's local time.
-function toDatetimeLocal(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }

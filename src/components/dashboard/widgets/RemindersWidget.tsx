@@ -5,6 +5,12 @@ import { Bell, Check } from 'lucide-react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { useMe } from '@/src/hooks/useMe'
 import { api } from '@/src/libs/api/client'
+import {
+  addDaysIso,
+  formatManilaDate,
+  manilaDateOf,
+  manilaToday,
+} from '@/src/libs/format/manila-date'
 
 type Reminder = {
   id: string
@@ -23,13 +29,11 @@ const TYPE_LABELS: Record<Reminder['reminderType'], string> = {
 
 function formatDue(dueAt: string, isOverdue: boolean): string {
   if (isOverdue) return 'Overdue'
-  const date = new Date(dueAt)
-  const now = new Date()
-  if (date.toDateString() === now.toDateString()) return 'Due today'
-  const tomorrow = new Date(now)
-  tomorrow.setDate(now.getDate() + 1)
-  if (date.toDateString() === tomorrow.toDateString()) return 'Due tomorrow'
-  return `Due ${date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}`
+  const dueDay = manilaDateOf(dueAt)
+  const today = manilaToday()
+  if (dueDay === today) return 'Due today'
+  if (dueDay === addDaysIso(today, 1)) return 'Due tomorrow'
+  return `Due ${formatManilaDate(dueAt, { month: 'short', day: 'numeric' })}`
 }
 
 export default function RemindersWidget() {

@@ -22,6 +22,7 @@ import {
 
 import { getInventoryDashboard } from '@/src/app/(app)/(dashboard)/inventory/_actions/get-inventory-dashboard'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import { formatManilaDate, formatManilaTime } from '@/src/libs/format/manila-date'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ function daysFromNow(dateStr?: string | null) {
 
 function fmtDate(dateStr?: string | null) {
   if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+  return formatManilaDate(dateStr, { month: 'short', day: 'numeric' })
 }
 
 const COLORS = [
@@ -479,7 +480,7 @@ export default function InventoryPage() {
             <h1 className="text-xl font-bold text-gray-900">Inventory Intelligence</h1>
             <p className="text-[11px] text-gray-400 mt-0.5">
               {s.lastUpdated
-                ? `Updated ${s.lastUpdated.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}`
+                ? `Updated ${formatManilaTime(s.lastUpdated, { hour: '2-digit', minute: '2-digit' })}`
                 : 'Loading…'}
             </p>
           </div>

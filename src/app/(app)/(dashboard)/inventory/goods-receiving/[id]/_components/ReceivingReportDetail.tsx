@@ -14,6 +14,7 @@ import { getReceivingDocument } from '../../_actions/get-receiving-document'
 import { getReceivingReport } from '../../_actions/get-receiving-report'
 import type { ReceivingReport } from '@/src/schema/inventory/goods-receiving'
 import { discountChainLabel } from '@/src/libs/format/discount-chain'
+import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 function fmtPHP(n: number): string {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
@@ -26,6 +27,7 @@ function fmtDate(v?: string | null): string {
         month: '2-digit',
         day: '2-digit',
         year: 'numeric',
+        timeZone: MANILA_TZ,
       })
     : '—'
 }
