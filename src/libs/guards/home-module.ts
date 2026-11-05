@@ -20,7 +20,7 @@ export const HOME_MODULE_OPTIONS: { value: HomeModule; label: string; hint: stri
   {
     value: 'admin',
     label: 'Owner view',
-    hint: 'The owner’s menu and dashboard, across modules.',
+    hint: 'Lands on the dashboard, with the owner’s menu across modules.',
   },
   { value: 'pos', label: 'POS', hint: 'Lands in POS, with the POS menu.' },
   { value: 'accounting', label: 'Accounting', hint: 'Lands in Accounting, with its dashboard.' },
@@ -59,4 +59,9 @@ export function dashboardRoleForHome(
 /** The module a home page lands in, or null when it isn't one (owner view, automatic). */
 export function landingModuleForHome(home: string | null | undefined): string | null {
   return isHomeModule(home) && home !== 'admin' ? home : null
+}
+
+/** Whether a home page lands on the dashboard rather than in a module (owner view). */
+export function landsOnDashboard(home: string | null | undefined): boolean {
+  return home === 'admin'
 }

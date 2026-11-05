@@ -1,7 +1,7 @@
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { isAdmin, canNavigateModule } from '@/src/libs/guards/permission'
 import { MODULES } from '@/src/libs/guards/modules'
-import { landingModuleForHome } from '@/src/libs/guards/home-module'
+import { landingModuleForHome, landsOnDashboard } from '@/src/libs/guards/home-module'
 import { redirect } from 'next/navigation'
 
 export default async function RootPage() {
@@ -12,6 +12,11 @@ export default async function RootPage() {
   }
 
   if (isAdmin(session)) {
+    redirect('/dashboard')
+  }
+
+  // Owner view: the dashboard, as the owner gets, not the first module.
+  if (landsOnDashboard(session.homeModule)) {
     redirect('/dashboard')
   }
 
