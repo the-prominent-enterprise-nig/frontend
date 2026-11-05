@@ -63,7 +63,7 @@ const PURPOSE_OPTIONS = DR_PURPOSE_GROUPS[0].purposes
 const STATUS_BADGE: Record<string, string> = {
   DRAFT: 'bg-[#f1f1f4] text-[#3d3d4a]',
   POSTED: 'bg-[#e7f5ef] text-[#0b6644]',
-  VOID: 'bg-[#f1f1f4] text-[#6f6f7f] line-through',
+  VOID: 'bg-[#f1f1f4] text-ink-muted line-through',
 }
 
 export type IdmPermissions = { canEdit: boolean; canPost: boolean; canVoid: boolean }

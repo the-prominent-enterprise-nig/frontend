@@ -326,7 +326,7 @@ function CaravanListItem({
           </span>
           <StageBadge caravan={caravan} />
         </div>
-        <div className="text-[11.5px] text-[#6f6f7f]">
+        <div className="text-[11.5px] text-ink-muted">
           {caravan?.hostBranch?.name ?? '—'} ·{' '}
           <span className={MONO}>{blockOnHand(block).toLocaleString()}</span> on hand
         </div>
@@ -348,7 +348,7 @@ function CaravanList({
   return (
     <div className="flex min-h-0 flex-col border-b border-[#eeeef1] lg:border-b-0 lg:border-r">
       <div
-        className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[12px] uppercase tracking-[.09em] text-[#6f6f7f]`}
+        className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[12px] uppercase tracking-[.09em] text-ink-muted`}
       >
         Caravans · {blocks.length}
       </div>
@@ -439,7 +439,7 @@ function UnitRow({ serial }: { serial: SerialNumberSummary }): React.ReactElemen
           <CopySerialButton serialNumber={serial.serialNumber} />
         </div>
       </td>
-      <td className="hidden py-1.5 pr-4 text-[12px] text-[#6f6f7f] sm:table-cell">
+      <td className="hidden py-1.5 pr-4 text-[12px] text-ink-muted sm:table-cell">
         {displayClassificationLabel(serial.item?.type?.name) || '—'}
       </td>
       <td className="py-1.5 pr-5 text-right">
@@ -460,7 +460,7 @@ function UnitsPlaceholder({ isLoading }: { isLoading: boolean }): React.ReactEle
             ))}
           </div>
         ) : (
-          <p className="text-[12px] text-[#6f6f7f]">No units to show for this item.</p>
+          <p className="text-[12px] text-ink-muted">No units to show for this item.</p>
         )}
       </td>
     </tr>
@@ -523,7 +523,7 @@ function DetailItems({
 }): React.ReactElement {
   if (block.groups.length === 0) {
     return (
-      <p className="px-5 py-8 text-center text-[12.5px] text-[#6f6f7f]">
+      <p className="px-5 py-8 text-center text-[12.5px] text-ink-muted">
         {emptyCaravanNote(block.caravan)}
       </p>
     )
@@ -533,7 +533,7 @@ function DetailItems({
       <table className="w-full text-sm">
         <thead className="sticky top-0 z-10">
           <tr
-            className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-left text-[11px] uppercase tracking-[.09em] text-[#6f6f7f]`}
+            className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-left text-[11px] uppercase tracking-[.09em] text-ink-muted`}
           >
             <th className="py-[9px] pl-5 pr-4 font-normal">Item / Serial #</th>
             <th className="hidden py-[9px] pr-4 font-normal sm:table-cell">Type</th>
@@ -553,7 +553,7 @@ function DetailItems({
 function EmptyState({ label }: { label: string }): React.ReactElement {
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-11 text-center">
-      <Package className="h-[30px] w-[30px] text-[#b0b0bc]" />
+      <Package className="h-[30px] w-[30px] text-ink-faint" />
       <div className="mt-1 text-[14px] font-semibold">{label}</div>
     </div>
   )

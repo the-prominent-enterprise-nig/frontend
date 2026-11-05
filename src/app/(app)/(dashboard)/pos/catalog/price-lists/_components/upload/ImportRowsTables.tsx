@@ -45,7 +45,7 @@ export function SkippedRowsTable({ rows }: { rows: PriceListImportRow[] }) {
           <tbody>
             {rows.map((r) => (
               <tr key={r.row} className="border-b border-[#f4f4f6] last:border-0">
-                <td className={`${MONO} px-4 py-2 text-xs text-[#6f6f7f]`}>{r.row}</td>
+                <td className={`${MONO} px-4 py-2 text-xs text-ink-muted`}>{r.row}</td>
                 <td className="px-4 py-2">{r.brand || '—'}</td>
                 <td className={`${MONO} px-4 py-2 text-xs`}>{r.model || '—'}</td>
                 <td className="px-4 py-2">
@@ -110,11 +110,11 @@ function ChangeRow({ row, showPriceUse }: { row: PriceListImportRow; showPriceUs
   const isUpdate = row.status === 'update'
   return (
     <tr className="border-b border-[#f4f4f6] last:border-0">
-      <td className={`${MONO} px-4 py-2 text-xs text-[#6f6f7f]`}>{row.row}</td>
+      <td className={`${MONO} px-4 py-2 text-xs text-ink-muted`}>{row.row}</td>
       {showPriceUse && <td className="px-4 py-2 text-xs font-medium">{row.priceUse}</td>}
       <td className="px-4 py-2">
         <div className="font-medium text-prominent-purple-900">{row.itemName}</div>
-        <div className={`${MONO} text-xs text-[#6f6f7f]`}>{row.itemSku}</div>
+        <div className={`${MONO} text-xs text-ink-muted`}>{row.itemSku}</div>
       </td>
       <td className="px-4 py-2">
         <span
@@ -132,7 +132,7 @@ function ChangeRow({ row, showPriceUse }: { row: PriceListImportRow; showPriceUs
       <td className="px-4 py-2 text-xs text-[#8a4b06]">
         {row.warning}
         {row.matchedBy === 'sku' && (
-          <span className="ml-1 text-[#6f6f7f]">{row.warning ? '· ' : ''}matched by SKU</span>
+          <span className="ml-1 text-ink-muted">{row.warning ? '· ' : ''}matched by SKU</span>
         )}
       </td>
     </tr>

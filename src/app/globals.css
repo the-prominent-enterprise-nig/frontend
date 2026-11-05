@@ -47,15 +47,23 @@
   --color-input: #f0f0f0;
   --color-ring: #3d2563;
 
-  /* Grey text, a little darker for readability. Tailwind's 400/500 greys are
-     where secondary and muted text lives across the app (~3,400 uses), so they
-     are nudged ~40% toward the next shade here rather than class by class.
-     300 is left alone — it is mostly borders. Hex greys used as text
-     (#8b8b9b, #5b5b6b, …) were darkened in place to match. */
-  --color-zinc-400: #8b8b94;
-  --color-zinc-500: #5e5e67;
-  --color-gray-400: #868d99;
-  --color-gray-500: #596170;
+  /* Grey text, darkened for readability. Tailwind's 400/500 greys are where
+     secondary and muted text lives across the app (~3,400 uses), so they are
+     darkened here rather than class by class. 300 is left alone — it is
+     mostly borders. */
+  --color-zinc-400: #74747e;
+  --color-zinc-500: #53535c;
+  --color-gray-400: #6f7682;
+  --color-gray-500: #4d5462;
+
+  /* Ink — the reusable grey text scale (text-ink-muted, placeholder:text-ink-faint,
+     …). Use these instead of hex greys; tune here to re-tone every screen.
+       muted  — secondary text: subtitles, meta lines, helper copy (~7.5:1)
+       subtle — tertiary text: empty-cell dashes, captions, hints (~5.3:1, AA)
+       faint  — placeholders and disabled text only (~3.5:1) */
+  --color-ink-muted: #55555f;
+  --color-ink-subtle: #6b6b78;
+  --color-ink-faint: #8a8a96;
 
   /* Chart Colors */
   --color-chart-1: #3d2563;

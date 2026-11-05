@@ -84,7 +84,7 @@ export function SerialCaptureDrawer({
             return (
               <div key={unitIndex} className="flex min-w-0 flex-col gap-1">
                 <div className="flex items-center justify-between gap-2">
-                  <span className={`${MONO} text-[10.5px] text-[#6f6f7f]`}>
+                  <span className={`${MONO} text-[10.5px] text-ink-muted`}>
                     Unit {unitIndex + 1} of {quantity}
                   </span>
                   {value.trim() && (
@@ -130,7 +130,7 @@ export function SerialCaptureDrawer({
                         tabIndex={-1}
                         onClick={() => onChange(unitIndex, '')}
                         aria-label={`Clear serial for unit ${unitIndex + 1}`}
-                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[#8e8e9d] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-ink-subtle hover:bg-[#fdeceb] hover:text-[#b42318]"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -156,7 +156,7 @@ export function SerialCaptureDrawer({
           >
             Clear all
           </button>
-          <span className="text-[11px] text-[#6f6f7f]">
+          <span className="text-[11px] text-ink-muted">
             Duplicates are rejected across the whole receipt.
             {!requireAll &&
               ' Only the serials entered are received — blank units stay open on the PO.'}

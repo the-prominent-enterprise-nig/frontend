@@ -79,10 +79,10 @@ function Field({
       <span className="flex items-center gap-1 text-[12px] font-medium text-[#3d3d4a]">
         {label}
         {required && <span className="text-[#b42318]"> *</span>}
-        {hint && <span className="ml-1 font-normal text-[#6f6f7f]">{hint}</span>}
+        {hint && <span className="ml-1 font-normal text-ink-muted">{hint}</span>}
         {tooltip && (
           <Tooltip label={tooltip}>
-            <Info className="h-3 w-3 text-[#8e8e9d]" />
+            <Info className="h-3 w-3 text-ink-subtle" />
           </Tooltip>
         )}
       </span>
@@ -301,7 +301,7 @@ export default function ManualRrForm() {
     >
       <div className="flex shrink-0 flex-wrap items-start justify-between gap-5 border-b border-[#e4e4e9] bg-white px-4 py-3.5 lg:px-5">
         <div className="flex min-w-0 flex-col gap-1">
-          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
+          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-ink-subtle`}>
             Accounting › Receiving Reports › New
           </div>
           <h2 className="text-[21px] font-semibold tracking-[-.02em]">Create Receiving Report</h2>
@@ -453,11 +453,11 @@ export default function ManualRrForm() {
                 <span className="text-[13.5px] font-semibold">
                   Items received <span className="text-[#b42318]">*</span>
                 </span>
-                <span className={`${MONO} text-[11px] text-[#6f6f7f]`}>
+                <span className={`${MONO} text-[11px] text-ink-muted`}>
                   {fields.length} {fields.length === 1 ? 'line' : 'lines'} · {totalUnits} units
                 </span>
               </div>
-              <span className="text-[11.5px] text-[#6f6f7f]">
+              <span className="text-[11.5px] text-ink-muted">
                 Pick a catalog item, or mark it &ldquo;Non-catalog items&rdquo; for anything not in
                 the catalog.
               </span>
@@ -473,7 +473,7 @@ export default function ManualRrForm() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2">
-            <span className="text-[11px] text-[#6f6f7f]">Defaults</span>
+            <span className="text-[11px] text-ink-muted">Defaults</span>
             <select
               value={defaultTaxCode}
               onChange={(e) => setDefaultTaxCode(e.target.value)}
@@ -515,7 +515,7 @@ export default function ManualRrForm() {
           ) : (
             <>
               <div
-                className={`${MONO} hidden grid-cols-[minmax(0,1fr)_64px_100px_120px_112px_96px_60px_60px] gap-x-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#6f6f7f] xl:grid`}
+                className={`${MONO} hidden grid-cols-[minmax(0,1fr)_64px_100px_120px_112px_96px_60px_60px] gap-x-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-ink-muted xl:grid`}
               >
                 <span className="whitespace-nowrap">Item / SKU</span>
                 <span className="whitespace-nowrap text-right">Qty</span>
@@ -580,7 +580,7 @@ export default function ManualRrForm() {
 
         <div className={`${PANEL} flex flex-col gap-2 px-4.5 py-3.5`}>
           <label className="text-[12px] font-medium text-[#3d3d4a]">
-            Notes <span className="font-normal text-[#6f6f7f]">optional</span>
+            Notes <span className="font-normal text-ink-muted">optional</span>
           </label>
           <Controller
             name="notes"

@@ -79,7 +79,7 @@ export function PoLinkPicker({
             <span className="text-[15px] font-semibold tracking-[-.01em]">
               Link a purchase order
             </span>
-            <span className="text-[11.5px] leading-[1.45] text-[#6f6f7f]">
+            <span className="text-[11.5px] leading-[1.45] text-ink-muted">
               {supplierName
                 ? `Open orders for ${supplierName}.`
                 : 'Linking a PO fills in the supplier and lets you pull its outstanding lines.'}
@@ -89,7 +89,7 @@ export function PoLinkPicker({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#6f6f7f] hover:bg-[#f1f1f4] hover:text-[#17171c]"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-[#f1f1f4] hover:text-[#17171c]"
           >
             <X className="h-4 w-4" />
           </button>
@@ -97,7 +97,7 @@ export function PoLinkPicker({
 
         <div className="border-b border-[#eeeef1] px-4.5 py-3">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8e8e9d]" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-subtle" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -111,7 +111,7 @@ export function PoLinkPicker({
 
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4.5 py-3.5">
           {posQuery.isLoading && (
-            <div className="flex items-center justify-center gap-2 py-8 text-[12.5px] text-[#6f6f7f]">
+            <div className="flex items-center justify-center gap-2 py-8 text-[12.5px] text-ink-muted">
               <Loader2 className="h-4 w-4 animate-spin" />
               Loading open purchase orders…
             </div>
@@ -138,7 +138,7 @@ export function PoLinkPicker({
                       </span>
                     </div>
                     <span className="text-[12px] text-[#3d3d4a]">{po.supplier.name}</span>
-                    <span className="text-[11px] text-[#6f6f7f]">
+                    <span className="text-[11px] text-ink-muted">
                       {outstanding} {outstanding === 1 ? 'unit' : 'units'} outstanding
                       {po.warehouse ? ` · to ${locationLabel(po.warehouse)}` : ''}
                     </span>
@@ -160,7 +160,7 @@ export function PoLinkPicker({
                     ? `No open purchase orders for ${supplierName}.`
                     : 'No purchase orders are waiting on a delivery.'}
               </span>
-              <span className="max-w-[360px] text-[11.5px] leading-[1.5] text-[#6f6f7f]">
+              <span className="max-w-[360px] text-[11.5px] leading-[1.5] text-ink-muted">
                 A receipt does not need a PO. Close this and record the delivery directly.
               </span>
             </div>

@@ -139,7 +139,7 @@ function WideRow(props: InnerProps) {
       <div className="flex min-w-0 flex-col gap-[3px]">
         <span className="text-[13px] font-medium leading-[1.35]">{props.title}</span>
         <div className="flex flex-wrap items-center gap-[7px]">
-          {props.sku && <span className={`${MONO} text-[10.5px] text-[#6f6f7f]`}>{props.sku}</span>}
+          {props.sku && <span className={`${MONO} text-[10.5px] text-ink-muted`}>{props.sku}</span>}
           {line.isSerialTracked && !closed && <SerialBadge />}
         </div>
       </div>
@@ -155,13 +155,13 @@ function WideRow(props: InnerProps) {
         {props.ordered}
       </span>
       <span
-        className={`${MONO} flex h-[34px] items-center justify-center self-start text-[12.5px] text-[#6f6f7f]`}
+        className={`${MONO} flex h-[34px] items-center justify-center self-start text-[12.5px] text-ink-muted`}
       >
         {props.receivedToDate > 0 ? props.receivedToDate : '—'}
       </span>
       <span
         className={`${MONO} flex h-[34px] items-center justify-center self-start pr-3 text-[13px] font-semibold ${
-          closed ? 'text-[#6f6f7f]' : 'text-[#b25e09]'
+          closed ? 'text-ink-muted' : 'text-[#b25e09]'
         }`}
       >
         {closed ? 'None' : remaining}
@@ -187,7 +187,7 @@ function WideRow(props: InnerProps) {
           <>
             <span
               className={`${MONO} text-right text-[13px] font-semibold ${
-                line.selected && line.quantityReceived > 0 ? 'text-[#17171c]' : 'text-[#8e8e9d]'
+                line.selected && line.quantityReceived > 0 ? 'text-[#17171c]' : 'text-ink-subtle'
               }`}
             >
               {fmtPeso(lineTotal)}
@@ -201,7 +201,7 @@ function WideRow(props: InnerProps) {
             </button>
           </>
         ) : (
-          <span className="text-[11px] text-[#8e8e9d]">—</span>
+          <span className="text-[11px] text-ink-subtle">—</span>
         )}
       </div>
     </div>
@@ -218,7 +218,7 @@ function NarrowCard(props: InnerProps) {
           <span className="text-[13.5px] font-medium leading-[1.35]">{props.title}</span>
           <div className="flex flex-wrap items-center gap-[7px]">
             {props.sku && (
-              <span className={`${MONO} text-[10.5px] text-[#6f6f7f]`}>{props.sku}</span>
+              <span className={`${MONO} text-[10.5px] text-ink-muted`}>{props.sku}</span>
             )}
             {line.isSerialTracked && !closed && <SerialBadge />}
           </div>
@@ -250,7 +250,7 @@ function NarrowCard(props: InnerProps) {
         {canViewCost && (
           <div className="ml-auto flex flex-col items-end gap-px">
             <span className={`${MONO} text-[13px] font-semibold`}>{fmtPeso(lineTotal)}</span>
-            <span className={`${MONO} text-[10.5px] text-[#6f6f7f]`}>
+            <span className={`${MONO} text-[10.5px] text-ink-muted`}>
               @ {fmtPeso(line.unitCost ?? 0)}
             </span>
           </div>
@@ -383,13 +383,13 @@ function SerialQty({ line, remaining, large }: InnerProps & { large?: boolean })
         } ${
           qty > 0
             ? 'border-[#7c4fd1] bg-white text-[#17171c] shadow-[0_0_0_3px_#f4efff]'
-            : 'border-[#d3d3db] bg-[#f7f7f8] text-[#6f6f7f]'
+            : 'border-[#d3d3db] bg-[#f7f7f8] text-ink-muted'
         }`}
       >
         <span>{qty}</span>
-        <span className="text-[#8e8e9d]">/ {remaining}</span>
+        <span className="text-ink-subtle">/ {remaining}</span>
       </div>
-      <span className="text-[10.5px] text-[#6f6f7f]">Counted from serials</span>
+      <span className="text-[10.5px] text-ink-muted">Counted from serials</span>
     </div>
   )
 }
@@ -410,7 +410,7 @@ function FillMaxButton({
         type="button"
         onClick={onFillMax}
         disabled={closed || atMax}
-        className="min-h-[46px] rounded-lg border border-[#d3d3db] bg-white px-3 py-2.5 text-[12.5px] text-[#17171c] disabled:text-[#a3a3b2]"
+        className="min-h-[46px] rounded-lg border border-[#d3d3db] bg-white px-3 py-2.5 text-[12.5px] text-[#17171c] disabled:text-ink-faint"
       >
         {label}
       </button>
@@ -423,7 +423,7 @@ function FillMaxButton({
       onClick={onFillMax}
       disabled={closed || atMax}
       className={`text-left text-[10.5px] ${
-        closed || atMax ? 'cursor-default text-[#6f6f7f]' : 'text-[#5b21b6] hover:underline'
+        closed || atMax ? 'cursor-default text-ink-muted' : 'text-[#5b21b6] hover:underline'
       }`}
     >
       {label}
@@ -456,7 +456,7 @@ function TrackingButton({
       : `${filled} / ${remaining} serials`
 
   const tone = closed
-    ? 'border-[#eeeef1] bg-[#f7f7f8] text-[#6f6f7f]'
+    ? 'border-[#eeeef1] bg-[#f7f7f8] text-ink-muted'
     : !tracked
       ? 'border-[#dcefe5] bg-[#f4fbf7] text-[#0b6644]'
       : hasDuplicate
@@ -511,7 +511,7 @@ function MiniStat({
         highlight ? 'border-[#f7dfc0] bg-[#fdf3e7]' : 'border-[#eeeef1] bg-[#fbfbfc]'
       }`}
     >
-      <span className={`${MONO} text-[9.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
+      <span className={`${MONO} text-[9.5px] uppercase tracking-[.08em] text-ink-subtle`}>
         {label}
       </span>
       <span

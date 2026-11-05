@@ -86,7 +86,7 @@ export function PriceListDetailPageView({
 
   if (isLoading) {
     return (
-      <div className="flex min-h-full items-center justify-center py-24 text-[#6f6f7f]">
+      <div className="flex min-h-full items-center justify-center py-24 text-ink-muted">
         <Loader2 className="h-6 w-6 animate-spin" />
       </div>
     )
@@ -125,7 +125,7 @@ export function PriceListDetailPageView({
       label: 'Items priced',
       value: total.toLocaleString(),
       note: 'across the whole list',
-      tone: total === 0 ? 'text-[#b0b0bc]' : 'text-[#17171c]',
+      tone: total === 0 ? 'text-ink-faint' : 'text-[#17171c]',
     },
     {
       label: 'No down payment',
@@ -175,7 +175,7 @@ export function PriceListDetailPageView({
                 {priceList.pricingMode === 'exclusive' ? 'VAT exclusive' : 'VAT inclusive'}
               </p>
               {priceList.description && (
-                <p className="mt-1 text-sm text-[#6f6f7f]">{priceList.description}</p>
+                <p className="mt-1 text-sm text-ink-muted">{priceList.description}</p>
               )}
             </div>
 
@@ -271,7 +271,7 @@ export function PriceListDetailPageView({
 
           {mode === 'filter' && (
             <div className="relative min-w-[220px] flex-1 sm:max-w-sm">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f6f7f]" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
               <input
                 type="text"
                 value={search}

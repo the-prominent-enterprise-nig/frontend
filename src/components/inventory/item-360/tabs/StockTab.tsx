@@ -103,9 +103,9 @@ export default function StockTab({
   if (stockedBalances.length === 0) {
     return (
       <div className={`${PLEX} flex flex-col items-center justify-center py-16 text-center`}>
-        <Package className="mb-3 h-10 w-10 text-[#b0b0bc]" />
+        <Package className="mb-3 h-10 w-10 text-ink-faint" />
         <p className="text-[13px] font-medium text-[#4b4b5a]">No stock on hand</p>
-        <p className="mt-1 text-[12px] text-[#6f6f7f]">Receive stock to see balances here.</p>
+        <p className="mt-1 text-[12px] text-ink-muted">Receive stock to see balances here.</p>
       </div>
     )
   }
@@ -222,7 +222,7 @@ export default function StockTab({
               }`}
             >
               <p
-                className={`${MONO} text-[10px] font-semibold tracking-[.08em] text-[#6f6f7f] uppercase`}
+                className={`${MONO} text-[10px] font-semibold tracking-[.08em] text-ink-muted uppercase`}
               >
                 {m.label}
               </p>
@@ -232,7 +232,7 @@ export default function StockTab({
               >
                 {m.value.toLocaleString()}
               </p>
-              <p className="mt-0.5 text-[11px] text-[#6f6f7f]">{m.note}</p>
+              <p className="mt-0.5 text-[11px] text-ink-muted">{m.note}</p>
             </div>
           ))}
         </div>
@@ -248,7 +248,7 @@ export default function StockTab({
           <span className="text-[13px] font-semibold text-[#17171c]">Stock by location</span>
           {isSerialTracked ? (
             <div className="relative">
-              <Search className="pointer-events-none absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2 text-[#8e8e9d]" />
+              <Search className="pointer-events-none absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2 text-ink-subtle" />
               <input
                 value={serialQuery}
                 onChange={(e) => setSerialQuery(e.target.value)}
@@ -259,11 +259,11 @@ export default function StockTab({
               />
             </div>
           ) : (
-            <span className="text-[11.5px] text-[#6f6f7f]">On hand per location</span>
+            <span className="text-[11.5px] text-ink-muted">On hand per location</span>
           )}
         </div>
         {query && matchCount === 0 && (
-          <p className="border-b border-[#eeeef1] px-4 py-2.5 text-[12px] text-[#6f6f7f]">
+          <p className="border-b border-[#eeeef1] px-4 py-2.5 text-[12px] text-ink-muted">
             No serial matches &ldquo;{serialQuery}&rdquo;.
           </p>
         )}
@@ -284,7 +284,7 @@ export default function StockTab({
         {goneMatches.length > 0 && (
           <div ref={goneMatchesRef} className="border-b border-[#eeeef1] bg-[#fbfaff] px-4 py-3">
             <p
-              className={`${MONO} mb-2 text-[9.5px] font-semibold tracking-[.08em] text-[#6f6f7f] uppercase`}
+              className={`${MONO} mb-2 text-[9.5px] font-semibold tracking-[.08em] text-ink-muted uppercase`}
             >
               Sold / removed — no longer on the shelf
             </p>
@@ -354,7 +354,7 @@ export default function StockTab({
                   <div className="flex min-w-0 flex-1 items-center gap-2">
                     {canExpand && (
                       <ChevronDown
-                        className={`h-3.5 w-3.5 shrink-0 text-[#8e8e9d] transition-transform ${
+                        className={`h-3.5 w-3.5 shrink-0 text-ink-subtle transition-transform ${
                           isOpen ? 'rotate-180' : ''
                         }`}
                       />
@@ -381,7 +381,7 @@ export default function StockTab({
                       >
                         {Number(balance.onHandQty ?? 0).toLocaleString()}
                       </p>
-                      <p className="text-[10px] text-[#6f6f7f]">on hand</p>
+                      <p className="text-[10px] text-ink-muted">on hand</p>
                     </div>
                     <div className="text-right">
                       <p
@@ -390,7 +390,7 @@ export default function StockTab({
                       >
                         {Number(balance.availableQty ?? 0).toLocaleString()}
                       </p>
-                      <p className="text-[10px] text-[#6f6f7f]">available</p>
+                      <p className="text-[10px] text-ink-muted">available</p>
                     </div>
                     <StockStatusBadge
                       status={status}
@@ -408,7 +408,7 @@ export default function StockTab({
                   >
                     <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
                       <p
-                        className={`${MONO} text-[9.5px] font-semibold tracking-[.08em] text-[#6f6f7f] uppercase`}
+                        className={`${MONO} text-[9.5px] font-semibold tracking-[.08em] text-ink-muted uppercase`}
                       >
                         Serial numbers at this location
                       </p>
@@ -424,12 +424,12 @@ export default function StockTab({
                         ))}
                       </div>
                     ) : locationSerials.length === 0 ? (
-                      <p className="flex items-center gap-1.5 text-[12px] text-[#6f6f7f]">
+                      <p className="flex items-center gap-1.5 text-[12px] text-ink-muted">
                         <Hash className="h-3.5 w-3.5 shrink-0" />
                         No serial numbers registered for this location yet.
                       </p>
                     ) : filteredSerials.length === 0 ? (
-                      <p className="text-[12px] text-[#6f6f7f]">
+                      <p className="text-[12px] text-ink-muted">
                         No serials here match &ldquo;{serialQuery}&rdquo;.
                       </p>
                     ) : (
@@ -485,7 +485,7 @@ export default function StockTab({
                                     >
                                       {serial.serialNumber}
                                     </span>
-                                    <span className="text-[10.5px] text-[#6f6f7f]">
+                                    <span className="text-[10.5px] text-ink-muted">
                                       <SerialAges
                                         firstReceivedAt={serial.firstReceivedAt}
                                         locationSince={serial.locationSince}

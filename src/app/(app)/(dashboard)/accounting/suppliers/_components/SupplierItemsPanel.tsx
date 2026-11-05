@@ -151,7 +151,7 @@ export default function SupplierItemsPanel({
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12 text-[#6f6f7f]">
+      <div className="flex items-center justify-center py-12 text-ink-muted">
         <Loader2 className="h-5 w-5 animate-spin" />
       </div>
     )
@@ -300,7 +300,7 @@ export default function SupplierItemsPanel({
       {/* Search — only once there is enough to hunt through. */}
       {mappings.length > PAGE_SIZE && (
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6f6f7f]" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
           <input
             type="search"
             value={search}
@@ -370,7 +370,7 @@ export default function SupplierItemsPanel({
                           type="button"
                           onClick={() => setPendingRemoval(mapping)}
                           aria-label={`Unlink ${mapping.item.name}`}
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#8e8e9d] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-subtle hover:bg-[#fdeceb] hover:text-[#b42318]"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>

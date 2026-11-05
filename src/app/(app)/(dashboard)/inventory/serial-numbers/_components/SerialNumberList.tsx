@@ -103,7 +103,7 @@ function MetricCell({
 }) {
   return (
     <div className={`flex flex-col gap-1 px-4 py-3 ${highlight ? 'bg-[#f4fbf7]' : ''}`}>
-      <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#6f6f7f]`}>
+      <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-ink-muted`}>
         {label}
       </span>
       <span
@@ -113,7 +113,7 @@ function MetricCell({
       >
         {value.toLocaleString()}
       </span>
-      <span className="text-[11px] text-[#6f6f7f]">{sub}</span>
+      <span className="text-[11px] text-ink-muted">{sub}</span>
     </div>
   )
 }
@@ -421,7 +421,7 @@ export default function SerialNumberList({
               value={search ?? ''}
               onChange={(e) => setSearch(e.target.value || undefined)}
               placeholder="Search a serial number…"
-              className="min-w-0 flex-1 border-none bg-transparent p-0 text-[14px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
+              className="min-w-0 flex-1 border-none bg-transparent p-0 text-[14px] text-[#17171c] outline-none placeholder:text-ink-faint"
             />
           </label>
         )}
@@ -439,7 +439,7 @@ export default function SerialNumberList({
             <div
               className={`flex h-[38px] min-w-[180px] flex-[1_1_180px] items-center gap-[9px] rounded-lg border px-3 transition-colors ${CONTROL_CHROME.idle} focus-within:border-[#5b21b6] focus-within:shadow-[0_0_0_3px_#f0e9fc]`}
             >
-              <Search className="h-3.25 w-3.25 shrink-0 text-[#6f6f7f]" />
+              <Search className="h-3.25 w-3.25 shrink-0 text-ink-muted" />
               <input
                 value={search ?? ''}
                 onChange={(e) => setSearch(e.target.value || undefined)}
@@ -448,7 +448,7 @@ export default function SerialNumberList({
                     ? 'Search serial, item, RR, supplier, caravan or location…'
                     : 'Search serial, brand, model, category, RR or supplier…'
                 }
-                className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
+                className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-ink-faint"
               />
             </div>
           )}
@@ -611,7 +611,7 @@ export default function SerialNumberList({
                 />
               ) : serials.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 px-6 py-11 text-center">
-                  <Hash className="h-[30px] w-[30px] text-[#b0b0bc]" />
+                  <Hash className="h-[30px] w-[30px] text-ink-faint" />
                   {hasFilters ? (
                     <>
                       <div className="mt-1 text-[14px] font-semibold">
@@ -634,7 +634,7 @@ export default function SerialNumberList({
                   <table className="w-full text-sm">
                     <thead>
                       <tr
-                        className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[12px] uppercase tracking-[.09em] text-[#6f6f7f]`}
+                        className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[12px] uppercase tracking-[.09em] text-ink-muted`}
                       >
                         {showTransfer && (
                           <th className="w-10 px-4 py-[9px]">
@@ -721,7 +721,7 @@ export default function SerialNumberList({
                                   <CopySerialButton serialNumber={serial.serialNumber} />
                                 </div>
                                 {displayClassificationLabel(serial.item?.type?.name) && (
-                                  <span className="text-[13px] text-[#6f6f7f]">
+                                  <span className="text-[13px] text-ink-muted">
                                     {displayClassificationLabel(serial.item?.type?.name)}
                                   </span>
                                 )}
@@ -737,10 +737,12 @@ export default function SerialNumberList({
                               <div className="font-medium text-[#17171c]">
                                 {originLabel(serial)}
                               </div>
-                              <div className={`${MONO} text-[12.5px] text-[#5b21b6]`}>
+                              <div
+                                className={`${MONO} whitespace-nowrap text-[12.5px] text-[#5b21b6]`}
+                              >
                                 {originRef(serial) ?? '—'}
                               </div>
-                              <div className="text-[12.5px] text-[#6f6f7f]">
+                              <div className="text-[12.5px] text-ink-muted">
                                 {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
                                   ? formatShortDate(serial.goodsReceiptLine.goodsReceipt.receivedAt)
                                   : '—'}
@@ -751,7 +753,9 @@ export default function SerialNumberList({
                                 {serial.consignedToVenue ??
                                   locationLabel(serial.warehouse ?? serial.currentWarehouse)}
                               </div>
-                              <div className={`${MONO} text-[12.5px] text-[#5b21b6]`}>
+                              <div
+                                className={`${MONO} whitespace-nowrap text-[12.5px] text-[#5b21b6]`}
+                              >
                                 {serial.goodsReceiptLine?.goodsReceipt ? (
                                   <Link
                                     href={`/accounting/receiving-reports/${serial.goodsReceiptLine.goodsReceipt.id}`}
@@ -764,7 +768,7 @@ export default function SerialNumberList({
                                   '—'
                                 )}
                               </div>
-                              <div className="text-[12.5px] text-[#6f6f7f]">
+                              <div className="text-[12.5px] text-ink-muted">
                                 {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
                                   ? formatShortDate(serial.goodsReceiptLine.goodsReceipt.receivedAt)
                                   : '—'}
@@ -821,7 +825,7 @@ export default function SerialNumberList({
             </div>
 
             {pagination.total > 0 && (
-              <div className="flex flex-wrap items-center justify-between gap-[14px] text-[11.5px] text-[#6f6f7f]">
+              <div className="flex flex-wrap items-center justify-between gap-[14px] text-[11.5px] text-ink-muted">
                 <div className="flex items-center gap-[14px]">
                   <span>
                     Showing {(page - 1) * pagination.limit + 1}–
@@ -846,7 +850,7 @@ export default function SerialNumberList({
                       type="button"
                       onClick={() => setPage(Math.max(1, page - 1))}
                       disabled={page <= 1}
-                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-[#a3a3b2]"
+                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-ink-faint"
                     >
                       Previous
                     </button>
@@ -857,7 +861,7 @@ export default function SerialNumberList({
                       type="button"
                       onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
                       disabled={page >= pagination.totalPages}
-                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-[#a3a3b2]"
+                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-ink-faint"
                     >
                       Next
                     </button>
@@ -909,10 +913,10 @@ function DestinationCell({ serial }: { serial: SerialNumberSummary }): React.JSX
       <div className="font-medium text-[#17171c]">
         {sold ? sold.name : locationLabel(serial.currentWarehouse ?? serial.warehouse)}
       </div>
-      <div className={`${MONO} text-[12.5px] text-[#5b21b6]`}>
+      <div className={`${MONO} whitespace-nowrap text-[12.5px] text-[#5b21b6]`}>
         {(sold ? sold.ref : serial.openTransfer?.transferNumber) ?? '—'}
       </div>
-      <div className="text-[12.5px] text-[#6f6f7f]">{date ? formatShortDate(date) : '—'}</div>
+      <div className="text-[12.5px] text-ink-muted">{date ? formatShortDate(date) : '—'}</div>
     </>
   )
 }

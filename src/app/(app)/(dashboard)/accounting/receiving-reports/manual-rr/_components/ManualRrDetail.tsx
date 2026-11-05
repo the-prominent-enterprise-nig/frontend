@@ -47,7 +47,7 @@ const withholdingClassLabel = (cls?: string | null) =>
 function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-[11px] text-[#6f6f7f]">{label}</span>
+      <span className="text-[11px] text-ink-muted">{label}</span>
       <span className={`text-[13px] text-[#17171c] ${mono ? MONO : ''}`}>{value}</span>
     </div>
   )
@@ -98,7 +98,7 @@ export default function ManualRrDetail({ id }: { id: string }) {
   const header = (breadcrumbTail: string, title: string, subtitle: string) => (
     <div className="flex shrink-0 flex-wrap items-start justify-between gap-5 border-b border-[#e4e4e9] bg-white px-4 py-3.5 lg:px-5">
       <div className="flex min-w-0 flex-col gap-1">
-        <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
+        <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-ink-subtle`}>
           Accounting › Receiving Reports › {breadcrumbTail}
         </div>
         <h2 className="text-[21px] font-semibold tracking-[-.02em]">{title}</h2>
@@ -190,13 +190,13 @@ export default function ManualRrDetail({ id }: { id: string }) {
         <div className={`${PANEL} flex flex-col overflow-hidden`}>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-2.5">
             <span className="text-[13.5px] font-semibold">Items</span>
-            <span className={`${MONO} text-[11px] text-[#6f6f7f]`}>
+            <span className={`${MONO} text-[11px] text-ink-muted`}>
               {report.lines.length} {report.lines.length === 1 ? 'line' : 'lines'} · {totalUnits}{' '}
               units
             </span>
           </div>
           <div
-            className={`${MONO} hidden grid-cols-[1fr_80px_100px_100px_1fr] items-end gap-x-4 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-[#6f6f7f] lg:grid`}
+            className={`${MONO} hidden grid-cols-[1fr_80px_100px_100px_1fr] items-end gap-x-4 border-b border-[#eeeef1] bg-[#fbfbfc] px-4.5 py-2.5 text-[10px] uppercase tracking-[.09em] text-ink-muted lg:grid`}
           >
             <span>Item</span>
             <span className="text-right">Qty</span>

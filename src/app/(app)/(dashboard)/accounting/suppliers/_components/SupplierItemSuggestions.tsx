@@ -103,7 +103,7 @@ export default function SupplierItemSuggestions({
 
   if (isLoading)
     return (
-      <div className="flex items-center justify-center rounded-xl border border-[#e4e4e9] py-10 text-[#6f6f7f]">
+      <div className="flex items-center justify-center rounded-xl border border-[#e4e4e9] py-10 text-ink-muted">
         <Loader2 className="h-5 w-5 animate-spin" />
       </div>
     )
@@ -124,7 +124,7 @@ export default function SupplierItemSuggestions({
             type="button"
             onClick={onClose}
             aria-label="Close suggestions"
-            className="rounded p-1 text-[#6f6f7f] hover:bg-white hover:text-[#3d3d4a]"
+            className="rounded p-1 text-ink-muted hover:bg-white hover:text-[#3d3d4a]"
           >
             <X className="h-4 w-4" />
           </button>
@@ -135,7 +135,7 @@ export default function SupplierItemSuggestions({
         <>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-[200px] flex-1">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#6f6f7f]" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
               <input
                 type="text"
                 value={search}

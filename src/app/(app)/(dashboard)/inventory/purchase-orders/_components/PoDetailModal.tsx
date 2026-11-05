@@ -102,9 +102,9 @@ function stageMeta(
 function InfoRow({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
   return (
     <div className="min-w-0">
-      <p className={`${MONO} text-[10px] uppercase tracking-[.09em] text-[#8e8e9d]`}>{label}</p>
+      <p className={`${MONO} text-[10px] uppercase tracking-[.09em] text-ink-subtle`}>{label}</p>
       <p
-        className={`mt-[3px] text-[13px] font-medium ${muted ? 'text-[#6f6f7f]' : 'text-[#17171c]'}`}
+        className={`mt-[3px] text-[13px] font-medium ${muted ? 'text-ink-muted' : 'text-[#17171c]'}`}
       >
         {value}
       </p>
@@ -246,7 +246,7 @@ export function PoDetailModal({
       {/* Header */}
       <div className="sticky top-0 z-40 flex flex-wrap items-start justify-between gap-4 border-b border-[#e4e4e9] bg-white px-5 py-3">
         <div className="flex min-w-0 flex-col gap-[3px]">
-          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-[#8e8e9d]`}>
+          <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-ink-subtle`}>
             Purchase Order
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
@@ -258,7 +258,7 @@ export function PoDetailModal({
               </span>
             )}
           </div>
-          <p className="text-[11.5px] text-[#6f6f7f]">
+          <p className="text-[11.5px] text-ink-muted">
             Created {fmtDate(po.createdAt)}
             {po.fromPr && ` · from ${po.fromPr.code}`}
             {po.preparedByName && ` · ${po.preparedByName}`}
@@ -317,7 +317,7 @@ export function PoDetailModal({
                   done || complete ? 'bg-[#0f7b52]' : active ? 'bg-[#5b21b6]' : 'bg-[#d3d3db]'
                 const ring = active && !complete ? 'shadow-[0_0_0_3px_#f0e9fc]' : ''
                 const labelColor =
-                  done || complete ? 'text-[#0b6644]' : active ? 'text-[#3f1490]' : 'text-[#6f6f7f]'
+                  done || complete ? 'text-[#0b6644]' : active ? 'text-[#3f1490]' : 'text-ink-muted'
                 return (
                   <div key={stage.key} className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
@@ -330,7 +330,7 @@ export function PoDetailModal({
                         >
                           {stage.label}
                         </span>
-                        <span className="text-[11px] text-[#6f6f7f]">
+                        <span className="text-[11px] text-ink-muted">
                           {stageMeta(i, po, stageIndex, received, ordered)}
                         </span>
                       </div>
@@ -358,7 +358,7 @@ export function PoDetailModal({
         {/* Supplier + facts */}
         <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[1fr_1.15fr]">
           <div className="rounded-xl border border-[#e4e4e9] bg-white p-4">
-            <p className={`${MONO} text-[10px] uppercase tracking-[.09em] text-[#8e8e9d]`}>
+            <p className={`${MONO} text-[10px] uppercase tracking-[.09em] text-ink-subtle`}>
               Supplier
             </p>
             <div className="mt-2.5 flex items-start gap-3">
@@ -440,7 +440,7 @@ export function PoDetailModal({
           <div className="flex items-center justify-between gap-3 border-b border-[#eeeef1] px-4 py-3">
             <div className="flex items-center gap-2">
               <span className="text-[13.5px] font-semibold">Line Items</span>
-              <span className={`${MONO} text-[11px] text-[#6f6f7f]`}>
+              <span className={`${MONO} text-[11px] text-ink-muted`}>
                 {po.lines.length} {po.lines.length === 1 ? 'line' : 'lines'} · {ordered} units
               </span>
             </div>
@@ -463,7 +463,7 @@ export function PoDetailModal({
             <table className="w-full min-w-[720px] text-sm">
               <thead>
                 <tr
-                  className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[10px] uppercase tracking-[.09em] text-[#6f6f7f]`}
+                  className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[10px] uppercase tracking-[.09em] text-ink-muted`}
                 >
                   <th className="px-4 py-2.5 text-left">Item / SKU</th>
                   <th className="px-3 py-2.5 text-right">Ordered</th>
@@ -493,10 +493,10 @@ export function PoDetailModal({
                             </span>
                           )}
                         </div>
-                        <p className={`${MONO} text-[10.5px] text-[#6f6f7f]`}>{line.item.sku}</p>
+                        <p className={`${MONO} text-[10.5px] text-ink-muted`}>{line.item.sku}</p>
                         {line.description && (
                           <p className="mt-0.5 text-[11.5px] text-[#4b4b5a]">
-                            <span className="mr-1 text-[#8e8e9d]">Internal:</span>
+                            <span className="mr-1 text-ink-subtle">Internal:</span>
                             {line.description}
                           </p>
                         )}
@@ -513,7 +513,7 @@ export function PoDetailModal({
                         {(serialsByLine[line.id] ?? []).length > 0 && (
                           <div className="mt-1.5">
                             <p
-                              className={`${MONO} text-[10px] uppercase tracking-[.08em] text-[#8e8e9d]`}
+                              className={`${MONO} text-[10px] uppercase tracking-[.08em] text-ink-subtle`}
                             >
                               Serial Numbers ({serialsByLine[line.id].length})
                             </p>
@@ -539,7 +539,7 @@ export function PoDetailModal({
                             ? 'font-semibold text-[#0b6644]'
                             : lineReceived > 0
                               ? 'font-semibold text-[#8a4b06]'
-                              : 'text-[#8e8e9d]'
+                              : 'text-ink-subtle'
                         }`}
                       >
                         {lineReceived}

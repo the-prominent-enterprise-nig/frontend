@@ -563,7 +563,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                       )}
                     />
                   )}
-                  <p className="mt-1 text-[11px] text-[#6f6f7f]">
+                  <p className="mt-1 text-[11px] text-ink-muted">
                     The branch the units physically leave.
                   </p>
                 </div>
@@ -617,7 +617,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                   )}
 
                   {goodsRows.length === 0 ? (
-                    <p className="rounded-lg border border-dashed border-[#d3d3db] px-4 py-6 text-center text-xs text-[#6f6f7f]">
+                    <p className="rounded-lg border border-dashed border-[#d3d3db] px-4 py-6 text-center text-xs text-ink-muted">
                       Nothing added yet — add a line to search for what is going back.
                     </p>
                   ) : (
@@ -655,7 +655,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                                 accountsLoading={accountsQuery.isLoading}
                               />
                               <div className="flex flex-wrap items-center gap-1.5 md:pl-1">
-                                <span className="text-[11px] text-[#6f6f7f]">Why:</span>
+                                <span className="text-[11px] text-ink-muted">Why:</span>
                                 {RETURN_REASONS.map((reason) => {
                                   const isOn = description.trim() === reason
                                   return (
@@ -684,7 +684,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                                   <button
                                     type="button"
                                     onClick={() => remove(index)}
-                                    className="ml-auto flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-[#8e8e9d] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                                    className="ml-auto flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-ink-subtle hover:bg-[#fdeceb] hover:text-[#b42318]"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                     Remove line
@@ -736,7 +736,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                 </div>
 
                 {chargeRows.length === 0 ? (
-                  <p className="text-xs text-[#8e8e9d]">None — most memos are stock only.</p>
+                  <p className="text-xs text-ink-subtle">None — most memos are stock only.</p>
                 ) : (
                   <div className="space-y-2">
                     {chargeRows.map(({ field, index }) => (
@@ -809,7 +809,7 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                       />
                     )}
                   />
-                  <p className="mt-1 text-[11px] text-[#6f6f7f]">
+                  <p className="mt-1 text-[11px] text-ink-muted">
                     The DR that went out with the goods.
                   </p>
                 </div>
@@ -1139,7 +1139,7 @@ function LineRow({
       <span className={`${readOnlyCellClass} ${MONO} font-medium text-[#17171c]`}>
         {/* Below md the row stacks and the headings are hidden, so the cell
             names itself the way the inputs' placeholders do. */}
-        <span className="text-[11px] font-normal uppercase tracking-wide text-[#6f6f7f] md:hidden">
+        <span className="text-[11px] font-normal uppercase tracking-wide text-ink-muted md:hidden">
           Total
         </span>
         <span>{fmtMoney(lineGross(line))}</span>
@@ -1228,7 +1228,7 @@ function ChargeRow({
         )}
       />
       <span className={`${readOnlyCellClass} ${MONO} font-medium text-[#17171c]`}>
-        <span className="text-[11px] font-normal uppercase tracking-wide text-[#6f6f7f] md:hidden">
+        <span className="text-[11px] font-normal uppercase tracking-wide text-ink-muted md:hidden">
           Total
         </span>
         <span>{fmtMoney(lineGross(line))}</span>
@@ -1236,7 +1236,7 @@ function ChargeRow({
       <button
         type="button"
         onClick={onRemove}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-[#8e8e9d] hover:bg-[#fdeceb] hover:text-[#b42318]"
+        className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-subtle hover:bg-[#fdeceb] hover:text-[#b42318]"
         aria-label="Remove charge"
         title="Remove charge"
       >
