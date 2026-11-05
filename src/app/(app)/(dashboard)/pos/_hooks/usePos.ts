@@ -19,6 +19,7 @@ import {
   closeSession,
   handoverSession,
   getTransactions,
+  getSalesByBranch,
   createTransaction,
   voidTransaction,
   sendReceipt,
@@ -256,6 +257,24 @@ export function useTransactions(
     queryFn: () => getTransactions(filters),
     staleTime: 60 * 1000,
     placeholderData: keepPreviousData,
+    ...options,
+  })
+}
+
+/** Oct 29 UAT POS-01 — sale total and count per branch for a period, from the
+ * server (the transaction list's rows carry no branch). Branch-scoped on the
+ * server: a branch user only ever gets their own branch. */
+export function useSalesByBranch(
+  params: { dateFrom: string; dateTo: string },
+  enabled: boolean,
+  options?: { refetchInterval?: number; refetchOnWindowFocus?: boolean }
+) {
+  return useQuery({
+    queryKey: ['pos-sales-by-branch', params],
+    queryFn: () => getSalesByBranch(params),
+    staleTime: 60 * 1000,
+    placeholderData: keepPreviousData,
+    enabled,
     ...options,
   })
 }
