@@ -297,7 +297,7 @@ function TransferLineRow({
           <p className="truncate text-[13px] font-semibold text-[#17171c]">
             {itemName || 'Unknown item'}
           </p>
-          {itemSku && <p className={`${MONO} mt-0.5 text-[11px] text-[#6f6f7f]`}>{itemSku}</p>}
+          {itemSku && <p className={`${MONO} mt-0.5 text-[11px] text-ink-muted`}>{itemSku}</p>}
           {itemError && <p className="mt-1 text-[11.5px] text-[#b42318]">{itemError}</p>}
         </div>
 
@@ -322,7 +322,7 @@ function TransferLineRow({
               type="button"
               onClick={onRemove}
               disabled={!canRemove}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#8e8e9d] hover:bg-[#fdeceb] hover:text-[#b42318] disabled:cursor-not-allowed disabled:opacity-30"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-subtle hover:bg-[#fdeceb] hover:text-[#b42318] disabled:cursor-not-allowed disabled:opacity-30"
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -339,7 +339,7 @@ function TransferLineRow({
       {showAvailability && (
         <p
           className={`mt-1 pl-0.5 text-[11.5px] ${
-            exceedsAvailable ? 'font-medium text-[#b42318]' : 'text-[#6f6f7f]'
+            exceedsAvailable ? 'font-medium text-[#b42318]' : 'text-ink-muted'
           }`}
         >
           {exceedsAvailable
@@ -660,7 +660,7 @@ export default function CreateTransferModal({
       <div className="shrink-0 border-b border-[#e4e4e9] bg-white px-6 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className={`${MONO} mb-1 text-[10.5px] uppercase tracking-[0.08em] text-[#8e8e9d]`}>
+            <p className={`${MONO} mb-1 text-[10.5px] uppercase tracking-[0.08em] text-ink-subtle`}>
               Inventory &rsaquo; Stock transfers &rsaquo;{' '}
               {isEditing ? (editing?.transferNumber ?? 'Edit') : 'New'}
             </p>
@@ -716,7 +716,7 @@ export default function CreateTransferModal({
                         className="relative h-[18px] w-8 shrink-0 rounded-full bg-[#d3d3db] transition-colors after:absolute after:top-[2px] after:left-[2px] after:h-[14px] after:w-[14px] after:rounded-full after:bg-white after:transition-transform peer-checked:bg-[#5b21b6] peer-checked:after:translate-x-[14px] peer-focus-visible:ring-2 peer-focus-visible:ring-[#5b21b6]/40"
                       />
                       <span className="font-medium">For a caravan</span>
-                      <span className="hidden text-[#6f6f7f] sm:inline">
+                      <span className="hidden text-ink-muted sm:inline">
                         — requesting stock for a caravan event hosted at a branch
                       </span>
                     </label>
@@ -726,7 +726,7 @@ export default function CreateTransferModal({
                   <div>
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                       <span
-                        className={`${MONO} text-[10px] font-semibold tracking-[.09em] text-[#6f6f7f] uppercase`}
+                        className={`${MONO} text-[10px] font-semibold tracking-[.09em] text-ink-muted uppercase`}
                       >
                         Route
                       </span>
@@ -1010,7 +1010,7 @@ export default function CreateTransferModal({
               {/* Column headings — matches each line row's own grid below */}
               {fields.length > 0 && (
                 <div
-                  className={`${MONO} hidden items-center gap-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-[18px] py-2 text-[10px] font-semibold tracking-[.09em] text-[#6f6f7f] uppercase sm:grid sm:grid-cols-[minmax(0,1fr)_96px_40px]`}
+                  className={`${MONO} hidden items-center gap-3 border-b border-[#eeeef1] bg-[#fbfbfc] px-[18px] py-2 text-[10px] font-semibold tracking-[.09em] text-ink-muted uppercase sm:grid sm:grid-cols-[minmax(0,1fr)_96px_40px]`}
                 >
                   <span>Item / SKU</span>
                   <span className="text-center">Units</span>
@@ -1020,7 +1020,7 @@ export default function CreateTransferModal({
 
               {fields.length === 0 && (
                 <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
-                  <PackageSearch className="h-7 w-7 text-[#b0b0bc]" />
+                  <PackageSearch className="h-7 w-7 text-ink-faint" />
                   <p className="text-[13.5px] font-semibold text-[#17171c]">No items yet</p>
                   <p className="max-w-[420px] text-[12px] leading-relaxed text-[#4b4b5a]">
                     Use the search above to add stock held at{' '}

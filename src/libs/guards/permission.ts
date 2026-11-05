@@ -70,6 +70,9 @@ export interface SessionUser {
    * never adds a sidebar item or hub tab. Absent on older sessions. */
   rolePermissions?: Permission[]
   primaryRole?: string
+  /** The home page of the highest-priority role that sets one (landing page,
+   * default menu, dashboard). See libs/guards/home-module.ts. */
+  homeModule?: string | null
   hierarchyLevel?: number
   moduleAccess?: string[]
   createdAt: string
@@ -77,17 +80,43 @@ export interface SessionUser {
   lastLoginAt?: string | null
 }
 
+/** What the permission checks read from a session. A narrower view of
+ * SessionUser, so the sidebar's trimmed session type can use the same rules as
+ * the pages instead of keeping its own copy. */
+export type PermissionHolder = Pick<
+  SessionUser,
+  'roles' | 'permissions' | 'primaryRole' | 'isSuperAdmin' | 'branchId'
+>
+
 export function isSuperAdmin(user: SessionUser): boolean {
   return user.isSuperAdmin === true || user.primaryRole === 'super-admin'
 }
 
-export function hasPrivilegedRole(user: SessionUser): boolean {
+export function hasPrivilegedRole(user: PermissionHolder): boolean {
   return hasRole(user, 'Business Owner')
 }
 
 /** Whether the user holds the named role, as their primary role or any other. */
-export function hasRole(user: SessionUser, role: string): boolean {
+export function hasRole(user: PermissionHolder, role: string): boolean {
   return user.primaryRole === role || user.roles.includes(role)
+}
+
+/**
+ * Settings' "manage" permissions (admin:roles:manage, admin:users:manage, …)
+ * stand for create, read, update and delete of their resource, the same rule
+ * the backend's matchesPermission applies, so a page that lets a "manage" role
+ * in and the route it calls agree. Admin module only: elsewhere "manage" is one
+ * specific step (pos:collections:manage).
+ */
+const MANAGE_COVERS = new Set(['create', 'read', 'update', 'delete'])
+
+export function adminManageCovers(userParts: string[], requiredParts: string[]): boolean {
+  return (
+    userParts.length === 3 &&
+    userParts[0] === 'admin' &&
+    userParts[2] === 'manage' &&
+    MANAGE_COVERS.has(requiredParts[2])
+  )
 }
 
 function matchesPermission(userPermission: string, requiredPermission: string): boolean {
@@ -110,7 +139,7 @@ function matchesPermission(userPermission: string, requiredPermission: string): 
 
     if (requiredPart === undefined) return userPart === '*'
     if (userPart === '*' || requiredPart === '*') continue
-    if (userPart !== requiredPart) return false
+    if (userPart !== requiredPart) return index === 2 && adminManageCovers(userParts, requiredParts)
   }
 
   return true
@@ -127,38 +156,22 @@ export function canManageSalesQuotas(user: SessionUser | null | undefined): bool
   return Boolean(user.isSuperAdmin || hasPrivilegedRole(user))
 }
 
-export function can(user: SessionUser, permission: Permission): boolean {
+export function can(user: PermissionHolder, permission: Permission): boolean {
   if (hasPrivilegedRole(user)) return true
   return user.permissions.some((p) => matchesPermission(p, permission))
 }
 
-const ROLE_MODULE_ACCESS: Record<string, string[]> = {
-  // Cashier reaches POS only. Creating a customer profile from scratch —
-  // for a credit application or a sale with no existing profile — happens
-  // through POS's own Customers screen (/pos/customers, pos:customers:*),
-  // not CRM's. Both write to the same Customer table via the same
-  // CustomerService, so it is the permission surface that differs, not the
-  // data (2026-09-19 review request, replacing the 'crm' entry added
-  // 2026-09-18).
-  cashier: ['pos'],
-  'pos-manager': ['pos'],
-  pos: ['pos'],
-}
-
+/**
+ * Whether a user's permissions reach a module. Decided by what the user's roles
+ * grant and nothing else: there used to be a fixed list of modules for roles
+ * named cashier, pos-manager and pos, which answered from that list alone and
+ * ignored every other role the user held, so a Finance Clerk - Payables who was also a
+ * Cashier was sent to /403 on Accounting. It also meant a role an owner happened
+ * to name "POS" was locked to POS. Both are gone: a role name never decides
+ * access.
+ */
 export function canAccessModule(user: SessionUser, module: string): boolean {
   if (hasPrivilegedRole(user)) return true
-
-  const allRoles = [...(user.primaryRole ? [user.primaryRole] : []), ...user.roles].map((r) =>
-    r.toLowerCase()
-  )
-
-  // Roles with a fixed allowlist take precedence over moduleAccess — checked first
-  // so stray permissions (e.g. inventory:items:read on a cashier) don't bleed into
-  // modules the role isn't meant to access.
-  const restrictedRoles = allRoles.filter((r) => r in ROLE_MODULE_ACCESS)
-  if (restrictedRoles.length > 0) {
-    return restrictedRoles.some((r) => ROLE_MODULE_ACCESS[r]?.includes(module))
-  }
 
   if (user.moduleAccess?.includes(module)) return true
   return user.permissions.some((p) => p === `${module}:*` || p.startsWith(`${module}:`))
@@ -185,23 +198,54 @@ export function canNavigateAny(user: SessionUser, perms: Permission[]): boolean 
   return perms.some((p) => canNavigate(user, p))
 }
 
+/** Navigation only: canAccessModule on the roles' own rows. A module the role
+ * reaches only through what its features bring (CRM's customer lookups bring
+ * accounting:* reads) is not one to land in — its entry page counts own rows
+ * and would find nothing to open. */
+export function canNavigateModule(user: SessionUser, module: string): boolean {
+  return canAccessModule({ ...user, permissions: user.rolePermissions ?? user.permissions }, module)
+}
+
 // Permissions granted by the admin role
-const ADMIN_ROLE_PERMISSIONS = ['admin:roles:manage', 'admin:permissions:manage'] as const
+export const ADMIN_ROLE_PERMISSIONS = ['admin:roles:manage', 'admin:permissions:manage'] as const
 
 // Check if user is an admin (assigned the admin role)
-export function isAdmin(user: SessionUser): boolean {
+export function isAdmin(user: PermissionHolder): boolean {
   if (hasPrivilegedRole(user)) return true
   return ADMIN_ROLE_PERMISSIONS.some((p) => can(user, p))
 }
 
+/** The rows that let someone change POS-wide settings: configuration and
+ * payment methods, terminals, financing terms, TPF providers, the loyalty
+ * program. Branch staff no longer hold them (2026-11-05). */
+export const POS_SETTINGS_PERMISSIONS = [
+  'pos:config:manage',
+  'pos:terminals:manage',
+  'pos:financing-terms:manage',
+  'pos:tpf-providers:manage',
+  'pos:loyalty-program:manage',
+]
+
 /**
- * Business Owner or Branch Manager only — the two roles allowed to configure
- * POS-wide settings (GL mapping, discount/stock thresholds, financing terms,
- * etc). Deliberately narrower than `can(user, 'pos:*')`, which loosely
- * matches any single pos:x:y permission a Cashier also happens to hold.
+ * Whether the user may change POS-wide settings (GL mapping, discount/stock
+ * thresholds, financing terms, etc). Decided by the permission rows the user's
+ * roles hold, so a custom role with the toggle gets the Settings area and one
+ * without it does not; no role name is consulted. Deliberately narrower than
+ * `can(user, 'pos:*')`, which loosely matches any single pos:x:y permission a
+ * Cashier also happens to hold.
  */
-export function canManagePosSettings(user: SessionUser): boolean {
+export function canManagePosSettings(user: PermissionHolder): boolean {
   if (isAdmin(user)) return true
-  const allRoles = [user.primaryRole ?? '', ...user.roles]
-  return allRoles.some((r) => r === 'Branch Manager' || r === 'pos-manager')
+  return POS_SETTINGS_PERMISSIONS.some((p) => can(user, p))
+}
+
+/**
+ * A branch-assigned user who changes POS settings without being an admin: the
+ * Branch Manager's position, and any custom role given the same toggle. Their
+ * settings reach their own branch only ("My Branch", branch receipt branding,
+ * the till's branch). The test is the permission and the branch, never a role
+ * name.
+ */
+export function managesOwnBranch(user: PermissionHolder): boolean {
+  return !isAdmin(user) && !!user.branchId && can(user, 'pos:config:manage')
 }

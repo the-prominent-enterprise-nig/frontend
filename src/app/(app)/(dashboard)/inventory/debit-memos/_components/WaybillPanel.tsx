@@ -7,6 +7,8 @@ import { FileAttachments } from '@/src/libs/data/AccountingV2Data'
 import { uploadWaybillAttachment } from '../_actions/upload-waybill-attachment'
 import { showToast } from '@/src/components/ui/toast'
 import { ConfirmDialog } from '@/src/components/ui/Modal'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
 
 // FileAttachment is polymorphic on (entityType, entityId), so a new document
 // type needs no schema change — just a stable string here.
@@ -31,6 +33,8 @@ type Props = {
  * creating, not only when editing.
  */
 export default function WaybillPanel({ memoId, readOnly, staged = [], onStagedChange }: Props) {
+  const { data: me } = useMe()
+  const canDetach = !!me && can(me, 'files:attachments:delete')
   const [uploading, setUploading] = useState(false)
   // The attachment awaiting its delete confirmation. Held by name as well as
   // id so the dialog can say which file it is about.
@@ -109,12 +113,15 @@ export default function WaybillPanel({ memoId, readOnly, staged = [], onStagedCh
         key: `staged-${i}`,
         name: file.name,
         onRemove: () => onStagedChange?.(staged.filter((_, j) => j !== i)),
+        removable: true,
         href: undefined,
       }))
     : attachments.map((a) => ({
         key: a.id,
         name: a.file.originalName,
         onRemove: () => setDetaching({ id: a.id, name: a.file.originalName }),
+        // Removing a saved attachment takes files:attachments:delete.
+        removable: canDetach,
         href: `/api/files/${a.file.id}/download`,
       }))
 
@@ -127,7 +134,7 @@ export default function WaybillPanel({ memoId, readOnly, staged = [], onStagedCh
       <div className="mb-3 flex items-center justify-between gap-4">
         <div className="min-w-0">
           <h3 className="text-[13px] font-semibold text-[#17171c]">
-            Waybill <span className="font-normal text-[#6f6f7f]">optional</span>
+            Waybill <span className="font-normal text-ink-muted">optional</span>
           </h3>
           <p className="text-[11.5px] leading-relaxed text-[#4b4b5a]">
             A photo of the waybill or gate pass that went out with the goods.
@@ -165,9 +172,9 @@ export default function WaybillPanel({ memoId, readOnly, staged = [], onStagedCh
       </div>
 
       {!isStaging && query.isLoading ? (
-        <p className="text-xs text-[#6f6f7f]">Loading…</p>
+        <p className="text-xs text-ink-muted">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="text-xs text-[#8e8e9d]">None attached.</p>
+        <p className="text-xs text-ink-subtle">None attached.</p>
       ) : (
         <ul className="space-y-1">
           {rows.map((row) => (
@@ -187,16 +194,16 @@ export default function WaybillPanel({ memoId, readOnly, staged = [], onStagedCh
                 </a>
               ) : (
                 <span className="flex items-center gap-2 text-xs text-[#3d3d4a]">
-                  <Paperclip className="h-3.5 w-3.5 text-[#8e8e9d]" />
+                  <Paperclip className="h-3.5 w-3.5 text-ink-subtle" />
                   {row.name}
-                  <span className="text-[#6f6f7f]">(pending save)</span>
+                  <span className="text-ink-muted">(pending save)</span>
                 </span>
               )}
-              {!readOnly && (
+              {!readOnly && row.removable && (
                 <button
                   type="button"
                   onClick={row.onRemove}
-                  className="rounded p-1 text-[#8e8e9d] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                  className="rounded p-1 text-ink-subtle hover:bg-[#fdeceb] hover:text-[#b42318]"
                   aria-label="Remove attachment"
                 >
                   <Trash2 className="h-3.5 w-3.5" />

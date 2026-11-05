@@ -41,7 +41,7 @@ function Fact({ label, value }: { label: string; value: string | null | undefine
     <div className="min-w-0">
       <p className={monoHeadClass}>{label}</p>
       <p
-        className={`mt-0.5 truncate text-[12.5px] font-medium ${shown ? 'text-[#17171c]' : 'text-[#8e8e9d]'}`}
+        className={`mt-0.5 truncate text-[12.5px] font-medium ${shown ? 'text-[#17171c]' : 'text-ink-subtle'}`}
         title={shown || undefined}
       >
         {shown || 'Not set'}
@@ -56,7 +56,7 @@ function FieldRow({ label, value }: { label: string; value: string | null | unde
     <div className="min-w-0">
       <p className="text-[11px] text-[#4b4b5a]">{label}</p>
       <p
-        className={`mt-0.5 text-[12.5px] font-medium break-words ${shown ? 'text-[#17171c]' : 'text-[#8e8e9d]'}`}
+        className={`mt-0.5 text-[12.5px] font-medium break-words ${shown ? 'text-[#17171c]' : 'text-ink-subtle'}`}
       >
         {shown || 'Not set'}
       </p>
@@ -109,7 +109,7 @@ export default function SupplierDetailPanel({
 
   if (detailQuery.isLoading) {
     return (
-      <div className="flex items-center justify-center rounded-xl border border-[#e4e4e9] bg-white py-20 text-[#6f6f7f]">
+      <div className="flex items-center justify-center rounded-xl border border-[#e4e4e9] bg-white py-20 text-ink-muted">
         <Loader2 className="h-5 w-5 animate-spin" />
       </div>
     )

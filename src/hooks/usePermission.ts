@@ -1,3 +1,5 @@
+import { adminManageCovers } from '@/src/libs/guards/permission'
+
 interface SessionUser {
   id: string
   roles: string[]
@@ -6,17 +8,6 @@ interface SessionUser {
   rolePermissions?: string[]
   primaryRole?: string
   moduleAccess?: string[]
-}
-
-// Roles that have a fixed module allowlist. Keep in sync with ROLE_MODULE_ACCESS in
-// src/libs/guards/permission.ts — both must agree on which modules each role can reach.
-const ROLE_MODULE_ACCESS: Record<string, string[]> = {
-  // 2026-09-19 — Cashier reaches POS only; customer creation moved to POS's
-  // own /pos/customers screen. See the sibling copy of this map in
-  // src/libs/guards/permission.ts for the full rationale.
-  cashier: ['pos'],
-  'pos-manager': ['pos'],
-  pos: ['pos'],
 }
 
 /**
@@ -51,7 +42,7 @@ function matchesPermission(userPermission: string, requiredPermission: string): 
 
     if (requiredPart === undefined) return userPart === '*'
     if (userPart === '*' || requiredPart === '*') continue
-    if (userPart !== requiredPart) return false
+    if (userPart !== requiredPart) return index === 2 && adminManageCovers(userParts, requiredParts)
   }
 
   return true
@@ -121,26 +112,13 @@ export function usePermission(session: SessionUser | null, permission: string): 
 }
 
 /**
- * Check if a user can see a top-level module tab.
- * For roles with an explicit allowlist (e.g. cashier → pos only), the allowlist
- * takes precedence so they cannot see other modules even if they happen to hold
- * stray permissions for them.
+ * Check if a user can see a top-level module tab. Decided by what the user's
+ * roles grant; a role's name never limits it (see canAccessModule).
  */
 export function hasModuleAccess(session: SessionUser | null, moduleKey: string): boolean {
   if (!session) return false
   if (session.primaryRole === 'Business Owner' || session.roles.includes('Business Owner'))
     return true
-
-  // Collect all role identifiers (primaryRole + roles[]), normalised to lowercase
-  // so backend casing variations like "Cashier" still match.
-  const allRoles = [...(session.primaryRole ? [session.primaryRole] : []), ...session.roles].map(
-    (r) => r.toLowerCase()
-  )
-
-  const restrictedRoles = allRoles.filter((r) => r in ROLE_MODULE_ACCESS)
-  if (restrictedRoles.length > 0) {
-    return restrictedRoles.some((r) => ROLE_MODULE_ACCESS[r]?.includes(moduleKey))
-  }
 
   // Trust the backend-computed moduleAccess list when present — it correctly handles
   // cross-module permission mappings (e.g. hr:payslips:read → payroll nav tab).

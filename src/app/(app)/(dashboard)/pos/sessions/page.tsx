@@ -247,7 +247,7 @@ export default function SessionsPage() {
               ))}
             </div>
           ) : sessions.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-16 text-[#8e8e9d]">
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-ink-subtle">
               <Monitor size={36} />
               <p className="text-[13px]">No sessions found.</p>
             </div>
@@ -403,7 +403,7 @@ function OpenSessionModal({
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
       setSearching(true)
-      const res = await searchUsers(search.trim(), effectiveBranchId, 'Cashier')
+      const res = await searchUsers(search.trim(), effectiveBranchId, 'Branch Cashier')
       if (res.success && Array.isArray(res.data)) {
         setFiltered(res.data)
         setUsersError('')
@@ -709,7 +709,7 @@ function SessionRow({
       aria-expanded={expanded}
       aria-label={expanded ? 'Hide session detail' : 'Show session detail'}
       className={`flex h-6 w-6 items-center justify-center rounded-md ${
-        expanded ? 'bg-[#f1ebfb] text-[#3f1490]' : 'text-[#6f6f7f] hover:bg-[#f4f4f6]'
+        expanded ? 'bg-[#f1ebfb] text-[#3f1490]' : 'text-ink-muted hover:bg-[#f4f4f6]'
       }`}
     >
       <ChevronDown size={14} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
@@ -2023,7 +2023,7 @@ function HandoverModal({
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(async () => {
       setSearching(true)
-      const res = await searchUsers(search.trim(), branchId ?? undefined, 'Cashier')
+      const res = await searchUsers(search.trim(), branchId ?? undefined, 'Branch Cashier')
       if (res.success && Array.isArray(res.data)) {
         setFiltered(res.data)
         setUsersError('')

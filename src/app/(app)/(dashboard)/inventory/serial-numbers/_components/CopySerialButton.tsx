@@ -26,7 +26,7 @@ export default function CopySerialButton({
         type="button"
         onClick={copy}
         aria-label="Copy serial number"
-        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[#8e8e9d] hover:bg-[#f1ebfb] hover:text-[#3f1490]"
+        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-ink-subtle hover:bg-[#f1ebfb] hover:text-[#3f1490]"
       >
         {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
       </button>

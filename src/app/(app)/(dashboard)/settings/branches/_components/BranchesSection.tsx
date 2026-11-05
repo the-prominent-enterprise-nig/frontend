@@ -17,9 +17,11 @@ type View = 'grid' | 'list'
 
 type Props = {
   initialBranches: BranchDetail[]
+  /** admin:branches:manage, which every branch write checks on the backend. */
+  canManageBranches?: boolean
 }
 
-export default function BranchesSection({ initialBranches }: Props) {
+export default function BranchesSection({ initialBranches, canManageBranches = false }: Props) {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [view, setView] = useState<View>('grid')
 
@@ -57,14 +59,16 @@ export default function BranchesSection({ initialBranches }: Props) {
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsModalOpen(true)}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-prominent-purple-800"
-            >
-              <Plus className="h-4 w-4" />
-              Add Branch
-            </button>
+            {canManageBranches && (
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(true)}
+                className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-prominent-purple-800"
+              >
+                <Plus className="h-4 w-4" />
+                Add Branch
+              </button>
+            )}
           </div>
         </div>
 

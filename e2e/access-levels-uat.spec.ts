@@ -19,7 +19,9 @@ test.describe('Access Levels UAT fixes', () => {
 
   // 1. POS PIN needs cashier-pin:verify, like its page. These roles hold a
   // corner of POS but no PIN, so Operations & Admin isn't offered at all.
-  for (const role of ['deposit-clerk', 'stock-clerk', 'inventory-manager']) {
+  // Inventory Clerk and Inventory OIC hold Sales Counter since the 2026-10-28
+  // sheet, PIN included, so POS PIN (Operations & Admin) is theirs now.
+  for (const role of ['deposit-clerk']) {
     test(`${role}: no Operations & Admin in POS`, async ({ page }) => {
       await loginAs(page, email(role), PASSWORD)
       await gotoReady(page, '/pos')
@@ -28,7 +30,7 @@ test.describe('Access Levels UAT fixes', () => {
   }
 
   // 2. Books and Expenses show on Accounting's own permissions only.
-  for (const role of ['sales-support', 'sales-admin', 'aircon-staff']) {
+  for (const role of ['sales-support', 'sales-admin-clerk', 'aircool-staff']) {
     test(`${role}: no Books or Expenses in the sidebar`, async ({ page }) => {
       await loginAs(page, email(role), PASSWORD)
       await gotoReady(page, '/accounting/account-mapping')
@@ -39,7 +41,7 @@ test.describe('Access Levels UAT fixes', () => {
   }
 
   test('aircon-clerk still has Expenses', async ({ page }) => {
-    await loginAs(page, email('aircon-clerk'), PASSWORD)
+    await loginAs(page, email('aircool-staff-expenses'), PASSWORD)
     await gotoReady(page, '/accounting/expenses')
     expect(await sidebarHrefs(page)).toContain('/accounting/expenses-hub')
   })
@@ -57,7 +59,7 @@ test.describe('Access Levels UAT fixes', () => {
   }
 
   test('finance-head still starts a reconciliation', async ({ page }) => {
-    await loginAs(page, email('finance-head'), PASSWORD)
+    await loginAs(page, email('accounting-and-finance-oic'), PASSWORD)
     await gotoReady(page, '/accounting/bank-reconciliation')
     await expect(page.getByRole('link', { name: /New Reconciliation/ })).toBeVisible()
   })
@@ -66,7 +68,10 @@ test.describe('Access Levels UAT fixes', () => {
 // 6. The row menu floats over the table, so a one-row search result doesn't
 // clip it.
 test('Users: the ⋯ menu on a single search result is fully clickable', async ({ page }) => {
-  await gotoReady(page, '/settings/users?status=active&search=technova.al-finance-head')
+  await gotoReady(
+    page,
+    '/settings/users?status=active&search=technova.al-accounting-and-finance-oic'
+  )
   const menu = page.getByRole('button', { name: 'More actions' }).first()
   await menu.waitFor()
   await menu.click()

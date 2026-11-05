@@ -14,44 +14,44 @@ const visit = (path: string) => async (page: Page) => gotoReady(page, path)
 
 const SCREENS: Screen[] = [
   {
-    role: 'Payables Clerk',
-    email: 'technova.al-payables-clerk@test.com',
+    role: 'Finance Clerk - Payables',
+    email: 'technova.al-finance-clerk-payables@test.com',
     name: 'the Bill form',
     open: visit('/accounting/ap-bills/new'),
   },
   {
-    role: 'Payables Clerk',
-    email: 'technova.al-payables-clerk@test.com',
+    role: 'Finance Clerk - Payables',
+    email: 'technova.al-finance-clerk-payables@test.com',
     name: 'Record Payment',
     open: visit('/accounting/ap-bills/payments/new'),
   },
   {
-    role: 'Expense Clerk',
-    email: 'technova.al-expense-clerk@test.com',
+    role: 'Accounting Clerk - Expenses & Loans',
+    email: 'technova.al-accounting-clerk-expenses-loans@test.com',
     name: 'the Expenses list account filter',
     open: visit('/accounting/expenses'),
   },
   {
-    role: 'Expense Clerk',
-    email: 'technova.al-expense-clerk@test.com',
+    role: 'Accounting Clerk - Expenses & Loans',
+    email: 'technova.al-accounting-clerk-expenses-loans@test.com',
     name: 'the Expense form',
     open: visit('/accounting/expenses/new'),
   },
   {
-    role: 'Payables Clerk',
-    email: 'technova.al-payables-clerk@test.com',
+    role: 'Finance Clerk - Payables',
+    email: 'technova.al-finance-clerk-payables@test.com',
     name: 'AP payment methods',
     open: visit('/accounting/ap-payment-methods'),
   },
   {
-    role: 'Sales Support',
-    email: 'technova.al-sales-support@test.com',
+    role: 'AR Clerks',
+    email: 'technova.al-ar-clerks@test.com',
     name: 'Account Mapping (opened by POS configuration)',
     open: visit('/accounting/account-mapping'),
   },
   {
-    role: 'Liquidation Clerk',
-    email: 'technova.al-liquidation-clerk@test.com',
+    role: 'Accounting Clerk - Special Accounts',
+    email: 'technova.al-accounting-clerk-special-accounts@test.com',
     name: 'New Special Account',
     open: async (page) => {
       await gotoReady(page, '/accounting/special-accounts')
@@ -88,9 +88,9 @@ test.describe('Account pickers load for the roles that use them', () => {
   }
 
   // The deposit slip's "Deposit from" list only opens with cash to deposit, so
-  // this makes the slip editor's own request as the Deposit Clerk.
-  test('Deposit Clerk: the deposit slip clearing accounts', async ({ page }) => {
-    await loginAs(page, 'technova.al-deposit-clerk@test.com', PASSWORD)
+  // this makes the slip editor's own request as the Accounting Clerk - Deposits.
+  test('Accounting Clerk - Deposits: the deposit slip clearing accounts', async ({ page }) => {
+    await loginAs(page, 'technova.al-accounting-clerk-deposits@test.com', PASSWORD)
     const res = await page.request.get('/api/accounts/options?search=1-01-04')
     expect(res.status()).toBe(200)
     const rows = (await res.json()) as { number: string }[]
@@ -98,12 +98,10 @@ test.describe('Account pickers load for the roles that use them', () => {
     expect(rows.every((row) => row.number.includes('1-01-04'))).toBe(true)
   })
 
-  // What a role's features bring (here Sales Support's customer list) is for
+  // What a role's features bring (here AR Clerks's customer list) is for
   // their screens; it never adds a page to the sidebar.
-  test('Sales Support: the customer list a feature brings adds no sidebar item', async ({
-    page,
-  }) => {
-    await loginAs(page, 'technova.al-sales-support@test.com', PASSWORD)
+  test('AR Clerks: the customer list a feature brings adds no sidebar item', async ({ page }) => {
+    await loginAs(page, 'technova.al-ar-clerks@test.com', PASSWORD)
     await gotoReady(page, '/dashboard')
     await page.waitForLoadState('networkidle')
     await page.locator('aside a[href]').first().waitFor()

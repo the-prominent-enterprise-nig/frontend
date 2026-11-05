@@ -15,7 +15,7 @@ const MM_PX = 96 / 25.4
 /** Height kept clear at the foot of each page. The print layout runs a little
  * taller than the screen one measured here (print padding, font metrics), so
  * a form that only just fits on screen would be clipped on paper. */
-const PRINT_SLACK_MM = 8
+const PRINT_SLACK_MM = 14
 /** Landscape sizes in mm. The 2 mm allowance keeps a full page from spilling
  * into a blank one. */
 const PAPERS = [
@@ -33,25 +33,21 @@ const PRINT_CSS = `
   @page { size: landscape; margin: 0; }
   .print-region { position: static; left: auto; width: auto; }
   .print-page { height: auto; }
-}
-@media print and (min-width: 288mm) and (max-width: 329.9mm) {
-  .print-page { width: ${PAPERS[1].w}mm; padding: ${PAPERS[1].inset}mm; }
+  /* The tight layout on every paper, Letter included: the monitoring sheet
+     is tall, and at full spacing it ran onto a second Letter page. */
   .print-sheet-compact { gap: 2mm !important; padding: 3mm !important; }
   .print-sheet-compact header { padding-bottom: 1.5mm !important; }
   .print-sheet-compact .print-tight { padding-top: 0.4mm !important; padding-bottom: 0.4mm !important; }
   .print-sheet-compact .print-tight-total { padding-top: 1mm !important; padding-bottom: 0.4mm !important; }
   .print-sheet-compact .print-tight-total,
   .print-sheet-compact .print-tight { line-height: 1.2 !important; }
+}
+@media print and (min-width: 288mm) and (max-width: 329.9mm) {
+  .print-page { width: ${PAPERS[1].w}mm; padding: ${PAPERS[1].inset}mm; }
   .print-fit { width: var(--w-a4); zoom: var(--z-a4); }
 }
 @media print and (min-width: 330mm) {
   .print-page { width: ${PAPERS[2].w}mm; padding: ${PAPERS[2].inset}mm; }
-  .print-sheet-compact { gap: 2mm !important; padding: 3mm !important; }
-  .print-sheet-compact header { padding-bottom: 1.5mm !important; }
-  .print-sheet-compact .print-tight { padding-top: 0.4mm !important; padding-bottom: 0.4mm !important; }
-  .print-sheet-compact .print-tight-total { padding-top: 1mm !important; padding-bottom: 0.4mm !important; }
-  .print-sheet-compact .print-tight-total,
-  .print-sheet-compact .print-tight { line-height: 1.2 !important; }
   .print-fit { width: var(--w-legal); zoom: var(--z-legal); }
 }
 `

@@ -12,7 +12,7 @@ import { gotoReady, loginAs } from './utils'
 //   Pricing & Promotion  Promotions → second row: Promo Codes | Gift Cards | Loyalty
 //   Cash & Receipts      Management → second row: Sessions | Cash Drawer,
 //                        New Receipts | Collected Funds History
-//   Approvals & Reviews  Override Review | Unit Release Approvals | Refund Approvals |
+//   Approvals & Reviews  Price Override Log | Unit Release Approvals | Refund Approvals |
 //                        Void Requests | Cancellations
 //   Reports              Daily Collection | Sales Reports | Sales Quotas
 //   Operations & Admin   Service Jobs | POS PIN | Settings
@@ -29,9 +29,8 @@ const sidebar = (page: Page) => page.locator('aside')
 const strip = (page: Page) => page.getByRole('navigation', { name: 'POS section tabs' })
 const subStrip = (page: Page) => page.getByRole('navigation', { name: 'POS sub tabs' })
 
-// A link's accessible name is its label, plus the pending count when it carries
-// one (Approvals & Reviews, Override Review) — so match the label followed by an
-// optional number.
+// A link's accessible name is its label, plus a count when it carries one — so
+// match the label followed by an optional number.
 const linkName = (label: string) =>
   new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}( \\d+)?$`)
 const row = (page: Page, label: string) =>
@@ -217,12 +216,14 @@ test.describe('POS sidebar — Business Owner', () => {
     await expect(page.getByTestId('pos-branch-switcher')).toHaveCount(0)
   })
 
-  test('Approvals & Reviews: the doc order, opening on Override Review', async ({ page }) => {
+  test('Approvals & Reviews: the doc order, opening on the Price Override Log', async ({
+    page,
+  }) => {
     await gotoReady(page, '/pos/customers')
     await clickRow(page, 'Approvals & Reviews', '/pos/override-review')
 
     expect(await tabOrder(page)).toEqual([
-      'Override Review',
+      'Price Override Log',
       'Unit Release Approvals',
       'Refund Approvals',
       'Void Requests',
@@ -288,7 +289,7 @@ test.describe('POS sidebar — Cashier', () => {
     await expectTabs(
       page,
       ['Unit Release Approvals', 'Void Requests'],
-      ['Override Review', 'Refund Approvals', 'Cancellations']
+      ['Price Override Log', 'Refund Approvals', 'Cancellations']
     )
   })
 

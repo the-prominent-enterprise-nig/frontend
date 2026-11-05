@@ -3,10 +3,15 @@ import { useCallback, useEffect, useState } from 'react'
 import { Plus, RefreshCw, Play, Trash2, X } from 'lucide-react'
 import { RecurringEntries, type RecurringEntry, fmtDate } from '@/src/libs/data/AccountingV2Data'
 import { getAccounts, type Account } from '@/src/libs/data/AccountingData'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
 
 const FREQS = ['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY']
 
 export default function RecurringList() {
+  // Shown only to those the backend lets through (UAT review 2026-11-04).
+  const { data: me } = useMe()
+  const canDelete = !!me && can(me, 'accounting:recurring-entries:delete')
   const [items, setItems] = useState<RecurringEntry[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
@@ -109,12 +114,14 @@ export default function RecurringList() {
                       >
                         <Play className="w-4 h-4" />
                       </button>
-                      <button
-                        onClick={() => del(r.id)}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canDelete && (
+                        <button
+                          onClick={() => del(r.id)}
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

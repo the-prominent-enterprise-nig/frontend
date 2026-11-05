@@ -15,24 +15,26 @@ test.describe('Roles & Access — module map', () => {
       row(/^Accountant/).getByText('Accounting: All access', { exact: true })
     ).toBeVisible()
     await expect(
-      row(/^Expense Clerk/).getByText(/^Accounting: Partial \(\d+ of \d+ features\)$/)
+      row(/^Accounting Clerk - Expenses & Loans/).getByText(
+        /^Accounting: Partial \(\d+ of \d+ features\)$/
+      )
     ).toBeVisible()
     // Protected steps kept out: Cashier's POS for branch staff, the Business
-    // Owner's stock-adjustment steps for the Inventory Manager.
+    // Owner's stock-adjustment steps for the Inventory OIC.
     await expect(
       row(/^Collector/).getByText('Point of Sale: All access *', { exact: true })
     ).toBeVisible()
     await expect(
-      row(/^Inventory Manager/).getByText('Inventory: All access *', { exact: true })
+      row(/^Inventory OIC/).getByText('Inventory: All access *', { exact: true })
     ).toBeVisible()
-    // Inventory Manager's catalog access doesn't make POS "All access".
-    await expect(row(/^Inventory Manager/).getByText(/^Point of Sale: Partial/)).toBeVisible()
+    // Inventory OIC's catalog access doesn't make POS "All access".
+    await expect(row(/^Inventory OIC/).getByText(/^Point of Sale: Partial/)).toBeVisible()
     await expect(page.getByText(/: Mixed$/)).toHaveCount(0)
   })
 
   test('role editor groups resources by feature with Shared with notes', async ({ page }) => {
     await gotoReady(page, '/settings/roles')
-    const row = page.getByRole('row', { name: /^Expense Clerk/ })
+    const row = page.getByRole('row', { name: /^Accounting Clerk - Expenses & Loans/ })
     await row.getByRole('button').last().click()
     await clickStable(
       page.getByRole('link', { name: 'Manage Access' }),
@@ -73,7 +75,7 @@ test.describe('Roles & Access — module map', () => {
     // Read back only; Send Invite is never pressed, so nothing is created.
     await page
       .getByRole('paragraph')
-      .filter({ hasText: /^Finance Head$/ })
+      .filter({ hasText: /^Accounting and Finance OIC$/ })
       .click()
     const readback = page.locator('[data-role-readback]')
     await expect(readback).toContainText('Accounting: All access')

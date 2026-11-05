@@ -73,7 +73,7 @@ export default function SettlementLedger({ settlement, notes, onNotes }: Props) 
                 cell.strong ? 'text-[20px] text-[#17171c]' : 'text-[15px]'
               } ${
                 !cell.strong && (cell.value === '—' || cell.value === 'pending')
-                  ? 'text-[#8e8e9d]'
+                  ? 'text-ink-subtle'
                   : cell.strong
                     ? ''
                     : 'text-[#3d3d4a]'

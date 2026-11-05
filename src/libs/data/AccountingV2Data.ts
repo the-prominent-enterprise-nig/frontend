@@ -976,6 +976,27 @@ export interface AcknowledgementReceipt {
   /** System-generated ACK-YYYYMMDD-NNNN, set once at creation. */
   number: string | null
   payerName: string
+  /** Scenario 83 — set when this receipt acknowledges another branch's cash
+   * turnover; `reference` is the turnover slip number. */
+  turnoverLine?: {
+    id: string
+    reference: string | null
+    turnoverAcknowledgedAt?: string | null
+    acknowledgedByName?: string | null
+  } | null
+  /** With `banked: 'true'` — the posted deposits that banked it, and how
+   * much of it each took. */
+  depositAllocations?: {
+    cashAmount: string | number
+    posDeposit: {
+      id: string
+      depositDate: string
+      lines: {
+        reference: string | null
+        bankAccount: { name: string; accountNumber: string | null } | null
+      }[]
+    }
+  }[]
   /** Real GL account this receipt credits — a Chart of Accounts pick,
    * matching the client's own reference tool. Null means it fell back to
    * the MISC_COLLECTIONS mapping. */
@@ -1090,8 +1111,15 @@ export interface UpdateAcknowledgementReceiptInput {
 export const AcknowledgementReceipts = {
   /** `unbanked: 'true'` asks for only what the branch still has to bank —
    * not cancelled, not already on a deposit (Scenario 70 G11). */
-  list: (params?: { branchId?: string; unbanked?: 'true' }) =>
-    api.get<AcknowledgementReceipt[]>('/accounting/acknowledgement-receipts', params as any),
+  list: (params?: {
+    branchId?: string
+    unbanked?: 'true'
+    /** Scenario 83 — banked by a posted deposit, with those deposits. */
+    banked?: 'true'
+    /** Payment date range, YYYY-MM-DD. */
+    from?: string
+    to?: string
+  }) => api.get<AcknowledgementReceipt[]>('/accounting/acknowledgement-receipts', params as any),
   get: (id: string) =>
     api.get<AcknowledgementReceipt>(`/accounting/acknowledgement-receipts/${id}`),
   /** The form's "+ Add as new customer" — a name is all a settlement needs, so
@@ -1152,6 +1180,9 @@ export type CreditMemoType =
   | 'billing_adjustment'
   | 'goodwill'
   | 'x_deal'
+  // Waives an installment account's pending penalties; voided through
+  // PenaltyWaiverMemos.
+  | 'penalty_waiver'
   // Scenario 79 — the interest an early settlement forgives; issued with the
   // payoff from the CRM account page, voided through EarlySettlementMemos.
   | 'early_settlement'
@@ -1260,6 +1291,11 @@ export const XDealMemos = {
 /** Scenario 79 — voiding one reopens the installment account it settled. */
 export const EarlySettlementMemos = {
   void: (id: string) => api.post<CreditMemo>(`/credit-memos/early-settlement/${id}/void`, {}),
+}
+
+/** Voiding one makes the waived penalties apply again. */
+export const PenaltyWaiverMemos = {
+  void: (id: string) => api.post<CreditMemo>(`/credit-memos/penalty-waiver/${id}/void`, {}),
 }
 
 // ============ Debit Memos ============

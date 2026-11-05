@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { ChevronRight } from 'lucide-react'
 import { Controller } from 'react-hook-form'
 import type { ItemTagLabel } from '@/src/schema/inventory/items'
@@ -139,18 +140,17 @@ export function AccountField({
         name={name}
         control={control}
         render={({ field }) => (
-          <select
-            {...field}
+          <SearchableSelect
+            portal
             value={field.value != null ? String(field.value) : ''}
-            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-          >
-            <option value="">— Use default mapping —</option>
-            {filtered.map((a) => (
-              <option key={a.id} value={a.id}>
-                {(a as any).number ?? a.code} — {a.name}
-              </option>
-            ))}
-          </select>
+            onChange={field.onChange}
+            options={filtered.map((a) => ({
+              value: a.id,
+              label: `${(a as any).number ?? a.code} — ${a.name}`,
+            }))}
+            placeholder="Use default mapping"
+            clearable
+          />
         )}
       />
     </div>

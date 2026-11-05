@@ -15,7 +15,7 @@ import { PrintMemoIconButton } from './PrintMemoIconButton'
 const STATUS: Record<IdmDetail['status'], { label: string; badge: string }> = {
   DRAFT: { label: 'With accounting', badge: 'bg-[#fdf3e7] text-[#8a4b06]' },
   POSTED: { label: 'Posted', badge: 'bg-[#e7f5ef] text-[#0b6644]' },
-  VOID: { label: 'Void', badge: 'bg-[#f1f1f4] text-[#6f6f7f] line-through' },
+  VOID: { label: 'Void', badge: 'bg-[#f1f1f4] text-ink-muted line-through' },
 }
 
 export function TypeChip({ internal }: { internal: boolean }): React.JSX.Element {
@@ -46,7 +46,7 @@ function MemoNumber({ memo, canOpenMemo }: { memo: IdmDetail; canOpenMemo: boole
 
 function DrLink({ memo }: { memo: IdmDetail }) {
   if (!memo.deliveryReceipt) {
-    return <span className="text-[12px] text-[#6f6f7f]">Standalone</span>
+    return <span className="text-[12px] text-ink-muted">Standalone</span>
   }
   return (
     <Link
@@ -81,7 +81,7 @@ export function InternalMemoRow({
       <td className="px-2 py-3" />
       <td className="px-4 py-3">
         <MemoNumber memo={memo} canOpenMemo={canOpenMemo} />
-        <span className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-[#6f6f7f]">
+        <span className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-ink-muted">
           <TypeChip internal />
           {fmtDate(memo.memoDate)}
         </span>
@@ -90,7 +90,7 @@ export function InternalMemoRow({
         <span className="block truncate text-[12.5px] font-medium text-[#17171c]">
           {memo.purpose ? drPurposeLabel(memo.purpose) : 'Internal memo'}
         </span>
-        <span className="mt-0.5 block truncate text-[10.5px] text-[#6f6f7f]">
+        <span className="mt-0.5 block truncate text-[10.5px] text-ink-muted">
           {memo.branch?.name ?? '—'}
         </span>
       </td>
@@ -110,7 +110,7 @@ export function InternalMemoRow({
       <td className="whitespace-nowrap px-3 py-3">
         <StatusChip status={memo.status} />
       </td>
-      <td className="whitespace-nowrap px-3 py-3 text-right text-[11.5px] text-[#6f6f7f]">
+      <td className="whitespace-nowrap px-3 py-3 text-right text-[11.5px] text-ink-muted">
         <span className="inline-flex items-center justify-end gap-2">
           <PrintMemoIconButton kind="internal" id={memo.id} />
           {canOpenMemo ? (
@@ -146,7 +146,7 @@ export function InternalMemoCard({
             {memo.purpose ? drPurposeLabel(memo.purpose) : 'Internal memo'} ·{' '}
             {memo.deliveryReceipt?.drNumber ?? 'Standalone'}
           </span>
-          <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[#6f6f7f]">
+          <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-muted">
             <TypeChip internal />
             {fmtDate(memo.memoDate)}
           </span>

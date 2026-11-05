@@ -1,5 +1,5 @@
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { isAdmin } from '@/src/libs/guards/permission'
+import { can, isAdmin } from '@/src/libs/guards/permission'
 import { redirect } from 'next/navigation'
 import { getBranches } from '../_actions/get-branches'
 import BranchesSection from './_components/BranchesSection'
@@ -20,7 +20,10 @@ export default async function BranchesSettingsPage() {
   return (
     <div className="min-h-full bg-zinc-50 px-6 py-6">
       <div className="mx-auto max-w-7xl">
-        <BranchesSection initialBranches={branches} />
+        <BranchesSection
+          initialBranches={branches}
+          canManageBranches={can(session, 'admin:branches:manage')}
+        />
       </div>
     </div>
   )

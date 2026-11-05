@@ -74,7 +74,7 @@ function SourceCell({ entry }: { entry: StockLedgerEntry }) {
     entry.stockTransferNumber ||
     entry.supplierDebitMemoNumber
 
-  if (!hasSource) return <span className="text-[#b0b0bc]">—</span>
+  if (!hasSource) return <span className="text-ink-faint">—</span>
 
   // min-w-0 on the flex column — without it a nowrap/truncate child can't
   // shrink below its own text width inside a flex container, so a long
@@ -91,7 +91,7 @@ function SourceCell({ entry }: { entry: StockLedgerEntry }) {
             {entry.stockTransferNumber}
           </Link>
           {entry.transferWarehouse && (
-            <p className="truncate text-[13px] text-[#6f6f7f]">
+            <p className="truncate text-[13px] text-ink-muted">
               {entry.transactionType === 'transfer_out' ? 'to ' : 'from '}
               {entry.transferWarehouse.branch?.name ?? entry.transferWarehouse.name}
             </p>
@@ -99,7 +99,7 @@ function SourceCell({ entry }: { entry: StockLedgerEntry }) {
         </>
       )}
       {entry.supplierDebitMemoNumber && (
-        <p className={`${MONO} truncate text-[13px] text-[#8e8e9d]`} title="Supplier debit memo">
+        <p className={`${MONO} truncate text-[13px] text-ink-subtle`} title="Supplier debit memo">
           DM {entry.supplierDebitMemoNumber}
         </p>
       )}
@@ -124,25 +124,25 @@ function SourceCell({ entry }: { entry: StockLedgerEntry }) {
               ? `/inventory/purchase-orders?tab=orders&po=${entry.purchaseOrderId}`
               : '/inventory/purchase-orders?tab=orders'
           }
-          className={`${MONO} truncate text-[13px] text-[#6f6f7f] hover:text-[#5b21b6] hover:underline`}
+          className={`${MONO} truncate text-[13px] text-ink-muted hover:text-[#5b21b6] hover:underline`}
           title="Purchase order"
         >
           {entry.purchaseOrderNumber}
         </Link>
       )}
       {entry.supplier?.name && (
-        <p className="truncate text-[13px] text-[#6f6f7f]" title={entry.supplier.name}>
+        <p className="truncate text-[13px] text-ink-muted" title={entry.supplier.name}>
           {entry.supplier.name}
         </p>
       )}
       {entry.supplierInvoiceNumber && (
-        <p className={`${MONO} truncate text-[13px] text-[#8e8e9d]`} title="Supplier invoice">
+        <p className={`${MONO} truncate text-[13px] text-ink-subtle`} title="Supplier invoice">
           SI {entry.supplierInvoiceNumber}
         </p>
       )}
       {entry.deliveryReceiptNumber && (
         <p
-          className={`${MONO} truncate text-[13px] text-[#8e8e9d]`}
+          className={`${MONO} truncate text-[13px] text-ink-subtle`}
           title="Supplier's delivery receipt"
         >
           DR {entry.deliveryReceiptNumber}
@@ -254,14 +254,14 @@ export default function StockLedgerTab({
             searchFocus ? CONTROL_CHROME.focused : CONTROL_CHROME.idle
           }`}
         >
-          <Search className="h-3.25 w-3.25 shrink-0 text-[#6f6f7f]" />
+          <Search className="h-3.25 w-3.25 shrink-0 text-ink-muted" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onFocus={() => setSearchFocus(true)}
             onBlur={() => setSearchFocus(false)}
             placeholder="Search unit, brand, model, category, RR, ST, SI or DR…"
-            className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-[#a3a3b2]"
+            className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-ink-faint"
           />
           {search !== '' && (
             <Tooltip label="Clear search" side="bottom" align="end">
@@ -269,7 +269,7 @@ export default function StockLedgerTab({
                 type="button"
                 onClick={() => setSearch('')}
                 aria-label="Clear search"
-                className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-[#6f6f7f] hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
+                className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-ink-muted hover:bg-[#f1f1f4] hover:text-[#3d3d4a]"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -296,7 +296,7 @@ export default function StockLedgerTab({
             onChange={(e) => setStartDate(e.target.value || undefined)}
             className={`rounded-lg border bg-white px-3 py-[8px] text-[13px] text-[#17171c] outline-none transition-colors ${CONTROL_CHROME.idle} focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]`}
           />
-          <span className="text-[12px] text-[#8e8e9d]">–</span>
+          <span className="text-[12px] text-ink-subtle">–</span>
           <input
             type="date"
             value={endDate ?? ''}
@@ -306,7 +306,7 @@ export default function StockLedgerTab({
         </div>
 
         {isFetching && !isLoading && (
-          <RefreshCw className="h-3.5 w-3.5 animate-spin text-[#8e8e9d]" />
+          <RefreshCw className="h-3.5 w-3.5 animate-spin text-ink-subtle" />
         )}
 
         {hasFilters && (
@@ -327,7 +327,7 @@ export default function StockLedgerTab({
         {isLoading ? (
           <div>
             <div
-              className={`${MONO} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-[#6f6f7f] sm:flex sm:gap-4`}
+              className={`${MONO} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] text-[10px] uppercase tracking-[.09em] text-ink-muted sm:flex sm:gap-4`}
             >
               <span className="w-20">Type</span>
               <span className="flex-1">Item</span>
@@ -352,7 +352,7 @@ export default function StockLedgerTab({
         ) : isNoResults ? (
           hasFilters ? (
             <div className="flex flex-col items-center gap-2 px-6 py-11 text-center">
-              <BookOpen className="h-[30px] w-[30px] text-[#b0b0bc]" />
+              <BookOpen className="h-[30px] w-[30px] text-ink-faint" />
               <div className="mt-1 text-[14px] font-semibold">No movements match</div>
               <div className="max-w-[420px] text-[12.5px] leading-[1.55] text-[#4b4b5a]">
                 {search
@@ -385,7 +385,7 @@ export default function StockLedgerTab({
               <table className="w-full table-fixed text-left text-sm">
                 <thead>
                   <tr
-                    className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[12px] uppercase tracking-[.09em] text-[#6f6f7f]`}
+                    className={`${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] text-[12px] uppercase tracking-[.09em] text-ink-muted`}
                   >
                     <th className="w-[120px] px-4 py-[9px] font-medium">Type</th>
                     <th className="w-[320px] px-4 py-[9px] font-medium">Item</th>
@@ -421,13 +421,13 @@ export default function StockLedgerTab({
                             {entry.item?.name ?? '—'}
                           </p>
                           {entry.item?.sku && (
-                            <p className={`${MONO} truncate text-[13px] text-[#8e8e9d]`}>
+                            <p className={`${MONO} truncate text-[13px] text-ink-subtle`}>
                               {entry.item.sku}
                             </p>
                           )}
                           {entry.serialNumber && (
                             <p
-                              className={`${MONO} truncate text-[13px] text-[#6f6f7f]`}
+                              className={`${MONO} truncate text-[13px] text-ink-muted`}
                               title="Serial number"
                             >
                               SN {entry.serialNumber}
@@ -455,7 +455,7 @@ export default function StockLedgerTab({
                           </span>
                         </td>
                         <td
-                          className={`${MONO} hidden px-4 py-[11px] text-[13.5px] text-[#6f6f7f] md:table-cell`}
+                          className={`${MONO} hidden px-4 py-[11px] text-[13.5px] text-ink-muted md:table-cell`}
                         >
                           {date
                             ? new Date(date).toLocaleDateString('en-PH', {
@@ -476,12 +476,12 @@ export default function StockLedgerTab({
 
             {/* Pagination */}
             <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
-              <span className="text-[11.5px] text-[#6f6f7f]">
+              <span className="text-[11.5px] text-ink-muted">
                 Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of{' '}
                 {total.toLocaleString()} movements
               </span>
               <div className="flex items-center gap-[10px]">
-                <span className="text-[11.5px] text-[#6f6f7f]">Rows</span>
+                <span className="text-[11.5px] text-ink-muted">Rows</span>
                 <select
                   value={limit}
                   onChange={(e) => setLimit(Number(e.target.value))}
@@ -496,7 +496,7 @@ export default function StockLedgerTab({
                     type="button"
                     onClick={() => setPage(Math.max(1, page - 1))}
                     disabled={page <= 1}
-                    className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-[#a3a3b2]"
+                    className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-ink-faint"
                   >
                     Previous
                   </button>
@@ -504,7 +504,7 @@ export default function StockLedgerTab({
                     type="button"
                     onClick={() => setPage(Math.min(totalPages, page + 1))}
                     disabled={page >= totalPages}
-                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-[#a3a3b2]"
+                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-ink-faint"
                   >
                     Next
                   </button>

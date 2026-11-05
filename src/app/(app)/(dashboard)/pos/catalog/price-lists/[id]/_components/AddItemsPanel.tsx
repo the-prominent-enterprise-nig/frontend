@@ -143,7 +143,7 @@ export function AddItemsPanel({ onAdd, isAdding }: Props) {
           Search items to add
         </label>
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f6f7f]" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
           <input
             id="add-items-search"
             type="text"
@@ -160,11 +160,11 @@ export function AddItemsPanel({ onAdd, isAdding }: Props) {
         {showResults && (
           <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-[#e4e4e9] bg-white shadow-lg">
             {isSearching ? (
-              <div className="flex items-center justify-center py-4 text-[#6f6f7f]">
+              <div className="flex items-center justify-center py-4 text-ink-muted">
                 <Loader2 className="h-4 w-4 animate-spin" />
               </div>
             ) : visibleResults.length === 0 ? (
-              <div className="px-4 py-3 text-sm text-[#6f6f7f]">No items found</div>
+              <div className="px-4 py-3 text-sm text-ink-muted">No items found</div>
             ) : (
               visibleResults.map((item) => (
                 <button
@@ -174,7 +174,7 @@ export function AddItemsPanel({ onAdd, isAdding }: Props) {
                   className="flex w-full items-center justify-between px-4 py-2 text-left text-sm hover:bg-[#f1ebfb]"
                 >
                   <span className="font-medium text-[#3d3d4a]">{item.name}</span>
-                  <span className="text-xs text-[#6f6f7f]">{item.sku}</span>
+                  <span className="text-xs text-ink-muted">{item.sku}</span>
                 </button>
               ))
             )}
@@ -184,7 +184,7 @@ export function AddItemsPanel({ onAdd, isAdding }: Props) {
           <button
             type="button"
             onClick={() => setShowResults(false)}
-            className="absolute right-2 top-8 rounded p-1 text-[#6f6f7f] hover:bg-[#f1f1f4]"
+            className="absolute right-2 top-8 rounded p-1 text-ink-muted hover:bg-[#f1f1f4]"
             title="Close search"
           >
             <X className="h-3.5 w-3.5" />
@@ -245,7 +245,7 @@ export function AddItemsPanel({ onAdd, isAdding }: Props) {
                 <tr className="bg-[#fbfbfc]">
                   <td className="px-3 py-2">
                     <p className="text-xs font-medium text-[#3d3d4a]">Apply to all</p>
-                    <p className="text-[11px] leading-snug text-[#6f6f7f]">Fills every row below</p>
+                    <p className="text-[11px] leading-snug text-ink-muted">Fills every row below</p>
                   </td>
                   {columns.map((col) => (
                     <td key={col.key} className="px-3 py-2">
@@ -289,7 +289,7 @@ export function AddItemsPanel({ onAdd, isAdding }: Props) {
                       >
                         {item.name}
                       </p>
-                      <p className={`${MONO} mt-0.5 text-[10.5px] text-[#6f6f7f]`}>{item.sku}</p>
+                      <p className={`${MONO} mt-0.5 text-[10.5px] text-ink-muted`}>{item.sku}</p>
                     </td>
                     {columns.map((col) => (
                       <td key={col.key} className="px-3 py-2.5">
@@ -311,7 +311,7 @@ export function AddItemsPanel({ onAdd, isAdding }: Props) {
                         onClick={() => unstageItem(item.itemId)}
                         aria-label={`Remove ${item.name} from batch`}
                         title="Remove from batch"
-                        className="rounded-lg p-1.5 text-[#6f6f7f] hover:bg-[#fdeceb] hover:text-[#b42318]"
+                        className="rounded-lg p-1.5 text-ink-muted hover:bg-[#fdeceb] hover:text-[#b42318]"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>

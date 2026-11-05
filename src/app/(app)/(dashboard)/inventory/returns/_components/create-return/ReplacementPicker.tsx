@@ -77,7 +77,7 @@ export default function ReplacementPicker({
                   </option>
                 ))}
               </select>
-              <span className={`${MONO} text-[10px] text-[#6f6f7f]`}>
+              <span className={`${MONO} text-[10px] text-ink-muted`}>
                 {units.length} available here
               </span>
             </>
@@ -88,7 +88,7 @@ export default function ReplacementPicker({
           <span className={LABEL}>Difference</span>
           <span
             className={`${MONO} text-[14px] font-semibold ${
-              serialTracked && !value ? 'text-[#8e8e9d]' : 'text-[#17171c]'
+              serialTracked && !value ? 'text-ink-subtle' : 'text-[#17171c]'
             }`}
           >
             {serialTracked && !value ? '—' : 'Even swap'}

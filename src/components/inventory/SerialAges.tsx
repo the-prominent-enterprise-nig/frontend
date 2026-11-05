@@ -14,7 +14,7 @@ type Props = {
  * moved since it was received; for one that never left, both read the same.
  */
 export function SerialAges({ firstReceivedAt, locationSince, inline }: Props) {
-  if (!firstReceivedAt && !locationSince) return <span className="text-[#b0b0bc]">—</span>
+  if (!firstReceivedAt && !locationSince) return <span className="text-ink-faint">—</span>
   const rr = firstReceivedAt ? formatAge(firstReceivedAt) : '—'
   const branch = locationSince ? formatAge(locationSince) : '—'
   if (inline) {
@@ -27,10 +27,10 @@ export function SerialAges({ firstReceivedAt, locationSince, inline }: Props) {
   return (
     <span className="flex flex-col leading-tight">
       <span>
-        <span className="text-[#8e8e9d]">RR</span> {rr}
+        <span className="text-ink-subtle">RR</span> {rr}
       </span>
       <span>
-        <span className="text-[#8e8e9d]">Branch</span> {branch}
+        <span className="text-ink-subtle">Branch</span> {branch}
       </span>
     </span>
   )

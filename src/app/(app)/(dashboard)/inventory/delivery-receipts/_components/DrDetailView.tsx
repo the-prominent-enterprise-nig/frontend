@@ -85,7 +85,7 @@ export default function DrDetailView({
           <Pair label="DR no." value={dr.drNumber} mono />
           {config.withDebitMemo && (
             <div>
-              <dt className="text-[11.5px] text-[#6f6f7f]">Debit memo no.</dt>
+              <dt className="text-[11.5px] text-ink-muted">Debit memo no.</dt>
               <dd className={`mt-0.5 text-[13px] ${MONO}`}>
                 {memo && memoHref ? (
                   <Link href={memoHref} className="font-medium text-[#3f1490] hover:underline">
@@ -181,7 +181,7 @@ function Pair({
 }): React.JSX.Element {
   return (
     <div className={wide ? 'sm:col-span-2' : ''}>
-      <dt className="text-[11.5px] text-[#6f6f7f]">{label}</dt>
+      <dt className="text-[11.5px] text-ink-muted">{label}</dt>
       <dd className={`mt-0.5 text-[13px] text-[#17171c] ${mono ? MONO : ''}`}>{value || '—'}</dd>
     </div>
   )
@@ -191,7 +191,7 @@ function ItemsTable({ dr }: { dr: DrDetail }): React.JSX.Element {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[560px] text-left text-[13px]">
-        <thead className="border-b border-[#eeeef1] text-[11px] uppercase tracking-[.06em] text-[#6f6f7f]">
+        <thead className="border-b border-[#eeeef1] text-[11px] uppercase tracking-[.06em] text-ink-muted">
           <tr>
             <th className="py-2 pr-3 font-medium">Model</th>
             <th className="py-2 pr-3 font-medium">Brand</th>
@@ -206,7 +206,7 @@ function ItemsTable({ dr }: { dr: DrDetail }): React.JSX.Element {
               <td className="py-2.5 pr-3">
                 {l.item.name}
                 {l.item.modelNumber && (
-                  <span className="block text-[11px] text-[#6f6f7f]">{l.item.modelNumber}</span>
+                  <span className="block text-[11px] text-ink-muted">{l.item.modelNumber}</span>
                 )}
               </td>
               <td className="py-2.5 pr-3 text-[#4b4b5a]">{l.item.brand?.name ?? '—'}</td>

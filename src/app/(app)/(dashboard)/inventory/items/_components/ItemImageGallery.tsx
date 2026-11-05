@@ -12,6 +12,8 @@ import {
   uploadItemFile,
   type ItemImage,
 } from '../_actions/item-images'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
 
 interface Props {
   itemId: string
@@ -29,7 +31,8 @@ function Thumbnail({
 }: {
   image: ItemImage
   onSetPrimary: () => void
-  onDelete: () => void
+  /** Absent when the user may not remove images: no button. */
+  onDelete?: () => void
   isPending: boolean
 }) {
   const [imgError, setImgError] = useState(false)
@@ -67,15 +70,17 @@ function Thumbnail({
             Set Primary
           </button>
         )}
-        <button
-          type="button"
-          onClick={onDelete}
-          disabled={isPending}
-          className="rounded-lg bg-red-600 p-1.5 text-white shadow hover:bg-red-700 disabled:opacity-50"
-          aria-label="Remove image"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        {onDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={isPending}
+            className="rounded-lg bg-red-600 p-1.5 text-white shadow hover:bg-red-700 disabled:opacity-50"
+            aria-label="Remove image"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
       {isPending && (
@@ -88,6 +93,10 @@ function Thumbnail({
 }
 
 export default function ItemImageGallery({ itemId }: Props) {
+  // Removing an image takes inventory:items:update on the backend (UAT review
+  // 2026-11-04: the button showed to everyone).
+  const { data: me } = useMe()
+  const canUpdate = !!me && can(me, 'inventory:items:update')
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
@@ -183,7 +192,7 @@ export default function ItemImageGallery({ itemId }: Props) {
             key={img.id}
             image={img}
             onSetPrimary={() => handleSetPrimary(img.id)}
-            onDelete={() => handleDelete(img.id)}
+            onDelete={canUpdate ? () => handleDelete(img.id) : undefined}
             isPending={pendingImageId === img.id}
           />
         ))}

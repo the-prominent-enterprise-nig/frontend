@@ -47,7 +47,7 @@ export default function OpenTransfersSection({ itemId }: { itemId: string }) {
   return (
     <div className="space-y-1.5" data-testid="open-transfers">
       <p
-        className={`${MONO} text-[10.5px] font-semibold tracking-[.08em] text-[#6f6f7f] uppercase`}
+        className={`${MONO} text-[10.5px] font-semibold tracking-[.08em] text-ink-muted uppercase`}
       >
         Open transfers · {open.length}
       </p>
@@ -80,7 +80,7 @@ function OpenTransferRow({
       <StatusChip status={transfer.status} />
       <span className="flex items-center gap-1 text-[#3d3d4a]">
         {branchLabel(transfer.fromWarehouse)}
-        <ArrowRight className="h-3 w-3 text-[#8e8e9d]" />
+        <ArrowRight className="h-3 w-3 text-ink-subtle" />
         {branchLabel(transfer.toWarehouse)}
       </span>
       <span className="text-[#4b4b5a]">
@@ -88,7 +88,7 @@ function OpenTransferRow({
         {qty === 1 ? 'unit' : 'units'}
         {serials.length > 0 && <span className={MONO}> · {serials.join(', ')}</span>}
       </span>
-      <span className="ml-auto text-[11px] text-[#6f6f7f]">
+      <span className="ml-auto text-[11px] text-ink-muted">
         {transfer.transferDate ? formatShortDate(transfer.transferDate) : ''}
       </span>
     </Link>

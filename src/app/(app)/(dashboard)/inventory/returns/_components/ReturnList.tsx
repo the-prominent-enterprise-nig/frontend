@@ -300,7 +300,7 @@ export default function ReturnList({ session }: { session: SessionUser }) {
 
   return (
     <div className="w-full min-h-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
-      <div className="mx-auto max-w-7xl space-y-5">
+      <div className="mx-auto max-w-[1520px] space-y-5">
         {/* Header */}
         {/* Header chrome — sizes, weights and the #5b21b6 primary — is shared
             with Stock Transfers next door, so the two inventory movement

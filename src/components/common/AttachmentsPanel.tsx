@@ -7,6 +7,8 @@ import { FileAttachments } from '@/src/libs/data/AccountingV2Data'
 import { uploadFile } from '@/src/libs/files/upload-file'
 import { showToast } from '@/src/components/ui/toast'
 import { ConfirmDialog } from '@/src/components/ui/Modal'
+import { useMe } from '@/src/hooks/useMe'
+import { can } from '@/src/libs/guards/permission'
 
 // A hint to the file picker, not a rule: POST /files/upload accepts any mime
 // type and only enforces MAX_FILE_SIZE_BYTES (10MB by default).
@@ -47,6 +49,8 @@ export default function AttachmentsPanel({
   onStagedChange,
   onChanged,
 }: Props): React.JSX.Element {
+  const { data: me } = useMe()
+  const canDetach = !!me && can(me, 'files:attachments:delete')
   const [uploading, setUploading] = useState(false)
   const [detaching, setDetaching] = useState<{ id: string; name: string } | null>(null)
   const [removing, setRemoving] = useState(false)
@@ -102,12 +106,15 @@ export default function AttachmentsPanel({
         name: file.name,
         href: undefined,
         onRemove: () => onStagedChange?.(staged.filter((_, j) => j !== i)),
+        removable: true,
       }))
     : attachments.map((a) => ({
         key: a.id,
         name: a.file.originalName,
         href: `/api/files/${a.file.id}/download`,
         onRemove: () => setDetaching({ id: a.id, name: a.file.originalName }),
+        // Removing a saved attachment takes files:attachments:delete.
+        removable: canDetach,
       }))
 
   return (
@@ -189,7 +196,7 @@ export default function AttachmentsPanel({
                   <span className="shrink-0 text-zinc-400">(pending save)</span>
                 </span>
               )}
-              {!readOnly && canRemove && (
+              {!readOnly && canRemove && row.removable && (
                 <button
                   type="button"
                   onClick={row.onRemove}

@@ -121,7 +121,7 @@ export default function ManageCategoriesDrawer({
           >
             {title}
           </span>
-          <span className="text-[11px] text-[#6f6f7f]">{note}</span>
+          <span className="text-[11px] text-ink-muted">{note}</span>
         </div>
         {types.map((type) => {
           const used = usageCount(type)
@@ -146,10 +146,10 @@ export default function ManageCategoriesDrawer({
 
               <div className="flex shrink-0 items-center gap-3">
                 <div role="cell" className="text-right">
-                  <p className={`${MONO} text-xs ${used ? 'text-[#3d3d4a]' : 'text-[#6f6f7f]'}`}>
+                  <p className={`${MONO} text-xs ${used ? 'text-[#3d3d4a]' : 'text-ink-muted'}`}>
                     {used ? `${used} list${used === 1 ? '' : 's'}` : 'Unused'}
                   </p>
-                  <p className="text-[11px] text-[#6f6f7f]">
+                  <p className="text-[11px] text-ink-muted">
                     {used ? 'priced under it' : 'no price lists'}
                   </p>
                 </div>
@@ -210,7 +210,7 @@ export default function ManageCategoriesDrawer({
                         onClick={() => setDeletingType(type)}
                         className={`rounded-lg border p-1.5 ${
                           used
-                            ? 'border-[#e4e4e9] text-[#b0b0bc]'
+                            ? 'border-[#e4e4e9] text-ink-faint'
                             : 'border-[#f3c9c5] text-[#b42318] hover:bg-[#fdeceb]'
                         }`}
                       >
@@ -245,7 +245,7 @@ export default function ManageCategoriesDrawer({
 
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-[200px] flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#6f6f7f]" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
               <input
                 type="text"
                 value={search}
@@ -287,21 +287,21 @@ export default function ManageCategoriesDrawer({
             className={`space-y-3 transition-opacity ${isFetching ? 'opacity-60' : ''}`}
           >
             {isLoading ? (
-              <div className="rounded-xl border border-[#e4e4e9] bg-white p-8 text-center text-sm text-[#6f6f7f]">
+              <div className="rounded-xl border border-[#e4e4e9] bg-white p-8 text-center text-sm text-ink-muted">
                 Loading price use types…
               </div>
             ) : priceUseTypes.length === 0 ? (
               <div className="flex flex-col items-center justify-center rounded-xl border border-[#e4e4e9] bg-white py-16">
-                <Tags className="mb-3 h-10 w-10 text-[#b0b0bc]" />
+                <Tags className="mb-3 h-10 w-10 text-ink-faint" />
                 <p className="text-sm font-medium text-[#4b4b5a]">No price use types yet</p>
                 {canManage && (
-                  <p className="mt-1 text-xs text-[#6f6f7f]">
+                  <p className="mt-1 text-xs text-ink-muted">
                     Create one to start categorizing price lists, e.g. WIP, CR-BR, SSC.
                   </p>
                 )}
               </div>
             ) : visible.length === 0 ? (
-              <div className="rounded-xl border border-[#e4e4e9] bg-white py-12 text-center text-sm text-[#6f6f7f]">
+              <div className="rounded-xl border border-[#e4e4e9] bg-white py-12 text-center text-sm text-ink-muted">
                 No price use type matches “{search}”.
               </div>
             ) : (

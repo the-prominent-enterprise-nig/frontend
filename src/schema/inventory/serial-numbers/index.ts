@@ -13,6 +13,9 @@ export const SerialStatusSchema = z.enum([
   'pulled_out',
   'lost_in_transit',
   'in_transit',
+  // Scenario 72 — left on a posted Delivery Receipt (raffle prize, giveaway,
+  // office use, …). Gone for good, like sold, but without a sale.
+  'issued',
 ])
 export type SerialStatus = z.infer<typeof SerialStatusSchema>
 
@@ -27,6 +30,7 @@ export const SERIAL_STATUS_LABELS: Record<SerialStatus, string> = {
   pulled_out: 'Pulled Out',
   lost_in_transit: 'Lost in Transit',
   in_transit: 'In Transit',
+  issued: 'Issued',
 }
 
 /**
@@ -38,7 +42,7 @@ export const SERIAL_STATUS_FILTER_GROUPS: { group: string; statuses: SerialStatu
   { group: 'On hand', statuses: ['in_stock', 'held'] },
   { group: 'Moving', statuses: ['in_transit'] },
   { group: 'Service', statuses: ['in_repair', 'defective', 'pulled_out'] },
-  { group: 'Gone', statuses: ['sold', 'scrapped', 'lost_in_transit'] },
+  { group: 'Gone', statuses: ['sold', 'issued', 'scrapped', 'lost_in_transit'] },
 ]
 
 export const SERIAL_STATUS_COLORS: Record<SerialStatus, string> = {
@@ -54,6 +58,7 @@ export const SERIAL_STATUS_COLORS: Record<SerialStatus, string> = {
   pulled_out: 'bg-purple-100 text-purple-700',
   lost_in_transit: 'bg-pink-100 text-pink-700',
   in_transit: 'bg-sky-100 text-sky-700',
+  issued: 'bg-indigo-100 text-indigo-700',
 }
 
 // The leading dot the Serial Numbers tab's pill badges use — kept separate
@@ -70,6 +75,7 @@ export const SERIAL_STATUS_DOT_COLORS: Record<SerialStatus, string> = {
   pulled_out: 'bg-purple-500',
   lost_in_transit: 'bg-pink-500',
   in_transit: 'bg-sky-500',
+  issued: 'bg-indigo-500',
 }
 
 // Statuses that mean this specific unit should not be sold as-is — the
@@ -302,6 +308,8 @@ export const SerialMovementTypeSchema = z.enum([
   'service',
   // Each step of a repair (UDS) the unit went through.
   'uds',
+  // Left on a posted Delivery Receipt (NIG #8).
+  'delivery_receipt',
 ])
 export type SerialMovementType = z.infer<typeof SerialMovementTypeSchema>
 
