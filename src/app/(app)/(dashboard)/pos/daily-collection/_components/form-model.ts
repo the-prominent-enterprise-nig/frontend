@@ -31,6 +31,23 @@ function formKind(row: DailyCollectionRow): string {
   return row.kind === 'MI-PARTIAL' ? 'MI' : row.kind
 }
 
+/** A tender key as the short mode the client's form uses — CASH, CHECK, GCASH,
+ * MAYA, CARD-BDO, or a bank by name. Same naming as the backend's `tenderLine`
+ * (daily-collection.form-sheet.ts), plus CASH for drawer money. */
+export function tenderModeLabel(tender: string): string {
+  const [method = '', ...rest] = tender.split('::')
+  const name = rest.join('::').trim().toUpperCase()
+  if (method === 'cash' || method === 'custom') return 'CASH'
+  if (method === 'check' || method === 'cheque') return 'CHECK'
+  if (method === 'card') return name ? `CARD-${name}` : 'CARD'
+  if (method === 'bank_transfer') return name || 'BANK'
+  if (method === 'qr' || method === 'gcash' || method === 'maya') {
+    const label = name || (method === 'maya' ? 'MAYA' : 'GCASH')
+    return label === 'SOUNDPAY' ? 'GCASH' : label
+  }
+  return method.toUpperCase()
+}
+
 export function peso(amount: number): string {
   return Number(amount ?? 0).toLocaleString('en-PH', {
     minimumFractionDigits: 2,
@@ -52,6 +69,9 @@ export interface FormLine {
   si: string
   customer: string
   desc: string
+  /** How the customer paid — CASH, CARD-BDO. Empty on a credit line and
+   * on a cancelled receipt. */
+  mode: string
   office: string
   field: string
   others: string
@@ -101,6 +121,7 @@ function collectionLines(report: DailyCollectionReport): {
       si: r.siNumber ?? '',
       customer: r.customerName,
       desc: formKind(r),
+      mode: r.cancelled ? '' : tenderModeLabel(r.tender),
       // Three separate facts under CASH RECEIPT: the booklet number, who
       // collected it in the field, and — under OTHERS — when the cash is in
       // another drawer, the counter that took it. These used to be one receipt number routed into
@@ -129,6 +150,7 @@ function collectionLines(report: DailyCollectionReport): {
       si: '',
       customer: `Turnover in from ${t.fromName}`,
       desc: 'TURNOVER',
+      mode: 'CASH',
       office: t.reference ?? '',
       field: '',
       others: '',
@@ -219,6 +241,7 @@ function creditLine(label: string, text: string, credit: number, balance: number
     si: '',
     customer: text.toUpperCase(),
     desc: '',
+    mode: '',
     office: '',
     field: '',
     others: '',
