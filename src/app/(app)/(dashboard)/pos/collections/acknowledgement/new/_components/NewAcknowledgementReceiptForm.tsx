@@ -8,7 +8,6 @@ import { ArrowLeft } from 'lucide-react'
 import {
   AcknowledgementReceipts,
   BankAccounts,
-  ClearingSettlements,
   fmtMoney,
   type BankAccountOption,
 } from '@/src/libs/data/AccountingV2Data'
@@ -127,7 +126,6 @@ export default function NewAcknowledgementReceiptForm({
     reference: '',
     bankAccountId: '',
     receivedInAccountId: '',
-    tpfProviderId: '',
     reason: '',
     receiptType: 'ACKNOWLEDGEMENT' as 'COLLECTION' | 'ACKNOWLEDGEMENT',
     clearedType: 'SAME_DATE' as ClearedType,
@@ -139,23 +137,25 @@ export default function NewAcknowledgementReceiptForm({
     withholding: '',
     withholdingAccountId: '',
   })
+  // Who paid: a customer (picked, so the receipt credits their Accounts
+  // Receivable) or someone who is not a customer (just a name — the money is
+  // held in Other / Miscellaneous Collections and touches no customer ledger).
+  const [payerKind, setPayerKind] = useState<'CUSTOMER' | 'NON_CUSTOMER'>('CUSTOMER')
   const [customer, setCustomer] = useState<PickedCustomer | null>(null)
+  const [payerName, setPayerName] = useState('')
   const [invoice, setInvoice] = useState<PickedInvoice | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([])
   const [accountOptions, setAccountOptions] = useState<CategorySelectOption[]>([])
-  const [tpfProviders, setTpfProviders] = useState<{ id: string; name: string }[]>([])
   useEffect(() => {
     BankAccounts.options().then((res) => setBankAccounts(res.data ?? []))
-    ClearingSettlements.activeTpfProviders().then((res) => setTpfProviders(res.data ?? []))
     getAccountOptions().then((res) => {
       const list = ((res.data as any)?.items ?? res.data ?? []) as Account[]
       setAccountOptions(accountsToCategoryOptions(list))
     })
   }, [])
 
-  const partner = tpfProviders.find((p) => p.id === form.tpfProviderId) ?? null
   const gross = toAmount(form.gross)
   const subsidy = toAmount(form.subsidy)
   const withholding = toAmount(form.withholding)
@@ -184,13 +184,8 @@ export default function NewAcknowledgementReceiptForm({
     subsidyAccountLabel: accountLabel(form.subsidyAccountId),
     withholdingAccountLabel: accountLabel(form.withholdingAccountId),
     // With a customer the gross credits Accounts Receivable, which is what puts
-    // it on their ledger and in AR Aging. A financing partner's settlement is
-    // owed by the partner instead, so it credits the partner's receivable.
-    creditAccountLabel: partner
-      ? `AR - Third-Party Financing - ${partner.name}`
-      : customer
-        ? 'Accounts Receivable (customer ledger)'
-        : null,
+    // it on their ledger and in AR Aging.
+    creditAccountLabel: customer ? 'Accounts Receivable (customer ledger)' : null,
   })
 
   const changeCustomer = (next: PickedCustomer | null) => {
@@ -200,11 +195,26 @@ export default function NewAcknowledgementReceiptForm({
     setCustomer(next)
   }
 
+  const changePayerKind = (next: 'CUSTOMER' | 'NON_CUSTOMER') => {
+    if (next === payerKind) return
+    // Each kind keeps nothing of the other: a customer's invoice no longer
+    // belongs once there is no customer, and a typed name is not a customer.
+    if (invoice?.id) setInvoice(null)
+    setCustomer(null)
+    setPayerName('')
+    setPayerKind(next)
+  }
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    if (!customer) {
+    const nonCustomerName = payerName.trim()
+    if (payerKind === 'CUSTOMER' && !customer) {
       setError('Pick a customer, or add a new one.')
+      return
+    }
+    if (payerKind === 'NON_CUSTOMER' && !nonCustomerName) {
+      setError('Enter who paid.')
       return
     }
     if (!(gross > 0)) {
@@ -235,13 +245,12 @@ export default function NewAcknowledgementReceiptForm({
       branchId: restrictedBranchId ?? (form.branchId || undefined),
       paymentDate: form.paymentDate,
       reference: form.reference || undefined,
-      payerName: customer.name,
-      customerId: customer.id,
+      payerName: payerKind === 'CUSTOMER' ? customer!.name : nonCustomerName,
+      customerId: payerKind === 'CUSTOMER' ? customer!.id : undefined,
       invoiceNo: invoice?.number || undefined,
       arInvoiceId: invoice?.id || undefined,
       bankAccountId: form.bankAccountId || undefined,
       receivedInAccountId: form.receivedInAccountId || undefined,
-      tpfProviderId: form.tpfProviderId || undefined,
       reason: form.reason || undefined,
       clearedType: form.clearedType,
       clearedDate: form.clearedType === 'SAME_DATE' ? undefined : form.clearedDate || undefined,
@@ -274,9 +283,9 @@ export default function NewAcknowledgementReceiptForm({
         New {form.receiptType === 'COLLECTION' ? 'Collection' : 'Acknowledgement'} Receipt
       </h1>
       <p className="mt-1 text-sm text-gray-500">
-        Record money received for a customer&apos;s sale — gross, less any subsidy, plus any
-        withholding tax, with the net that reached the bank. Receipts from earlier dates can be
-        recorded too.
+        Record money received — for a customer&apos;s sale, or from someone who is not a customer —
+        gross, less any subsidy, plus any withholding tax, with the net that reached the bank.
+        Receipts from earlier dates can be recorded too.
       </p>
 
       <form
@@ -374,31 +383,49 @@ export default function NewAcknowledgementReceiptForm({
           </Field>
         </div>
 
+        <Field
+          label="Payer"
+          hint={
+            payerKind === 'NON_CUSTOMER'
+              ? "For money from someone who is not a customer. It is not on any customer's ledger or in AR Aging."
+              : undefined
+          }
+        >
+          <SegmentedControl
+            name="Payer"
+            value={payerKind}
+            onChange={changePayerKind}
+            options={[
+              { value: 'CUSTOMER', label: 'Customer' },
+              { value: 'NON_CUSTOMER', label: 'Non-customer' },
+            ]}
+          />
+        </Field>
+
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <span className="mb-1 block text-xs font-medium text-gray-800">
-              Customer <span className="text-red-600">*</span>
-            </span>
-            <CustomerField value={customer} onChange={changeCustomer} />
-          </div>
+          {payerKind === 'CUSTOMER' ? (
+            <div>
+              <span className="mb-1 block text-xs font-medium text-gray-800">
+                Customer <span className="text-red-600">*</span>
+              </span>
+              <CustomerField value={customer} onChange={changeCustomer} />
+            </div>
+          ) : (
+            <Field label="Payer name" required>
+              <input
+                value={payerName}
+                maxLength={255}
+                onChange={(e) => setPayerName(e.target.value)}
+                placeholder="Who paid"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              />
+            </Field>
+          )}
           <div>
             <span className="mb-1 block text-xs font-medium text-gray-800">Sales Invoice No.</span>
             <InvoiceField customer={customer} value={invoice} onChange={setInvoice} />
           </div>
         </div>
-
-        <Field
-          label="Financing partner"
-          hint="Pick the third-party financer (Tonik, Salmon, Skyro…) when it paid this one. The money then clears that partner's receivable instead of the customer's, and stays off the customer's ledger. Leave empty when the customer paid."
-        >
-          <SearchableSelect
-            value={form.tpfProviderId}
-            onChange={(value) => setForm({ ...form, tpfProviderId: value })}
-            options={tpfProviders.map((p) => ({ value: p.id, label: p.name }))}
-            placeholder="— Paid by the customer —"
-            clearable
-          />
-        </Field>
 
         <Field
           label="Received in"
@@ -447,11 +474,9 @@ export default function NewAcknowledgementReceiptForm({
             label="Gross (AR amount)"
             required
             hint={
-              partner
-                ? `Credited to ${partner.name}'s receivable — the partner owes it, so it stays off the customer's ledger.`
-                : customer
-                  ? "Credited to Accounts Receivable, so it shows on the customer's ledger and in AR Aging."
-                  : "Held in Other / Miscellaneous Collections until it is applied to the customer's invoice."
+              customer
+                ? "Credited to Accounts Receivable, so it shows on the customer's ledger and in AR Aging."
+                : "Held in Other / Miscellaneous Collections until it is applied to the customer's invoice."
             }
           >
             <input
