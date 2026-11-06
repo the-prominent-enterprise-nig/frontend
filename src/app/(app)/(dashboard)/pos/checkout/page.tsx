@@ -175,7 +175,6 @@ import type {
   InstallmentPreview,
   PosSession,
 } from '@/src/schema/pos'
-import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
 import { caravanPlaceLabel, terminalPlaceId } from '@/src/libs/format/locationLabel'
 import { useOutputVatCodes } from '@/src/hooks/useOutputVatCodes'
 import {
@@ -6082,11 +6081,6 @@ export default function CheckoutPage() {
           </div>
         )}
       </div>
-
-      {/* Scenario 60 Part 3 — a caravan this branch hosts has ended with
-          stock still in it. Those units no longer sell here; say so rather
-          than let them just vanish from the serial picker. */}
-      <EndedCaravansBanner variant="pos" hostBranchId={activeBranchId} enabled={!!activeBranchId} />
 
       {/* Cancellation pending banner */}
       {cancellationReqId && (
