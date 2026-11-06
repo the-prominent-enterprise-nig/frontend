@@ -6,6 +6,7 @@ import {
   receivingReportSourceSubtitle,
   receivingReportBranchLine,
   receivingReportMetaSlots,
+  receivingReportGrossUnitCosts,
 } from '@/src/libs/format/receiving-report'
 import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
 
@@ -123,9 +124,13 @@ export function buildReceivingReportHtml(
 
   let totalQty = 0
   let totalAmount = 0
+  // VAT-inclusive, so the unit cost reads the same as the PO's unit price.
+  const grossUnitCosts = receivingReportGrossUnitCosts(
+    rr as Parameters<typeof receivingReportGrossUnitCosts>[0]
+  )
 
   const rows = lines
-    .map((l) => {
+    .map((l, i) => {
       const item = l.item as
         | {
             name?: string
@@ -136,7 +141,7 @@ export function buildReceivingReportHtml(
         | undefined
       const serials = (l.serialNumbers as string[] | undefined) ?? []
       const qty = Number(l.quantityReceived ?? 0)
-      const unitCost = l.unitCost != null ? Number(l.unitCost) : null
+      const unitCost = grossUnitCosts[i] ?? null
       totalQty += qty
       if (unitCost != null) totalAmount += qty * unitCost
       return `<tr>
@@ -155,15 +160,16 @@ export function buildReceivingReportHtml(
     })
     .join('')
 
-  // Input VAT carved out of the unit costs and tax withheld at receiving, so
-  // AP's invoice (which takes both from this receipt) can be read against it.
+  // Input VAT is already inside the (VAT-inclusive) unit costs, so it is
+  // shown as part of the total rather than added on top; withholding comes
+  // off it. AP's invoice takes both from this receipt.
   const vatAmount = Number(rr.vatAmount ?? 0)
   const withheldAmount = Number(rr.withheldAmount ?? 0)
   const taxRows =
     showAmounts && (vatAmount > 0 || withheldAmount > 0)
-      ? `<tr><td class="label">Input VAT</td><td class="value">${fmtMoney(vatAmount)}</td></tr>
+      ? `<tr><td class="label">Input VAT (included)</td><td class="value">${fmtMoney(vatAmount)}</td></tr>
         <tr><td class="label">Less: Withholding tax</td><td class="value">${withheldAmount > 0 ? '- ' : ''}${fmtMoney(withheldAmount)}</td></tr>
-        <tr><td class="label">Net payable</td><td class="value">${fmtMoney(totalAmount + vatAmount - withheldAmount)}</td></tr>`
+        <tr><td class="label">Net payable</td><td class="value">${fmtMoney(totalAmount - withheldAmount)}</td></tr>`
       : ''
 
   return `<!DOCTYPE html><html><head><title>${esc(doc.documentNumber)}</title><style>

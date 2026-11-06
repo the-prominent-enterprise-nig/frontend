@@ -271,3 +271,32 @@ export function receivingReportBranchLine(
   if (!name) return null
   return { name, address: warehouse?.branch?.addressLine1?.trim() || null }
 }
+
+/**
+ * Per-unit cost as the supplier priced it — VAT included — for the printed
+ * and on-screen RR, so its unit cost matches the PO's unit price.
+ *
+ * Receiving stores each line net of the VAT it backs out (that is what the
+ * stock and the GL are carried at), and the receipt does not record its own
+ * VatTreatment. The gross is recovered the way ReceivingReportEditForm
+ * already does it: net share = Σ net ÷ (Σ net + the receipt's VAT). Lines
+ * are stored to 4 decimals, so rounding the recovered figure to centavos
+ * lands back on the price that was typed.
+ *
+ * Returns null per line where the line carries no cost at all.
+ */
+export function receivingReportGrossUnitCosts(report: {
+  vatAmount?: number | string | null
+  lines?: { quantityReceived?: number | string | null; unitCost?: number | string | null }[] | null
+}): (number | null)[] {
+  const lines = report.lines ?? []
+  const netTotal = lines.reduce(
+    (sum, l) => sum + Number(l.quantityReceived ?? 0) * Number(l.unitCost ?? 0),
+    0
+  )
+  const vat = Number(report.vatAmount ?? 0)
+  const netShare = netTotal > 0 && vat > 0 ? netTotal / (netTotal + vat) : 1
+  return lines.map((l) =>
+    l.unitCost == null ? null : Math.round((Number(l.unitCost) / netShare) * 100) / 100
+  )
+}

@@ -3,6 +3,7 @@
 import { formatManilaDate } from '@/src/libs/format/manila-date'
 import {
   receivingReportBranchLine,
+  receivingReportGrossUnitCosts,
   receivingReportMetaSlots,
   receivingReportReasonLabel,
   receivingReportSourceName,
@@ -132,14 +133,17 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
   let totalQty = 0
   let totalAmount = 0
   let hasAnyCost = false
-  for (const l of lines) {
+  // VAT-inclusive, so the unit cost reads the same as the PO's unit price.
+  const grossUnitCosts = receivingReportGrossUnitCosts(rr)
+  lines.forEach((l, i) => {
     const qty = Number(l.quantityReceived ?? 0)
+    const unitCost = grossUnitCosts[i]
     totalQty += qty
-    if (l.unitCost != null) {
+    if (unitCost != null) {
       hasAnyCost = true
-      totalAmount += qty * Number(l.unitCost)
+      totalAmount += qty * unitCost
     }
-  }
+  })
 
   const vatAmount = Number(rr.vatAmount ?? 0)
   const withheldAmount = Number(rr.withheldAmount ?? 0)
@@ -251,9 +255,9 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
             </tr>
           </thead>
           <tbody>
-            {lines.map((l) => {
+            {lines.map((l, i) => {
               const qty = Number(l.quantityReceived ?? 0)
-              const unitCost = l.unitCost != null ? Number(l.unitCost) : null
+              const unitCost = grossUnitCosts[i] ?? null
               return (
                 <tr key={l.id}>
                   <td className={`${TD} font-mono`}>{(l.serialNumbers ?? []).join(', ')}</td>
@@ -291,7 +295,7 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
             {hasTax && (
               <>
                 <tr>
-                  <td className={`${TD} text-right`}>Input VAT</td>
+                  <td className={`${TD} text-right`}>Input VAT (included)</td>
                   <td className={`${TD} text-right tabular-nums`}>{fmtAmount(vatAmount)}</td>
                 </tr>
                 <tr>
@@ -303,7 +307,7 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
                 <tr>
                   <td className={`${TD} text-right`}>Net payable</td>
                   <td className={`${TD} text-right tabular-nums`}>
-                    {fmtAmount(totalAmount + vatAmount - withheldAmount)}
+                    {fmtAmount(totalAmount - withheldAmount)}
                   </td>
                 </tr>
               </>

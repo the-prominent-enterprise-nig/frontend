@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { PackageCheck, X } from 'lucide-react'
@@ -96,6 +96,8 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
   // handful of rows.
   const lines = watched.lines ?? []
   const poLines = useMemo(() => po?.lines ?? [], [po])
+  // SRP + discounts as the PO opened with them — see the pricing effect below.
+  const pricingBaseline = useRef<string | null>(null)
 
   // ─── Reset when a different PO opens ──────────────────────────────────────
   useEffect(() => {
@@ -148,6 +150,14 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
         }
       }),
     })
+    // The same [srp, discounts] pairs just written, so the pricing effect
+    // leaves the PO's unit price alone until one of them is really edited.
+    pricingBaseline.current = JSON.stringify(
+      po.lines.map((l) => [
+        l.srp != null ? Number(l.srp) : undefined,
+        (l.discounts as unknown[]) ?? undefined,
+      ])
+    )
   }, [po, reset])
 
   // Scenario 46 — unit cost follows SRP through the discount chain, the same
@@ -155,8 +165,13 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
   // could disagree on the same line: a receipt showing "3000 less 3% less 500"
   // beside a hand-typed cost of something else is worse than no discount at
   // all, because the numbers look reconciled and aren't.
+  //
+  // Only once the receiver actually edits SRP or discounts. On open, unit cost
+  // is the PO's own unit price — which may have been typed over the derived
+  // figure on the PO — so the RR prints the same price the PO did.
   const pricingKey = JSON.stringify(lines.map((l) => [l?.srp, l?.discounts]))
   useEffect(() => {
+    if (pricingKey === pricingBaseline.current) return
     lines.forEach((line, i) => {
       const srp = Number(line?.srp)
       const chain = (line?.discounts ?? []) as { type?: string; value?: number }[]
