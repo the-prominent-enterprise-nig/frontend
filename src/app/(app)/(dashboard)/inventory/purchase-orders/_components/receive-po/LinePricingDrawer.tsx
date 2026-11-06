@@ -88,7 +88,7 @@ export function LinePricingDrawer({
               <Readout label="Line total this delivery" value={fmtPeso(lineTotal)} strong />
             </div>
             <span className="text-[11px] text-ink-muted">
-              Unit cost follows SRP through the discount chain. Press Edit if the delivery is priced
+              Unit cost is the PO&apos;s unit price. Press Edit if the delivery is priced
               differently from the PO — the variance is what the 3-way match is for.
             </span>
           </>
@@ -221,7 +221,9 @@ export function LinePricingDrawer({
                   />
                 )}
               />
-              <span className="text-[11px] text-ink-subtle">auto from SRP &minus; discounts</span>
+              <span className="text-[11px] text-ink-subtle">
+                PO price; recalculated if SRP or discounts change
+              </span>
             </label>
 
             <label className="flex flex-col gap-1">

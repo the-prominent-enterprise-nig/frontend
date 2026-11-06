@@ -14,6 +14,7 @@ import { getReceivingDocument } from '../../_actions/get-receiving-document'
 import { getReceivingReport } from '../../_actions/get-receiving-report'
 import type { ReceivingReport } from '@/src/schema/inventory/goods-receiving'
 import { discountChainLabel } from '@/src/libs/format/discount-chain'
+import { receivingReportGrossUnitCosts } from '@/src/libs/format/receiving-report'
 import { MANILA_TZ } from '@/src/libs/format/manila-date'
 
 function fmtPHP(n: number): string {
@@ -165,6 +166,11 @@ export default function ReceivingReportDetail({
   const lines = record?.lines ?? []
   // Costs reach the inventory RR document for the Business Owner only.
   const showsAmounts = (doc.document.lines ?? []).some((l) => l.unitCost != null)
+  // VAT-inclusive, as on the printed RR, so it reads the same as the PO price.
+  const grossUnitCosts = receivingReportGrossUnitCosts(doc.document)
+  const grossById = new Map(
+    (doc.document.lines ?? []).map((l, i) => [l.id, grossUnitCosts[i] ?? null] as const)
+  )
   // Only worth a table of its own when the paper genuinely omits something.
   const hasRecordOnly = lines.some(
     (l) =>
@@ -287,6 +293,7 @@ export default function ReceivingReportDetail({
               <tbody className="divide-y divide-gray-100">
                 {lines.map((l) => {
                   const chain = discountChainLabel(l, fmtPHP)
+                  const gross = grossById.get(l.id) ?? null
                   return (
                     <tr key={l.id}>
                       <td className="py-2 pr-4 text-gray-900">
@@ -301,7 +308,7 @@ export default function ReceivingReportDetail({
                         {chain || <span className="text-gray-400">—</span>}
                       </td>
                       <td className="py-2 pr-4 text-right tabular-nums">
-                        {l.unitCost != null ? fmtPHP(Number(l.unitCost)) : '—'}
+                        {gross != null ? fmtPHP(gross) : '—'}
                       </td>
                       <td className="py-2 pr-4 text-gray-600">{l.taxCode || '—'}</td>
                       <td className="py-2 text-right tabular-nums">
