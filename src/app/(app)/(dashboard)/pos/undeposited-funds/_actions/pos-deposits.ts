@@ -278,6 +278,45 @@ export async function rejectPosTurnover(
   return result
 }
 
+/** What accounting can correct on a turnover still awaiting acknowledgment. */
+export interface CorrectPosTurnoverInput {
+  amount: number
+  reference: string
+  /** `YYYY-MM-DD`. */
+  depositDate?: string
+  receivedBy?: string
+  reason: string
+}
+
+/** Accounting fixes a pending turnover's amount, slip number, date or who
+ * took it; the sender's deposit is reposted with that line changed. */
+export async function correctPosTurnover(
+  lineId: string,
+  input: CorrectPosTurnoverInput
+): Promise<ApiResponse<PosDeposit>> {
+  const result = await api.post<PosDeposit>(`/pos-deposits/turnovers/${lineId}/correct`, input)
+  if (result.success) revalidate()
+  return result
+}
+
+/** One change made to a posted deposit, from the accounting audit log. */
+export interface PosDepositHistoryEntry {
+  id: string
+  action: 'CORRECT' | 'CORRECT_TURNOVER' | 'REJECT_TURNOVER' | 'ACKNOWLEDGE_TURNOVER'
+  at: string
+  by: string
+  reason: string | null
+  amountBefore: number | null
+  amountAfter: number | null
+}
+
+/** A deposit's corrections, rejections and acknowledgments, newest first. */
+export async function getPosDepositHistory(
+  id: string
+): Promise<ApiResponse<PosDepositHistoryEntry[]>> {
+  return api.get<PosDepositHistoryEntry[]>(`/pos-deposits/${id}/history`)
+}
+
 /** A branch cash can be turned over to. */
 export interface TurnoverBranchOption {
   id: string

@@ -538,6 +538,7 @@ export function CashInTransitList({
         groups={groups}
         loading={ledger.loading}
         canManage={canManage}
+        canCorrect={canCorrect}
         selection={selection}
         onOpenDeposit={openDeposit}
         onDepositReceipts={(group) =>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery, type QueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery, type QueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Loader2, Pencil, X } from 'lucide-react'
 import AttachmentsPanel from '@/src/components/common/AttachmentsPanel'
 import { ConfirmDialog } from '@/src/components/ui/Modal'
@@ -19,12 +19,17 @@ import {
   correctPosDeposit,
   updatePosDeposit,
   getPosDeposit,
+  getPosDepositHistory,
   getPosDepositSummary,
   type PosDeposit,
+  type PosDepositLine,
+  type PosDepositLineInput,
   type PosDepositStatus,
+  type PosDepositHistoryEntry,
 } from '../_actions/pos-deposits'
 import {
   SlipEditor,
+  cashOnHandFundId,
   round2,
   slipAmount,
   slipsFromLines,
@@ -114,30 +119,33 @@ export function DepositDetailLoader({
   onClose: () => void
   onChanged: () => void
 }): React.JSX.Element {
-  const [current, setCurrent] = useState(id)
-  const query = useQuery({
-    queryKey: [POS_DEPOSITS_KEY, 'detail', current],
-    queryFn: () => getPosDeposit(current),
-    staleTime: 0,
+  const ids = choices.length > 1 ? choices.map((c) => c.id) : [id]
+  const queries = useQueries({
+    queries: ids.map((depositId) => ({
+      queryKey: [POS_DEPOSITS_KEY, 'detail', depositId],
+      queryFn: () => getPosDeposit(depositId),
+      staleTime: 0,
+    })),
   })
-  const deposit = query.data?.data
-  if (!deposit || deposit.id !== current) {
+  const deposits = queries.map((q) => q.data?.data)
+  if (deposits.some((d) => !d)) return <PanelSpinner />
+  const loaded = deposits as PosDeposit[]
+  if (loaded.length > 1) {
     return (
-      <div className="absolute inset-0 z-40 flex items-center justify-center bg-white">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
-      </div>
+      <CombinedDepositDetail
+        deposits={loaded}
+        choices={choices}
+        accounts={accounts}
+        canManage={canManage}
+        canCorrect={canCorrect}
+        onClose={onClose}
+        onChanged={onChanged}
+      />
     )
   }
   return (
     <DepositDetail
-      // A fresh panel per deposit, so a half-made correction never carries over.
-      key={deposit.id}
-      switcher={
-        choices.length > 1 ? (
-          <DepositSwitcher choices={choices} current={current} onPick={setCurrent} />
-        ) : undefined
-      }
-      deposit={deposit}
+      deposit={loaded[0]}
       accounts={accounts}
       canManage={canManage}
       canVerify={canVerify}
@@ -148,40 +156,206 @@ export function DepositDetailLoader({
   )
 }
 
-/** The deposits behind one session, one pill each — which one is open. */
-function DepositSwitcher({
-  choices,
-  current,
-  onPick,
-}: {
-  choices: DepositChoice[]
-  current: string
-  onPick: (id: string) => void
-}): React.JSX.Element {
+function PanelSpinner(): React.JSX.Element {
   return (
-    <div className="rounded-lg border border-gray-200 p-3">
-      <p className="mb-2 text-xs text-ink-muted">
-        This session was banked in {choices.length} deposits. Each is checked and corrected on its
-        own.
-      </p>
-      <div className="flex flex-wrap gap-2">
-        {choices.map((c, i) => (
-          <button
-            key={c.id}
-            type="button"
-            onClick={() => onPick(c.id)}
-            aria-pressed={c.id === current}
-            className={`rounded-full border px-3 py-1 text-xs font-medium ${
-              c.id === current
-                ? 'border-purple-700 bg-purple-700 text-white'
-                : 'border-gray-200 text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            {i + 1}. {c.label}
-          </button>
-        ))}
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-white">
+      <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+    </div>
+  )
+}
+
+/** Each slip with its own date, or its deposit's when it has none. */
+function datedLines(deposit: PosDeposit): PosDepositLine[] {
+  return (deposit.lines ?? []).map((l) => ({
+    ...l,
+    depositDate: l.depositDate ?? deposit.depositDate,
+  }))
+}
+
+/** A posted deposit accounting may still correct. */
+function correctable(deposit: PosDeposit): boolean {
+  return deposit.status === 'cleared' && !deposit.reconciledAt && correctableSlips(deposit)
+}
+
+/**
+ * A session banked over several trips to the bank, read as one: every slip of
+ * every deposit in one table, oldest first, and one correction across them
+ * all. Each deposit keeps its own entries — a correction reposts only the
+ * deposits whose slips changed — and its own proof.
+ */
+function CombinedDepositDetail({
+  deposits,
+  choices,
+  accounts,
+  canManage,
+  canCorrect,
+  onClose,
+  onChanged,
+}: {
+  deposits: PosDeposit[]
+  choices: DepositChoice[]
+  accounts: BankAccountOption[]
+  canManage: boolean
+  canCorrect: boolean
+  onClose: () => void
+  onChanged: () => void
+}): React.JSX.Element {
+  const [editing, setEditing] = useState(false)
+  const lines = deposits
+    .flatMap(datedLines)
+    .sort((a, b) => (a.depositDate ?? '').localeCompare(b.depositDate ?? ''))
+  const sessions = [...new Map(deposits.flatMap((d) => d.sessions).map((x) => [x.id, x])).values()]
+  const canEdit = canCorrect && deposits.every(correctable)
+  return (
+    <div className="absolute inset-0 z-40 flex bg-white">
+      <div className="flex h-full w-full flex-col bg-white">
+        <CombinedHeader
+          deposits={deposits}
+          slipCount={lines.length}
+          sessionCount={sessions.length}
+          onClose={onClose}
+        />
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+          <SessionList sessions={sessions} />
+          {editing ? (
+            <SlipEdit
+              deposits={deposits}
+              accounts={accounts}
+              correcting
+              onCancel={() => setEditing(false)}
+              onSaved={() => {
+                setEditing(false)
+                onChanged()
+              }}
+            />
+          ) : (
+            <SlipList
+              lines={lines}
+              fallbackDate={deposits[0].depositDate}
+              onEdit={canEdit ? () => setEditing(true) : undefined}
+              editLabel="Correct deposit"
+            />
+          )}
+          <DepositHistory ids={deposits.map((d) => d.id)} />
+          {deposits.map((d) => (
+            <AttachmentsPanel
+              key={d.id}
+              entityType={POS_DEPOSIT_ENTITY}
+              entityId={d.id}
+              title={`Proof of deposit · ${choices.find((c) => c.id === d.id)?.label ?? d.reference ?? fmtDate(d.depositDate)}`}
+              description="Deposit slip, check images, transfer screenshots."
+              readOnly={!canManage}
+              canRemove={false}
+              onChanged={onChanged}
+            />
+          ))}
+        </div>
       </div>
     </div>
+  )
+}
+
+function CombinedHeader({
+  deposits,
+  slipCount,
+  sessionCount,
+  onClose,
+}: {
+  deposits: PosDeposit[]
+  slipCount: number
+  sessionCount: number
+  onClose: () => void
+}): React.JSX.Element {
+  const first = [...deposits].sort((a, b) => a.depositDate.localeCompare(b.depositDate))[0]
+  const total = round2(deposits.reduce((sum, d) => sum + Number(d.amount), 0))
+  const status = deposits.find((d) => d.status !== 'cleared')?.status ?? 'cleared'
+  return (
+    <div className="flex shrink-0 items-center justify-between border-b px-5 py-4">
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-lg font-semibold">Deposits · {fmtDate(first.depositDate)}</h3>
+          <StatusChip status={status} />
+        </div>
+        <p className="text-xs text-gray-500">
+          {fmtMoney(total)} · {sessionCount} session{sessionCount === 1 ? '' : 's'} ·{' '}
+          {deposits.length} deposits · {slipCount} slip{slipCount === 1 ? '' : 's'}
+        </p>
+      </div>
+      <button onClick={onClose} aria-label="Close">
+        <X className="h-5 w-5 text-gray-500" />
+      </button>
+    </div>
+  )
+}
+
+const HISTORY_LABEL: Record<PosDepositHistoryEntry['action'], string> = {
+  CORRECT: 'Deposit corrected',
+  CORRECT_TURNOVER: 'Turnover corrected',
+  REJECT_TURNOVER: 'Turnover rejected',
+  ACKNOWLEDGE_TURNOVER: 'Turnover acknowledged',
+}
+
+/** `Nov 9, 2026, 3:42 PM` in Manila time. */
+function fmtWhen(iso: string): string {
+  return new Date(iso).toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  })
+}
+
+/** What a change did to the deposit's total, when it changed it. */
+function amountChange(e: PosDepositHistoryEntry): string | null {
+  if (e.amountBefore === null || e.amountAfter === null) return null
+  if (Math.abs(e.amountBefore - e.amountAfter) < 0.005) return null
+  return `${fmtMoney(e.amountBefore)} → ${fmtMoney(e.amountAfter)}`
+}
+
+/**
+ * Every change made to the deposits after they posted — corrections,
+ * turnover corrections, rejections, acknowledgments — newest first, with
+ * when, who, the reason they gave and what it did to the total. Nothing
+ * shows until something was changed.
+ */
+function DepositHistory({ ids }: { ids: string[] }): React.JSX.Element | null {
+  const queries = useQueries({
+    queries: ids.map((id) => ({
+      queryKey: [POS_DEPOSITS_KEY, 'history', id],
+      queryFn: () => getPosDepositHistory(id),
+      staleTime: 0,
+    })),
+  })
+  const entries = queries
+    .flatMap((q) => q.data?.data ?? [])
+    .sort((a, b) => b.at.localeCompare(a.at))
+  if (!entries.length) return null
+  return (
+    <section className="rounded-lg border border-gray-200">
+      <h4 className="border-b border-gray-200 px-3 py-2 text-xs font-medium uppercase tracking-wide text-ink-muted">
+        Correction history
+      </h4>
+      <ol className="divide-y divide-gray-100 text-sm">
+        {entries.map((e) => (
+          <HistoryRow key={e.id} entry={e} />
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+function HistoryRow({ entry }: { entry: PosDepositHistoryEntry }): React.JSX.Element {
+  const change = amountChange(entry)
+  return (
+    <li className="px-3 py-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+        <span className="font-medium text-gray-900">{HISTORY_LABEL[entry.action]}</span>
+        <span className="text-xs text-ink-muted">
+          {fmtWhen(entry.at)} · {entry.by}
+        </span>
+      </div>
+      {entry.reason && <p className="mt-0.5 text-gray-700">{entry.reason}</p>}
+      {change && <p className="mt-0.5 text-xs text-ink-muted tabular-nums">{change}</p>}
+    </li>
   )
 }
 
@@ -195,7 +369,6 @@ function StatusChip({ status }: { status: PosDepositStatus }): React.JSX.Element
 
 export function DepositDetail({
   deposit,
-  switcher,
   accounts,
   canManage,
   canVerify,
@@ -204,8 +377,6 @@ export function DepositDetail({
   onChanged,
 }: {
   deposit: PosDeposit
-  /** Picks among a session's several deposits, above the rest of the body. */
-  switcher?: React.ReactNode
   accounts: BankAccountOption[]
   canManage: boolean
   canVerify: boolean
@@ -261,11 +432,10 @@ export function DepositDetail({
           </button>
         </div>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
-          {switcher}
-          <SessionList deposit={deposit} />
+          <SessionList sessions={deposit.sessions} />
           {editing ? (
             <SlipEdit
-              deposit={deposit}
+              deposits={[deposit]}
               accounts={accounts}
               correcting={correcting}
               onCancel={() => setEditing(false)}
@@ -276,11 +446,13 @@ export function DepositDetail({
             />
           ) : (
             <SlipList
-              deposit={deposit}
+              lines={deposit.lines ?? []}
+              fallbackDate={deposit.depositDate}
               onEdit={canEditSlips ? () => setEditing(true) : undefined}
               editLabel={correcting ? 'Correct deposit' : 'Edit slips'}
             />
           )}
+          {deposit.status !== 'draft' && <DepositHistory ids={[deposit.id]} />}
           <AttachmentsPanel
             entityType={POS_DEPOSIT_ENTITY}
             entityId={deposit.id}
@@ -312,10 +484,10 @@ export function DepositDetail({
   )
 }
 
-function SessionList({ deposit }: { deposit: PosDeposit }): React.JSX.Element {
+function SessionList({ sessions }: { sessions: PosDeposit['sessions'] }): React.JSX.Element {
   return (
     <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200 text-sm">
-      {deposit.sessions.map((s) => (
+      {sessions.map((s) => (
         // Named, not priced: the slips below are the figures accounting checks.
         <li key={s.id} className="px-3 py-2">
           {s.terminal?.name ?? 'Terminal'} ·{' '}
@@ -332,16 +504,18 @@ function SessionList({ deposit }: { deposit: PosDeposit }): React.JSX.Element {
 /** The slips as recorded — each bank, its amount, the account it empties,
  * its slip number and the day it was banked. */
 function SlipList({
-  deposit,
+  lines,
+  fallbackDate,
   onEdit,
   editLabel = 'Edit slips',
 }: {
-  deposit: PosDeposit
+  lines: PosDepositLine[]
+  /** The date a slip with none of its own shows: its deposit's. */
+  fallbackDate: string
   /** Present while the slips can still be corrected. */
   onEdit?: () => void
   editLabel?: string
 }): React.JSX.Element | null {
-  const lines = deposit.lines ?? []
   if (lines.length === 0) return null
   return (
     <div className="space-y-2">
@@ -390,7 +564,7 @@ function SlipList({
                 </td>
                 <td className="px-3 py-2 text-gray-600">{l.reference ?? '—'}</td>
                 <td className="whitespace-nowrap px-3 py-2">
-                  {fmtDate(l.depositDate ?? deposit.depositDate)}
+                  {fmtDate(l.depositDate ?? fallbackDate)}
                 </td>
               </tr>
             ))}
@@ -401,55 +575,149 @@ function SlipList({
   )
 }
 
-/** The deposit's slips, editable — saved as a whole, replacing the old ones.
- * The new total is shown beside the old one so a corrected amount is seen
- * before it is saved. A posted deposit's correction also asks why, and
- * reposts it. */
+/** Each deposit's slips, tagged with it, oldest deposit first. */
+function initialSlips(deposits: PosDeposit[], accounts: BankAccountOption[]): Slip[] {
+  const cashFund = cashOnHandFundId(accounts)
+  return deposits.flatMap((d) =>
+    slipsFromLines(d.lines ?? [], d.depositDate, cashFund).map((slip) => ({
+      ...slip,
+      depositId: d.id,
+    }))
+  )
+}
+
+/** Each deposit's cash turnovers, tagged with it. */
+function initialTurnovers(deposits: PosDeposit[]): Turnover[] {
+  return deposits.flatMap((d) =>
+    turnoversFromLines(d.lines ?? [], d.depositDate).map((t) => ({ ...t, depositId: d.id }))
+  )
+}
+
+/** What each deposit is saved with: its turnovers, then its slips. A slip
+ * added in the editor goes on the latest deposit. */
+function linesByDeposit(
+  deposits: PosDeposit[],
+  slips: Slip[],
+  turnovers: Turnover[]
+): Map<string, PosDepositLineInput[]> {
+  const latest = [...deposits].sort((a, b) => a.depositDate.localeCompare(b.depositDate)).at(-1)
+  const owner = (depositId?: string): string | undefined => depositId ?? latest?.id
+  return new Map(
+    deposits.map((d) => {
+      const own = slips.filter((s) => owner(s.depositId) === d.id)
+      const handed = turnovers.filter((t) => owner(t.depositId) === d.id)
+      return [d.id, [...handed.map(toTurnoverLine), ...toLineInputs(own)]]
+    })
+  )
+}
+
+interface SaveResult {
+  error: string | null
+  /** Deposits already reposted before a refusal — the panel must refresh. */
+  corrected: number
+}
+
+/** Reposts, one after another, only the deposits whose slips changed. Stops
+ * at the first refusal and says which deposits were already corrected. */
+async function correctEach(
+  changed: [string, PosDepositLineInput[]][],
+  reason: string,
+  nameOf: (id: string) => string
+): Promise<SaveResult> {
+  const done: string[] = []
+  for (const [id, lines] of changed) {
+    const res = await correctPosDeposit(id, lines, reason)
+    if (!res.success) {
+      const msg = res.error || res.message || 'Failed to correct the deposit'
+      const prior = done.length ? ` ${done.join(', ')} already corrected.` : ''
+      return { error: `${nameOf(id)}: ${msg}.${prior}`, corrected: done.length }
+    }
+    done.push(nameOf(id))
+  }
+  return { error: null, corrected: done.length }
+}
+
+/** The slips, editable — saved as a whole, replacing the old ones. The new
+ * total is shown beside the old one so a corrected amount is seen before it
+ * is saved. A posted deposit's correction also asks why, and reposts it.
+ *
+ * Given a session's several deposits, it edits all their slips and turnovers
+ * as one list; each goes back to its own deposit, and only the deposits that
+ * changed are reversed and reposted. */
 function SlipEdit({
-  deposit,
+  deposits,
   accounts,
   correcting,
   onCancel,
   onSaved,
 }: {
-  deposit: PosDeposit
+  deposits: PosDeposit[]
   accounts: BankAccountOption[]
   correcting: boolean
   onCancel: () => void
   onSaved: () => void
 }): React.JSX.Element {
+  const single = deposits.length === 1 ? deposits[0] : null
   const [reason, setReason] = useState('')
-  const [slips, setSlips] = useState<Slip[]>(() =>
-    slipsFromLines(deposit.lines ?? [], deposit.depositDate)
-  )
+  const [original] = useState(() => initialSlips(deposits, accounts))
+  const [slips, setSlips] = useState<Slip[]>(original)
   // Scenario 83 — its cash turnovers, editable while the receiving branch
   // has yet to acknowledge them (an acknowledged one locks the deposit).
-  const [turnovers, setTurnovers] = useState<Turnover[]>(() =>
-    turnoversFromLines(deposit.lines ?? [], deposit.depositDate)
-  )
+  const [originalTurnovers] = useState(() => initialTurnovers(deposits))
+  const [turnovers, setTurnovers] = useState<Turnover[]>(originalTurnovers)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const wasTotal = round2(deposits.reduce((sum, d) => sum + Number(d.amount), 0))
   const total = round2(
     slips.reduce((sum, s) => sum + slipAmount(s), 0) +
       turnovers.reduce((sum, t) => sum + turnoverAmount(t), 0)
   )
+  const nameOf = (id: string): string => deposits.find((d) => d.id === id)?.reference || 'A deposit'
+  const emptied = single
+    ? undefined
+    : [...linesByDeposit(deposits, slips, turnovers)].find(([, lines]) => lines.length === 0)
   const problem =
     turnovers.map(turnoverProblem).find(Boolean) ??
     slipsProblem(slips) ??
+    (emptied
+      ? `${nameOf(emptied[0])} would have nothing left — every deposit keeps at least one slip or turnover.`
+      : null) ??
     (correcting && !reason.trim() ? 'Say why the deposit is being corrected.' : null)
   const patchTurnover = (i: number, patch: Partial<Turnover>): void =>
     setTurnovers((all) => all.map((t, n) => (n === i ? { ...t, ...patch } : t)))
 
-  const save = async (): Promise<void> => {
-    setSaving(true)
-    setError(null)
+  const saveSingle = async (deposit: PosDeposit): Promise<SaveResult> => {
     const lines = [...turnovers.map(toTurnoverLine), ...toLineInputs(slips)]
     const res = correcting
       ? await correctPosDeposit(deposit.id, lines, reason.trim())
       : await updatePosDeposit(deposit.id, lines)
+    const error = res.success ? null : res.error || res.message || 'Failed to save the slips'
+    return { error, corrected: 0 }
+  }
+
+  const saveAll = async (): Promise<SaveResult> => {
+    const before = linesByDeposit(deposits, original, originalTurnovers)
+    const changed = [...linesByDeposit(deposits, slips, turnovers)].filter(
+      ([id, lines]) => JSON.stringify(lines) !== JSON.stringify(before.get(id))
+    )
+    if (!changed.length) return { error: 'Nothing was changed.', corrected: 0 }
+    return correctEach(changed, reason.trim(), nameOf)
+  }
+
+  const save = async (): Promise<void> => {
+    setSaving(true)
+    setError(null)
+    const { error: failed, corrected } = single ? await saveSingle(single) : await saveAll()
     setSaving(false)
-    if (!res.success) {
-      setError(res.error || res.message || 'Failed to save the slips')
+    if (failed && corrected > 0) {
+      // Part of it posted: the form no longer matches the deposits, so close
+      // it onto their fresh state and say what is left to do.
+      showToast({ title: 'Deposit only partly corrected', description: failed, status: 'error' })
+      onSaved()
+      return
+    }
+    if (failed) {
+      setError(failed)
       return
     }
     showToast(
@@ -470,7 +738,7 @@ function SlipEdit({
         <TurnoverBlock
           key={i}
           turnover={t}
-          senderId={deposit.branchId}
+          senderId={deposits[0].branchId}
           onChange={(patch) => patchTurnover(i, patch)}
         />
       ))}
@@ -479,8 +747,8 @@ function SlipEdit({
       )}
       <p className="text-sm text-gray-600">
         Total <strong className="tabular-nums">{fmtMoney(total)}</strong>
-        {Math.abs(total - Number(deposit.amount)) >= 0.005 && (
-          <span className="text-gray-500"> · was {fmtMoney(Number(deposit.amount))}</span>
+        {Math.abs(total - wasTotal) >= 0.005 && (
+          <span className="text-gray-500"> · was {fmtMoney(wasTotal)}</span>
         )}
       </p>
       {correcting && (
