@@ -13,7 +13,8 @@ export default async function SerialNumbersPage({
   searchParams,
 }: {
   // Scenario 60 Part 3 — `?caravan=<id>` opens the Caravan tab on that
-  // caravan (the ended-caravan banners link here).
+  // caravan, `?caravan=all` on every caravan (the ended-caravan banner links
+  // here).
   searchParams: Promise<{ caravan?: string }>
 }) {
   const { caravan } = await searchParams
