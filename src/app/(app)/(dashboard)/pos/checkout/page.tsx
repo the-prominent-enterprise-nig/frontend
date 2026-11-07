@@ -2730,6 +2730,15 @@ export default function CheckoutPage() {
   >([])
   const customerApplicationsRequestRef = useRef(0)
   const selectedCustomerId = selectedCustomer?.id ?? null
+  // Nov UAT — rows the cashier dismissed (×) from the customer card, for this
+  // sale only: nothing changes on the application itself. A different
+  // customer (or a new sale, which clears the customer) brings them all back.
+  const [dismissedApplicationIds, setDismissedApplicationIds] = useState<Set<string>>(
+    () => new Set()
+  )
+  useEffect(() => {
+    setDismissedApplicationIds(new Set())
+  }, [selectedCustomerId])
   useEffect(() => {
     const requestId = ++customerApplicationsRequestRef.current
     if (!selectedCustomerId) {
@@ -6500,49 +6509,103 @@ export default function CheckoutPage() {
                         <p className="text-xs text-gray-600">
                           No approved credit application on file.
                         </p>
+                      ) : customerApplications.every((a) => dismissedApplicationIds.has(a.id)) ? (
+                        // Every row dismissed — say so, and offer them back.
+                        <p className="text-xs text-gray-600">
+                          {customerApplications.length === 1
+                            ? '1 application hidden.'
+                            : `${customerApplications.length} applications hidden.`}{' '}
+                          <button
+                            type="button"
+                            data-testid="show-dismissed-applications"
+                            onClick={() => setDismissedApplicationIds(new Set())}
+                            className="font-medium text-prominent-purple-700 hover:underline"
+                          >
+                            Show
+                          </button>
+                        </p>
                       ) : (
                         <ul className="divide-y divide-gray-300 rounded-lg border border-purple-200 bg-gray-200">
-                          {customerApplications.map((a) => (
-                            <li
-                              key={a.id}
-                              data-testid="customer-credit-application"
-                              className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs"
-                            >
-                              <span
-                                className="min-w-0 flex-1 truncate text-gray-700"
-                                title={a.itemNames.join(', ')}
+                          {customerApplications
+                            .filter((a) => !dismissedApplicationIds.has(a.id))
+                            .map((a) => (
+                              <li
+                                key={a.id}
+                                data-testid="customer-credit-application"
+                                className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs"
                               >
-                                <span className="font-semibold text-gray-900">
-                                  {a.applicationNumber}
-                                </span>{' '}
-                                · {a.itemNames.join(', ')}
-                              </span>
-                              <span className="shrink-0 font-semibold text-gray-800">
-                                {fmt(a.requestedAmount)}
-                              </span>
-                              {/* Nov UAT — one click puts the approved items on
+                                <span
+                                  className="min-w-0 flex-1 truncate text-gray-700"
+                                  title={a.itemNames.join(', ')}
+                                >
+                                  <span className="font-semibold text-gray-900">
+                                    {a.applicationNumber}
+                                  </span>{' '}
+                                  · {a.itemNames.join(', ')}
+                                </span>
+                                <span className="shrink-0 font-semibold text-gray-800">
+                                  {fmt(a.requestedAmount)}
+                                </span>
+                                {/* Nov UAT — one click puts the approved items on
                                   the sale. Not while it is already the sale's
                                   application, and never for an X-Deal, which
                                   must not consume one. */}
-                              {saleMode === 'sale' &&
-                                !xDealActive &&
-                                creditApplicationId !== a.id && (
-                                  <button
-                                    type="button"
-                                    data-testid="fill-cart-from-application"
-                                    onClick={() => fillCartFromApplication(a)}
-                                    disabled={!!arrivingCreditApplication}
-                                    className="shrink-0 rounded-md bg-prominent-purple-700 px-2 py-1 text-[11px] font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
-                                  >
-                                    {arrivingCreditApplication?.id === a.id
-                                      ? 'Filling…'
-                                      : 'Fill cart'}
-                                  </button>
-                                )}
-                            </li>
-                          ))}
+                                {saleMode === 'sale' &&
+                                  !xDealActive &&
+                                  creditApplicationId !== a.id && (
+                                    <button
+                                      type="button"
+                                      data-testid="fill-cart-from-application"
+                                      onClick={() => fillCartFromApplication(a)}
+                                      disabled={!!arrivingCreditApplication}
+                                      className="shrink-0 rounded-md bg-prominent-purple-700 px-2 py-1 text-[11px] font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
+                                    >
+                                      {arrivingCreditApplication?.id === a.id
+                                        ? 'Filling…'
+                                        : 'Fill cart'}
+                                    </button>
+                                  )}
+                                {/* Nov UAT — dismiss this row from the card for
+                                  this sale; the application is untouched. */}
+                                <button
+                                  type="button"
+                                  data-testid="dismiss-customer-application"
+                                  onClick={() =>
+                                    setDismissedApplicationIds((prev) => new Set(prev).add(a.id))
+                                  }
+                                  disabled={arrivingCreditApplication?.id === a.id}
+                                  aria-label={`Dismiss ${a.applicationNumber}`}
+                                  title="Hide for this sale"
+                                  // Far right, set apart from Fill cart by a gap
+                                  // and a divider, so a near-miss on one never
+                                  // lands on the other.
+                                  className="ml-1 shrink-0 border-l border-gray-300 pl-2 text-gray-500 hover:text-gray-800 disabled:opacity-40"
+                                >
+                                  <X size={12} />
+                                </button>
+                              </li>
+                            ))}
                         </ul>
                       )}
+                      {/* Some (not all) dismissed — a quiet way back. */}
+                      {customerApplications &&
+                        customerApplications.some((a) => dismissedApplicationIds.has(a.id)) &&
+                        !customerApplications.every((a) => dismissedApplicationIds.has(a.id)) && (
+                          <button
+                            type="button"
+                            data-testid="show-dismissed-applications"
+                            onClick={() => setDismissedApplicationIds(new Set())}
+                            className="mt-1 text-[11px] font-medium text-prominent-purple-700 hover:underline"
+                          >
+                            Show{' '}
+                            {(() => {
+                              const n = customerApplications.filter((a) =>
+                                dismissedApplicationIds.has(a.id)
+                              ).length
+                              return n === 1 ? '1 hidden application' : `${n} hidden applications`
+                            })()}
+                          </button>
+                        )}
                     </div>
                   )}
               </div>
