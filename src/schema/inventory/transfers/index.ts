@@ -388,6 +388,7 @@ export const TransferSummarySchema = z.object({
         id: z.string(),
         code: z.string(),
         receivedAt: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
         // Extra/unlisted items received alongside the transfer — lines with
         // no stockTransferLineId, i.e. not a reconciled dispatched line.
         lines: z

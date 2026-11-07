@@ -1,5 +1,6 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import { meaningfulSerialReason, wrongUnitBySerial } from '@/src/libs/inventory/wrong-unit-notes'
 import { MANILA_TZ, manilaDateOf, manilaMonthOf } from '@/src/libs/format/manila-date'
 import {
   receivingReportSourceName,
@@ -564,6 +565,25 @@ export function buildStockTransferHtml(data: unknown): string {
   ].includes(String(transfer.status))
   // Blank (—) until the transfer is received.
   const receipts = transferReceipts(transfer)
+  const wrongUnits = wrongUnitBySerial(
+    transfer.goodsReceipts as { notes?: string | null }[] | undefined
+  )
+
+  // Under the serial: what changed at receipt — a "Wrong serial" swap (the
+  // line was repointed; the cell keeps the transferred serial and this names
+  // the one received), or a "Wrong unit" note (a different unit arrived).
+  const serialCorrectionNote = (l: Record<string, unknown>, serial?: string): string => {
+    const original = (l.receiptCorrectedFromSerial as { serialNumber?: string } | null)
+      ?.serialNumber
+    const reason = meaningfulSerialReason(l.receiptCorrectionReason as string | null | undefined)
+    if (original) {
+      return `<div class="wrong-unit">Wrong serial — received ${esc(serial)}${reason ? ` (reason: ${esc(reason)})` : ''}</div>`
+    }
+    if (serial && wrongUnits.has(serial)) {
+      return `<div class="wrong-unit">Wrong unit — received ${esc(wrongUnits.get(serial))}</div>`
+    }
+    return ''
+  }
 
   let totalQty = 0
   const rows = lines
@@ -572,12 +592,18 @@ export function buildStockTransferHtml(data: unknown): string {
       const serial = (l.serialNumber as Record<string, unknown> | null)?.serialNumber as
         | string
         | undefined
+      // A Wrong serial swap repointed the line — print the serial that was
+      // transferred, with the received one in the note underneath.
+      const transferredSerial =
+        ((l.receiptCorrectedFromSerial as { serialNumber?: string } | null)?.serialNumber as
+          | string
+          | undefined) ?? serial
       const qty = Number(l.quantity ?? 0)
       totalQty += qty
       return `<tr>
         <td class="num">${i + 1}</td>
         <td>${esc(item?.name) || '—'}</td>
-        ${hasSerialLine ? `<td class="mono">${esc(serial) || (item?.isSerialTracked && awaitingDispatch ? '<em>Assigned at dispatch</em>' : '—')}</td>` : ''}
+        ${hasSerialLine ? `<td class="mono">${esc(transferredSerial) || (item?.isSerialTracked && awaitingDispatch ? '<em>Assigned at dispatch</em>' : '—')}${serialCorrectionNote(l, serial)}</td>` : ''}
         <td class="right">${qty}</td>
       </tr>`
     })
@@ -613,6 +639,7 @@ export function buildStockTransferHtml(data: unknown): string {
     td.num, th.num { text-align: center; width: 32px; }
     td.right, th.right { text-align: right; }
     td.mono { font-family: "Courier New", monospace; }
+    .wrong-unit { font-family: Arial, sans-serif; font-size: 10px; color: #92400e; margin-top: 2px; }
     .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
     .total-wrap table { width: auto; }
     .total-wrap td { font-weight: 700; }

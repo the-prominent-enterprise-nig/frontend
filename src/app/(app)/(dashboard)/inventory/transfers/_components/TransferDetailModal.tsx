@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   useForm,
@@ -64,6 +64,12 @@ import {
   serialScanProps,
 } from '../../purchase-orders/_components/receive-po/serialScan'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
+import { getSenderSerials, type SenderSerial } from '../_actions/get-sender-serials'
+import {
+  buildWrongUnitNote,
+  meaningfulSerialReason,
+  wrongUnitBySerial,
+} from '@/src/libs/inventory/wrong-unit-notes'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
@@ -554,169 +560,328 @@ function UnlistedSerialInputs({
   )
 }
 
-// "The wrong serial was sent" — surfaced only for someone holding the same
-// serial-override permission that gates a dispatch-time override, since
-// rewriting or repointing a serial record at receipt is the same class of
-// action. Two mutually exclusive corrections: a typo-fix rewrites the same
-// physical unit's recorded serial in place; a unit-swap repoints this line
-// at a different unit that actually arrived (search scoped to this item,
-// across every branch, since the true unit could be a stray record
-// anywhere). Both force quantityReceived to 1 — a correction only makes
-// sense for a unit that did show up.
+/** Item name without its spec tail and "(1 of 2)" counter — "SHARP
+ * HMDX41PW — 14-Cup Capacity… (1 of 2)" reads as "SHARP HMDX41PW". */
+function shortItemName(name: string | undefined): string | undefined {
+  return name
+    ?.split(' — ')[0]
+    .replace(/\s*\(\d+ of \d+\)\s*$/, '')
+    .trim()
+}
+
+/** "250502400 (SHARP HMDX41PW)" — the serial with a short model tag. */
+function unitLabel(serial: string | undefined, itemName: string | undefined): string {
+  const model = shortItemName(itemName)
+  if (!serial) return model ?? '—'
+  return model ? `${serial} (${model})` : serial
+}
+
+// Two receive-time exceptions on a serial line, each behind its own link:
+//
+// "Wrong serial?" — a different unit of the SAME item arrived. The receiver
+// picks it from that item's in-stock units — the sender's first, then every
+// other branch, since the true unit could be a stray record anywhere; the
+// line is repointed at it and the dispatched serial is flagged lost in
+// transit. Gated on the serial-override permission — the same class of
+// action as a dispatch-time override — and needs a reason.
+//
+// "Wrong unit?" — the receiver picks the unit that arrived from what the
+// sender could have shipped by mistake: anything in stock at the source
+// warehouse (any model) plus this transfer's other dispatched units. Nothing
+// is repointed — the line is received and a note naming the picked unit is
+// added to the receipt notes. Open to every receiver; no override needed.
 function SerialReceiveCorrection({
   control,
   setValue,
   index,
   itemId,
+  transferId,
+  ownSerial,
+  lineLabel,
   canOverrideSerial,
 }: {
   control: Control<ReceiveTransferFormValues>
   setValue: UseFormSetValue<ReceiveTransferFormValues>
   index: number
   itemId: string | undefined
+  transferId: string
+  ownSerial: string | undefined
+  lineLabel: string
   canOverrideSerial: boolean
 }) {
-  const [openMode, setOpenMode] = useState<'typo' | 'swap' | null>(null)
-  const correctedSerialNumber = useWatch({ control, name: `lines.${index}.correctedSerialNumber` })
+  const [mode, setMode] = useState<'serial' | 'unit' | null>(null)
+  const [addedNote, setAddedNote] = useState<string | null>(null)
   const replacementSerialNumberId = useWatch({
     control,
     name: `lines.${index}.replacementSerialNumberId`,
   })
+  const notes = useWatch({ control, name: 'notes' }) ?? ''
+  const quantityReceived = useWatch({ control, name: `lines.${index}.quantityReceived` })
+  const activeMode = mode ?? (replacementSerialNumberId ? 'serial' : null)
+
+  function clearSerial(): void {
+    setMode(null)
+    setValue(`lines.${index}.replacementSerialNumberId`, '')
+    setValue(`lines.${index}.replacementSerialLabel`, '')
+    setValue(`lines.${index}.correctionReason`, '')
+  }
+
+  // Receive the line as-is and record the discrepancy in the receipt notes.
+  function receiveWithNote(note: string): void {
+    setMode(null)
+    setAddedNote(note)
+    setValue(`lines.${index}.quantityReceived`, 1, { shouldDirty: true })
+    const bullet = `• ${note}`
+    if (!notes.includes(bullet)) {
+      setValue('notes', notes.trim() ? `${notes.trim()}\n${bullet}` : bullet, {
+        shouldDirty: true,
+      })
+    }
+  }
+
+  function undoNote(): void {
+    const next = notes
+      .split('\n')
+      .filter((l) => l.trim() !== `• ${addedNote}`)
+      .join('\n')
+      .trim()
+    setValue('notes', next, { shouldDirty: true })
+    setAddedNote(null)
+  }
+
+  // Unticking "Received" after a wrong-unit pick means nothing arrived on
+  // this line after all — drop the note so the receipt doesn't contradict it.
+  useEffect(() => {
+    if (addedNote && quantityReceived !== 1) undoNote()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quantityReceived])
+
+  if (addedNote) {
+    return <AddedNoteNotice note={addedNote} onUndo={undoNote} />
+  }
+  if (activeMode === 'serial') {
+    return (
+      <WrongSerialPanel
+        control={control}
+        setValue={setValue}
+        index={index}
+        itemId={itemId}
+        transferId={transferId}
+        ownSerial={ownSerial}
+        onCancel={clearSerial}
+      />
+    )
+  }
+  if (activeMode === 'unit') {
+    return (
+      <WrongUnitPanel
+        index={index}
+        transferId={transferId}
+        ownSerial={ownSerial}
+        onPick={(picked) => receiveWithNote(buildWrongUnitNote(lineLabel, picked))}
+        onCancel={() => setMode(null)}
+      />
+    )
+  }
+  return (
+    <div className="mt-1 flex items-center gap-3">
+      {canOverrideSerial && (
+        <button
+          type="button"
+          onClick={() => setMode('serial')}
+          className="text-[11px] font-medium text-amber-700 hover:text-amber-800"
+        >
+          Wrong serial?
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => setMode('unit')}
+        className="text-[11px] font-medium text-amber-700 hover:text-amber-800"
+      >
+        Wrong unit?
+      </button>
+    </div>
+  )
+}
+
+function AddedNoteNotice({
+  note,
+  onUndo,
+}: {
+  note: string
+  onUndo: () => void
+}): React.JSX.Element {
+  return (
+    <div className="mt-1.5 flex items-start justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+      <p className="text-[11px] text-amber-800">
+        Received — added to receipt notes: <span className="font-medium">{note}</span>
+      </p>
+      <button
+        type="button"
+        onClick={onUndo}
+        className="shrink-0 text-[11px] font-medium text-amber-700 hover:text-amber-900"
+      >
+        Undo
+      </button>
+    </div>
+  )
+}
+
+/** "Brand Model · Warehouse" under each serial — enough to tell units apart. */
+function senderSerialSecondary(s: SenderSerial): string | undefined {
+  const model = [s.item?.brand?.name, s.item?.modelNumber || s.item?.name].filter(Boolean).join(' ')
+  return [model, s.currentWarehouse?.name].filter(Boolean).join(' · ') || undefined
+}
+
+/** Sender's units first, then other branches — searchable by serial,
+ * brand, model, item name or SKU. `itemId` narrows to one item's stock. */
+function SenderSerialSearch({
+  queryKey,
+  transferId,
+  itemId,
+  ownSerial,
+  placeholder,
+  onSelect,
+}: {
+  queryKey: string
+  transferId: string
+  itemId?: string
+  ownSerial: string | undefined
+  placeholder: string
+  onSelect: (s: SenderSerial) => void
+}): React.JSX.Element {
+  return (
+    <SearchCombobox
+      value=""
+      onChange={() => {}}
+      onSelect={(option) => onSelect(option.meta as SenderSerial)}
+      queryKey={queryKey}
+      placeholder={placeholder}
+      typeToSearchMessage="Search by serial, brand or model"
+      emptyMessage="No matching units"
+      search={async (query) => {
+        const res = await getSenderSerials(transferId, query, itemId)
+        return (res.data ?? [])
+          .filter((s) => s.serialNumber !== ownSerial)
+          .map((s) => ({
+            id: s.id,
+            primary: s.serialNumber,
+            secondary: senderSerialSecondary(s),
+            meta: s,
+          }))
+      }}
+    />
+  )
+}
+
+function CorrectionPanelHeader({
+  title,
+  onCancel,
+}: {
+  title: string
+  onCancel: () => void
+}): React.JSX.Element {
+  return (
+    <div className="mb-1.5 flex items-center justify-between">
+      <p className="text-[11px] font-medium text-amber-900">{title}</p>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="text-amber-600 hover:text-amber-800"
+        aria-label="Cancel correction"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
+}
+
+function WrongUnitPanel({
+  index,
+  transferId,
+  ownSerial,
+  onPick,
+  onCancel,
+}: {
+  index: number
+  transferId: string
+  ownSerial: string | undefined
+  onPick: (label: string) => void
+  onCancel: () => void
+}): React.JSX.Element {
+  return (
+    <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 p-2">
+      <CorrectionPanelHeader title="Wrong unit" onCancel={onCancel} />
+      <SenderSerialSearch
+        queryKey={`receive-wrong-unit-search-${transferId}-${index}`}
+        transferId={transferId}
+        ownSerial={ownSerial}
+        placeholder="Search the unit that actually arrived…"
+        onSelect={(s) =>
+          onPick(
+            unitLabel(
+              s.serialNumber,
+              s.item?.modelNumber
+                ? [s.item.brand?.name, s.item.modelNumber].filter(Boolean).join(' ')
+                : s.item?.name
+            )
+          )
+        }
+      />
+      <p className="mt-1 text-[11px] text-amber-600">
+        Picking a unit receives this line and adds a note to the receipt notes.
+      </p>
+    </div>
+  )
+}
+
+function WrongSerialPanel({
+  control,
+  setValue,
+  index,
+  itemId,
+  transferId,
+  ownSerial,
+  onCancel,
+}: {
+  control: Control<ReceiveTransferFormValues>
+  setValue: UseFormSetValue<ReceiveTransferFormValues>
+  index: number
+  itemId: string | undefined
+  transferId: string
+  ownSerial: string | undefined
+  onCancel: () => void
+}): React.JSX.Element {
   const replacementSerialLabel = useWatch({
     control,
     name: `lines.${index}.replacementSerialLabel`,
   })
   const correctionReason = useWatch({ control, name: `lines.${index}.correctionReason` }) ?? ''
 
-  if (!canOverrideSerial) return null
-
-  const activeMode: 'typo' | 'swap' | null = correctedSerialNumber
-    ? 'typo'
-    : replacementSerialNumberId
-      ? 'swap'
-      : openMode
-
-  function clearCorrection() {
-    setOpenMode(null)
-    setValue(`lines.${index}.correctedSerialNumber`, '')
-    setValue(`lines.${index}.replacementSerialNumberId`, '')
-    setValue(`lines.${index}.replacementSerialLabel`, '')
-    setValue(`lines.${index}.correctionReason`, '')
-  }
-
-  if (!activeMode) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpenMode('typo')}
-        className="mt-1 text-[11px] font-medium text-amber-700 hover:text-amber-800"
-      >
-        Wrong serial received?
-      </button>
-    )
-  }
-
   return (
     <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 p-2">
-      <div className="mb-1.5 flex items-center justify-between">
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setValue(`lines.${index}.replacementSerialNumberId`, '')
-              setValue(`lines.${index}.replacementSerialLabel`, '')
-              setOpenMode('typo')
-            }}
-            className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
-              activeMode === 'typo' ? 'bg-amber-200 text-amber-900' : 'text-amber-700'
-            }`}
-          >
-            Fix typo
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setValue(`lines.${index}.correctedSerialNumber`, '')
-              setOpenMode('swap')
-            }}
-            className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
-              activeMode === 'swap' ? 'bg-amber-200 text-amber-900' : 'text-amber-700'
-            }`}
-          >
-            Different unit arrived
-          </button>
-        </div>
-        <button
-          type="button"
-          onClick={clearCorrection}
-          className="text-amber-600 hover:text-amber-800"
-          aria-label="Cancel correction"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {activeMode === 'typo' ? (
-        <Controller
-          name={`lines.${index}.correctedSerialNumber`}
-          control={control}
-          render={({ field }) => (
-            <input
-              {...field}
-              value={field.value ?? ''}
-              type="text"
-              placeholder="Correct serial number"
-              onChange={(e) => {
-                field.onChange(e.target.value)
-                setValue(`lines.${index}.quantityReceived`, 1)
-              }}
-              className="w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-500"
-            />
-          )}
-        />
-      ) : (
-        <>
-          <SearchCombobox
-            value=""
-            onChange={() => {}}
-            onSelect={(option) => {
-              setValue(`lines.${index}.replacementSerialNumberId`, option.id, {
-                shouldValidate: true,
-              })
-              setValue(`lines.${index}.replacementSerialLabel`, option.primary)
-              setValue(`lines.${index}.quantityReceived`, 1)
-            }}
-            queryKey={`receive-serial-swap-search-${itemId}-${index}`}
-            placeholder="Search the serial that actually arrived…"
-            typeToSearchMessage="Type a serial number to search across every branch…"
-            emptyMessage="No matching serial numbers"
-            search={async (query) => {
-              const res = await getSerialNumbers({
-                itemId,
-                search: query || undefined,
-                status: 'in_stock',
-                limit: 25,
-                scope: 'override',
-              })
-              return (res.data?.data ?? []).map((s) => ({
-                id: s.id,
-                primary: s.serialNumber,
-                secondary:
-                  [s.currentWarehouse?.name, s.status].filter(Boolean).join(' · ') || undefined,
-              }))
-            }}
-          />
-          {replacementSerialLabel && (
-            <p className="mt-1 text-[11px] text-amber-700">
-              Will link to: {replacementSerialLabel}
-            </p>
-          )}
-          <p className="mt-1 text-[11px] text-amber-600">
-            Not registered yet? Add it in the serial numbers module first, then search for it here.
-          </p>
-        </>
+      <CorrectionPanelHeader title="Wrong serial" onCancel={onCancel} />
+      <SenderSerialSearch
+        queryKey={`receive-serial-swap-search-${transferId}-${itemId}-${index}`}
+        transferId={transferId}
+        itemId={itemId}
+        ownSerial={ownSerial}
+        placeholder="Search the serial that actually arrived…"
+        onSelect={(s) => {
+          setValue(`lines.${index}.replacementSerialNumberId`, s.id, {
+            shouldValidate: true,
+          })
+          setValue(`lines.${index}.replacementSerialLabel`, s.serialNumber)
+          setValue(`lines.${index}.quantityReceived`, 1)
+        }}
+      />
+      {replacementSerialLabel && (
+        <p className="mt-1 text-[11px] text-amber-700">Will link to: {replacementSerialLabel}</p>
       )}
-
+      <p className="mt-1 text-[11px] text-amber-600">
+        Not registered yet? Add it in the serial numbers module first, then search for it here.
+      </p>
       <input
         value={correctionReason}
         onChange={(e) => setValue(`lines.${index}.correctionReason`, e.target.value)}
@@ -1133,6 +1298,8 @@ export default function TransferDetailModal({
   // receive call, so there can be more than one — aggregate extras across
   // all of them, not just the first.
   const extraLinesReceived = (transfer?.goodsReceipts ?? []).flatMap((grn) => grn.lines ?? [])
+  // Receive-time "Wrong unit" notes, keyed by the serial each was logged against.
+  const wrongUnits = wrongUnitBySerial(transfer?.goodsReceipts)
 
   // A repair transfer auto-paired by the UDS module tracks its specific
   // serial separately (the UDS's own line) — never require an assignment
@@ -1698,14 +1865,20 @@ export default function TransferDetailModal({
                                   Assigned at dispatch
                                 </span>
                               ) : line.receiptCorrectedFromSerial ? (
-                                <span
-                                  title={`Corrected at receipt — was ${line.receiptCorrectedFromSerial.serialNumber}.${line.receiptCorrectionReason ? ` ${line.receiptCorrectionReason}` : ''}`}
-                                >
-                                  <span className="text-zinc-300 line-through">
-                                    {line.receiptCorrectedFromSerial.serialNumber}
-                                  </span>{' '}
-                                  <LineSerial line={line} />
-                                </span>
+                                // Wrong serial swap — keep the serial that was
+                                // transferred as the line's serial; the unit
+                                // that actually arrived goes in the note below.
+                                <>
+                                  <SerialLink
+                                    serialId={line.receiptCorrectedFromSerial.id}
+                                    serialNumber={line.receiptCorrectedFromSerial.serialNumber}
+                                  />
+                                  <p className="mt-0.5 font-sans text-[11px] font-medium text-amber-700">
+                                    Wrong serial — received <LineSerial line={line} />
+                                    {meaningfulSerialReason(line.receiptCorrectionReason) &&
+                                      ` (reason: ${meaningfulSerialReason(line.receiptCorrectionReason)})`}
+                                  </p>
+                                </>
                               ) : line.receiptCorrectionReason ? (
                                 <span
                                   title={`Corrected at receipt. ${line.receiptCorrectionReason}`}
@@ -1715,6 +1888,13 @@ export default function TransferDetailModal({
                               ) : (
                                 <LineSerial line={line} />
                               )}
+                              {line.serialNumber?.serialNumber &&
+                                wrongUnits.has(line.serialNumber.serialNumber) && (
+                                  <p className="mt-0.5 font-sans text-[11px] font-medium text-amber-700">
+                                    Wrong unit — received{' '}
+                                    {wrongUnits.get(line.serialNumber.serialNumber)}
+                                  </p>
+                                )}
                             </td>
                           )}
                           <td className="px-3 py-2 text-right font-medium text-zinc-700">
@@ -2341,6 +2521,9 @@ export default function TransferDetailModal({
                             setValue={receiveForm.setValue}
                             index={idx}
                             itemId={lineField.itemId}
+                            transferId={transfer.id}
+                            ownSerial={lineField.serialLabel}
+                            lineLabel={unitLabel(lineField.serialLabel, lineField.itemLabel)}
                             canOverrideSerial={canOverrideSerial}
                           />
                         )}
@@ -2481,11 +2664,11 @@ export default function TransferDetailModal({
                     name="notes"
                     control={receiveForm.control}
                     render={({ field }) => (
-                      <input
+                      <textarea
                         {...field}
-                        type="text"
+                        rows={3}
                         placeholder="Optional receipt notes…"
-                        className={fieldClass}
+                        className={`${fieldClass} resize-y`}
                       />
                     )}
                   />
