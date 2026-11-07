@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, X, RefreshCw, ClipboardList, Download, Copy, Check, Plus } from 'lucide-react'
@@ -358,6 +358,15 @@ export default function ReceivingReportsTab({
   // would never open. `autoOpened` makes it fire once — without it, closing
   // the modal while ?new=1 is still in the URL would immediately reopen it.
   const wantsNew = searchParams.get('new') === '1'
+  // The UDS list's "Receive Back" also names the service center and the
+  // ticket's units, so the form opens on them.
+  const serviceCenterPreset = useMemo(() => {
+    const serviceCenterId = searchParams.get('serviceCenter')
+    const serials = searchParams.get('serials')?.split(',').filter(Boolean) ?? []
+    return wantsNew && serviceCenterId && serials.length
+      ? { serviceCenterId, serialNumberIds: serials }
+      : null
+  }, [wantsNew, searchParams])
   const [autoOpened, setAutoOpened] = useState(false)
 
   useEffect(() => {
@@ -375,7 +384,7 @@ export default function ReceivingReportsTab({
     setIsCreateOpen(false)
     if (!wantsNew) return
     const next = new URLSearchParams(searchParams.toString())
-    next.delete('new')
+    ;['new', 'serviceCenter', 'serials'].forEach((key) => next.delete(key))
     const qs = next.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }, [wantsNew, searchParams, router, pathname])
@@ -915,6 +924,7 @@ export default function ReceivingReportsTab({
           subtitle="Record what was delivered against a purchase order."
           submitLabel="Create Receiving Report"
           submittingLabel="Creating…"
+          serviceCenterPreset={serviceCenterPreset}
         />
       )}
     </div>

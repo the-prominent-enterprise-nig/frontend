@@ -26,6 +26,7 @@ import SetRepairProviderModal from './SetRepairProviderModal'
 import WriteOffUdsModal from './WriteOffUdsModal'
 import ReceiveFromProviderModal from './ReceiveFromProviderModal'
 import { can, type SessionUser } from '@/src/libs/guards/permission'
+import { saveStockTransferDraft } from '../../transfers/_components/stockTransferDraft'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import {
   UDS_REASON_LABELS,
@@ -77,6 +78,8 @@ function buildNextStep(handlers: {
   writeOff: (uds: Uds) => void
   /** Scenario 72 Part 10 — one fixed step, confirmed in a small modal. */
   advance: (uds: Uds, target: ManualUdsStatus) => void
+  /** The trip to main goes out on a new stock transfer. */
+  sendToMain: (uds: Uds) => void
   /** A hop a stock transfer carries is moved there, not here. */
   viewTransfer: (transferNumber: string) => void
   /** The two DR legs are hidden from anyone who cannot raise a DR. */
@@ -90,7 +93,7 @@ function buildNextStep(handlers: {
   // Scenario 72 Part 7 — both of these legs now go out on a Delivery Receipt:
   // the buttons open a new DR for this ticket instead of a modal.
   const DISPATCH: StepAction = {
-    label: 'Create DR to Service Centre',
+    label: 'DR to Service Center',
     className: 'bg-amber-50 text-amber-700 hover:bg-amber-100',
     run: handlers.dispatch,
   }
@@ -100,7 +103,7 @@ function buildNextStep(handlers: {
     run: handlers.receive,
   }
   const RELEASE: StepAction = {
-    label: 'Create DR to Customer',
+    label: 'DR to Customer',
     className: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100',
     run: handlers.release,
   }
@@ -145,7 +148,8 @@ function buildNextStep(handlers: {
 
     const outbound = onTransfer(uds.linkedStockTransfer)
     if (uds.status === 'issued') {
-      return { next: outbound ?? stepTo('Send to Main', 'in_transit'), alt: null }
+      const send: StepAction = { ...stepTo('Send to Main', 'in_transit'), run: handlers.sendToMain }
+      return { next: outbound ?? send, alt: null }
     }
     if (uds.status === 'in_transit') {
       return { next: outbound ?? stepTo('Receive at Main', 'received'), alt: null }
@@ -222,6 +226,8 @@ export default function UdsList({ session }: { session: SessionUser }) {
   const [receivingUds, setReceivingUds] = useState<Uds | null>(null)
   const router = useRouter()
   const canCreateDr = can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_CREATE)
+  const canCreateTransfer = can(session, INVENTORY_PERMISSIONS.TRANSFERS_CREATE)
+  const canCreateRr = can(session, INVENTORY_PERMISSIONS.RECEIVE_CREATE)
 
   // Built once from the setters above; the table itself is state-independent.
   const nextStep = useMemo(
@@ -230,7 +236,15 @@ export default function UdsList({ session }: { session: SessionUser }) {
         assess: setAssessingUds,
         dispatch: (uds) =>
           router.push(`/inventory/delivery-receipts/new?purpose=to_service_center&udsId=${uds.id}`),
-        receive: setReceivingUds,
+        receive: (uds) => {
+          // Back from the service center on a Receiving Report, which closes
+          // the ticket's leg. Without RR rights, the old confirmation.
+          if (!canCreateRr || !uds.repairProviderId) return setReceivingUds(uds)
+          const serials = uds.lines.map((l) => l.serialNumberId).join(',')
+          router.push(
+            `/inventory/stock-transaction?tab=receiving&new=1&serviceCenter=${uds.repairProviderId}&serials=${serials}`
+          )
+        },
         release: (uds) => {
           const purpose =
             uds.status === 'repaired' || uds.repairType === 'home_service'
@@ -240,13 +254,31 @@ export default function UdsList({ session }: { session: SessionUser }) {
         },
         writeOff: setWritingOffUds,
         advance: (uds, target) => setSelectedStep({ uds, target }),
+        sendToMain: (uds) => {
+          // The transfer to main becomes the ticket's own (the backend links
+          // it), so its dispatch and receipt move the ticket.
+          if (!canCreateTransfer || !uds.warehouseId) {
+            return setSelectedStep({ uds, target: 'in_transit' })
+          }
+          saveStockTransferDraft({
+            fromWarehouseId: uds.warehouseId,
+            pinnedLines: uds.lines.map((l) => ({
+              itemId: l.itemId,
+              itemLabel: l.item.name,
+              serialNumberId: l.serialNumberId,
+            })),
+            toMain: true,
+            reason: `Repair — ${uds.code} to Main for assessment`,
+          })
+          router.push('/inventory/stock-transaction?tab=transfers')
+        },
         viewTransfer: (number) =>
           router.push(
             `/inventory/stock-transaction?tab=transfers&transfer=${encodeURIComponent(number)}`
           ),
         canCreateDr,
       }),
-    [router, canCreateDr]
+    [router, canCreateDr, canCreateTransfer, canCreateRr]
   )
 
   const hasFilters = !!statusFilter || !!reasonFilter || !!warehouseFilter || !!providerFilter

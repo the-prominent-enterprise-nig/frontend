@@ -326,7 +326,10 @@ export const DrUdsLookupSchema = z.object({
         isSerialTracked: z.boolean(),
         brand: z.object({ name: z.string() }).nullable(),
       }),
-      serialNumber: z.object({ serialNumber: z.string() }),
+      serialNumber: z.object({
+        serialNumber: z.string(),
+        currentWarehouseId: z.string().nullable().optional(),
+      }),
     })
   ),
 })

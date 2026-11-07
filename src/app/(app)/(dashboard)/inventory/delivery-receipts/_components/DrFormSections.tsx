@@ -16,7 +16,6 @@ import {
   DR_GIVEAWAY_RECIPIENTS,
   RAFFLE_OCCASIONS,
   isRepairPurpose,
-  isTicketedRepair,
   type DrCustomerLookup,
   type DrFormValues,
 } from '@/src/schema/inventory/delivery-receipts'
@@ -228,9 +227,8 @@ function WarehouseField({
   onChange: (warehouseId: string) => void
 }): React.JSX.Element {
   const { control } = useFormContext<DrFormValues>()
-  // A ticketed repair DR leaves from wherever its ticket's unit is.
-  const [purpose, udsId] = useWatch({ control, name: ['purpose', 'udsId'] })
-  const locked = isTicketedRepair({ purpose, udsId })
+  // A ticketed repair DR starts from wherever its ticket's unit is, but the
+  // branch stays the user's pick.
   // Branch-scoped server-side: a branch user only gets their own branch.
   const warehouses = useQuery({
     queryKey: ['dr-issuing-warehouses'],
@@ -254,8 +252,7 @@ function WarehouseField({
             }}
             options={options}
             loading={warehouses.isLoading}
-            placeholder={locked ? 'From the repair ticket' : 'Select branch…'}
-            disabled={locked}
+            placeholder="Select branch…"
             chrome={CONTROL_CHROME}
           />
         )}

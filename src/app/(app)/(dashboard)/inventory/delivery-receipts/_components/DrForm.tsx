@@ -18,6 +18,7 @@ import { showToast } from '@/src/components/ui/toast'
 import {
   DrFormSchema,
   DrSubmitSchema,
+  isTicketedRepair,
   type DrFormValues,
 } from '@/src/schema/inventory/delivery-receipts'
 import { saveDeliveryReceipt } from '../_actions/save-delivery-receipt'
@@ -141,11 +142,12 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
     else router.push(BACK_HREF)
   }
 
-  /** Lines name units on one warehouse's shelf; a new warehouse clears them. */
+  /** Lines name units on one warehouse's shelf; a new warehouse clears them.
+   * A ticketed repair DR's lines are its UDS's units, so they stay. */
   function onWarehouseChange(warehouseId: string): void {
     const hadLines = form.getValues('lines').length > 0
     form.setValue('warehouseId', warehouseId, { shouldDirty: true, shouldValidate: true })
-    if (hadLines) {
+    if (hadLines && !isTicketedRepair(form.getValues())) {
       form.setValue('lines', [], { shouldDirty: true })
       showToast({ title: 'Items cleared — they were picked from the other branch', status: 'info' })
     }
