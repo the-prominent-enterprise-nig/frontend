@@ -250,6 +250,7 @@ export const SerialNumberSummarySchema = z.object({
       kind: z.enum(['delivery_receipt', 'pos_release', 'service_job']),
       reference: z.string().nullable(),
       name: z.string().nullable(),
+      since: z.string().nullable().optional(),
     })
     .nullable()
     .optional(),

@@ -125,7 +125,7 @@ function heldDestination(serial: Serial): Lines | null {
     name: hold.name ?? HOLD_LABELS[hold.kind],
     tag: `Reserved · ${HOLD_LABELS[hold.kind]}`,
     reference: hold.reference,
-    date: serial.deliveryReceipt?.date ?? null,
+    date: hold.since ?? null,
   }
 }
 
