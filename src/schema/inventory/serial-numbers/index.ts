@@ -169,6 +169,8 @@ export const SerialNumberSummarySchema = z.object({
   warehouse: SerialWarehouseSchema.optional().nullable(),
   currentWarehouse: SerialWarehouseSchema.optional().nullable(),
   status: SerialStatusSchema,
+  // How the unit came in: brand new, back from repair, or repossessed.
+  receivedAs: z.enum(['brand_new', 'repair_return', 'repo']).nullable().optional(),
   soldToCustomerId: z.string().optional().nullable(),
   saleDate: z.string().optional().nullable(),
   // NIG #10 — who bought it, and the sale it is out on (SI number, else the
@@ -203,7 +205,60 @@ export const SerialNumberSummarySchema = z.object({
   unitCost: z.number().nullable().optional(),
   // Set while an open transfer (requested through partially received)
   // already claims this unit.
-  openTransfer: z.object({ transferNumber: z.string() }).nullable().optional(),
+  openTransfer: z
+    .object({
+      transferNumber: z.string(),
+      status: z.string().optional(),
+      date: z.string().nullable().optional(),
+      // The branch it is headed to.
+      toWarehouseName: z.string().nullable().optional(),
+    })
+    .nullable()
+    .optional(),
+  // Out at a service center for repair — physically there, still ours.
+  consignedToSupplier: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
+  // The open repair ticket (UDS) the unit is on, if any.
+  repairTicket: z
+    .object({
+      code: z.string(),
+      status: z.string(),
+      reason: z.string().optional(),
+      // Set when the unit is a customer's, in for repair.
+      customerName: z.string().nullable().optional(),
+      dispatchDeliveryReceiptNumber: z.string().nullable().optional(),
+      dispatchedAt: z.string().nullable().optional(),
+      expectedReturnDate: z.string().nullable().optional(),
+      repairProviderName: z.string().nullable().optional(),
+    })
+    .nullable()
+    .optional(),
+  // The newest live Delivery Receipt naming the unit — the one it left on
+  // (posted) or is waiting on (draft to approved).
+  deliveryReceipt: z
+    .object({
+      drNumber: z.string(),
+      status: z.string(),
+      purpose: z.string(),
+      recipient: z.string().nullable(),
+      date: z.string(),
+    })
+    .nullable()
+    .optional(),
+  // What a held unit is reserved for.
+  heldBy: z
+    .object({
+      kind: z.enum(['delivery_receipt', 'pos_release', 'service_job']),
+      reference: z.string().nullable(),
+      name: z.string().nullable(),
+      since: z.string().nullable().optional(),
+    })
+    .nullable()
+    .optional(),
+  // The transfer a lost unit went missing on.
+  lostOnTransfer: z
+    .object({ transferNumber: z.string(), fromWarehouseName: z.string() })
+    .nullable()
+    .optional(),
   // Scenario 56 — RR age (first received) and branch age (arrived here).
   firstReceivedAt: z.string().nullable().optional(),
   locationSince: z.string().nullable().optional(),

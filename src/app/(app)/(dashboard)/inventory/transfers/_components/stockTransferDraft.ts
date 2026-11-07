@@ -1,12 +1,18 @@
 /**
- * General Stockbook's "Stock Transfer" hands the ticked units to the Transfers
+ * General Stockbook's "Stock Transfer" (and the UDS list's "Send to Main") hands the ticked units to the Transfers
  * form through sessionStorage, not the URL: the form reads it once on mount and
  * removes it, so a refresh or Back can't reopen a stale draft.
  */
 
 export type PinnedLine = { itemId: string; itemLabel?: string; serialNumberId: string }
 
-export type StockTransferDraft = { fromWarehouseId: string; pinnedLines: PinnedLine[] }
+export type StockTransferDraft = {
+  fromWarehouseId: string
+  pinnedLines: PinnedLine[]
+  /** A repair ticket's trip: the destination is fixed to Main. */
+  toMain?: boolean
+  reason?: string
+}
 
 const KEY = 'inventory:stock-transfer-draft'
 
@@ -22,7 +28,7 @@ export function consumeStockTransferDraft(): StockTransferDraft | null {
   try {
     const parsed: unknown = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') return null
-    const { fromWarehouseId, pinnedLines } = parsed as Record<string, unknown>
+    const { fromWarehouseId, pinnedLines, toMain, reason } = parsed as Record<string, unknown>
     if (typeof fromWarehouseId !== 'string' || !Array.isArray(pinnedLines)) return null
     const lines = pinnedLines.flatMap((p): PinnedLine[] => {
       if (!p || typeof p !== 'object') return []
@@ -36,7 +42,13 @@ export function consumeStockTransferDraft(): StockTransferDraft | null {
         },
       ]
     })
-    return lines.length > 0 ? { fromWarehouseId, pinnedLines: lines } : null
+    if (lines.length === 0) return null
+    return {
+      fromWarehouseId,
+      pinnedLines: lines,
+      toMain: toMain === true,
+      reason: typeof reason === 'string' ? reason : undefined,
+    }
   } catch {
     return null
   }

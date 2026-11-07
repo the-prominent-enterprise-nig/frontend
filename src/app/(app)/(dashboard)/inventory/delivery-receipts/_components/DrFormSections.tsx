@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import { Controller, useFormContext, useWatch, type UseFormSetValue } from 'react-hook-form'
 import { useQuery } from '@tanstack/react-query'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
@@ -16,7 +17,6 @@ import {
   DR_GIVEAWAY_RECIPIENTS,
   RAFFLE_OCCASIONS,
   isRepairPurpose,
-  isTicketedRepair,
   type DrCustomerLookup,
   type DrFormValues,
 } from '@/src/schema/inventory/delivery-receipts'
@@ -181,7 +181,7 @@ export function DrIssueSection({
   onWarehouseChange: (warehouseId: string) => void
 }): React.JSX.Element {
   const { control, formState } = useFormContext<DrFormValues>()
-  const purpose = useWatch({ control, name: 'purpose' })
+  const [purpose, headOffice] = useWatch({ control, name: ['purpose', 'issuingHeadOffice'] })
   const config = DR_PURPOSE_CONFIG[purpose]
   const errors = formState.errors
   return (
@@ -208,7 +208,8 @@ export function DrIssueSection({
         </Field>
         <WarehouseField error={errors.warehouseId?.message} onChange={onWarehouseChange} />
         <DepartmentField
-          required={!!config.requiresDepartment}
+          // Only a head office (Mabini, San Sebastian) has departments.
+          required={!!config.requiresDepartment && headOffice}
           error={errors.departmentId?.message}
         />
       </div>
@@ -227,20 +228,24 @@ function WarehouseField({
   error?: string
   onChange: (warehouseId: string) => void
 }): React.JSX.Element {
-  const { control } = useFormContext<DrFormValues>()
-  // A ticketed repair DR leaves from wherever its ticket's unit is.
-  const [purpose, udsId] = useWatch({ control, name: ['purpose', 'udsId'] })
-  const locked = isTicketedRepair({ purpose, udsId })
+  const { control, setValue } = useFormContext<DrFormValues>()
+  const warehouseId = useWatch({ control, name: 'warehouseId' })
+  // A ticketed repair DR starts from wherever its ticket's unit is, but the
+  // branch stays the user's pick.
   // Branch-scoped server-side: a branch user only gets their own branch.
   const warehouses = useQuery({
     queryKey: ['dr-issuing-warehouses'],
     queryFn: () => getWarehouses({ status: 'active', limit: 200 }),
     staleTime: 5 * 60_000,
   })
-  const options = (warehouses.data?.data?.data ?? []).map((w) => ({
-    value: w.id,
-    label: locationLabel(w),
-  }))
+  const rows = warehouses.data?.data?.data ?? []
+  const options = rows.map((w) => ({ value: w.id, label: locationLabel(w) }))
+  // Whether the issuing branch is a head office decides if Office use needs a
+  // department — kept on the form so the submit check can read it.
+  const headOffice = !!rows.find((w) => w.id === warehouseId)?.branch?.isHeadOffice
+  useEffect(() => {
+    setValue('issuingHeadOffice', headOffice)
+  }, [headOffice, setValue])
   return (
     <Field label="Issuing branch" required error={error}>
       <Controller
@@ -254,8 +259,7 @@ function WarehouseField({
             }}
             options={options}
             loading={warehouses.isLoading}
-            placeholder={locked ? 'From the repair ticket' : 'Select branch…'}
-            disabled={locked}
+            placeholder="Select branch…"
             chrome={CONTROL_CHROME}
           />
         )}
