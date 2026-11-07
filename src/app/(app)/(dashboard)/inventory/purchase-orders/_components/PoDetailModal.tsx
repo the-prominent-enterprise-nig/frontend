@@ -46,8 +46,8 @@ type Props = {
   canReceive?: boolean
   canClose?: boolean
   canEdit?: boolean
-  /** Unit price, line totals and the PO total: the Business Owner and Mabini's
-   * Branch Manager only. Everyone else sees quantities. */
+  /** Unit price, line totals and the PO total: roles that may see item cost
+   * (see canSeeSupplierPrices) only. Everyone else sees quantities. */
   showPrices?: boolean
   onApprove?: (po: PurchaseOrderSummary) => void
   onCancel?: (po: PurchaseOrderSummary) => void

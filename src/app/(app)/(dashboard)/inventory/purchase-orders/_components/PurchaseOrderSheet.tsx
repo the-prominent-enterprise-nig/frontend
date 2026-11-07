@@ -68,8 +68,8 @@ export default function PurchaseOrderSheet({
   showPrices = true,
 }: {
   doc: PurchaseOrderPrintDocument
-  /** Prices (unit, line and total): the Business Owner and Mabini's Branch
-   * Manager only. Everyone else gets quantities. */
+  /** Prices (unit, line and total): roles that may see item cost
+   * (see canSeeSupplierPrices) only. Everyone else gets quantities. */
   showPrices?: boolean
 }) {
   const po = doc.document

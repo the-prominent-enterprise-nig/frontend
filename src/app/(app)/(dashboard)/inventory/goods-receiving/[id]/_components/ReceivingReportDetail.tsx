@@ -169,7 +169,7 @@ export default function ReceivingReportDetail({
 
   const lines = record?.lines ?? []
   // Costs reach the inventory RR document for the Business Owner only.
-  // …and to the Business Owner and Mabini's Branch Manager on screen as well.
+  // …and to roles that may see item cost on screen as well.
   const showsAmounts = showPrices && (doc.document.lines ?? []).some((l) => l.unitCost != null)
   // VAT-inclusive, as on the printed RR, so it reads the same as the PO price.
   const grossUnitCosts = receivingReportGrossUnitCosts(doc.document)

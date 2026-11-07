@@ -93,8 +93,8 @@ export function buildReceivingReportHtml(
   // Costs reach the document only for whoever may see them — the Business
   // Owner on the inventory copy, Accounting on its own — so the amounts
   // print whenever it carries them, quantities only otherwise.
-  // `showPrices: false` (anyone but the Business Owner and Mabini's Branch
-  // Manager) prints quantities only: no unit cost, amounts or totals.
+  // `showPrices: false` (anyone but roles that may see item cost
+  // (see canSeeSupplierPrices)) prints quantities only: no unit cost, amounts or totals.
   const showAmounts =
     opts.showPrices !== false && (opts.showAmounts ?? lines.some((l) => l.unitCost != null))
 
@@ -725,8 +725,8 @@ function buildPurchaseOrderHtml(
   // purchaseOrderLineId -> serials map (see get-purchase-order-receipts.ts)
   // once the PO is closed, so a fully-received PO's printout can show them.
   serialsByLineId?: Record<string, string[]>,
-  // Prices (unit price, line totals, PO total): the Business Owner and
-  // Mabini's Branch Manager only. Everyone else gets quantities.
+  // Prices (unit price, line totals, PO total): roles that may see item cost
+  // (see canSeeSupplierPrices) only. Everyone else gets quantities.
   showPrices = true
 ): string {
   const doc = data as PrintDocumentEnvelope

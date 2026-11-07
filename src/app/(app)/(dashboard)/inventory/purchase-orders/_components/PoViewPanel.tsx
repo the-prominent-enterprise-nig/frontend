@@ -16,7 +16,7 @@ import { PLEX, MONO, StatusBadge } from './procurementTokens'
 type Props = {
   po: PurchaseOrderSummary | null
   onClose: () => void
-  /** Prices on the printable PO: Business Owner and Mabini's Branch Manager only. */
+  /** Prices on the printable PO: roles that may see item cost only. */
   showPrices?: boolean
 }
 

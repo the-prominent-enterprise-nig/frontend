@@ -395,8 +395,8 @@ export function PurchaseOrderList({
 
   const [overdueOnly, setOverdueOnly] = useState(false)
   const requestsSession = session && can(session, PROCUREMENT_PERMISSIONS.PR_READ) ? session : null
-  // PO prices (list Total, detail, print, PDF, view): the Business Owner and
-  // Mabini's Branch Manager only.
+  // PO prices (list Total, detail, print, PDF, view): roles that may see item cost
+  // (see canSeeSupplierPrices) only.
   const showPrices = useSeesSupplierPrices()
   const grid = showPrices ? GRID : GRID_NO_TOTAL
   /** The "Requests" pill — swaps the orders table for open purchase requests. */

@@ -250,18 +250,14 @@ export function managesOwnBranch(user: PermissionHolder): boolean {
   return !isAdmin(user) && !!user.branchId && can(user, 'pos:config:manage')
 }
 
-/** The only branch whose printouts carry prices. */
-const PRICE_VISIBLE_BRANCH = 'mabini'
-
 /**
- * Whether prices (unit price, line amounts, totals) show on the printed PO and
- * Receiving Report. The Business Owner and Mabini's Branch Manager only;
- * everyone else, Head Office and other Mabini staff included, gets quantities.
+ * Whether supplier prices (unit price, line amounts, totals) show on Purchase
+ * Orders and Receiving Reports — on screen and in print. Per the access
+ * sheet, whoever may see receiving cost (inventory:receive:cost-view: Head
+ * Office inventory roles, Department Heads, Owners); Accounting reads its own
+ * RR copy through its financial-report permission. The "no item cost" roles —
+ * branch staff and warehouse custodians — get quantities only.
  */
-export function canSeeSupplierPrices(
-  user: PermissionHolder & Pick<SessionUser, 'branchName'>
-): boolean {
-  if (hasPrivilegedRole(user)) return true
-  const atMabini = user.branchName?.trim().toLowerCase() === PRICE_VISIBLE_BRANCH
-  return atMabini && hasRole(user, 'Branch Manager')
+export function canSeeSupplierPrices(user: SessionUser): boolean {
+  return canAny(user, ['inventory:receive:cost-view', 'accounting:financial_report:read'])
 }
