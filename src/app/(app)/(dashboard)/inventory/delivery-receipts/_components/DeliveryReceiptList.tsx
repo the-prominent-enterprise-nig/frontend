@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { Plus, Search, Truck } from 'lucide-react'
+import { Search, Truck } from 'lucide-react'
 import { can, type SessionUser } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { PLEX, MONO, STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
@@ -132,11 +132,10 @@ function NewDrLink(): React.JSX.Element {
   return (
     <Link
       href="/inventory/delivery-receipts/new"
-      className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-3 py-2 text-sm font-medium text-white hover:bg-[#4a189b] sm:px-4"
+      // Same size and style as the Purchase Order tab's "+ New Purchase".
+      className="rounded-lg bg-[#5b21b6] px-4 py-[9px] text-[13px] font-medium text-white hover:bg-[#4a189b]"
     >
-      <Plus className="h-4 w-4" />
-      <span className="hidden sm:inline">New delivery receipt</span>
-      <span className="sm:hidden">New</span>
+      + New Receipt
     </Link>
   )
 }
