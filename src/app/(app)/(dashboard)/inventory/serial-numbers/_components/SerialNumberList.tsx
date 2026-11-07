@@ -62,7 +62,24 @@ const CONTROL_CHROME = {
   focused: 'border-[#5b21b6] shadow-[0_0_0_3px_#f0e9fc]',
 }
 
-function SerialStatusPill({ status }: { status: SerialStatus }) {
+/** A repossessed unit back on the shelf reads Repossessed, not In Stock. */
+function SerialStatusPill({
+  status,
+  repossessed = false,
+}: {
+  status: SerialStatus
+  repossessed?: boolean
+}): React.JSX.Element {
+  if (repossessed && status === 'in_stock') {
+    return (
+      <StatusBadge
+        label="Repossessed"
+        colorClassName="bg-teal-50 text-teal-700"
+        dotClassName="bg-teal-600"
+        size="xs"
+      />
+    )
+  }
   return (
     <StatusBadge
       label={SERIAL_STATUS_LABELS[status]}
@@ -801,7 +818,10 @@ export default function SerialNumberList({
                             )}
                             <td className="px-4 py-[11px] text-center">
                               <div className="flex flex-col items-center gap-1">
-                                <SerialStatusPill status={serial.status} />
+                                <SerialStatusPill
+                                  status={serial.status}
+                                  repossessed={serial.receivedAs === 'repo'}
+                                />
                                 {serial.openTransfer && (
                                   <OpenTransferChip number={serial.openTransfer.transferNumber} />
                                 )}

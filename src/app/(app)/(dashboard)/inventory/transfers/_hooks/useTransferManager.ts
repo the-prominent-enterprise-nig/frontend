@@ -165,6 +165,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
           status: 'success',
         })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({
           queryKey: ['inventory-transfer', selectedTransfer?.id],
@@ -202,6 +204,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
       if (result.success) {
         showToast({ title: 'Request approved', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         // No optimistic status set here — approving routes to either
@@ -224,6 +228,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
       if (result.success) {
         showToast({ title: 'Request rejected', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         if (selectedTransfer) {
@@ -245,6 +251,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
       if (result.success) {
         showToast({ title: 'Request approved', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         if (selectedTransfer) {
@@ -267,6 +275,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
       if (result.success) {
         showToast({ title: 'Request rejected', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         if (selectedTransfer) {
@@ -288,6 +298,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
       if (result.success) {
         showToast({ title: 'Request accepted', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         if (selectedTransfer) {
@@ -310,6 +322,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
       if (result.success) {
         showToast({ title: 'Request rejected', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         if (selectedTransfer) {
@@ -343,6 +357,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
           status: 'success',
         })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         if (selectedTransfer) {
@@ -378,6 +394,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
           status: 'success',
         })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         if (selectedTransfer && result.data?.status) {
@@ -401,6 +419,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
       if (result.success) {
         showToast({ title: 'Transfer dispatched', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         if (selectedTransfer) {
@@ -423,6 +443,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
       if (result.success) {
         showToast({ title: 'Transfer received', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
         // Unlike every other transfer action, receive has two possible
@@ -448,6 +470,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
       if (result.success) {
         showToast({ title: 'Transfer cancelled', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
         setSelectedTransfer(null)
       } else {
@@ -582,6 +606,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
 
     refetch: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
       queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
     },
   }

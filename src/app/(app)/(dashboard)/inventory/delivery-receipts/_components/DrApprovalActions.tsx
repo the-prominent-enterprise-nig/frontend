@@ -39,6 +39,8 @@ export function DrApprovalActions({ dr }: { dr: DrDetail }): React.JSX.Element {
   async function done(message: string): Promise<void> {
     showToast({ title: message, status: 'success' })
     await queryClient.invalidateQueries({ queryKey: ['delivery-receipts'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
     router.refresh()
   }
 

@@ -224,6 +224,13 @@ export const UdsSchema = z.object({
   rfsFormFile: UdsRfsFormFileSchema.optional().nullable(),
   repairProviderId: z.string().optional().nullable(),
   repairProvider: UdsRepairProviderSchema.optional().nullable(),
+  // A DR already raised for this sheet and not yet posted (draft through
+  // approved), newest first.
+  deliveryReceipts: z
+    .array(
+      z.object({ id: z.string(), drNumber: z.string(), status: z.string(), purpose: z.string() })
+    )
+    .optional(),
   // Scenario 73 — In-Store / Home Service from the intake RR.
   repairType: z.enum(['in_store', 'home_service']).optional().nullable(),
   linkedStockTransferId: z.string().optional().nullable(),

@@ -64,6 +64,8 @@ export function useCreateStockRequest(): CreateStockRequest {
           status: 'success',
         })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
       } else {
         showToast({

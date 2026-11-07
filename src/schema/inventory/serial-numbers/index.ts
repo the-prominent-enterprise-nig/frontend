@@ -169,6 +169,8 @@ export const SerialNumberSummarySchema = z.object({
   warehouse: SerialWarehouseSchema.optional().nullable(),
   currentWarehouse: SerialWarehouseSchema.optional().nullable(),
   status: SerialStatusSchema,
+  // How the unit came in: brand new, back from repair, or repossessed.
+  receivedAs: z.enum(['brand_new', 'repair_return', 'repo']).nullable().optional(),
   soldToCustomerId: z.string().optional().nullable(),
   saleDate: z.string().optional().nullable(),
   // NIG #10 — who bought it, and the sale it is out on (SI number, else the

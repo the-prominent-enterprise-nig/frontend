@@ -82,6 +82,8 @@ function buildNextStep(handlers: {
   sendToMain: (uds: Uds) => void
   /** A hop a stock transfer carries is moved there, not here. */
   viewTransfer: (transferNumber: string) => void
+  /** A leg already on a DR is moved there — no second DR. */
+  viewDr: (drId: string) => void
   /** The two DR legs are hidden from anyone who cannot raise a DR. */
   canCreateDr: boolean
 }): (uds: Uds) => { next: StepAction | null; alt: StepAction | null } {
@@ -133,6 +135,21 @@ function buildNextStep(handlers: {
   return (uds) => {
     const none = { next: null, alt: null }
     if (uds.status === 'completed' || uds.status === 'cancelled') return none
+
+    // Already raised: the DR (draft or awaiting approval) moves the sheet
+    // once it posts, so the step is to open it, not to raise another.
+    const openDr = uds.deliveryReceipts?.[0]
+    if (openDr) {
+      const waiting = openDr.status === 'draft' ? 'draft' : 'awaiting approval'
+      return {
+        next: {
+          label: `Open ${openDr.drNumber} (${waiting})`,
+          className: 'bg-sky-50 text-sky-700 hover:bg-sky-100',
+          run: () => handlers.viewDr(openDr.id),
+        },
+        alt: null,
+      }
+    }
 
     // Scenario 73 — Home Service: the service center named at intake already
     // serviced the unit, so it goes straight back to the customer on a DR —
@@ -276,6 +293,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
           router.push(
             `/inventory/stock-transaction?tab=transfers&transfer=${encodeURIComponent(number)}`
           ),
+        viewDr: (id) => router.push(`/inventory/delivery-receipts/${id}`),
         canCreateDr,
       }),
     [router, canCreateDr, canCreateTransfer, canCreateRr]

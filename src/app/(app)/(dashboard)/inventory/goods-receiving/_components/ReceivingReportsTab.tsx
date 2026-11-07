@@ -419,6 +419,8 @@ export default function ReceivingReportsTab({
         queryClient.invalidateQueries({ queryKey: ['inventory-receiving-reports'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-receiving-reports-summary'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-stock-balances'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
       } else if (result.errorCode !== 'receiving_warehouse_mismatch') {
         // That one code is a confirmable warning, not a failure — the modal
         // shows its own banner and "Receive anyway" instead of this toast.

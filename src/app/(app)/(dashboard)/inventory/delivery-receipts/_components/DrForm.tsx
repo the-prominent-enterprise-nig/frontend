@@ -83,6 +83,8 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
     if (!id) return
     showToast({ title: 'Draft saved', status: 'success' })
     await queryClient.invalidateQueries({ queryKey: ['delivery-receipts'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
     if (!draft) router.push(`/inventory/delivery-receipts/${id}`)
     else router.refresh()
   }
@@ -102,6 +104,8 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
     if (doc?.success && doc.data) printDeliveryReceipt(doc.data.dr, doc.data.memo)
     else showToast({ title: 'Saved, but the preview could not load', status: 'error' })
     await queryClient.invalidateQueries({ queryKey: ['delivery-receipts'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
     router.refresh()
   }
 
@@ -132,6 +136,8 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
     }
     showToast({ title: res.message ?? 'Submitted', status: 'success' })
     await queryClient.invalidateQueries({ queryKey: ['delivery-receipts'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
     router.push(`/inventory/delivery-receipts/${id}`)
     router.refresh()
   }
