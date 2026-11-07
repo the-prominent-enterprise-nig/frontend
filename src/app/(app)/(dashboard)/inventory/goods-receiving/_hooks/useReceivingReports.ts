@@ -3,6 +3,7 @@
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 import { STALE } from '@/src/libs/query/stale-times'
+import { DEFAULT_PAGE_SIZE } from '@/src/components/inventory/ListFooterPager'
 import { getReceivingReports } from '../_actions/get-receiving-reports'
 import { getReceivingReport } from '../_actions/get-receiving-report'
 import { getReceivingReportsSummary } from '../_actions/get-receiving-reports-summary'
@@ -12,7 +13,12 @@ import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 export function useReceivingReports(options: { includeManual?: boolean } = {}) {
   const { includeManual = false } = options
   const [page, setPage] = useState(1)
-  const limit = 20
+  const [limit, setLimitState] = useState<number>(DEFAULT_PAGE_SIZE)
+  // A new page size starts back on page 1, or the current page may not exist.
+  const setLimit = (next: number): void => {
+    setLimitState(next)
+    setPage(1)
+  }
 
   const [search, setSearchState] = useState('')
   const [warehouseId, setWarehouseId] = useState<string | undefined>()
@@ -154,6 +160,7 @@ export function useReceivingReports(options: { includeManual?: boolean } = {}) {
     },
     resetFilters,
     setPage,
+    setLimit,
 
     selectedId,
     setSelectedId,

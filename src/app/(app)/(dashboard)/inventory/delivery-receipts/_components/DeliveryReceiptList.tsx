@@ -7,13 +7,11 @@ import { Plus, Search, Truck } from 'lucide-react'
 import { can, type SessionUser } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { PLEX, MONO, STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
-import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
+import { DEFAULT_PAGE_SIZE, ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { drPurposeLabel } from '@/src/libs/inventory/delivery-receipt-purposes'
 import type { DrStatus, DrSummary } from '@/src/schema/inventory/delivery-receipts'
 import { getDeliveryReceipts } from '../_actions/get-delivery-receipts'
 import { DR_STATUS_META, drStatusLabel, fmtDrDate } from '../_lib/dr-format'
-
-const PAGE_SIZE = 20
 
 const STATUS_PILLS: { value: DrStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -35,14 +33,15 @@ export default function DeliveryReceiptList({
   const [status, setStatus] = useState<DrStatus | 'all'>('all')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
   const canCreate = can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_CREATE)
 
   const query = useQuery({
-    queryKey: ['delivery-receipts', status, search.trim(), page],
+    queryKey: ['delivery-receipts', status, search.trim(), page, pageSize],
     queryFn: () =>
       getDeliveryReceipts({
         page,
-        limit: PAGE_SIZE,
+        limit: pageSize,
         status: status === 'all' ? undefined : status,
         search: search.trim() || undefined,
       }),
@@ -96,11 +95,15 @@ export default function DeliveryReceiptList({
               <DrTable rows={rows} />
               <ListFooterPager
                 page={page}
-                pageCount={Math.ceil(total / PAGE_SIZE)}
-                shown={rows.length}
+                pageCount={Math.ceil(total / pageSize)}
                 total={total}
-                noun={total === 1 ? 'delivery receipt' : 'delivery receipts'}
+                limit={pageSize}
+                noun="delivery receipts"
                 onPageChange={setPage}
+                onLimitChange={(next) => {
+                  setPageSize(next)
+                  setPage(1)
+                }}
               />
             </>
           )}

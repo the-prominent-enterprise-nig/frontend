@@ -1,5 +1,6 @@
 'use client'
 
+import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { Fragment, useState } from 'react'
 import Link from 'next/link'
 import { Plus, RotateCcw, ChevronDown, FileWarning, Info, SearchX } from 'lucide-react'
@@ -289,6 +290,8 @@ export default function ReturnList({ session }: { session: SessionUser }) {
     resetFilters,
     page,
     setPage,
+    limit,
+    setLimit,
     warehouseOptions,
     createReturn,
     isCreating,
@@ -549,36 +552,15 @@ export default function ReturnList({ session }: { session: SessionUser }) {
               {/* The count stays put on a single page — it is how many
                   returns matched, which is worth reading even when they all
                   fit. */}
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 bg-zinc-50/70 px-4 py-2.5 text-sm text-zinc-500">
-                <span>
-                  Showing {(page - 1) * pagination.limit + 1}–
-                  {Math.min(page * pagination.limit, pagination.total)} of {pagination.total}{' '}
-                  returns
-                </span>
-                {pagination.totalPages > 1 && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setPage(Math.max(1, page - 1))}
-                      disabled={page <= 1}
-                      className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 hover:bg-zinc-50 disabled:opacity-40"
-                    >
-                      Previous
-                    </button>
-                    <span className="px-2 font-medium text-zinc-700">
-                      {page} / {pagination.totalPages}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                      disabled={page >= pagination.totalPages}
-                      className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 hover:bg-zinc-50 disabled:opacity-40"
-                    >
-                      Next
-                    </button>
-                  </div>
-                )}
-              </div>
+              <ListFooterPager
+                page={page}
+                pageCount={pagination.totalPages}
+                total={pagination.total}
+                limit={limit}
+                noun="returns"
+                onPageChange={setPage}
+                onLimitChange={setLimit}
+              />
             </div>
           )}
         </div>

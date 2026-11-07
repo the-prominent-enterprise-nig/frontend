@@ -21,7 +21,7 @@ import { showToast } from '@/src/components/ui/toast'
 import { ConfirmDialog } from '@/src/components/ui/Modal'
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 import { Select } from '@/src/components/ui/Select'
-import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
+import { DEFAULT_PAGE_SIZE, ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { MONO, PLEX, STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
 import {
   appliedLabel,
@@ -30,7 +30,7 @@ import {
   shownStatus,
   STATUS_META,
 } from '../_lib/debit-memo-format'
-import { MEMO_PAGE_SIZE, useDebitMemos, type DebitMemoStatusFilter } from '../_hooks/useDebitMemos'
+import { useDebitMemos, type DebitMemoStatusFilter } from '../_hooks/useDebitMemos'
 import {
   MEMO_TYPE_OPTIONS,
   SUPPLIER_PURPOSE,
@@ -240,6 +240,7 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
 
   const [type, setType] = useState<MemoTypeFilter>('all')
   const [requestedPage, setRequestedPage] = useState(1)
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
   const canOpenMemo = INVENTORY_DEBIT_MEMO_ACCESS.READ.some((p) => hasPermission(session, p))
   const internal = useInternalMemos(filters, type)
 
@@ -256,10 +257,10 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
   }, [memos, internal.memos, type])
 
   // Paged after merging, same as the hook pages the supplier memos alone.
-  const pageCount = Math.max(1, Math.ceil(rows.length / MEMO_PAGE_SIZE))
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize))
   const page = Math.min(requestedPage, pageCount)
-  const pageStart = (page - 1) * MEMO_PAGE_SIZE
-  const pageRows = rows.slice(pageStart, pageStart + MEMO_PAGE_SIZE)
+  const pageStart = (page - 1) * pageSize
+  const pageRows = rows.slice(pageStart, pageStart + pageSize)
 
   function applyFilters(patch: Parameters<typeof setFilters>[0]) {
     setFilters(patch)
@@ -671,10 +672,14 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
               <ListFooterPager
                 page={page}
                 pageCount={pageCount}
-                shown={pageRows.length}
                 total={rows.length}
-                noun={rows.length === 1 ? 'memo' : 'memos'}
+                limit={pageSize}
+                noun="memos"
                 onPageChange={setRequestedPage}
+                onLimitChange={(next) => {
+                  setPageSize(next)
+                  setRequestedPage(1)
+                }}
               />
             </>
           )}

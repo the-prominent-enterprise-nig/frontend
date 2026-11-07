@@ -1,5 +1,6 @@
 'use client'
 
+import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { describeDocumentError } from '@/src/libs/data/document-errors'
 import { useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -947,46 +948,25 @@ export function PurchaseOrderList({
                 )
               })}
 
-              <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
-                <span className="text-[11.5px] text-ink-muted">
-                  {/* Requests alone can fill the table, so 0 orders is possible. */}
-                  {pagination.total === 0
-                    ? 'No orders yet'
-                    : `Showing ${(page - 1) * pagination.limit + 1}–${Math.min(page * pagination.limit, pagination.total)} of ${pagination.total} orders`}
-                  {inlineRequests.length > 0 &&
-                    ` · ${inlineRequests.length} open ${inlineRequests.length === 1 ? 'request' : 'requests'}`}
-                </span>
-                <div className="flex items-center gap-[10px]">
-                  <span className="text-[11.5px] text-ink-muted">Rows</span>
-                  <select
-                    value={limit}
-                    onChange={(e) => setLimit(Number(e.target.value))}
-                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[9px] py-1.5 text-[12px] text-[#3d3d4a]"
-                  >
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setPage(page - 1)}
-                      disabled={page <= 1}
-                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-ink-faint"
-                    >
-                      Previous
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPage(page + 1)}
-                      disabled={page >= pagination.totalPages}
-                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-ink-faint"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <ListFooterPager
+                page={page}
+                pageCount={pagination.totalPages}
+                total={pagination.total}
+                limit={limit}
+                noun="orders"
+                onPageChange={setPage}
+                onLimitChange={setLimit}
+                summary={
+                  <>
+                    {/* Requests alone can fill the table, so 0 orders is possible. */}
+                    {pagination.total === 0
+                      ? 'No orders yet'
+                      : `Showing ${(page - 1) * pagination.limit + 1}–${Math.min(page * pagination.limit, pagination.total)} of ${pagination.total} orders`}
+                    {inlineRequests.length > 0 &&
+                      ` · ${inlineRequests.length} open ${inlineRequests.length === 1 ? 'request' : 'requests'}`}
+                  </>
+                }
+              />
             </div>
           )}
 
