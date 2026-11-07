@@ -220,11 +220,40 @@ export const SerialNumberSummarySchema = z.object({
     .object({
       code: z.string(),
       status: z.string(),
+      reason: z.string().optional(),
+      // Set when the unit is a customer's, in for repair.
+      customerName: z.string().nullable().optional(),
       dispatchDeliveryReceiptNumber: z.string().nullable().optional(),
       dispatchedAt: z.string().nullable().optional(),
       expectedReturnDate: z.string().nullable().optional(),
       repairProviderName: z.string().nullable().optional(),
     })
+    .nullable()
+    .optional(),
+  // The newest live Delivery Receipt naming the unit — the one it left on
+  // (posted) or is waiting on (draft to approved).
+  deliveryReceipt: z
+    .object({
+      drNumber: z.string(),
+      status: z.string(),
+      purpose: z.string(),
+      recipient: z.string().nullable(),
+      date: z.string(),
+    })
+    .nullable()
+    .optional(),
+  // What a held unit is reserved for.
+  heldBy: z
+    .object({
+      kind: z.enum(['delivery_receipt', 'pos_release', 'service_job']),
+      reference: z.string().nullable(),
+      name: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+  // The transfer a lost unit went missing on.
+  lostOnTransfer: z
+    .object({ transferNumber: z.string(), fromWarehouseName: z.string() })
     .nullable()
     .optional(),
   // Scenario 56 — RR age (first received) and branch age (arrived here).

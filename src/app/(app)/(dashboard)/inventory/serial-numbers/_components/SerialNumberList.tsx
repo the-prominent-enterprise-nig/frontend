@@ -19,7 +19,6 @@ import {
   SERIAL_STATUS_COLORS,
   SERIAL_STATUS_DOT_COLORS,
   SERIAL_STATUS_FILTER_GROUPS,
-  type SerialNumberSummary,
   type SerialStatus,
 } from '@/src/schema/inventory/serial-numbers'
 import RegisterSerialsModal from './RegisterSerialsModal'
@@ -36,7 +35,8 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { formatAge, formatShortDate } from '@/src/libs/format/date'
-import { originLabel, originRef, soldDestination } from '@/src/libs/format/serial-provenance'
+import { originLabel, originRef } from '@/src/libs/format/serial-provenance'
+import { DestinationCell, LocationNote, ServiceCenterLocation } from './SerialWhereaboutsCells'
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { LocationFilters } from '@/src/components/inventory/LocationFilters'
@@ -756,6 +756,7 @@ export default function SerialNumberList({
                                   <div className="font-medium text-[#17171c]">
                                     {serial.consignedToVenue ??
                                       locationLabel(serial.warehouse ?? serial.currentWarehouse)}
+                                    <LocationNote serial={serial} />
                                   </div>
                                   <div
                                     className={`${MONO} whitespace-nowrap text-[12.5px] text-[#5b21b6]`}
@@ -909,75 +910,4 @@ export default function SerialNumberList({
       />
     </div>
   )
-}
-
-/** Name / reference / date, the three lines every location cell shows. */
-function CellLines({
-  name,
-  tag,
-  reference,
-  date,
-}: {
-  name: string
-  tag?: string
-  reference?: string | null
-  date?: string | null
-}): React.JSX.Element {
-  return (
-    <>
-      <div className="font-medium text-[#17171c]">
-        {name}
-        {tag && <span className="ml-1.5 text-[11.5px] font-normal text-ink-muted">· {tag}</span>}
-      </div>
-      <div className={`${MONO} whitespace-nowrap text-[12.5px] text-[#5b21b6]`}>
-        {reference ?? '—'}
-      </div>
-      <div className="text-[12.5px] text-ink-muted">{date ? formatShortDate(date) : '—'}</div>
-    </>
-  )
-}
-
-/** Out for repair: it is at the service center, on the DR it left on. */
-function ServiceCenterLocation({ serial }: { serial: SerialNumberSummary }): React.JSX.Element {
-  const ticket = serial.repairTicket
-  return (
-    <CellLines
-      name={serial.consignedToSupplier?.name ?? 'Service center'}
-      tag="Service center"
-      reference={ticket?.dispatchDeliveryReceiptNumber ?? ticket?.code}
-      date={ticket?.dispatchedAt}
-    />
-  )
-}
-
-/** A sold unit's destination is its buyer and the sale; one on an open
- * transfer, the branch it is headed to; one out for repair, its branch, on
- * its ticket; any other, where it is stored (NIG #10). */
-function DestinationCell({ serial }: { serial: SerialNumberSummary }): React.JSX.Element {
-  const sold = soldDestination(serial)
-  if (sold) return <CellLines name={sold.name} reference={sold.ref} date={sold.date} />
-  const here = locationLabel(serial.currentWarehouse ?? serial.warehouse)
-  const transfer = serial.openTransfer
-  if (transfer) {
-    return (
-      <CellLines
-        name={transfer.toWarehouseName ?? here}
-        tag={serial.status === 'in_transit' ? 'In transit' : undefined}
-        reference={transfer.transferNumber}
-        date={transfer.date ?? serial.locationSince}
-      />
-    )
-  }
-  const ticket = serial.consignedToSupplier ? serial.repairTicket : null
-  if (ticket) {
-    return (
-      <CellLines
-        name={here}
-        tag="Back from repair"
-        reference={ticket.code}
-        date={ticket.expectedReturnDate}
-      />
-    )
-  }
-  return <CellLines name={here} date={serial.locationSince} />
 }
