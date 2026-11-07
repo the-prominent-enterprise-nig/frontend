@@ -304,7 +304,7 @@ export const UDS_STATUS_LABELS: Record<UdsStatus, string> = {
   issued: 'Issued',
   in_transit: 'In Transit',
   received: 'Received',
-  at_provider: 'At Service Centre',
+  at_provider: 'At Service Center',
   repaired: 'Repaired',
   completed: 'Completed',
   cancelled: 'Cancelled',
