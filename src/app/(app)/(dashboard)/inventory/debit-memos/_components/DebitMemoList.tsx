@@ -333,7 +333,7 @@ export default function DebitMemoList({ session }: { session: SessionUser }) {
       <div className="mx-auto max-w-[1520px] space-y-5">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="max-w-2xl">
+          <div className="min-w-0">
             <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Debit Memos</h1>
             {/* Says "back out" because the Returns screen moves stock the
                 opposite way and the two names can't tell them apart. */}

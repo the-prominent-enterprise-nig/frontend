@@ -116,7 +116,7 @@ export default function DeliveryReceiptList({
 function ListHeader({ canCreate }: { canCreate: boolean }): React.JSX.Element {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="max-w-2xl">
+      <div className="min-w-0">
         <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Delivery Receipts</h1>
         <p className="mt-1 text-sm text-[#4b4b5a]">
           Stock going out for office use, raffle prizes, giveaways and donations, or held for a
