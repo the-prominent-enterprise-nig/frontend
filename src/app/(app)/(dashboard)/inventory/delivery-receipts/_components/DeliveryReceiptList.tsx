@@ -3,17 +3,15 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { Plus, Search, Truck } from 'lucide-react'
+import { Search, Truck } from 'lucide-react'
 import { can, type SessionUser } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { PLEX, MONO, STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
-import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
+import { DEFAULT_PAGE_SIZE, ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { drPurposeLabel } from '@/src/libs/inventory/delivery-receipt-purposes'
 import type { DrStatus, DrSummary } from '@/src/schema/inventory/delivery-receipts'
 import { getDeliveryReceipts } from '../_actions/get-delivery-receipts'
 import { DR_STATUS_META, drStatusLabel, fmtDrDate } from '../_lib/dr-format'
-
-const PAGE_SIZE = 20
 
 const STATUS_PILLS: { value: DrStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -35,14 +33,15 @@ export default function DeliveryReceiptList({
   const [status, setStatus] = useState<DrStatus | 'all'>('all')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
   const canCreate = can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_CREATE)
 
   const query = useQuery({
-    queryKey: ['delivery-receipts', status, search.trim(), page],
+    queryKey: ['delivery-receipts', status, search.trim(), page, pageSize],
     queryFn: () =>
       getDeliveryReceipts({
         page,
-        limit: PAGE_SIZE,
+        limit: pageSize,
         status: status === 'all' ? undefined : status,
         search: search.trim() || undefined,
       }),
@@ -96,11 +95,15 @@ export default function DeliveryReceiptList({
               <DrTable rows={rows} />
               <ListFooterPager
                 page={page}
-                pageCount={Math.ceil(total / PAGE_SIZE)}
-                shown={rows.length}
+                pageCount={Math.ceil(total / pageSize)}
                 total={total}
-                noun={total === 1 ? 'delivery receipt' : 'delivery receipts'}
+                limit={pageSize}
+                noun="delivery receipts"
                 onPageChange={setPage}
+                onLimitChange={(next) => {
+                  setPageSize(next)
+                  setPage(1)
+                }}
               />
             </>
           )}
@@ -113,7 +116,7 @@ export default function DeliveryReceiptList({
 function ListHeader({ canCreate }: { canCreate: boolean }): React.JSX.Element {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="max-w-2xl">
+      <div className="min-w-0">
         <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Delivery Receipts</h1>
         <p className="mt-1 text-sm text-[#4b4b5a]">
           Stock going out for office use, raffle prizes, giveaways and donations, or held for a
@@ -129,11 +132,10 @@ function NewDrLink(): React.JSX.Element {
   return (
     <Link
       href="/inventory/delivery-receipts/new"
-      className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-3 py-2 text-sm font-medium text-white hover:bg-[#4a189b] sm:px-4"
+      // Same size and style as the Purchase Order tab's "+ New Purchase".
+      className="rounded-lg bg-[#5b21b6] px-4 py-[9px] text-[13px] font-medium text-white hover:bg-[#4a189b]"
     >
-      <Plus className="h-4 w-4" />
-      <span className="hidden sm:inline">New delivery receipt</span>
-      <span className="sm:hidden">New</span>
+      + New Receipt
     </Link>
   )
 }

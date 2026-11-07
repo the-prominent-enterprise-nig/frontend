@@ -1,30 +1,25 @@
 import { redirect } from 'next/navigation'
-import { Suspense } from 'react'
-import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { ProcurementHub } from './_components/ProcurementHub'
-import { getProcurementHubPermissions } from './_permissions/procurement-hub-permissions'
+import { STOCK_TRANSACTION_PATH } from './_lib/procurementHref'
 
-export const metadata = {
-  title: 'Purchase Orders | NIG Central',
-  description: 'View and manage purchase orders and purchase requests',
-}
+type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
-export default async function PurchaseOrdersPage() {
-  const session = await getSessionOrNull()
-
-  if (!session) {
-    redirect('/login')
+/**
+ * Purchase orders and requests are viewed on the Stock Transaction hub's
+ * Purchase Order tab now. This old address only forwards there, keeping the
+ * link's own parameters (po, pr, newFor, supplierName…) so dashboard widgets,
+ * notifications and bookmarks still open the right order or request.
+ */
+export default async function PurchaseOrdersPage({
+  searchParams,
+}: {
+  searchParams: SearchParams
+}): Promise<never> {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(await searchParams)) {
+    // `tab` here meant this page's Orders / Requests tabs; the hub has its own.
+    if (key === 'tab' || value === undefined) continue
+    for (const v of Array.isArray(value) ? value : [value]) params.append(key, v)
   }
-
-  const permissions = getProcurementHubPermissions(session)
-
-  if (!permissions.canReadOrders && !permissions.canReadRequests) {
-    redirect('/403')
-  }
-
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-zinc-50" />}>
-      <ProcurementHub session={session} {...permissions} currentUserBranchId={session.branchId} />
-    </Suspense>
-  )
+  params.set('tab', 'purchase-orders')
+  redirect(`${STOCK_TRANSACTION_PATH}?${params}`)
 }

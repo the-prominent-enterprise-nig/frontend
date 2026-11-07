@@ -1,18 +1,10 @@
 'use client'
 
+import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import {
-  Plus,
-  ClipboardCheck,
-  ChevronLeft,
-  ChevronRight,
-  Paperclip,
-  ArrowRight,
-  AlertTriangle,
-  X,
-} from 'lucide-react'
+import { Plus, ClipboardCheck, Paperclip, ArrowRight, AlertTriangle, X } from 'lucide-react'
 import UdsStatusBand from './UdsStatusBand'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { STATUS_CONFIG, ASSESSMENT_CONFIG, REASON_DOT, TRANSFER_STATUS_LABELS } from './udsDisplay'
@@ -194,6 +186,8 @@ export default function UdsList({ session }: { session: SessionUser }) {
     resetFilters,
     page,
     setPage,
+    limit,
+    setLimit,
     warehouseOptions,
     supplierOptions,
     createUds,
@@ -579,36 +573,18 @@ export default function UdsList({ session }: { session: SessionUser }) {
               </table>
             </div>
           )}
+          {!isLoading && records.length > 0 && (
+            <ListFooterPager
+              page={page}
+              pageCount={pagination.lastPage}
+              total={pagination.total}
+              limit={limit}
+              noun="UDS records"
+              onPageChange={setPage}
+              onLimitChange={setLimit}
+            />
+          )}
         </div>
-
-        {/* Pagination */}
-        {!isLoading && records.length > 0 && (
-          <div className="flex items-center justify-between text-sm text-zinc-600">
-            <p>
-              Showing {(pagination.page - 1) * pagination.limit + 1}–
-              {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
-            </p>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPage(page - 1)}
-                disabled={page <= 1}
-                className="rounded-lg border border-zinc-200 p-1.5 hover:bg-zinc-100 disabled:opacity-40"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <span className="text-zinc-700 font-medium">
-                {pagination.page} / {pagination.lastPage}
-              </span>
-              <button
-                onClick={() => setPage(page + 1)}
-                disabled={page >= pagination.lastPage}
-                className="rounded-lg border border-zinc-200 p-1.5 hover:bg-zinc-100 disabled:opacity-40"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       <CreateUdsModal

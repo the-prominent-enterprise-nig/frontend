@@ -1,5 +1,6 @@
 'use client'
 
+import { DEFAULT_PAGE_SIZE } from '@/src/components/inventory/ListFooterPager'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
@@ -21,7 +22,12 @@ export function useAdjustments() {
   const queryClient = useQueryClient()
 
   const [page, setPage] = useState(1)
-  const [limit] = useState(20)
+  const [limit, setLimitState] = useState<number>(DEFAULT_PAGE_SIZE)
+  // A new page size starts back on page 1, or the current page may not exist.
+  const setLimit = (next: number): void => {
+    setLimitState(next)
+    setPage(1)
+  }
   const [warehouseFilter, setWarehouseFilter] = useState<string | undefined>(undefined)
   const [statusFilter, setStatusFilter] = useState<AdjustmentStatus | undefined>(undefined)
   const [selectedAdjustment, setSelectedAdjustment] = useState<AdjustmentDetail | null>(null)
@@ -133,6 +139,8 @@ export function useAdjustments() {
 
     page,
     setPage,
+    limit,
+    setLimit,
 
     selectedAdjustment,
     setSelectedAdjustment,

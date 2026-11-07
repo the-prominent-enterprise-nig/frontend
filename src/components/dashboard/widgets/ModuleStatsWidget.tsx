@@ -57,7 +57,9 @@ export default function ModuleStatsWidget() {
       bg: 'bg-amber-50',
       accent: 'border-amber-100',
       stats: stats.inventory,
-      links: [{ label: 'Purchase Orders', href: '/inventory/purchase-orders' }],
+      links: [
+        { label: 'Purchase Orders', href: '/inventory/stock-transaction?tab=purchase-orders' },
+      ],
     },
     {
       id: 'accounting',

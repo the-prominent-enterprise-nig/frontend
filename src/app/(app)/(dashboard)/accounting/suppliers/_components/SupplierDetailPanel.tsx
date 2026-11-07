@@ -193,7 +193,7 @@ export default function SupplierDetailPanel({
                 be the one to say no. */}
             {canBuy && !blockedFromBuying && (
               <Link
-                href={`/inventory/purchase-orders?tab=orders&newFor=${encodeURIComponent(supplier.id)}&supplierName=${encodeURIComponent(supplier.name)}`}
+                href={`/inventory/stock-transaction?tab=purchase-orders&newFor=${encodeURIComponent(supplier.id)}&supplierName=${encodeURIComponent(supplier.name)}`}
                 title={`Draft a purchase from ${supplier.name} — it becomes a purchase order once approved`}
                 className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-2 text-[12.5px] font-semibold text-white hover:bg-[#4a189b] hover:no-underline"
               >

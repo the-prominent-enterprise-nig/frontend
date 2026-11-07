@@ -2,36 +2,42 @@
 
 import Link from 'next/link'
 import { AlertTriangle, ArrowRight } from 'lucide-react'
-import { caravanCountdown, type CaravanAlert } from '@/src/schema/inventory/warehouses'
+import { ALL_CARAVANS, type CaravanAlert } from '@/src/schema/inventory/warehouses'
 import { caravanLabelWithPlace } from '@/src/libs/format/locationLabel'
 import { useCaravanAlerts } from './useCaravanAlerts'
 
 type Props = {
   /** Narrows an unrestricted viewer to one host (the POS terminal's branch). */
   hostBranchId?: string | null
-  /** 'inventory' links each caravan to its units; 'pos' is a notice only —
-   * a cashier can't transfer, so it says who to ask instead. */
+  /** 'inventory' links to the caravans; 'pos' is a notice only — a cashier
+   * can't transfer, so it says who to ask instead. */
   variant: 'inventory' | 'pos'
   enabled?: boolean
-  /** Replaces the "View units" link with an in-page action — for the Serial
-   * Numbers page itself, where the link would only point back at the page. */
-  onView?: (caravanId: string) => void
+  /** Replaces the link with an in-page action — for the General Stockbook
+   * itself, where the link would only point back at the page. Gets the one
+   * caravan's id when only one has ended, nothing for "all of them". */
+  onView?: (caravanId?: string) => void
 }
 
-const VIEW_CLASS = 'inline-flex items-center gap-1 font-medium text-[#5b21b6] hover:underline'
+const VIEW_CLASS =
+  'inline-flex shrink-0 items-center gap-1 font-medium text-[#5b21b6] hover:underline'
 
 function unitsText(n: number): string {
   return `${n} ${n === 1 ? 'unit' : 'units'}`
 }
 
-function hostText(alert: CaravanAlert): string {
-  return alert.hostBranch ? ` at ${alert.hostBranch.name}` : ''
+/** "Dumalag Caravan has ended" for one, "3 ended caravans" for several. */
+function headline(ended: CaravanAlert[]): string {
+  const units = unitsText(ended.reduce((sum, a) => sum + a.unitsHeld, 0))
+  return ended.length === 1
+    ? `${caravanLabelWithPlace(ended[0])} has ended and still holds ${units}`
+    : `${ended.length} ended caravans still hold ${units}`
 }
 
 /**
  * Scenario 60 Part 3 — "items in the caravan should always be transferred
- * out if the caravan has ended." Lists every ended caravan still holding
- * stock; renders nothing when there are none.
+ * out if the caravan has ended." One line however many caravans have ended,
+ * with a single link to them; renders nothing when there are none.
  */
 export default function EndedCaravansBanner({
   hostBranchId,
@@ -45,57 +51,48 @@ export default function EndedCaravansBanner({
 
   if (variant === 'pos') {
     return (
-      <div className="flex items-start gap-3 border-b border-amber-200 bg-amber-50 px-5 py-3">
-        <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-500" />
-        <div className="text-sm text-amber-800">
-          {ended.map((a) => (
-            <p key={a.id}>
-              <span className="font-medium">{caravanLabelWithPlace(a)}</span> has ended —{' '}
-              {unitsText(a.unitsHeld)} still there can&apos;t be sold. Ask your stock controller to
-              transfer them out.
-            </p>
-          ))}
-        </div>
+      <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-800">
+        <AlertTriangle size={14} className="shrink-0 text-amber-500" />
+        <p>
+          <span className="font-medium">{headline(ended)}</span> that can&apos;t be sold. Ask your
+          stock controller to transfer them out.
+        </p>
       </div>
     )
   }
 
+  // One caravan opens straight onto it; several open the Caravan view.
+  const single = ended.length === 1 ? ended[0].id : undefined
+  const label = single ? 'View caravan' : 'View caravans'
   return (
     <div
       role="alert"
-      className="flex flex-col gap-2 rounded-xl border border-[#f3d7a8] bg-[#fdf6ea] px-4 py-3"
+      className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 rounded-xl border border-[#f3d7a8] bg-[#fdf6ea] px-4 py-2.5"
     >
-      <div className="flex items-center gap-2 text-[13px] font-semibold text-[#8a4b06]">
+      <p className="flex min-w-0 items-center gap-2 text-[13px] text-[#8a4b06]">
         <AlertTriangle className="h-4 w-4 shrink-0" />
-        {ended.length === 1
-          ? 'An ended caravan still holds stock'
-          : `${ended.length} ended caravans still hold stock`}
-      </div>
-      <ul className="flex flex-col gap-1.5">
-        {ended.map((a) => (
-          <li
-            key={a.id}
-            className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[12.5px] text-[#5b3a0a]"
-          >
-            <span>
-              <span className="font-medium">{caravanLabelWithPlace(a)}</span>
-              {hostText(a)} · {caravanCountdown(a.endDate, a.closedAt)} · {unitsText(a.unitsHeld)}{' '}
-              to transfer out
-            </span>
-            {onView ? (
-              <button type="button" onClick={() => onView(a.id)} className={VIEW_CLASS}>
-                View units
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
-            ) : (
-              <Link href={`/inventory/serial-numbers?caravan=${a.id}`} className={VIEW_CLASS}>
-                View units
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            )}
-          </li>
-        ))}
-      </ul>
+        <span>
+          <span className="font-semibold">{headline(ended)}</span> to transfer out
+        </span>
+      </p>
+      {onView ? (
+        <button
+          type="button"
+          onClick={() => onView(single)}
+          className={`${VIEW_CLASS} text-[12.5px]`}
+        >
+          {label}
+          <ArrowRight className="h-3.5 w-3.5" />
+        </button>
+      ) : (
+        <Link
+          href={`/inventory/serial-numbers?caravan=${single ?? ALL_CARAVANS}`}
+          className={`${VIEW_CLASS} text-[12.5px]`}
+        >
+          {label}
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Link>
+      )}
     </div>
   )
 }

@@ -278,6 +278,10 @@ export default function SerialNumberList({
     setCaravanView(true)
     setCaravanId(id)
   }
+  const openAllCaravans = (): void => {
+    setCaravanView(true)
+    setCaravanId(undefined)
+  }
 
   const brandOptions = useMemo(() => {
     const seen = new Map<string, string>()
@@ -430,7 +434,11 @@ export default function SerialNumberList({
             Caravan tab's own cards already show them, so only on All Serials.
             Gated on transfers:create: those are the people who can act. */}
         {!caravanView && !isLocator && (
-          <EndedCaravansBanner variant="inventory" enabled={canTransfer} onView={openCaravan} />
+          <EndedCaravansBanner
+            variant="inventory"
+            enabled={canTransfer}
+            onView={(id) => (id ? openCaravan(id) : openAllCaravans())}
+          />
         )}
 
         {/* Filter bar */}
