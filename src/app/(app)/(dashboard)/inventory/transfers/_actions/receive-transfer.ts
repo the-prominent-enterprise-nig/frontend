@@ -29,7 +29,9 @@ export async function receiveTransfer(
     lines: parsed.data.lines.map((line) => ({
       stockTransferLineId: line.stockTransferLineId,
       quantityReceived: line.quantityReceived,
-      correctedSerialNumber: line.correctedSerialNumber || undefined,
+      // Nov UAT — a serial is never typed in at receipt; the backend refuses
+      // correctedSerialNumber. The "Fix typo" box is commented out on the form.
+      // correctedSerialNumber: line.correctedSerialNumber || undefined,
       replacementSerialNumberId: line.replacementSerialNumberId || undefined,
       correctionReason: line.correctionReason || undefined,
     })),
@@ -37,7 +39,8 @@ export async function receiveTransfer(
       itemId: line.itemId,
       quantity: line.quantity,
       notes: line.notes || undefined,
-      serialNumbers: line.serialNumbers?.length ? line.serialNumbers : undefined,
+      // Existing NIG serials picked by search (Nov UAT) — never typed text.
+      serialNumberIds: line.serialNumberIds?.length ? line.serialNumberIds : undefined,
     })),
   }
 

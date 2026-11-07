@@ -37,7 +37,10 @@ type Params = {
   // "override" (Scenario 29 SN-01): bypasses branch scoping entirely
   // (including the caller's own branch) — requires itemId and the
   // inventory:transfers:serial-override permission server-side.
-  scope?: 'company' | 'override'
+  // "receipt" (Nov UAT): the stock-transfer receive form's search for the unit
+  // that arrived — every branch, in-stock and free units only; requires
+  // itemId and inventory:transfers:receive server-side.
+  scope?: 'company' | 'override' | 'receipt'
   // Scenario 56 — leave out units already claimed by an open transfer, so a
   // transfer picker (or its availability count) never offers one.
   freeForTransfer?: boolean

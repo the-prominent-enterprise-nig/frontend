@@ -66,6 +66,12 @@ type Props = {
     label: (typed: string) => string
     onAdd: (typed: string) => void
   }
+  /** Enter picks the result whose `primary` is exactly what was typed (case
+   * and surrounding spaces ignored) — waiting for the results if they have not
+   * landed yet. For barcode scanners, which type the code and press Enter.
+   * Never picks anything that is not an exact match, and Enter never submits
+   * the surrounding form. Off by default so existing usages are untouched. */
+  selectOnEnter?: boolean
 }
 
 /**
@@ -90,6 +96,7 @@ export function SearchCombobox({
   compact = false,
   clearable = true,
   addOption,
+  selectOnEnter = false,
 }: Props) {
   // confirmedLabel: what gets shown when the dropdown is closed (only changes on select/clear)
   const [confirmedLabel, setConfirmedLabel] = useState(initialLabel ?? '')
@@ -189,6 +196,34 @@ export function SearchCombobox({
 
   const options = data ?? []
 
+  // selectOnEnter — the code Enter was pressed on, held until results for
+  // exactly that query arrive (a scanner is faster than the 300ms debounce).
+  const pendingEnterRef = useRef<string | null>(null)
+  const exactMatch = (query: string) => {
+    const wanted = query.trim().toLowerCase()
+    return wanted ? options.find((o) => o.primary.trim().toLowerCase() === wanted) : undefined
+  }
+  useEffect(() => {
+    const pending = pendingEnterRef.current
+    if (!pending || isLoading || debouncedQuery !== pending) return
+    pendingEnterRef.current = null
+    const hit = exactMatch(pending)
+    if (hit) handleSelect(hit)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, isLoading, debouncedQuery])
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!selectOnEnter || e.key !== 'Enter') return
+    e.preventDefault()
+    const hit = debouncedQuery === searchQuery && !isLoading ? exactMatch(searchQuery) : undefined
+    if (hit) {
+      handleSelect(hit)
+      return
+    }
+    pendingEnterRef.current = searchQuery
+    setDebouncedQuery(searchQuery)
+  }
+
   function handleSelect(option: SearchComboboxOption) {
     onChange(option.id)
     onSelect?.(option)
@@ -227,6 +262,7 @@ export function SearchCombobox({
             autoFocus
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
             disabled={disabled}
             placeholder={confirmedLabel || placeholder || typeToSearchMessage}
             className={`min-w-0 flex-1 bg-transparent text-zinc-900 outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed ${

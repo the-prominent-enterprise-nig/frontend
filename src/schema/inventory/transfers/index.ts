@@ -217,18 +217,22 @@ export const ReceiveTransferExtraLineSchema = z
     // to render the serial-capture drawer instead of a bare quantity input.
     // Stripped before the value is sent to the API.
     isSerialTracked: z.boolean().optional(),
-    // The actual arriving unit's serial(s) — one per unit — for a
-    // serial-tracked pick (e.g. the wrong model arrived). Required when
-    // isSerialTracked is set; mutually exclusive with a bare quantity.
-    serialNumbers: z.array(z.string().min(1)).optional(),
+    // Nov UAT — the arriving unit(s) for a serial-tracked pick (e.g. the
+    // wrong model arrived): existing NIG serials found by search, never typed
+    // ("You can never encode serial that is not received within NIG").
+    // Required when isSerialTracked is set.
+    serialNumberIds: z.array(z.string().min(1)).optional(),
+    // Form-only — the picked serials' text, for display. Stripped before
+    // the value is sent to the API.
+    serialLabels: z.array(z.string()).optional(),
   })
-  .refine((d) => !d.isSerialTracked || (d.serialNumbers && d.serialNumbers.length > 0), {
-    message: 'At least one serial number is required',
-    path: ['serialNumbers'],
+  .refine((d) => !d.isSerialTracked || (d.serialNumberIds && d.serialNumberIds.length > 0), {
+    message: 'Pick at least one serial number that arrived',
+    path: ['serialNumberIds'],
   })
-  .refine((d) => !d.isSerialTracked || d.serialNumbers?.length === Math.round(d.quantity), {
+  .refine((d) => !d.isSerialTracked || d.serialNumberIds?.length === Math.round(d.quantity), {
     message: 'Serial count must match quantity',
-    path: ['serialNumbers'],
+    path: ['serialNumberIds'],
   })
 
 export const ReceiveTransferFormSchema = z.object({

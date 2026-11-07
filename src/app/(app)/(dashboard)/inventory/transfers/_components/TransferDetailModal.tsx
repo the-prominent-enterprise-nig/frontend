@@ -59,10 +59,11 @@ import {
   ItemSearchCombobox,
   type ItemSearchMeta,
 } from '../../purchase-requests/_components/ItemSearchCombobox'
-import {
-  advanceOnScan,
-  serialScanProps,
-} from '../../purchase-orders/_components/receive-po/serialScan'
+// Nov UAT — used only by the commented-out typed-serial boxes (UnlistedSerialInputs).
+// import {
+//   advanceOnScan,
+//   serialScanProps,
+// } from '../../purchase-orders/_components/receive-po/serialScan'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
@@ -476,12 +477,118 @@ function ItemSerialGroup({
 }
 
 /**
- * Gap 2 fix — an unlisted item that turns out to be serial-tracked (e.g. the
- * wrong model arrived) now captures its actual serial(s) instead of being
- * excluded from the picker outright. One box per unit, scan-friendly;
- * duplicates are checked across every unlisted line on this receipt, since
- * that is the scope the backend itself rejects a repeat within.
+ * Nov UAT — the unit(s) of an unlisted serial-tracked item that arrived (often
+ * a different model than the one dispatched). "When receiving different serial
+ * or Model, it must also from existing serial within NIG. You must search
+ * serial within NIG even not from originating branch. You can never encode
+ * serial that is not received within NIG." So each unit is picked from the
+ * serials NIG already holds, searched across every branch; typing only
+ * searches, and a scanner's code + Enter picks the exact match. Units already
+ * picked elsewhere on this receipt are left out of the results. The backend
+ * moves each picked unit out of its old warehouse.
+ *
+ * Replaces UnlistedSerialInputs (one free-text box per unit, which registered
+ * whatever was typed as a new serial) — kept below, commented out.
  */
+function UnlistedSerialPicker({
+  control,
+  setValue,
+  index,
+  itemId,
+  takenIds,
+}: {
+  control: Control<ReceiveTransferFormValues>
+  setValue: UseFormSetValue<ReceiveTransferFormValues>
+  index: number
+  itemId: string | undefined
+  /** Serials already picked anywhere on this receipt. */
+  takenIds: Set<string>
+}) {
+  const ids = useWatch({ control, name: `extraLines.${index}.serialNumberIds` }) ?? []
+  const labels = useWatch({ control, name: `extraLines.${index}.serialLabels` }) ?? []
+
+  function commit(nextIds: string[], nextLabels: string[]) {
+    setValue(`extraLines.${index}.serialNumberIds`, nextIds, { shouldValidate: false })
+    setValue(`extraLines.${index}.serialLabels`, nextLabels, { shouldValidate: false })
+    setValue(`extraLines.${index}.quantity`, nextIds.length, { shouldValidate: false })
+  }
+
+  return (
+    <div
+      data-testid="unlisted-serial-picker"
+      className="mt-1.5 space-y-1.5 rounded-lg border border-zinc-100 bg-zinc-50 p-2"
+    >
+      {ids.length > 0 && (
+        <ul className="space-y-1">
+          {ids.map((id, unitIndex) => (
+            <li
+              key={id}
+              data-testid="unlisted-serial-picked"
+              className="flex items-center justify-between gap-1.5 rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs"
+            >
+              <span className="font-mono font-semibold text-[#0b0b0f]">
+                {labels[unitIndex] ?? id}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  commit(
+                    ids.filter((_, i) => i !== unitIndex),
+                    labels.filter((_, i) => i !== unitIndex)
+                  )
+                }
+                className="shrink-0 text-zinc-400 hover:text-red-600"
+                aria-label={`Remove serial ${labels[unitIndex] ?? id}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {/* Remounted after each pick so the box is empty for the next unit. */}
+      <SearchCombobox
+        key={`${itemId}-${ids.length}`}
+        value=""
+        onChange={() => {}}
+        onSelect={(option) => commit([...ids, option.id], [...labels, option.primary])}
+        selectOnEnter
+        compact
+        disabled={!itemId}
+        // The picked units are part of the key: results are cached with them
+        // filtered out, so a unit freed elsewhere must not stay hidden.
+        queryKey={`receive-unlisted-serial-${itemId}-${index}-${[...takenIds].sort().join(',')}`}
+        placeholder={
+          ids.length
+            ? 'Add another unit — search or scan…'
+            : 'Search or scan the serial that arrived…'
+        }
+        typeToSearchMessage="Type a serial number to search every branch of NIG…"
+        emptyMessage="No in-stock serial of this item anywhere in NIG matches"
+        search={async (query) => {
+          const res = await getSerialNumbers({
+            itemId,
+            search: query || undefined,
+            limit: 25,
+            // Every branch, in-stock and free units only (server-side).
+            scope: 'receipt',
+          })
+          return (res.data?.data ?? [])
+            .filter((s) => !takenIds.has(s.id))
+            .map((s) => ({
+              id: s.id,
+              primary: s.serialNumber,
+              secondary: s.currentWarehouse?.name ?? undefined,
+            }))
+        }}
+      />
+    </div>
+  )
+}
+
+/* Nov UAT — the old free-text serial boxes, commented out: whatever was typed
+ * was registered as a new serial, which the ticket forbids.
+ *
 function UnlistedSerialInputs({
   control,
   setValue,
@@ -553,31 +660,42 @@ function UnlistedSerialInputs({
     </div>
   )
 }
+ */
 
-// "The wrong serial was sent" — surfaced only for someone holding the same
-// serial-override permission that gates a dispatch-time override, since
-// rewriting or repointing a serial record at receipt is the same class of
-// action. Two mutually exclusive corrections: a typo-fix rewrites the same
-// physical unit's recorded serial in place; a unit-swap repoints this line
-// at a different unit that actually arrived (search scoped to this item,
-// across every branch, since the true unit could be a stray record
-// anywhere). Both force quantityReceived to 1 — a correction only makes
+// "The wrong serial was sent" — a different physical unit of this item arrived
+// than the one dispatched. Nov UAT ("As a Custodian, I want to receive partial
+// or different serial from ST"):
+//   - anyone receiving the transfer can record it (it used to need the
+//     serial-override permission);
+//   - the unit is picked from the serials NIG already holds — searched across
+//     every branch, not just the originating one — and never typed in. Typing
+//     only searches; a scanner's code + Enter picks the exact match.
+// A different MODEL is not a swap: leave this line unticked and add the unit
+// under Unlisted Items. Forces quantityReceived to 1 — a correction only makes
 // sense for a unit that did show up.
+//
+// The typo-fix mode that rewrote this unit's serial to typed text is commented
+// out below ("You can never encode serial that is not received within NIG");
+// the backend refuses it too.
 function SerialReceiveCorrection({
   control,
   setValue,
   index,
   itemId,
-  canOverrideSerial,
+  canCorrect,
+  takenIds,
 }: {
   control: Control<ReceiveTransferFormValues>
   setValue: UseFormSetValue<ReceiveTransferFormValues>
   index: number
   itemId: string | undefined
-  canOverrideSerial: boolean
+  canCorrect: boolean
+  /** Serials already picked elsewhere on this receipt. */
+  takenIds: Set<string>
 }) {
-  const [openMode, setOpenMode] = useState<'typo' | 'swap' | null>(null)
-  const correctedSerialNumber = useWatch({ control, name: `lines.${index}.correctedSerialNumber` })
+  const [open, setOpen] = useState(false)
+  // const [openMode, setOpenMode] = useState<'typo' | 'swap' | null>(null)
+  // const correctedSerialNumber = useWatch({ control, name: `lines.${index}.correctedSerialNumber` })
   const replacementSerialNumberId = useWatch({
     control,
     name: `lines.${index}.replacementSerialNumberId`,
@@ -588,64 +706,49 @@ function SerialReceiveCorrection({
   })
   const correctionReason = useWatch({ control, name: `lines.${index}.correctionReason` }) ?? ''
 
-  if (!canOverrideSerial) return null
+  if (!canCorrect) return null
 
-  const activeMode: 'typo' | 'swap' | null = correctedSerialNumber
-    ? 'typo'
-    : replacementSerialNumberId
-      ? 'swap'
-      : openMode
+  // const activeMode: 'typo' | 'swap' | null = correctedSerialNumber
+  //   ? 'typo'
+  //   : replacementSerialNumberId
+  //     ? 'swap'
+  //     : openMode
+  const active = open || !!replacementSerialNumberId
 
   function clearCorrection() {
-    setOpenMode(null)
-    setValue(`lines.${index}.correctedSerialNumber`, '')
+    setOpen(false)
+    // setValue(`lines.${index}.correctedSerialNumber`, '')
     setValue(`lines.${index}.replacementSerialNumberId`, '')
     setValue(`lines.${index}.replacementSerialLabel`, '')
     setValue(`lines.${index}.correctionReason`, '')
   }
 
-  if (!activeMode) {
+  if (!active) {
     return (
       <button
         type="button"
-        onClick={() => setOpenMode('typo')}
+        data-testid="receive-different-unit"
+        onClick={() => setOpen(true)}
         className="mt-1 text-[11px] font-medium text-amber-700 hover:text-amber-800"
       >
-        Wrong serial received?
+        Different unit arrived?
       </button>
     )
   }
 
   return (
-    <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 p-2">
+    <div
+      data-testid="receive-different-unit-panel"
+      className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 p-2"
+    >
       <div className="mb-1.5 flex items-center justify-between">
+        <p className="text-[11px] font-medium text-amber-900">Different unit arrived</p>
+        {/* Nov UAT — the "Fix typo" / "Different unit arrived" toggle. Only
+            the second remains; the typo-fix typed a new serial in.
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setValue(`lines.${index}.replacementSerialNumberId`, '')
-              setValue(`lines.${index}.replacementSerialLabel`, '')
-              setOpenMode('typo')
-            }}
-            className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
-              activeMode === 'typo' ? 'bg-amber-200 text-amber-900' : 'text-amber-700'
-            }`}
-          >
-            Fix typo
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setValue(`lines.${index}.correctedSerialNumber`, '')
-              setOpenMode('swap')
-            }}
-            className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
-              activeMode === 'swap' ? 'bg-amber-200 text-amber-900' : 'text-amber-700'
-            }`}
-          >
-            Different unit arrived
-          </button>
-        </div>
+          <button type="button" onClick={() => setOpenMode('typo')}>Fix typo</button>
+          <button type="button" onClick={() => setOpenMode('swap')}>Different unit arrived</button>
+        </div> */}
         <button
           type="button"
           onClick={clearCorrection}
@@ -656,72 +759,74 @@ function SerialReceiveCorrection({
         </button>
       </div>
 
-      {activeMode === 'typo' ? (
-        <Controller
-          name={`lines.${index}.correctedSerialNumber`}
-          control={control}
-          render={({ field }) => (
-            <input
-              {...field}
-              value={field.value ?? ''}
-              type="text"
-              placeholder="Correct serial number"
-              onChange={(e) => {
-                field.onChange(e.target.value)
-                setValue(`lines.${index}.quantityReceived`, 1)
-              }}
-              className="w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-500"
-            />
-          )}
-        />
-      ) : (
-        <>
-          <SearchCombobox
-            value=""
-            onChange={() => {}}
-            onSelect={(option) => {
-              setValue(`lines.${index}.replacementSerialNumberId`, option.id, {
-                shouldValidate: true,
-              })
-              setValue(`lines.${index}.replacementSerialLabel`, option.primary)
+      {/* Nov UAT — the typo-fix box, commented out:
+      <Controller
+        name={`lines.${index}.correctedSerialNumber`}
+        control={control}
+        render={({ field }) => (
+          <input
+            {...field}
+            value={field.value ?? ''}
+            type="text"
+            placeholder="Correct serial number"
+            onChange={(e) => {
+              field.onChange(e.target.value)
               setValue(`lines.${index}.quantityReceived`, 1)
             }}
-            queryKey={`receive-serial-swap-search-${itemId}-${index}`}
-            placeholder="Search the serial that actually arrived…"
-            typeToSearchMessage="Type a serial number to search across every branch…"
-            emptyMessage="No matching serial numbers"
-            search={async (query) => {
-              const res = await getSerialNumbers({
-                itemId,
-                search: query || undefined,
-                status: 'in_stock',
-                limit: 25,
-                scope: 'override',
-              })
-              return (res.data?.data ?? []).map((s) => ({
-                id: s.id,
-                primary: s.serialNumber,
-                secondary:
-                  [s.currentWarehouse?.name, s.status].filter(Boolean).join(' · ') || undefined,
-              }))
-            }}
           />
-          {replacementSerialLabel && (
-            <p className="mt-1 text-[11px] text-amber-700">
-              Will link to: {replacementSerialLabel}
-            </p>
-          )}
-          <p className="mt-1 text-[11px] text-amber-600">
-            Not registered yet? Add it in the serial numbers module first, then search for it here.
-          </p>
-        </>
+        )}
+      /> */}
+      <SearchCombobox
+        value={replacementSerialNumberId ?? ''}
+        onChange={() => {}}
+        onSelect={(option) => {
+          setValue(`lines.${index}.replacementSerialNumberId`, option.id, {
+            shouldValidate: true,
+          })
+          setValue(`lines.${index}.replacementSerialLabel`, option.primary)
+          setValue(`lines.${index}.quantityReceived`, 1)
+        }}
+        selectOnEnter
+        // The picked units are part of the key: results are cached with them
+        // filtered out, so a unit freed elsewhere must not stay hidden.
+        queryKey={`receive-serial-swap-search-${itemId}-${index}-${[...takenIds].sort().join(',')}`}
+        placeholder="Search or scan the serial that actually arrived…"
+        typeToSearchMessage="Type a serial number to search every branch of NIG…"
+        emptyMessage="No in-stock serial of this item anywhere in NIG matches"
+        search={async (query) => {
+          const res = await getSerialNumbers({
+            itemId,
+            search: query || undefined,
+            limit: 25,
+            // Every branch, in-stock and free units only (server-side).
+            scope: 'receipt',
+          })
+          return (res.data?.data ?? [])
+            .filter((s) => s.id === replacementSerialNumberId || !takenIds.has(s.id))
+            .map((s) => ({
+              id: s.id,
+              primary: s.serialNumber,
+              secondary: s.currentWarehouse?.name ?? undefined,
+            }))
+        }}
+      />
+      {replacementSerialLabel && (
+        <p data-testid="receive-replacement-label" className="mt-1 text-[11px] text-amber-700">
+          Will receive: {replacementSerialLabel}
+        </p>
       )}
+      <p className="mt-1 text-[11px] text-amber-600">
+        Only serials NIG already holds can be picked. Not listed? It is not in stock anywhere in NIG
+        — leave this line unticked and raise it with the source branch. A different model? Leave
+        this line unticked and add it under Unlisted Items.
+      </p>
 
       <input
         value={correctionReason}
         onChange={(e) => setValue(`lines.${index}.correctionReason`, e.target.value)}
         type="text"
-        placeholder="Reason for the correction (required)"
+        aria-label="Reason for the different unit"
+        placeholder="Reason (required)"
         className="mt-1.5 w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-500"
       />
     </div>
@@ -972,6 +1077,15 @@ export default function TransferDetailModal({
     name: 'extraLines',
   })
   const watchedExtraLines = useWatch({ control: receiveForm.control, name: 'extraLines' }) ?? []
+  // Nov UAT — every existing serial picked on this receipt (a different
+  // unit on a dispatched line, or an unlisted unit), so a pick never shows up
+  // again in another search. Replaces the typed-serial duplicate check.
+  const watchedReceiveLines = useWatch({ control: receiveForm.control, name: 'lines' }) ?? []
+  const pickedSerialIds = new Set<string>([
+    ...watchedExtraLines.flatMap((l) => l?.serialNumberIds ?? []),
+    ...watchedReceiveLines.map((l) => l?.replacementSerialNumberId).filter((v): v is string => !!v),
+  ])
+  /* Nov UAT — the typed-serial duplicate check, commented out with the boxes:
   function isDuplicateExtraSerial(lineIndex: number, unitIndex: number, value: string): boolean {
     const needle = value.trim()
     let seenSelf = false
@@ -988,6 +1102,7 @@ export default function TransferDetailModal({
     }
     return false
   }
+  */
 
   const rejectHqForm = useForm<RejectHqTransferFormValues>({
     resolver: zodResolver(RejectHqTransferFormSchema),
@@ -1718,6 +1833,17 @@ export default function TransferDetailModal({
                                     {line.receiptCorrectedFromSerial.serialNumber}
                                   </span>{' '}
                                   <LineSerial line={line} />
+                                  {/* Nov UAT — the unit that was expected and
+                                      never arrived is usually still at the
+                                      source (the wrong one was loaded): say
+                                      to check there rather than read as a loss. */}
+                                  <span
+                                    data-testid="expected-unit-not-received"
+                                    className="mt-0.5 block font-sans text-[11px] font-normal text-amber-700"
+                                  >
+                                    {line.receiptCorrectedFromSerial.serialNumber} not received —
+                                    check the source branch
+                                  </span>
                                 </span>
                               ) : line.receiptCorrectionReason ? (
                                 <span
@@ -2354,7 +2480,10 @@ export default function TransferDetailModal({
                             setValue={receiveForm.setValue}
                             index={idx}
                             itemId={lineField.itemId}
-                            canOverrideSerial={canOverrideSerial}
+                            // Nov UAT — anyone receiving may record a
+                            // different unit (was: serial-override only).
+                            canCorrect={canReceiveThis}
+                            takenIds={pickedSerialIds}
                           />
                         )}
                       </div>
@@ -2383,7 +2512,8 @@ export default function TransferDetailModal({
                           quantity: 1,
                           notes: '',
                           isSerialTracked: false,
-                          serialNumbers: undefined,
+                          serialNumberIds: undefined,
+                          serialLabels: undefined,
                         })
                       }
                       className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:text-prominent-purple-800"
@@ -2418,8 +2548,13 @@ export default function TransferDetailModal({
                                           { shouldValidate: false }
                                         )
                                         receiveForm.setValue(
-                                          `extraLines.${idx}.serialNumbers`,
-                                          tracked ? [''] : undefined,
+                                          `extraLines.${idx}.serialNumberIds`,
+                                          tracked ? [] : undefined,
+                                          { shouldValidate: false }
+                                        )
+                                        receiveForm.setValue(
+                                          `extraLines.${idx}.serialLabels`,
+                                          tracked ? [] : undefined,
                                           { shouldValidate: false }
                                         )
                                         receiveForm.setValue(
@@ -2470,11 +2605,12 @@ export default function TransferDetailModal({
                               </button>
                             </div>
                             {isSerialTracked && (
-                              <UnlistedSerialInputs
+                              <UnlistedSerialPicker
                                 control={receiveForm.control}
                                 setValue={receiveForm.setValue}
                                 index={idx}
-                                isDuplicate={isDuplicateExtraSerial}
+                                itemId={watchedExtraLines[idx]?.itemId}
+                                takenIds={pickedSerialIds}
                               />
                             )}
                           </div>
@@ -2483,8 +2619,8 @@ export default function TransferDetailModal({
                     </div>
                   )}
                   <p className="mt-1 text-xs text-zinc-400">
-                    A serial-tracked pick switches to serial entry — one box per unit, scanner
-                    ready.
+                    A serial-tracked pick asks for the unit(s) that arrived — searched across every
+                    branch of NIG, scanner ready. A different model arrives here.
                   </p>
                 </div>
 
