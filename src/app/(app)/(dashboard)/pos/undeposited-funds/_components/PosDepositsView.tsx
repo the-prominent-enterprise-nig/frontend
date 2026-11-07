@@ -83,10 +83,19 @@ export function useDepositSummary(branchId: string | null) {
   })
 }
 
+/** One of the deposits behind a session row — a session banked over several
+ * trips to the bank has one per trip, each with its own slips and entries. */
+export interface DepositChoice {
+  id: string
+  label: string
+}
+
 /** Opens a deposit by id — the table rows only know which deposit a session
- * is in. */
+ * is in. A session banked by several deposits passes them all as `choices`,
+ * so each can be checked and corrected from the one panel. */
 export function DepositDetailLoader({
   id,
+  choices = [],
   accounts,
   canManage,
   canVerify,
@@ -95,6 +104,7 @@ export function DepositDetailLoader({
   onChanged,
 }: {
   id: string
+  choices?: DepositChoice[]
   /** The bank accounts a slip can be corrected to. */
   accounts: BankAccountOption[]
   canManage: boolean
@@ -104,13 +114,14 @@ export function DepositDetailLoader({
   onClose: () => void
   onChanged: () => void
 }): React.JSX.Element {
+  const [current, setCurrent] = useState(id)
   const query = useQuery({
-    queryKey: [POS_DEPOSITS_KEY, 'detail', id],
-    queryFn: () => getPosDeposit(id),
+    queryKey: [POS_DEPOSITS_KEY, 'detail', current],
+    queryFn: () => getPosDeposit(current),
     staleTime: 0,
   })
   const deposit = query.data?.data
-  if (!deposit) {
+  if (!deposit || deposit.id !== current) {
     return (
       <div className="absolute inset-0 z-40 flex items-center justify-center bg-white">
         <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
@@ -119,6 +130,13 @@ export function DepositDetailLoader({
   }
   return (
     <DepositDetail
+      // A fresh panel per deposit, so a half-made correction never carries over.
+      key={deposit.id}
+      switcher={
+        choices.length > 1 ? (
+          <DepositSwitcher choices={choices} current={current} onPick={setCurrent} />
+        ) : undefined
+      }
       deposit={deposit}
       accounts={accounts}
       canManage={canManage}
@@ -127,6 +145,43 @@ export function DepositDetailLoader({
       onClose={onClose}
       onChanged={onChanged}
     />
+  )
+}
+
+/** The deposits behind one session, one pill each — which one is open. */
+function DepositSwitcher({
+  choices,
+  current,
+  onPick,
+}: {
+  choices: DepositChoice[]
+  current: string
+  onPick: (id: string) => void
+}): React.JSX.Element {
+  return (
+    <div className="rounded-lg border border-gray-200 p-3">
+      <p className="mb-2 text-xs text-ink-muted">
+        This session was banked in {choices.length} deposits. Each is checked and corrected on its
+        own.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {choices.map((c, i) => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onPick(c.id)}
+            aria-pressed={c.id === current}
+            className={`rounded-full border px-3 py-1 text-xs font-medium ${
+              c.id === current
+                ? 'border-purple-700 bg-purple-700 text-white'
+                : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            {i + 1}. {c.label}
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -140,6 +195,7 @@ function StatusChip({ status }: { status: PosDepositStatus }): React.JSX.Element
 
 export function DepositDetail({
   deposit,
+  switcher,
   accounts,
   canManage,
   canVerify,
@@ -148,6 +204,8 @@ export function DepositDetail({
   onChanged,
 }: {
   deposit: PosDeposit
+  /** Picks among a session's several deposits, above the rest of the body. */
+  switcher?: React.ReactNode
   accounts: BankAccountOption[]
   canManage: boolean
   canVerify: boolean
@@ -203,6 +261,7 @@ export function DepositDetail({
           </button>
         </div>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+          {switcher}
           <SessionList deposit={deposit} />
           {editing ? (
             <SlipEdit

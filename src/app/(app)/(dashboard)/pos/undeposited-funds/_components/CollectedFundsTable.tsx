@@ -14,6 +14,7 @@ import {
   type Allowed,
 } from './TurnoverActions'
 import type { BranchGroup, LedgerRow, Selection } from './CashInTransitList'
+import type { DepositChoice } from './PosDepositsView'
 
 /**
  * Scenario 83 — the Collected Funds table, laid out as the client's mockup:
@@ -325,6 +326,34 @@ function moneyOf(group: BranchGroup): { collected: number; deposited: number } {
   return { collected, deposited }
 }
 
+/** Opens a deposit; `choices` are every deposit behind the row, when more
+ * than one banked it. */
+export type OpenDeposit = (id: string, choices?: DepositChoice[]) => void
+
+/**
+ * Every posted deposit behind a session, from its slips and turnovers, each
+ * labelled by its slip numbers and what it banked. A session banked over
+ * several trips to the bank reads as several, so none is hidden behind the
+ * one that happened to finish it.
+ */
+export function depositChoices(row: LedgerRow): DepositChoice[] {
+  const byDeposit = new Map<string, { refs: string[]; amount: number }>()
+  const items = [
+    ...row.bankSlips.map((s) => ({ id: s.depositId, ref: s.reference, amount: s.amount })),
+    ...row.turnovers.map((t) => ({ id: t.depositId, ref: t.reference, amount: t.amount })),
+  ]
+  for (const item of items) {
+    const entry = byDeposit.get(item.id) ?? { refs: [], amount: 0 }
+    if (item.ref && !entry.refs.includes(item.ref)) entry.refs.push(item.ref)
+    entry.amount += item.amount
+    byDeposit.set(item.id, entry)
+  }
+  return [...byDeposit].map(([id, { refs, amount }]) => ({
+    id,
+    label: [refs.join(', ') || 'No slip no.', fmtMoney(amount)].join(' · '),
+  }))
+}
+
 // --- The table -----------------------------------------------------------
 
 export function CollectedFundsTable({
@@ -341,7 +370,7 @@ export function CollectedFundsTable({
   loading: boolean
   canManage: boolean
   selection: Selection
-  onOpenDeposit: (id: string) => void
+  onOpenDeposit: OpenDeposit
   onDepositReceipts: (group: BranchGroup) => void
   onTurnoverChanged: () => void
   empty: string
@@ -456,7 +485,7 @@ function BranchRows({
   selection: Selection
   allowed: (t: PosTurnover) => Allowed
   onAct: (t: PosTurnover, kind: Action) => void
-  onOpenDeposit: (id: string) => void
+  onOpenDeposit: OpenDeposit
   onDepositReceipts: () => void
 }): React.JSX.Element {
   const selectable = group.rows.filter((r) => r.status === 'to_deposit')
@@ -553,7 +582,7 @@ function LineRow({
   selection: Selection
   allowed: Allowed | null
   onAct: (kind: Action) => void
-  onOpenDeposit: (id: string) => void
+  onOpenDeposit: OpenDeposit
 }): React.JSX.Element {
   const row = line.row
   // The still-to-deposit part ticks; the part already gone opens its deposit.
@@ -567,7 +596,7 @@ function LineRow({
     row && pickable
       ? () => selection.toggle(row)
       : opensId
-        ? () => onOpenDeposit(opensId)
+        ? () => onOpenDeposit(opensId, row ? depositChoices(row) : undefined)
         : undefined
   return (
     <tr onClick={onClick} className={`hover:bg-gray-50 ${onClick ? 'cursor-pointer' : ''}`}>

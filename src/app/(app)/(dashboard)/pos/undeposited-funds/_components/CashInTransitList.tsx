@@ -60,6 +60,7 @@ import { TURNOVERS_KEY, usePendingIncoming } from './TurnoverActions'
 import {
   DepositDetailLoader,
   POS_DEPOSIT_ENTITY,
+  type DepositChoice,
   refreshDeposits,
   useDepositSummary,
 } from './PosDepositsView'
@@ -472,6 +473,12 @@ export function CashInTransitList({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const [openDepositId, setOpenDepositId] = useState<string | null>(searchParams.get('deposit'))
+  /** The other deposits behind the row it was opened from, if several banked it. */
+  const [openChoices, setOpenChoices] = useState<DepositChoice[]>([])
+  const openDeposit = (id: string, choices: DepositChoice[] = []): void => {
+    setOpenChoices(choices)
+    setOpenDepositId(id)
+  }
 
   /** After any deposit action: the table, the cards and the branch totals. */
   const refreshAll = (): void => {
@@ -532,7 +539,7 @@ export function CashInTransitList({
         loading={ledger.loading}
         canManage={canManage}
         selection={selection}
-        onOpenDeposit={setOpenDepositId}
+        onOpenDeposit={openDeposit}
         onDepositReceipts={(group) =>
           setDepositing({ sessions: [], branchId: group.branchId, branchName: group.branchName })
         }
@@ -570,7 +577,9 @@ export function CashInTransitList({
       )}
       {openDepositId && (
         <DepositDetailLoader
+          key={openDepositId}
           id={openDepositId}
+          choices={openChoices}
           accounts={ledger.accounts}
           canManage={canManage}
           canVerify={canVerify}
