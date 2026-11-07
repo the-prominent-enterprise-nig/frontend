@@ -249,3 +249,19 @@ export function canManagePosSettings(user: PermissionHolder): boolean {
 export function managesOwnBranch(user: PermissionHolder): boolean {
   return !isAdmin(user) && !!user.branchId && can(user, 'pos:config:manage')
 }
+
+/** The only branch whose printouts carry prices. */
+const PRICE_VISIBLE_BRANCH = 'mabini'
+
+/**
+ * Whether prices (unit price, line amounts, totals) show on the printed PO and
+ * Receiving Report. The Business Owner and Mabini's Branch Manager only;
+ * everyone else, Head Office and other Mabini staff included, gets quantities.
+ */
+export function canSeeSupplierPrices(
+  user: PermissionHolder & Pick<SessionUser, 'branchName'>
+): boolean {
+  if (hasPrivilegedRole(user)) return true
+  const atMabini = user.branchName?.trim().toLowerCase() === PRICE_VISIBLE_BRANCH
+  return atMabini && hasRole(user, 'Branch Manager')
+}

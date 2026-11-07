@@ -120,7 +120,15 @@ function MetaPair({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocument }) {
+export default function ReceivingReportSheet({
+  doc,
+  showPrices = true,
+}: {
+  doc: ReceivingReportDocument
+  /** Prices (unit, line and total): the Business Owner and Mabini's Branch
+   * Manager only. Everyone else gets quantities. */
+  showPrices?: boolean
+}) {
   const rr = doc.document
   const enterprise = doc.enterprise
   const lines = rr.lines ?? []
@@ -145,9 +153,10 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
     }
   })
 
+  const showCost = showPrices && hasAnyCost
   const vatAmount = Number(rr.vatAmount ?? 0)
   const withheldAmount = Number(rr.withheldAmount ?? 0)
-  const hasTax = hasAnyCost && (vatAmount > 0 || withheldAmount > 0)
+  const hasTax = showCost && (vatAmount > 0 || withheldAmount > 0)
 
   return (
     <div className="bg-white px-5 py-6 text-[13px] text-gray-900 sm:px-8 sm:py-8">
@@ -237,7 +246,7 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
               </th>
               {/* Only when the receipt carries costs — a transfer-sourced one
                   has none, so its sheet stays quantities only. */}
-              {hasAnyCost && (
+              {showCost && (
                 <>
                   <th rowSpan={2} className={`${TH} w-[12%]`}>
                     Unit cost
@@ -265,7 +274,7 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
                   <td className={TD}>{l.item?.primaryCategory?.name ?? ''}</td>
                   <td className={TD}>{l.item?.modelNumber || l.item?.name || ''}</td>
                   <td className={`${TD} text-right tabular-nums`}>{qty}</td>
-                  {hasAnyCost && (
+                  {showCost && (
                     <>
                       <td className={`${TD} text-right tabular-nums`}>
                         {unitCost != null ? fmtAmount(unitCost) : '—'}
@@ -289,7 +298,7 @@ export default function ReceivingReportSheet({ doc }: { doc: ReceivingReportDocu
               <td className={`${TD} text-right`}>Total</td>
               <td className={`${TD} min-w-[120px] text-right tabular-nums`}>
                 {totalQty} unit{totalQty === 1 ? '' : 's'}
-                {hasAnyCost ? ` — ${fmtAmount(totalAmount)}` : ''}
+                {showCost ? ` — ${fmtAmount(totalAmount)}` : ''}
               </td>
             </tr>
             {hasTax && (

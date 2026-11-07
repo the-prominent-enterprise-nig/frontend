@@ -266,7 +266,7 @@ function PoLink({ report }: { report: ReceivingReport }) {
   const href = report.stockTransfer
     ? `/inventory/stock-transaction?tab=transfers&transfer=${encodeURIComponent(code)}`
     : poId
-      ? `/inventory/purchase-orders?tab=orders&po=${poId}`
+      ? `/inventory/stock-transaction?tab=purchase-orders&po=${poId}`
       : null
 
   // A typed-in (unlinked) PO number names a document the system doesn't

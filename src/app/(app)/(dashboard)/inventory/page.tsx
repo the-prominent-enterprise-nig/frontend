@@ -1037,7 +1037,7 @@ export default function InventoryPage() {
                   {loading ? '—' : s.openPrCount} Open PR{s.openPrCount === 1 ? '' : 's'}
                 </Link>
                 <Link
-                  href="/inventory/purchase-orders?tab=orders"
+                  href="/inventory/stock-transaction?tab=purchase-orders"
                   className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-200"
                 >
                   {loading ? '—' : s.openPoCount} Open PO{s.openPoCount === 1 ? '' : 's'}
@@ -1059,7 +1059,7 @@ export default function InventoryPage() {
                       href={
                         p.type === 'PR'
                           ? '/inventory/purchase-requests'
-                          : `/inventory/purchase-orders?tab=orders&po=${p.id}`
+                          : `/inventory/stock-transaction?tab=purchase-orders&po=${p.id}`
                       }
                       className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-gray-50 transition-colors"
                     >

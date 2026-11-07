@@ -84,7 +84,7 @@ export function printInventoryDocument(
  */
 export function buildReceivingReportHtml(
   data: unknown,
-  opts: { showAmounts?: boolean } = {}
+  opts: { showAmounts?: boolean; showPrices?: boolean } = {}
 ): string {
   const doc = data as PrintDocumentEnvelope
   const rr = doc.document as Record<string, unknown>
@@ -93,7 +93,10 @@ export function buildReceivingReportHtml(
   // Costs reach the document only for whoever may see them — the Business
   // Owner on the inventory copy, Accounting on its own — so the amounts
   // print whenever it carries them, quantities only otherwise.
-  const { showAmounts = lines.some((l) => l.unitCost != null) } = opts
+  // `showPrices: false` (anyone but the Business Owner and Mabini's Branch
+  // Manager) prints quantities only: no unit cost, amounts or totals.
+  const showAmounts =
+    opts.showPrices !== false && (opts.showAmounts ?? lines.some((l) => l.unitCost != null))
 
   const fmtDate = (v: unknown) =>
     v ? new Date(v as string).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
@@ -286,7 +289,7 @@ export function buildReceivingReportHtml(
 
 export function printReceivingReportDocument(
   data: unknown,
-  opts: { showAmounts?: boolean } = {}
+  opts: { showAmounts?: boolean; showPrices?: boolean } = {}
 ): void {
   const win = window.open('', '_blank', 'width=950,height=750')
   if (!win) return
@@ -721,7 +724,10 @@ function buildPurchaseOrderHtml(
   // themselves (those live on the goods receipt) — pass in a
   // purchaseOrderLineId -> serials map (see get-purchase-order-receipts.ts)
   // once the PO is closed, so a fully-received PO's printout can show them.
-  serialsByLineId?: Record<string, string[]>
+  serialsByLineId?: Record<string, string[]>,
+  // Prices (unit price, line totals, PO total): the Business Owner and
+  // Mabini's Branch Manager only. Everyone else gets quantities.
+  showPrices = true
 ): string {
   const doc = data as PrintDocumentEnvelope
   const po = doc.document as Record<string, unknown>
@@ -781,7 +787,7 @@ function buildPurchaseOrderHtml(
         ? (l.discounts as { name?: string; type: string; value: number }[])
         : []
       const discountNote =
-        srp != null && discounts.length > 0
+        showPrices && srp != null && discounts.length > 0
           ? `<div class="discount-note">SRP ${fmt(srp)} · ${discounts
               .map((d) => {
                 const amount = d.type === 'percentage' ? `${d.value}%` : fmt(d.value)
@@ -795,8 +801,7 @@ function buildPurchaseOrderHtml(
         <td class="num">${i + 1}</td>
         <td>${esc(name)}${discountNote}</td>
         <td class="right">${qty}</td>
-        <td class="right">${fmt(unitPrice)}</td>
-        <td class="right">${fmt(lineTotal)}</td>
+        ${showPrices ? `<td class="right">${fmt(unitPrice)}</td><td class="right">${fmt(lineTotal)}</td>` : ''}
       </tr>`
     })
     .join('')
@@ -909,18 +914,21 @@ function buildPurchaseOrderHtml(
           <th class="num">#</th>
           <th>Item</th>
           <th class="right">Qty</th>
-          <th class="right">Unit price</th>
-          <th class="right">Total</th>
+          ${showPrices ? '<th class="right">Unit price</th><th class="right">Total</th>' : ''}
         </tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
 
-    <div class="total-wrap">
+    ${
+      showPrices
+        ? `<div class="total-wrap">
       <table>
         <tr><td class="label">Total</td><td class="value">${fmt(Number(po.totalAmount ?? 0))}</td></tr>
       </table>
-    </div>
+    </div>`
+        : ''
+    }
 
     <div class="signatures">
       <div class="sig-block">
@@ -957,11 +965,12 @@ function buildPurchaseOrderHtml(
 
 export function printPurchaseOrderDocument(
   data: unknown,
-  serialsByLineId?: Record<string, string[]>
+  serialsByLineId?: Record<string, string[]>,
+  showPrices = true
 ): void {
   const win = window.open('', '_blank', 'width=950,height=750')
   if (!win) return
-  win.document.write(buildPurchaseOrderHtml(data, serialsByLineId))
+  win.document.write(buildPurchaseOrderHtml(data, serialsByLineId, showPrices))
   win.document.close()
 }
 

@@ -123,7 +123,7 @@ export async function getNeedsAttentionItems(
     tier: 2,
     badge: 'PO',
     badgeStyle: 'bg-blue-100 text-blue-700',
-    href: '/inventory/purchase-orders',
+    href: '/inventory/stock-transaction?tab=purchase-orders',
   }))
 
   const returnRefund = returnRes.data ?? []

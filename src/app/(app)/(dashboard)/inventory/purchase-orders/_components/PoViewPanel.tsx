@@ -1,5 +1,7 @@
 'use client'
 
+import { DocumentUnavailable } from '@/src/components/inventory/DocumentUnavailable'
+import { describeDocumentError } from '@/src/libs/data/document-errors'
 import { useEffect, useRef, useState } from 'react'
 import { X, Printer, Download, Loader2 } from 'lucide-react'
 import { getPurchaseOrderDocument } from '../_actions/get-purchase-order-document'
@@ -14,6 +16,8 @@ import { PLEX, MONO, StatusBadge } from './procurementTokens'
 type Props = {
   po: PurchaseOrderSummary | null
   onClose: () => void
+  /** Prices on the printable PO: Business Owner and Mabini's Branch Manager only. */
+  showPrices?: boolean
 }
 
 function DocumentSkeleton() {
@@ -35,7 +39,7 @@ function DocumentSkeleton() {
 // footer row), minus that panel's left list pane — a PO has exactly one
 // document to show, not a list of deliveries to pick between.
 
-export function PoViewPanel({ po, onClose }: Props) {
+export function PoViewPanel({ po, onClose, showPrices = false }: Props) {
   const [doc, setDoc] = useState<PurchaseOrderPrintDocument | null>(null)
   const [serialsByLineId, setSerialsByLineId] = useState<Record<string, string[]>>({})
   const [loading, setLoading] = useState(false)
@@ -133,7 +137,7 @@ export function PoViewPanel({ po, onClose }: Props) {
             <button
               type="button"
               disabled={!doc}
-              onClick={() => doc && printPurchaseOrderDocument(doc, serialsByLineId)}
+              onClick={() => doc && printPurchaseOrderDocument(doc, serialsByLineId, showPrices)}
               className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-[#4a189b] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Printer className="h-3.5 w-3.5" />
@@ -157,13 +161,11 @@ export function PoViewPanel({ po, onClose }: Props) {
               <DocumentSkeleton />
             </div>
           ) : error ? (
-            <div className="mx-auto max-w-3xl rounded-xl border border-[#f3c9c5] bg-[#fdeceb] p-4">
-              <p className="text-[13px] font-medium text-[#b42318]">{error}</p>
-            </div>
+            <DocumentUnavailable {...describeDocumentError(error, 'purchase order')} />
           ) : doc ? (
             <div className="mx-auto max-w-3xl rounded-lg border border-[#e4e4e9] bg-white shadow-sm">
               <div ref={sheetRef}>
-                <PurchaseOrderSheet doc={doc} />
+                <PurchaseOrderSheet doc={doc} showPrices={showPrices} />
               </div>
             </div>
           ) : null}

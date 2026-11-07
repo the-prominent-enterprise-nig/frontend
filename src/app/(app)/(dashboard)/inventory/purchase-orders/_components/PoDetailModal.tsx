@@ -46,6 +46,9 @@ type Props = {
   canReceive?: boolean
   canClose?: boolean
   canEdit?: boolean
+  /** Unit price, line totals and the PO total: the Business Owner and Mabini's
+   * Branch Manager only. Everyone else sees quantities. */
+  showPrices?: boolean
   onApprove?: (po: PurchaseOrderSummary) => void
   onCancel?: (po: PurchaseOrderSummary) => void
   onSend?: (po: PurchaseOrderSummary) => void
@@ -179,6 +182,7 @@ export function PoDetailModal({
   canReceive,
   canClose,
   canEdit,
+  showPrices = false,
   onApprove,
   onCancel,
   onSend,
@@ -469,8 +473,12 @@ export function PoDetailModal({
                   <th className="px-3 py-2.5 text-right">Ordered</th>
                   <th className="px-3 py-2.5 text-right">Received</th>
                   <th className="w-[150px] px-3 py-2.5 text-left">Progress</th>
-                  <th className="px-3 py-2.5 text-right">Unit Price</th>
-                  <th className="px-4 py-2.5 text-right">Line Total</th>
+                  {showPrices && (
+                    <>
+                      <th className="px-3 py-2.5 text-right">Unit Price</th>
+                      <th className="px-4 py-2.5 text-right">Line Total</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#f4f4f6]">
@@ -505,7 +513,7 @@ export function PoDetailModal({
                               so it now comes from the shared formatter rather
                               than being restated here, where a tweak on one
                               screen would silently make the four disagree. */}
-                        {discountChainLabel(line, fmtPeso) && (
+                        {showPrices && discountChainLabel(line, fmtPeso) && (
                           <p className="mt-0.5 text-[11.5px] text-[#4b4b5a]">
                             {discountChainLabel(line, fmtPeso)}
                           </p>
@@ -558,14 +566,18 @@ export function PoDetailModal({
                           />
                         </div>
                       </td>
-                      <td className={`${MONO} px-3 py-3 text-right text-[13px] text-[#3d3d4a]`}>
-                        {fmtPeso(line.unitPrice)}
-                      </td>
-                      <td
-                        className={`${MONO} px-4 py-3 text-right text-[13.5px] font-semibold text-[#17171c]`}
-                      >
-                        {fmtPeso(line.lineTotal ?? line.quantity * line.unitPrice)}
-                      </td>
+                      {showPrices && (
+                        <>
+                          <td className={`${MONO} px-3 py-3 text-right text-[13px] text-[#3d3d4a]`}>
+                            {fmtPeso(line.unitPrice)}
+                          </td>
+                          <td
+                            className={`${MONO} px-4 py-3 text-right text-[13.5px] font-semibold text-[#17171c]`}
+                          >
+                            {fmtPeso(line.lineTotal ?? line.quantity * line.unitPrice)}
+                          </td>
+                        </>
+                      )}
                     </tr>
                   )
                 })}
@@ -574,20 +586,22 @@ export function PoDetailModal({
           </div>
 
           {/* Totals */}
-          <div className="flex justify-end border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-3.5">
-            <div className="w-full max-w-[260px] space-y-1.5">
-              <div className="flex items-center justify-between text-[12.5px]">
-                <span className="text-[#4b4b5a]">Subtotal</span>
-                <span className={`${MONO} text-[#3d3d4a]`}>{fmtPeso(subtotal)}</span>
-              </div>
-              <div className="flex items-baseline justify-between border-t border-[#e4e4e9] pt-1.5">
-                <span className="text-[13px] font-semibold">Total</span>
-                <span className={`${MONO} text-[17px] font-semibold`}>
-                  {fmtPeso(Number(po.totalAmount))}
-                </span>
+          {showPrices && (
+            <div className="flex justify-end border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-3.5">
+              <div className="w-full max-w-[260px] space-y-1.5">
+                <div className="flex items-center justify-between text-[12.5px]">
+                  <span className="text-[#4b4b5a]">Subtotal</span>
+                  <span className={`${MONO} text-[#3d3d4a]`}>{fmtPeso(subtotal)}</span>
+                </div>
+                <div className="flex items-baseline justify-between border-t border-[#e4e4e9] pt-1.5">
+                  <span className="text-[13px] font-semibold">Total</span>
+                  <span className={`${MONO} text-[17px] font-semibold`}>
+                    {fmtPeso(Number(po.totalAmount))}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
