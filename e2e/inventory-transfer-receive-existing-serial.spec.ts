@@ -132,9 +132,16 @@ async function openAsReceiver(browser: Browser, transferNumber: string, reason: 
   return { context, receiver, modal }
 }
 
+/** Searches a serial box and picks the result. Works whether the box is
+ * closed (a button) or still open from a previous search (a textbox — the
+ * box does not close on Escape); "search or scan" matches both the first
+ * and the "Add another unit — search or scan…" label. */
 async function searchAndPick(page: Page, scope: ReturnType<Page['locator']>, text: string) {
-  await scope.getByRole('button', { name: /Search or scan/ }).click()
-  await page.keyboard.type(text)
+  const box = scope.getByRole('textbox', { name: /search or scan/i })
+  if (!(await box.isVisible())) {
+    await scope.getByRole('button', { name: /search or scan/i }).click()
+  }
+  await box.fill(text)
   await page.getByRole('button', { name: new RegExp(text) }).click()
 }
 
