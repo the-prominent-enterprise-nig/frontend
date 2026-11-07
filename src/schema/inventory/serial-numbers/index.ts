@@ -203,7 +203,30 @@ export const SerialNumberSummarySchema = z.object({
   unitCost: z.number().nullable().optional(),
   // Set while an open transfer (requested through partially received)
   // already claims this unit.
-  openTransfer: z.object({ transferNumber: z.string() }).nullable().optional(),
+  openTransfer: z
+    .object({
+      transferNumber: z.string(),
+      status: z.string().optional(),
+      date: z.string().nullable().optional(),
+      // The branch it is headed to.
+      toWarehouseName: z.string().nullable().optional(),
+    })
+    .nullable()
+    .optional(),
+  // Out at a service center for repair — physically there, still ours.
+  consignedToSupplier: z.object({ id: z.string(), name: z.string() }).nullable().optional(),
+  // The open repair ticket (UDS) the unit is on, if any.
+  repairTicket: z
+    .object({
+      code: z.string(),
+      status: z.string(),
+      dispatchDeliveryReceiptNumber: z.string().nullable().optional(),
+      dispatchedAt: z.string().nullable().optional(),
+      expectedReturnDate: z.string().nullable().optional(),
+      repairProviderName: z.string().nullable().optional(),
+    })
+    .nullable()
+    .optional(),
   // Scenario 56 — RR age (first received) and branch age (arrived here).
   firstReceivedAt: z.string().nullable().optional(),
   locationSince: z.string().nullable().optional(),

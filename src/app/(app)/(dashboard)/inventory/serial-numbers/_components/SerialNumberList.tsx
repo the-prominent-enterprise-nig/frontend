@@ -749,30 +749,38 @@ export default function SerialNumberList({
                               </div>
                             </td>
                             <td className="px-4 py-[11px] text-[13.5px] text-[#4b4b5a] hidden sm:table-cell">
-                              <div className="font-medium text-[#17171c]">
-                                {serial.consignedToVenue ??
-                                  locationLabel(serial.warehouse ?? serial.currentWarehouse)}
-                              </div>
-                              <div
-                                className={`${MONO} whitespace-nowrap text-[12.5px] text-[#5b21b6]`}
-                              >
-                                {serial.goodsReceiptLine?.goodsReceipt ? (
-                                  <Link
-                                    href={`/accounting/receiving-reports/${serial.goodsReceiptLine.goodsReceipt.id}`}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="underline-offset-2 hover:underline"
+                              {serial.consignedToSupplier ? (
+                                <ServiceCenterLocation serial={serial} />
+                              ) : (
+                                <>
+                                  <div className="font-medium text-[#17171c]">
+                                    {serial.consignedToVenue ??
+                                      locationLabel(serial.warehouse ?? serial.currentWarehouse)}
+                                  </div>
+                                  <div
+                                    className={`${MONO} whitespace-nowrap text-[12.5px] text-[#5b21b6]`}
                                   >
-                                    {serial.goodsReceiptLine.goodsReceipt.code}
-                                  </Link>
-                                ) : (
-                                  '—'
-                                )}
-                              </div>
-                              <div className="text-[12.5px] text-ink-muted">
-                                {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
-                                  ? formatShortDate(serial.goodsReceiptLine.goodsReceipt.receivedAt)
-                                  : '—'}
-                              </div>
+                                    {serial.goodsReceiptLine?.goodsReceipt ? (
+                                      <Link
+                                        href={`/accounting/receiving-reports/${serial.goodsReceiptLine.goodsReceipt.id}`}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="underline-offset-2 hover:underline"
+                                      >
+                                        {serial.goodsReceiptLine.goodsReceipt.code}
+                                      </Link>
+                                    ) : (
+                                      '—'
+                                    )}
+                                  </div>
+                                  <div className="text-[12.5px] text-ink-muted">
+                                    {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
+                                      ? formatShortDate(
+                                          serial.goodsReceiptLine.goodsReceipt.receivedAt
+                                        )
+                                      : '—'}
+                                  </div>
+                                </>
+                              )}
                             </td>
                             <td className="px-4 py-[11px] text-[13.5px] text-[#4b4b5a] hidden md:table-cell">
                               <DestinationCell serial={serial} />
@@ -903,20 +911,73 @@ export default function SerialNumberList({
   )
 }
 
-/** A sold unit's destination is its buyer and the sale; any other unit's is
- * where it is stored, and the transfer already claiming it (NIG #10). */
-function DestinationCell({ serial }: { serial: SerialNumberSummary }): React.JSX.Element {
-  const sold = soldDestination(serial)
-  const date = sold ? sold.date : serial.locationSince
+/** Name / reference / date, the three lines every location cell shows. */
+function CellLines({
+  name,
+  tag,
+  reference,
+  date,
+}: {
+  name: string
+  tag?: string
+  reference?: string | null
+  date?: string | null
+}): React.JSX.Element {
   return (
     <>
       <div className="font-medium text-[#17171c]">
-        {sold ? sold.name : locationLabel(serial.currentWarehouse ?? serial.warehouse)}
+        {name}
+        {tag && <span className="ml-1.5 text-[11.5px] font-normal text-ink-muted">· {tag}</span>}
       </div>
       <div className={`${MONO} whitespace-nowrap text-[12.5px] text-[#5b21b6]`}>
-        {(sold ? sold.ref : serial.openTransfer?.transferNumber) ?? '—'}
+        {reference ?? '—'}
       </div>
       <div className="text-[12.5px] text-ink-muted">{date ? formatShortDate(date) : '—'}</div>
     </>
   )
+}
+
+/** Out for repair: it is at the service center, on the DR it left on. */
+function ServiceCenterLocation({ serial }: { serial: SerialNumberSummary }): React.JSX.Element {
+  const ticket = serial.repairTicket
+  return (
+    <CellLines
+      name={serial.consignedToSupplier?.name ?? 'Service center'}
+      tag="Service center"
+      reference={ticket?.dispatchDeliveryReceiptNumber ?? ticket?.code}
+      date={ticket?.dispatchedAt}
+    />
+  )
+}
+
+/** A sold unit's destination is its buyer and the sale; one on an open
+ * transfer, the branch it is headed to; one out for repair, its branch, on
+ * its ticket; any other, where it is stored (NIG #10). */
+function DestinationCell({ serial }: { serial: SerialNumberSummary }): React.JSX.Element {
+  const sold = soldDestination(serial)
+  if (sold) return <CellLines name={sold.name} reference={sold.ref} date={sold.date} />
+  const here = locationLabel(serial.currentWarehouse ?? serial.warehouse)
+  const transfer = serial.openTransfer
+  if (transfer) {
+    return (
+      <CellLines
+        name={transfer.toWarehouseName ?? here}
+        tag={serial.status === 'in_transit' ? 'In transit' : undefined}
+        reference={transfer.transferNumber}
+        date={transfer.date ?? serial.locationSince}
+      />
+    )
+  }
+  const ticket = serial.consignedToSupplier ? serial.repairTicket : null
+  if (ticket) {
+    return (
+      <CellLines
+        name={here}
+        tag="Back from repair"
+        reference={ticket.code}
+        date={ticket.expectedReturnDate}
+      />
+    )
+  }
+  return <CellLines name={here} date={serial.locationSince} />
 }
