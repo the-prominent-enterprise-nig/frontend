@@ -1982,6 +1982,13 @@ export default function CheckoutPage() {
   const downPaymentZeroed = false
   // No rate-card figure either — the cashier's amount stands.
   const downPaymentFree = employeeApplianceLoanActive || xDealActive
+  // Nov UAT — an in-house plan may also take ₱0 down when one of ITS items'
+  // prices was overridden (not some other line's — overriding a cash
+  // accessory must not unlock ₱0 down on the financed unit), or for a business
+  // customer. The backend allows the same.
+  const inhouseZeroDownAllowed =
+    selectedCustomer?.customerType === 'business' ||
+    inhouseInstallmentCartLines.some((l) => l.priceOverridden)
   // An Employee Appliance Loan's down payment only counts once typed
   // explicitly (the term pick's auto-fill, marked by
   // downPaymentAutoForPriceListItemId, is ignored for it). An X-Deal never
@@ -2123,7 +2130,8 @@ export default function CheckoutPage() {
   })()
 
   /** The plan's one down payment box. A TPF sale may take 0; an in-house plan
-   * never (Oct 29 UAT POS-11). An X-Deal's is the cash portion and an Employee
+   * only with a price override or for a business customer (Oct 29 UAT POS-11,
+   * Nov UAT). An X-Deal's is the cash portion and an Employee
    * Appliance Loan's is optional — their own wording, the same single figure. */
   function renderPlanDownPayment() {
     if (xDealActive) {
@@ -2169,7 +2177,7 @@ export default function CheckoutPage() {
       <PlanDownPaymentField
         total={planDownPayment}
         max={planSaleAmount}
-        allowZero={planProvider === 'tpf'}
+        allowZero={planProvider === 'tpf' || inhouseZeroDownAllowed}
         badge={planDpBadge}
         hint={
           installmentCartLines.length > 1
@@ -2765,6 +2773,31 @@ export default function CheckoutPage() {
         if (requestId === customerApplicationsRequestRef.current) setCustomerApplications(null)
       })
   }, [selectedCustomerId, creditAppsRefreshNonce])
+
+  /** Nov UAT — "approved credit application, auto-fill the item on the sale".
+   *  Builds the cart from an application on the customer card, the same way
+   *  arriving from the credit application page does (the arrival effects
+   *  below): its approved items as installment lines, its remembered serial,
+   *  Price Use, term and down payment, and the application picked. Replaces
+   *  whatever the cart holds, once the cashier agrees — the arrival switches
+   *  every line to installment, and an application covers only its own items. */
+  function fillCartFromApplication(application: { id: string; applicationNumber: string }) {
+    if (arrivingCreditApplication) return
+    if (
+      cart.length > 0 &&
+      !window.confirm(
+        `Replace the ${cart.length === 1 ? 'item' : `${cart.length} items`} in the cart with ${application.applicationNumber}'s approved items?`
+      )
+    ) {
+      return
+    }
+    setError('')
+    setCart([])
+    // The guard is per application; a second fill of the same one (the cart was
+    // cleared, or replaced) must be allowed to build again.
+    arrivalBuiltRef.current = null
+    setArrivingCreditApplication({ id: application.id, stage: 'fetching' })
+  }
 
   // Scenario 71 — with the override ticked, every application of this customer that
   // is not used, declined or cancelled is a candidate, whether or not it covers the
@@ -4799,11 +4832,13 @@ export default function CheckoutPage() {
       return
     }
     // Oct 29 UAT POS-11 — an in-house plan (typed or from a term) takes a
-    // down payment above 0; the backend refuses one without.
+    // down payment above 0; the backend refuses one without. Not with a price
+    // override or for a business customer (Nov UAT).
     if (
       inhouseInstallmentCartLines.length > 0 &&
       !xDealActive &&
       !employeeApplianceLoanActive &&
+      !inhouseZeroDownAllowed &&
       planDownPayment <= 0
     ) {
       setError('An in-house installment sale needs a down payment above ₱0.')
@@ -6485,6 +6520,25 @@ export default function CheckoutPage() {
                               <span className="shrink-0 font-semibold text-gray-800">
                                 {fmt(a.requestedAmount)}
                               </span>
+                              {/* Nov UAT — one click puts the approved items on
+                                  the sale. Not while it is already the sale's
+                                  application, and never for an X-Deal, which
+                                  must not consume one. */}
+                              {saleMode === 'sale' &&
+                                !xDealActive &&
+                                creditApplicationId !== a.id && (
+                                  <button
+                                    type="button"
+                                    data-testid="fill-cart-from-application"
+                                    onClick={() => fillCartFromApplication(a)}
+                                    disabled={!!arrivingCreditApplication}
+                                    className="shrink-0 rounded-md bg-prominent-purple-700 px-2 py-1 text-[11px] font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
+                                  >
+                                    {arrivingCreditApplication?.id === a.id
+                                      ? 'Filling…'
+                                      : 'Fill cart'}
+                                  </button>
+                                )}
                             </li>
                           ))}
                         </ul>
