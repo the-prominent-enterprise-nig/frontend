@@ -3,6 +3,7 @@ import ExportButton from '@/src/components/common/ExportButton'
 import TablePagination from '@/src/components/common/TablePagination'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { useState, type ReactElement } from 'react'
+import { Loader2 } from 'lucide-react'
 import { useAgingCategoryOptions, type AgingFilters } from '../_hooks/useInventoryReports'
 import {
   type AgingReportItem,
@@ -24,6 +25,8 @@ interface Props {
   /** The filters the report on screen was loaded with. */
   filters: AgingFilters
   onFiltersChange: (filters: AgingFilters) => void
+  /** Re-runs the report on the same filters (the button reads "Refresh"). */
+  onRefresh: () => void
   warehouses: Option[]
   /** Item types: the report's Types. */
   typeOptions: Option[]
@@ -156,6 +159,8 @@ type FilterBarProps = Pick<Props, 'warehouses' | 'typeOptions'> & {
   onDraftChange: (patch: Partial<AgingFilters>) => void
   onProcess: () => void
   isDirty: boolean
+  /** The report is loading — the button says so and can't be pressed twice. */
+  isBusy: boolean
 }
 
 /** The staged filters; they only reach the report on Process. */
@@ -164,6 +169,7 @@ function FilterBar({
   onDraftChange: set,
   onProcess,
   isDirty,
+  isBusy,
   warehouses,
   typeOptions,
 }: FilterBarProps): ReactElement {
@@ -218,9 +224,11 @@ function FilterBar({
       <button
         type="button"
         onClick={onProcess}
-        className="inline-flex h-10 items-center justify-center rounded-xl bg-prominent-purple-700 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-prominent-purple-800"
+        disabled={isBusy}
+        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-prominent-purple-700 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-prominent-purple-800 disabled:cursor-wait disabled:opacity-80"
       >
-        {isDirty ? 'Process' : 'Refresh'}
+        {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+        {isBusy ? 'Processing…' : isDirty ? 'Process' : 'Refresh'}
       </button>
     </div>
   )
@@ -319,6 +327,7 @@ export default function AgingReport({
   setPage,
   filters,
   onFiltersChange,
+  onRefresh,
   warehouses,
   typeOptions,
 }: Props): ReactElement {
@@ -351,8 +360,13 @@ export default function AgingReport({
       <FilterBar
         draft={draft}
         onDraftChange={(patch) => setDraft((d) => ({ ...d, ...patch }))}
-        onProcess={() => onFiltersChange({ ...draft, asOf: draft.asOf || filters.asOf })}
+        // Same filters: re-run the report. Applying them again changed no
+        // query key, so "Refresh" used to do nothing at all.
+        onProcess={() =>
+          isDirty ? onFiltersChange({ ...draft, asOf: draft.asOf || filters.asOf }) : onRefresh()
+        }
         isDirty={isDirty}
+        isBusy={isFetching}
         warehouses={warehouses}
         typeOptions={typeOptions}
       />
