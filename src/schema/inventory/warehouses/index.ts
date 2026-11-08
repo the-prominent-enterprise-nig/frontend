@@ -65,6 +65,18 @@ export function isCaravanBranch(branch: WarehouseBranch | null | undefined): boo
   return !!branch?.isTemporary
 }
 
+/** The branch a user's caravan pickers (host branch, running caravans) are
+ * limited to — null means every branch. Mirrors the backend's branchScopeOf:
+ * a Warehouse Custodian's branch (Negros/Panay Warehouse) owns no warehouse
+ * row and hosts no caravan, so they pick from every branch, as head office. */
+export function caravanScopeBranchId(
+  warehouses: { branchId?: string | null }[],
+  branchId: string | null | undefined
+): string | null {
+  if (!branchId) return null
+  return warehouses.some((wh) => wh.branchId === branchId) ? branchId : null
+}
+
 /** Ended once its host closed it, or its end date is before today — mirrors
  * the backend rule that stops new stock going in (stock can still be
  * transferred out). */

@@ -10,6 +10,7 @@ import {
 } from '@/src/schema/inventory/transfers'
 import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 import {
+  caravanScopeBranchId,
   isCaravanBranch,
   warehouseLabel,
   type WarehouseSummary,
@@ -139,6 +140,8 @@ export default function ConsignToCaravanModal({
   warehouses,
   currentUserBranchId,
 }: Props): React.JSX.Element | null {
+  // A Warehouse Custodian's branch hosts no caravan — they pick any host.
+  const hostScope = caravanScopeBranchId(warehouses, currentUserBranchId)
   const {
     control,
     handleSubmit,
@@ -148,7 +151,7 @@ export default function ConsignToCaravanModal({
 
   // Seeded on open only — the ticked units can't change while it's up.
   useEffect(() => {
-    if (isOpen) reset(initialValues(serials, sourceId, currentUserBranchId ?? ''))
+    if (isOpen) reset(initialValues(serials, sourceId, hostScope ?? ''))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, reset])
 
@@ -193,8 +196,8 @@ export default function ConsignToCaravanModal({
             <NewCaravanFields
               control={control as unknown as Control<CaravanFieldsForm>}
               errors={errors}
-              hostBranchOptions={hostOptions(warehouses, currentUserBranchId)}
-              hostLocked={!!currentUserBranchId}
+              hostBranchOptions={hostOptions(warehouses, hostScope)}
+              hostLocked={!!hostScope}
             />
             <TransferDates control={control} arrivalError={errors.expectedArrival?.message} />
             <div>

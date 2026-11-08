@@ -10,6 +10,7 @@ import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { hasPrivilegedRole, type SessionUser } from '@/src/libs/guards/permission'
 import {
+  caravanScopeBranchId,
   isCaravanBranch,
   warehouseLabel,
   type WarehouseSummary,
@@ -261,7 +262,10 @@ export default function SerialNumberList({
   const caravanActions: CaravanActions = {
     canEdit: canManageCaravan,
     canClose: canManageCaravan && (hasPrivilegedRole(session) || !session.branchId),
-    hostBranchOptions: hostBranchChoices(warehouseOptions, session.branchId),
+    hostBranchOptions: hostBranchChoices(
+      warehouseOptions,
+      caravanScopeBranchId(warehouseOptions, session.branchId)
+    ),
     hostLocked: !!session.branchId,
   }
 
