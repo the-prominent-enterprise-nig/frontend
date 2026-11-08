@@ -1,5 +1,6 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import { ledgerScheme } from '@/src/libs/format/ledgerScheme'
 import { MANILA_TZ, manilaDateOf, manilaMonthOf } from '@/src/libs/format/manila-date'
 import {
   receivingReportSourceName,
@@ -1052,6 +1053,8 @@ export function buildCustomerLedgerHtml(
   const totalLine = (label: string, value: string) =>
     `<p class="totals-line"><span class="totals-label">${esc(label)}</span> : <span class="totals-value">${esc(value)}</span></p>`
 
+  // WIP / SSC / … — or "Price Override" when the sale's price was overridden.
+  const schemeLabel = ledgerScheme(ledger)
   const ledgerRows = rows
     .map(
       (r) => `<tr>
@@ -1171,7 +1174,7 @@ export function buildCustomerLedgerHtml(
         ${cell('Inst. Diff.', fmt(account.interestDifferential))}
       </tr>
       <tr>
-        ${cell('Scheme', account.priceUseType?.name ?? '—')}
+        ${cell('Scheme', schemeLabel)}
         ${cell('MI', fmt(account.monthlyInstallment))}
         ${cell('Term', `${account.termMonths} months`)}
         ${cell('Branch', account.branch?.name ?? '—')}
@@ -1253,6 +1256,9 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
+  // Scheme column — each sale's Price Use (WIP, SSC, …) or "Price Override" on its
+  // own row, same as the on-screen all-purchases ledger.
+  const showScheme = rows.some((r) => r.scheme)
   const ledgerRows = rows
     .map(
       (r) => `<tr>
@@ -1260,6 +1266,7 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
         <td class="mono">${esc(r.ref)}</td>
         <td class="right">${r.inst > 0 ? r.inst : '—'}</td>
         <td>${esc(r.description)}</td>
+        ${showScheme ? `<td>${esc(r.scheme ?? '')}</td>` : ''}
         <td class="right">${r.debit > 0 ? fmt(r.debit) : '—'}</td>
         <td class="right">${r.credit > 0 ? fmt(r.credit) : '—'}</td>
         <td class="right">${fmt(r.due)}</td>
@@ -1275,7 +1282,7 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
   const ledgerTotalRow =
     rows.length > 0
       ? `<tr class="total-row">
-        <td colspan="4"><strong>Total</strong></td>
+        <td colspan="${showScheme ? 5 : 4}"><strong>Total</strong></td>
         <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
         <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
         <td></td>
@@ -1351,6 +1358,7 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
       <thead>
         <tr>
           <th>Date</th><th>Ref</th><th class="right">Inst.</th><th>Description</th>
+          ${showScheme ? '<th>Scheme</th>' : ''}
           <th class="right">Debit</th><th class="right">Credit</th><th class="right">Due</th><th class="right">Outstanding</th>
         </tr>
       </thead>

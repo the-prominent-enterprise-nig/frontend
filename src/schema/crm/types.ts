@@ -576,6 +576,10 @@ export interface InstallmentLedgerRow {
    * footer/summary that sums `debit`/`credit` across rows must skip these,
    * or it double-counts. Omitted (falsy) for every real money-moving row. */
   displayOnly?: boolean
+  /** On a Sale row only: the sale's Scheme — the Price Use it was priced under
+   * (WIP, SSC, …), or "Price Override" when its price was manually overridden.
+   * Omitted everywhere else (and by a backend that predates it). */
+  scheme?: string
 }
 
 export interface InstallmentLedger {
