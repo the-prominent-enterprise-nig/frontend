@@ -100,14 +100,30 @@ function MetricCell({
   value,
   sub,
   highlight,
+  active,
+  onClick,
 }: {
   label: string
   value: number
   sub: string
   highlight?: boolean
+  /** The status this count stands for is the one filtering the list. */
+  active?: boolean
+  /** Clicking a count filters the list to it. */
+  onClick?: () => void
 }) {
+  const tone = active
+    ? 'bg-[#f1ebfb] shadow-[inset_0_-2px_0_#5b21b6]'
+    : highlight
+      ? 'bg-[#f4fbf7] hover:bg-[#eaf7f0]'
+      : 'hover:bg-[#fbfbfc]'
   return (
-    <div className={`flex flex-col gap-1 px-4 py-3 ${highlight ? 'bg-[#f4fbf7]' : ''}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex flex-col gap-1 px-4 py-3 text-left transition-colors ${tone}`}
+    >
       <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-ink-muted`}>
         {label}
       </span>
@@ -119,7 +135,7 @@ function MetricCell({
         {value.toLocaleString()}
       </span>
       <span className="text-[11px] text-ink-muted">{sub}</span>
-    </div>
+    </button>
   )
 }
 
@@ -304,6 +320,10 @@ export default function SerialNumberList({
     )
   }, [itemOptions])
 
+  // A count clicked again goes back to every status.
+  const toggleStatus = (status: SerialStatus): void =>
+    setStatusFilter(statusFilter === status ? undefined : status)
+
   const hasFilters =
     statusFilter ||
     locationFilter.locations.length > 0 ||
@@ -348,16 +368,6 @@ export default function SerialNumberList({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {/* Status sits with the header actions, as on the mockup. */}
-            <SearchableSelect
-              className="w-[150px]"
-              value={statusFilter ?? ''}
-              onChange={(v) => setStatusFilter((v || undefined) as SerialStatus | undefined)}
-              placeholder="All statuses"
-              chrome={CONTROL_CHROME}
-              clearable
-              options={statusOptions}
-            />
             {canManage && (
               <button
                 type="button"
@@ -384,16 +394,43 @@ export default function SerialNumberList({
             aggregate to show. */}
         {!caravanView && !isLoading && (
           <div className="grid grid-cols-2 divide-x divide-y divide-[#eeeef1] overflow-hidden rounded-xl border border-[#e4e4e9] bg-white min-[640px]:grid-cols-3 min-[1080px]:grid-cols-5 min-[1080px]:divide-y-0">
-            <MetricCell label="Registered" value={pagination.total} sub="total units" />
+            {/* Each count filters the list to its status; Registered clears it. */}
+            <MetricCell
+              label="Registered"
+              value={pagination.total}
+              sub="total units"
+              active={!statusFilter}
+              onClick={() => setStatusFilter(undefined)}
+            />
             <MetricCell
               label="In Stock"
               value={statusCounts.in_stock}
               sub="available to sell"
               highlight
+              active={statusFilter === 'in_stock'}
+              onClick={() => toggleStatus('in_stock')}
             />
-            <MetricCell label="Reserved" value={statusCounts.held} sub="claimed for a sale" />
-            <MetricCell label="Pulled Out" value={statusCounts.pulled_out} sub="repossessed" />
-            <MetricCell label="Sold" value={statusCounts.sold} sub="out of stock" />
+            <MetricCell
+              label="Reserved"
+              value={statusCounts.held}
+              sub="claimed for a sale"
+              active={statusFilter === 'held'}
+              onClick={() => toggleStatus('held')}
+            />
+            <MetricCell
+              label="Pulled Out"
+              value={statusCounts.pulled_out}
+              sub="repossessed"
+              active={statusFilter === 'pulled_out'}
+              onClick={() => toggleStatus('pulled_out')}
+            />
+            <MetricCell
+              label="Sold"
+              value={statusCounts.sold}
+              sub="out of stock"
+              active={statusFilter === 'sold'}
+              onClick={() => toggleStatus('sold')}
+            />
           </div>
         )}
 
@@ -480,6 +517,17 @@ export default function SerialNumberList({
               ))}
             </div>
           )}
+
+          {/* Status — with the other filters, so Clear resets it too. */}
+          <SearchableSelect
+            className="w-[150px]"
+            value={statusFilter ?? ''}
+            onChange={(v) => setStatusFilter((v || undefined) as SerialStatus | undefined)}
+            placeholder="All statuses"
+            chrome={CONTROL_CHROME}
+            clearable
+            options={statusOptions}
+          />
 
           {caravanView && (
             <SearchableSelect
