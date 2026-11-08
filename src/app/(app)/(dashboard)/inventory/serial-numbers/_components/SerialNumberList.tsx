@@ -438,10 +438,14 @@ export default function SerialNumberList({
         )}
 
         {/* Filter bar */}
-        <div className="flex flex-wrap items-center gap-[10px] rounded-xl border border-[#e4e4e9] bg-white p-3 min-[1400px]:flex-nowrap">
+        {/* Head office also gets the location filters, so the search takes a
+            line of its own above them; branch staff keep one row. */}
+        <div
+          className={`flex flex-wrap items-center gap-[10px] rounded-xl border border-[#e4e4e9] bg-white p-3 ${seesAllLocations ? '' : 'min-[1400px]:flex-nowrap'}`}
+        >
           {/* The Locator shares this bar; it opens with the search focused. */}
           <div
-            className={`flex h-[38px] min-w-[180px] flex-[1_1_180px] items-center gap-[9px] rounded-lg border px-3 transition-colors ${CONTROL_CHROME.idle} focus-within:border-[#5b21b6] focus-within:shadow-[0_0_0_3px_#f0e9fc]`}
+            className={`flex h-[38px] min-w-[180px] items-center gap-[9px] rounded-lg border px-3 transition-colors ${seesAllLocations ? 'basis-full' : 'flex-[1_1_180px]'} ${CONTROL_CHROME.idle} focus-within:border-[#5b21b6] focus-within:shadow-[0_0_0_3px_#f0e9fc]`}
           >
             <Search className="h-3.25 w-3.25 shrink-0 text-ink-muted" />
             <input

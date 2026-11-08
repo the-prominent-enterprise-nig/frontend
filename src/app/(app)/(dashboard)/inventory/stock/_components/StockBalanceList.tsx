@@ -238,9 +238,10 @@ export default function StockBalanceList({
         <div className="flex flex-wrap items-center gap-[10px] rounded-xl border border-[#e4e4e9] bg-white p-3">
           {/* Search — brand, model or category only. Serial numbers were
               deliberately dropped: a serial belongs to one unit, not to the
-              rolled-up quantity this list reports. */}
+              rolled-up quantity this list reports. A line of its own, the
+              filters below it (as on the General Stockbook's head-office bar). */}
           <div
-            className={`flex h-[38px] min-w-[220px] flex-[1_1_280px] items-center gap-[9px] rounded-lg border px-3 transition-colors ${
+            className={`flex h-[38px] min-w-[220px] basis-full items-center gap-[9px] rounded-lg border px-3 transition-colors ${
               searchFocus ? CONTROL_CHROME.focused : CONTROL_CHROME.idle
             }`}
           >
