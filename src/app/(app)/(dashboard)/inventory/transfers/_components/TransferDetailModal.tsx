@@ -1345,28 +1345,31 @@ export default function TransferDetailModal({
   const fieldClass =
     'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
-  // Fleet roster (drivers and vehicles) lookups for the dispatch form — scoped
-  // to the source branch they are on file for, same as the branch the
-  // dispatching stock is leaving from. A caravan has no fleet of its own
-  // (drivers and vehicles are registered to real branches), so stock leaving a
-  // caravan goes out on its host branch's drivers and vehicles.
-  const fromBranch = transfer?.fromWarehouse?.branch
-  const dispatchFromBranchId = fromBranch?.isTemporary
-    ? (fromBranch.hostBranch?.id ?? fromBranch.id)
-    : fromBranch?.id
+  // Fleet roster lookups for the dispatch form. Neither list is scoped to a
+  // branch — not the one the stock leaves from, not the caller's own — so
+  // whoever dispatches may use any branch's driver and vehicle (a caravan has
+  // no fleet of its own, so this also covers stock leaving a caravan).
   // Plates come from the vehicle roster, driver names from the driver roster —
   // two separate lists, neither tied to the other (a driver is not assigned to
   // a plate; who drives what varies per trip). Phone/license/carrier stay
   // manual, they are not on either roster.
   async function searchDispatchVehicles(query: string): Promise<AutocompleteOption[]> {
-    const result = await searchVehicles({ q: query, branchId: dispatchFromBranchId })
+    const result = await searchVehicles({ q: query })
     if (!result.success || !result.data) return []
-    return result.data.map((v) => ({ id: v.id, label: v.plateNo, sublabel: v.tag }))
+    // Vehicles from every branch are offered, so the branch is shown beside
+    // the vehicle type to tell whose it is.
+    return result.data.map((v) => ({
+      id: v.id,
+      label: v.plateNo,
+      sublabel: [v.tag, v.branch?.name].filter(Boolean).join(' · ') || null,
+    }))
   }
   async function searchDispatchDrivers(query: string): Promise<AutocompleteOption[]> {
-    const result = await searchDrivers({ q: query, branchId: dispatchFromBranchId })
+    const result = await searchDrivers({ q: query })
     if (!result.success || !result.data) return []
-    return result.data.map((d) => ({ id: d.id, label: d.name }))
+    // Drivers from every branch are offered, so the branch is shown to tell
+    // two people of the same name apart.
+    return result.data.map((d) => ({ id: d.id, label: d.name, sublabel: d.branch?.name }))
   }
   // Scenario 71 item 22 — a pick fills only the field it is for.
   function pickDispatchVehicle(option: AutocompleteOption) {
