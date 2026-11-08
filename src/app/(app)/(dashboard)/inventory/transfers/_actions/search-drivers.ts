@@ -5,15 +5,14 @@ import { DriverListResponseSchema, type Driver } from '@/src/schema/inventory/dr
 
 type Params = {
   q?: string
-  branchId?: string
 }
 
-// The dispatch form's Driver Name suggestions: the drivers on file for the
-// branch the stock leaves from. A short list — it is a type-ahead, not a page.
+// The dispatch form's Driver Name suggestions: every driver on the roster, any
+// branch — not scoped to the branch the stock leaves from or to the caller's
+// own. A short list — it is a type-ahead, not a page.
 export async function searchDrivers(params: Params = {}): Promise<ApiResponse<Driver[]>> {
-  const result = await api.get<{ data: Driver[] }>('/inventory/drivers', {
+  const result = await api.get<{ data: Driver[] }>('/inventory/drivers/lookup', {
     q: params.q,
-    branchId: params.branchId,
     limit: 20,
   })
 

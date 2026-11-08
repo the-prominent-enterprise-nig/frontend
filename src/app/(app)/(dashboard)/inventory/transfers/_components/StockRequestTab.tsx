@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
-import { hasRole, type SessionUser } from '@/src/libs/guards/permission'
+import type { SessionUser } from '@/src/libs/guards/permission'
 import type { CreateTransferFormValues } from '@/src/schema/inventory/transfers'
 import { useCreateStockRequest } from '../_hooks/useCreateStockRequest'
 import CreateTransferModal from './CreateTransferModal'
@@ -57,7 +57,9 @@ export default function StockRequestTab({ session }: { session: SessionUser }): 
       warehouses={warehouseOptions}
       currentUserBranchId={session.branchId}
       currentUserRegion={currentUserRegion}
-      canPickAnyDestination={hasRole(session, 'Warehouse Custodian')}
+      // Deliberately not set: a stock request is always for the requester's
+      // own branch (To locks to it), a Warehouse Custodian's Panay / Negros
+      // warehouse included — they pick who to ask in From.
       canSkipApproval={hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_DIRECT)}
     />
   )
