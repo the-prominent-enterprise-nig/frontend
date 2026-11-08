@@ -41,6 +41,10 @@ import { originLabel, originRef, soldDestination } from '@/src/libs/format/seria
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { LocationFilters } from '@/src/components/inventory/LocationFilters'
+import {
+  ListFooterPager,
+  STOCK_LEDGER_PAGE_SIZES,
+} from '@/src/components/inventory/ListFooterPager'
 import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
 import SerialHistoryContent from '@/src/components/inventory/serial-history/SerialHistoryContent'
 
@@ -207,7 +211,6 @@ export default function SerialNumberList({
     resetFilters,
     page,
     setPage,
-    limit,
     setLimit,
     warehouseOptions,
     itemOptions,
@@ -793,53 +796,18 @@ export default function SerialNumberList({
                   </table>
                 </div>
               )}
+              <ListFooterPager
+                page={page}
+                pageCount={pagination.totalPages}
+                total={pagination.total}
+                limit={pagination.limit}
+                noun={caravanView ? 'items' : 'units'}
+                onPageChange={setPage}
+                onLimitChange={setLimit}
+                pageSizes={STOCK_LEDGER_PAGE_SIZES}
+                showPageNumber={false}
+              />
             </div>
-
-            {pagination.total > 0 && (
-              <div className="flex flex-wrap items-center justify-between gap-[14px] text-[11.5px] text-ink-muted">
-                <div className="flex items-center gap-[14px]">
-                  <span>
-                    Showing {(page - 1) * pagination.limit + 1}–
-                    {Math.min(page * pagination.limit, pagination.total)} of {pagination.total}
-                  </span>
-                  <div className="flex items-center gap-[10px]">
-                    <span>Rows</span>
-                    <select
-                      value={limit}
-                      onChange={(e) => setLimit(Number(e.target.value))}
-                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[9px] py-1.5 text-[12px] text-[#3d3d4a]"
-                    >
-                      <option value={20}>20</option>
-                      <option value={50}>50</option>
-                      <option value={100}>100</option>
-                    </select>
-                  </div>
-                </div>
-                {pagination.totalPages > 1 && (
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setPage(Math.max(1, page - 1))}
-                      disabled={page <= 1}
-                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-ink-faint"
-                    >
-                      Previous
-                    </button>
-                    <span className="px-3 py-1.5 font-medium text-[#17171c]">
-                      {page} / {pagination.totalPages}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                      disabled={page >= pagination.totalPages}
-                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-ink-faint"
-                    >
-                      Next
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
           </>
         )}
 

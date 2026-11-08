@@ -11,6 +11,10 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import type { StockBalance, StockStateFilter } from '@/src/schema/inventory/goods-receiving'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
+import {
+  ListFooterPager,
+  STOCK_LEDGER_PAGE_SIZES,
+} from '@/src/components/inventory/ListFooterPager'
 import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
 import { stockStatusOf, type StockStatus } from '@/src/libs/inventory/stock-status'
 
@@ -119,7 +123,6 @@ export default function StockBalanceList({
     resetFilters,
     page,
     setPage,
-    limit,
     setLimit,
     locationOptions,
     locationsLoading,
@@ -439,42 +442,17 @@ export default function StockBalanceList({
                 )
               })}
 
-              <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
-                <span className="text-[11.5px] text-ink-muted">
-                  Showing {(page - 1) * pagination.limit + 1}–
-                  {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} items
-                </span>
-                <div className="flex items-center gap-[10px]">
-                  <span className="text-[11.5px] text-ink-muted">Rows</span>
-                  <select
-                    value={limit}
-                    onChange={(e) => setLimit(Number(e.target.value))}
-                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[9px] py-1.5 text-[12px] text-[#3d3d4a]"
-                  >
-                    <option value={20}>20</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setPage(Math.max(1, page - 1))}
-                      disabled={page <= 1}
-                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-ink-faint"
-                    >
-                      Previous
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                      disabled={page >= pagination.totalPages}
-                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-ink-faint"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <ListFooterPager
+                page={page}
+                pageCount={pagination.totalPages}
+                total={pagination.total}
+                limit={pagination.limit}
+                noun="items"
+                onPageChange={setPage}
+                onLimitChange={setLimit}
+                pageSizes={STOCK_LEDGER_PAGE_SIZES}
+                showPageNumber={false}
+              />
             </div>
           )}
 
