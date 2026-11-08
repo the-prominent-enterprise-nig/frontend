@@ -1,6 +1,10 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
 import { locationLabel } from '@/src/libs/format/locationLabel'
-import { meaningfulSerialReason, wrongUnitBySerial } from '@/src/libs/inventory/wrong-unit-notes'
+import {
+  meaningfulSerialReason,
+  splitUnitLabel,
+  wrongUnitBySerial,
+} from '@/src/libs/inventory/wrong-unit-notes'
 import { MANILA_TZ, manilaDateOf, manilaMonthOf } from '@/src/libs/format/manila-date'
 import {
   receivingReportSourceName,
@@ -569,20 +573,59 @@ export function buildStockTransferHtml(data: unknown): string {
     transfer.goodsReceipts as { notes?: string | null }[] | undefined
   )
 
-  // Under the serial: what changed at receipt — a "Wrong serial" swap (the
-  // line was repointed; the cell keeps the transferred serial and this names
-  // the one received), or a "Wrong unit" note (a different unit arrived).
-  const serialCorrectionNote = (l: Record<string, unknown>, serial?: string): string => {
+  // Same layout as the drawer's Items table. A "Wrong serial" swap repointed
+  // the line: the serial received leads, with the dispatched one in
+  // the note. A "Wrong unit" keeps the dispatched unit on its row with a
+  // remark; once received, the unit that arrived gets its own row under it.
+  // That row fills the line's slot, so it adds nothing to
+  // the total.
+  const serialCell = (l: Record<string, unknown>, serial?: string): string => {
+    const item = l.item as { isSerialTracked?: boolean } | undefined
     const original = (l.receiptCorrectedFromSerial as { serialNumber?: string } | null)
       ?.serialNumber
-    const reason = meaningfulSerialReason(l.receiptCorrectionReason as string | null | undefined)
     if (original) {
-      return `<div class="wrong-unit">Wrong serial — received ${esc(serial)}${reason ? ` (reason: ${esc(reason)})` : ''}</div>`
+      const reason = meaningfulSerialReason(l.receiptCorrectionReason as string | null | undefined)
+      return `${esc(serial)}<div class="wrong-unit">Wrong serial: dispatched ${esc(original)}${reason ? ` (reason: ${esc(reason)})` : ''}</div>`
     }
-    if (serial && wrongUnits.has(serial)) {
-      return `<div class="wrong-unit">Wrong unit — received ${esc(wrongUnits.get(serial))}</div>`
-    }
-    return ''
+    const main =
+      esc(serial) ||
+      (item?.isSerialTracked && awaitingDispatch ? '<em>Assigned at dispatch</em>' : '—')
+    const wrongUnit = serial ? wrongUnits.get(serial) : undefined
+    return wrongUnit
+      ? `${main}<div class="wrong-unit">Wrong unit: ${esc(wrongUnit)} arrived instead</div>`
+      : main
+  }
+
+  // Once anything has been received, a line still short gets a note under
+  // its item, worded like the drawer's Received column — so a partial
+  // receipt's sheet can't read as if every unit arrived. Received lines stay
+  // plain (a Wrong unit line already carries its own remark).
+  const showStatus = ['received', 'partially_received'].includes(String(transfer.status))
+  const shortfallNote = (l: Record<string, unknown>): string => {
+    if (!showStatus) return ''
+    const received = Number(l.receivedQuantity ?? 0)
+    const qty = Number(l.quantity ?? 0)
+    const lost = (l.serialNumber as { status?: string } | null)?.status === 'lost_in_transit'
+    const text = lost
+      ? 'Lost in Transit'
+      : received >= qty
+        ? ''
+        : l.serialNumberId
+          ? 'Not received yet'
+          : `${received} of ${qty} received`
+    return text ? `<div class="line-status">${text}</div>` : ''
+  }
+
+  const arrivedUnitRow = (l: Record<string, unknown>, serial?: string): string => {
+    const wrongUnit = serial ? wrongUnits.get(serial) : undefined
+    if (!wrongUnit || Number(l.receivedQuantity ?? 0) < 1) return ''
+    const arrived = splitUnitLabel(wrongUnit)
+    return `<tr>
+        <td class="num"></td>
+        <td>${esc(arrived.model) || 'Unit received'}<div class="unit-model">Arrived in place of ${esc(serial)}</div></td>
+        <td class="mono">${esc(arrived.serial)}</td>
+        <td class="right">1</td>
+      </tr>`
   }
 
   let totalQty = 0
@@ -592,20 +635,14 @@ export function buildStockTransferHtml(data: unknown): string {
       const serial = (l.serialNumber as Record<string, unknown> | null)?.serialNumber as
         | string
         | undefined
-      // A Wrong serial swap repointed the line — print the serial that was
-      // transferred, with the received one in the note underneath.
-      const transferredSerial =
-        ((l.receiptCorrectedFromSerial as { serialNumber?: string } | null)?.serialNumber as
-          | string
-          | undefined) ?? serial
       const qty = Number(l.quantity ?? 0)
       totalQty += qty
       return `<tr>
         <td class="num">${i + 1}</td>
-        <td>${esc(item?.name) || '—'}</td>
-        ${hasSerialLine ? `<td class="mono">${esc(transferredSerial) || (item?.isSerialTracked && awaitingDispatch ? '<em>Assigned at dispatch</em>' : '—')}${serialCorrectionNote(l, serial)}</td>` : ''}
+        <td>${esc(item?.name) || '—'}${shortfallNote(l)}</td>
+        ${hasSerialLine ? `<td class="mono">${serialCell(l, serial)}</td>` : ''}
         <td class="right">${qty}</td>
-      </tr>`
+      </tr>${hasSerialLine ? arrivedUnitRow(l, serial) : ''}`
     })
     .join('')
 
@@ -640,6 +677,8 @@ export function buildStockTransferHtml(data: unknown): string {
     td.right, th.right { text-align: right; }
     td.mono { font-family: "Courier New", monospace; }
     .wrong-unit { font-family: Arial, sans-serif; font-size: 10px; color: #92400e; margin-top: 2px; }
+    .line-status { font-size: 10px; color: #555; margin-top: 2px; }
+    .unit-model { font-family: Arial, sans-serif; font-size: 10px; color: #555; margin-top: 2px; }
     .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
     .total-wrap table { width: auto; }
     .total-wrap td { font-weight: 700; }

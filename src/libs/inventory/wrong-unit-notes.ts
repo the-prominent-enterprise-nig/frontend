@@ -30,6 +30,14 @@ export function wrongUnitBySerial(
   return map
 }
 
+/** Splits a received-unit label — "0925MGS-25GLS00427 (MINAMI MGS25GLS)" —
+ * into its serial and the brand/model in brackets (absent when none was known). */
+export function splitUnitLabel(label: string): { serial: string; model?: string } {
+  const at = label.indexOf(' (')
+  if (at < 0 || !label.endsWith(')')) return { serial: label }
+  return { serial: label.slice(0, at), model: label.slice(at + 2, -1) }
+}
+
 /** The Wrong serial reason worth showing — dropped when it only repeats the
  * "Wrong serial" label itself (e.g. a reason typed as "wrong serial"). */
 export function meaningfulSerialReason(reason: string | null | undefined): string | undefined {
