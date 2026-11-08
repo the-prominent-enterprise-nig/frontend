@@ -1,11 +1,13 @@
 /**
- * Scenario 78 Part 2 — a line on 6-01-041 Commissions - SMI names the sale the
- * SMI is paid on: a Sales Invoice No. picker, no Sales Agent (SMI isn't tied to
- * the selling agent), the amount typed, and the entry labelled "SMI Expense".
+ * Scenario 78 Part 2 — a line on 6-01-041 Commissions - SMI behaves exactly like
+ * one on 6-01-040 Commissions - Sales: a Sales Invoice No. picker and, unless the
+ * entry is paid to a Sales Agent (whose name is already above), a Sales Agent
+ * pick of its own, the amount typed, and the entry labelled "SMI Expense".
  *
- * UI contract only: what the server enforces (the sale must be a completed one,
- * each sale's SMI released once and separately from its commission, any payee)
- * is proven in backend/src/accounting/expenses/expenses-vehicle-commission.spec.ts.
+ * UI contract only: what the server enforces (the sale must be a completed one
+ * credited to the entry's agent, each sale's SMI released once and separately
+ * from its commission) is proven in
+ * backend/src/accounting/expenses/expenses-vehicle-commission.spec.ts.
  * Needs 6-01-041 tagged SMI — migration 20261026120000_scenario_78_smi_expense_kind,
  * or the COA seed on a fresh database.
  *
@@ -49,7 +51,7 @@ test.describe('Expense lines — Commissions - SMI (Scenario 78)', () => {
     await expect(page.getByRole('heading', { name: 'New Expense' })).toBeVisible()
   })
 
-  test('an SMI line asks for the Sales Invoice No. and nothing about an agent', async ({
+  test('an SMI line asks for the Sales Invoice No. and its Sales Agent, like a commission line', async ({
     page,
   }) => {
     await pickPayee(page, 'Other')
@@ -59,34 +61,47 @@ test.describe('Expense lines — Commissions - SMI (Scenario 78)', () => {
     const smi = kindRow(page, 'SMI')
     await expect(smi).toBeVisible()
     await expect(smi.getByText('Sales Invoice No. *')).toBeVisible()
-    await expect(page.getByText('Sales Agent *')).toHaveCount(0)
+    await expect(smi.getByText('Sales Agent *')).toBeVisible()
+    // Not a Sales Agent entry, so the line carries its own agent to pick.
+    await expect(smi.locator('[aria-label="Line sales agent"]')).toBeVisible()
     await expect(page.getByTestId('expense-kind-chip')).toHaveText(/smi expense/i)
     await expect(
-      page.getByText('Use the “Sales Invoice No.” to pick the sale each SMI is paid on.', {
-        exact: false,
-      })
+      page.getByText(
+        'Use the “Sales Invoice No.” to select invoices assigned to the chosen Sales Agent.',
+        {
+          exact: false,
+        }
+      )
     ).toBeVisible()
   })
 
-  test('the SMI picker searches sales with no agent filter, even on a Sales Agent entry', async ({
+  test("on a Sales Agent entry the SMI line has no Sales Agent column and searches the payee's sales", async ({
     page,
   }) => {
     await pickPayee(page, 'Sales Agent')
     await pickAccount(page, 'Commissions - SM', SMI)
     const smi = kindRow(page, 'SMI')
-    // Paid to an agent or not, an SMI line has no agent column of its own.
-    await expect(smi.locator('[aria-label="Sales agent"]')).toHaveCount(0)
+    // The agent is the payee, named once above — the same as a commission line.
+    await expect(smi.getByText('Sales Agent *')).toHaveCount(0)
+
+    await page.locator('[aria-label="Select sales agent"]').click()
+    const firstAgent = page.locator('body > div.fixed button').nth(1)
+    await expect(firstAgent).toBeVisible({ timeout: 10_000 })
+    await firstAgent.click()
+    await expect(smi.getByText('Sales Agent *')).toHaveCount(0)
 
     const lookup = page.waitForRequest(
-      (r) => r.url().includes('/expenses/lookups/sales') && r.url().includes('kind=SMI')
+      (r) =>
+        r.url().includes('/expenses/lookups/sales') &&
+        r.url().includes('kind=SMI') &&
+        r.url().includes('agentId=')
     )
     await smi.getByText('— Select —').first().click()
     await page.keyboard.type('SI')
-    const req = await lookup
-    expect(req.url()).not.toContain('agentId=')
+    await lookup
   })
 
-  test('a commission line and an SMI line sit on one entry, each with its own columns', async ({
+  test('a commission line and an SMI line sit on one entry, with the same columns', async ({
     page,
   }) => {
     await pickPayee(page, 'Other')
@@ -97,9 +112,9 @@ test.describe('Expense lines — Commissions - SMI (Scenario 78)', () => {
 
     await expect(kindRow(page, 'AGENT_COMMISSION')).toBeVisible()
     await expect(kindRow(page, 'SMI')).toBeVisible()
-    // The commission line keeps its Sales Agent; the SMI line doesn't get one.
+    // Both lines carry a Sales Invoice No. and a Sales Agent.
     await expect(kindRow(page, 'AGENT_COMMISSION').getByText('Sales Agent *')).toBeVisible()
-    await expect(kindRow(page, 'SMI').getByText('Sales Agent *')).toHaveCount(0)
+    await expect(kindRow(page, 'SMI').getByText('Sales Agent *')).toBeVisible()
     await expect(page.getByText('Sales Invoice No. *')).toHaveCount(2)
   })
 

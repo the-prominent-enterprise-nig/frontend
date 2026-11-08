@@ -274,6 +274,12 @@ export interface AgentInvoice {
   commission: number | null
   /** The live Commissions - Sales voucher paying this sale's commission. */
   released: AgentInvoiceRelease | null
+  /** What accounting recorded in Expenses for this sale's SMI — the
+   * Commissions - SMI line's amount, read exactly like `commission`. Null
+   * until a recorded entry exists (a draft carries none). */
+  smi: number | null
+  /** The live Commissions - SMI voucher paying this sale's SMI. */
+  smiReleased: AgentInvoiceRelease | null
 }
 
 export interface AgentInvoiceRelease {
@@ -439,6 +445,10 @@ export interface InstallmentAccountDetail extends InstallmentAccount {
   // (Commissions - Sales, recorded entries only). Zero until it is encoded.
   // Shown only to users who can read agents.
   salesCommission?: number | string
+  // The SMI on this sale — what accounting encoded in Expenses (Commissions -
+  // SMI, recorded entries only), shown beside the commission to the same
+  // users. Zero until it is encoded.
+  salesSmi?: number | string
   // The sale's receipt: when it was rung up, by whom, and how it was paid
   // for at the register. Null for hand-entered/imported accounts (POS-only).
   saleReceipt?: {
@@ -566,6 +576,10 @@ export interface InstallmentLedgerRow {
    * footer/summary that sums `debit`/`credit` across rows must skip these,
    * or it double-counts. Omitted (falsy) for every real money-moving row. */
   displayOnly?: boolean
+  /** On a Sale row only: the sale's Scheme — the Price Use it was priced under
+   * (WIP, SSC, …), or "Price Override" when its price was manually overridden.
+   * Omitted everywhere else (and by a backend that predates it). */
+  scheme?: string
 }
 
 export interface InstallmentLedger {

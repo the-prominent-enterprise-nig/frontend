@@ -406,8 +406,8 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
     if (!expenseId) return
     Expenses.get(expenseId).then((res) => {
       if (res.success && res.data) {
-        if (res.data.status !== 'DRAFT') {
-          setLoadError('Only DRAFT expenses can be edited.')
+        if (res.data.status === 'VOID') {
+          setLoadError('A voided expense cannot be edited.')
         } else {
           setInitial(res.data)
         }
@@ -446,7 +446,15 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
       inventoryAccounts={inventoryAccounts}
       bankAccounts={bankAccounts}
       mappings={mappings}
-      onSaved={() => router.push('/accounting/expenses')}
+      // A recorded expense goes back to its own page, where the journal entry
+      // it now carries can be checked; a draft goes back to the list.
+      onSaved={() =>
+        router.push(
+          initial?.status === 'RECORDED'
+            ? `/accounting/expenses/${initial.id}`
+            : '/accounting/expenses'
+        )
+      }
     />
   )
 }
@@ -894,8 +902,11 @@ function ExpenseFormFields({
       1 + // Expense Account
       (showSpecialColumn && !k ? 1 : 0) + // Special Account
       (isItemMode ? 2 : 1) + // Qty + Unit Price, or Description
-      (k === 'AGENT_COMMISSION' ? 2 : 0) + // Sales Invoice No., Sales Agent
-      (k === 'SMI' ? 1 : 0) + // Sales Invoice No.
+      (k === 'AGENT_COMMISSION' || k === 'SMI'
+        ? form.payeeType === 'AGENT'
+          ? 1 // Sales Invoice No. — the agent is the payee, named above
+          : 2 // Sales Invoice No., Sales Agent
+        : 0) +
       (k === 'FUEL' ? 2 : 0) + // Plate, Liters
       (k === 'VEHICLE_REPAIR' ? 3 : 0) + // Plate, Repair/Service Type, Service Detail
       3 + // Division, Tax Code, Amount
@@ -1152,6 +1163,10 @@ function ExpenseFormFields({
   // the choice rides in a ref rather than state (no re-render between the
   // click and requestSubmit reading it).
   const submitModeRef = useRef<'draft' | 'record'>('draft')
+  // Already posted to the GL: there is nothing left to record, and Save writes
+  // the change straight through (the server reverses and re-posts the journal
+  // entry when the change reaches the books).
+  const isRecorded = initial?.status === 'RECORDED'
   const submitAs = (mode: 'draft' | 'record') => {
     submitModeRef.current = mode
     formRef.current?.requestSubmit()
@@ -1401,7 +1416,9 @@ function ExpenseFormFields({
               {initial ? 'Edit Expense' : 'New Expense'}
             </h1>
             <p className="mt-1 text-sm text-gray-500">
-              Record and categorize a business expense. Recording posts a journal entry to the GL.
+              {isRecorded
+                ? 'This expense is already recorded. A change that reaches the books reverses its journal entry and posts a new one — the ledger keeps both.'
+                : 'Record and categorize a business expense. Recording posts a journal entry to the GL.'}
             </p>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-2 pt-1">
@@ -1412,23 +1429,38 @@ function ExpenseFormFields({
               >
                 Cancel
               </Link>
-              <button
-                type="button"
-                onClick={() => submitAs('draft')}
-                disabled={saving}
-                className="flex items-center gap-2 rounded-lg border border-prominent-purple-700 px-4 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-60"
-              >
-                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                {saving ? 'Saving...' : 'Save draft'}
-              </button>
-              <button
-                type="button"
-                onClick={() => submitAs('record')}
-                disabled={saving}
-                className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
-              >
-                Record
-              </button>
+              {isRecorded ? (
+                <button
+                  type="button"
+                  data-testid="expense-save-changes"
+                  onClick={() => submitAs('draft')}
+                  disabled={saving}
+                  className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+                >
+                  {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {saving ? 'Saving...' : 'Save changes'}
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => submitAs('draft')}
+                    disabled={saving}
+                    className="flex items-center gap-2 rounded-lg border border-prominent-purple-700 px-4 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-60"
+                  >
+                    {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {saving ? 'Saving...' : 'Save draft'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => submitAs('record')}
+                    disabled={saving}
+                    className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+                  >
+                    Record
+                  </button>
+                </>
+              )}
             </div>
             {expenseChip && (
               <span
@@ -1454,6 +1486,17 @@ function ExpenseFormFields({
           </div>
         )}
       </div>
+
+      {/* Said up front, not after Save refuses: this expense settled a special
+          account, so what it paid and to whom can't move. */}
+      {isRecorded && initial?.editLock && (
+        <div
+          data-testid="expense-edit-lock"
+          className="mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800"
+        >
+          {initial.editLock}
+        </div>
+      )}
 
       <form ref={formRef} id={FORM_ID} onSubmit={submit} className="mt-6 space-y-6">
         {/* ① Header Information — the client's field order: Date, Cleared, Paid from,
@@ -1674,13 +1717,8 @@ function ExpenseFormFields({
                       onChange={(id) => {
                         setForm({ ...form, agentId: id ?? '' })
                         // The sales already picked were this agent's, not the next one's.
-                        // An SMI line's sale isn't the agent's, so it stays.
                         setLines((prev) =>
-                          prev.map((l) =>
-                            kindOfAccount(l.categoryAccountId) === 'SMI'
-                              ? l
-                              : { ...l, posTransactionId: '', saleLabel: '' }
-                          )
+                          prev.map((l) => ({ ...l, posTransactionId: '', saleLabel: '' }))
                         )
                       }}
                       options={agentOptions}
@@ -1739,11 +1777,9 @@ function ExpenseFormFields({
             n={2}
             title="Expense Details"
             hint={
-              showCommissionCols
+              showCommissionCols || showSmiCols
                 ? 'Add one or more expense items. Use the “Sales Invoice No.” to select invoices assigned to the chosen Sales Agent.'
-                : showSmiCols
-                  ? 'Add one or more expense items. Use the “Sales Invoice No.” to pick the sale each SMI is paid on.'
-                  : 'Add one or more expense items. Vehicle fields will appear automatically for vehicle-related accounts.'
+                : 'Add one or more expense items. Vehicle fields will appear automatically for vehicle-related accounts.'
             }
             right={
               hasOwnCategoryLines ? (
@@ -1765,8 +1801,8 @@ function ExpenseFormFields({
               <div className="divide-y divide-zinc-200">
                 {lines.map((line, i) => {
                   const kind = kindOfAccount(line.categoryAccountId)
-                  // Whose sales this commission line can release: the entry's agent when it
-                  // is paid to one, else the line's own pick.
+                  // Whose sales this commission or SMI line can release: the entry's agent
+                  // when it is paid to one, else the line's own pick.
                   const lineAgentId = form.payeeType === 'AGENT' ? form.agentId : line.saleAgentId
                   // Sales already on another line of the same kind on this entry — not
                   // offered again. A commission line and an SMI line may share a sale.
@@ -1942,7 +1978,11 @@ function ExpenseFormFields({
                             </LineField>
                           </>
                         )}
-                        {kind === 'AGENT_COMMISSION' && (
+                        {/* A commission line and an SMI line (Scenario 78) are released the
+                          same way: the sale, credited to the entry's agent, and the Sales
+                          Agent it belongs to. They differ only in what the system accrued —
+                          nothing computes SMI, so its amount is always typed. */}
+                        {(kind === 'AGENT_COMMISSION' || kind === 'SMI') && (
                           <>
                             <LineField label="Sales Invoice No. *">
                               <SearchCombobox
@@ -1950,12 +1990,16 @@ function ExpenseFormFields({
                                 compact
                                 value={line.posTransactionId}
                                 initialLabel={line.saleLabel}
-                                queryKey={`expense-commission-sales:${lineAgentId}:${otherSaleIds.join(',')}`}
+                                queryKey={`expense-${kind === 'SMI' ? 'smi' : 'commission'}-sales:${lineAgentId}:${otherSaleIds.join(',')}`}
                                 placeholder="— Select —"
                                 typeToSearchMessage={
                                   lineAgentId ? "Search this agent's sales…" : 'Search sales…'
                                 }
-                                emptyMessage="No unreleased sales found"
+                                emptyMessage={
+                                  kind === 'SMI'
+                                    ? 'No sales without an SMI found'
+                                    : 'No unreleased sales found'
+                                }
                                 onChange={(id) => {
                                   if (!id) setLine(i, { posTransactionId: '', saleLabel: '' })
                                 }}
@@ -1967,17 +2011,23 @@ function ExpenseFormFields({
                                     // Whose commission it is — the line's Sales Agent.
                                     ...(sale.agentId ? { saleAgentId: sale.agentId } : {}),
                                     // What the system accrued on the sale, when it did —
-                                    // a starting point, still editable.
-                                    ...(line.amount === '' && sale.commission != null
+                                    // a starting point, still editable. Never for an SMI:
+                                    // the accrued figure is the commission.
+                                    ...(kind !== 'SMI' &&
+                                    line.amount === '' &&
+                                    sale.commission != null
                                       ? { amount: String(sale.commission) }
                                       : {}),
                                     ...(line.description.trim() === ''
-                                      ? { description: `Commission - ${sale.number}` }
+                                      ? {
+                                          description: `${kind === 'SMI' ? 'SMI' : 'Commission'} - ${sale.number}`,
+                                        }
                                       : {}),
                                   })
                                 }}
                                 search={async (query) => {
                                   const res = await Expenses.commissionSales({
+                                    ...(kind === 'SMI' ? { kind: 'SMI' as const } : {}),
                                     agentId: lineAgentId || undefined,
                                     search: query || undefined,
                                     excludeExpenseId: initial?.id,
@@ -1997,7 +2047,7 @@ function ExpenseFormFields({
                                         .filter(Boolean)
                                         .join(' · '),
                                       badge:
-                                        x.commission != null
+                                        kind !== 'SMI' && x.commission != null
                                           ? `Commission ${fmtMoney(x.commission)}`
                                           : undefined,
                                       meta: x,
@@ -2005,16 +2055,11 @@ function ExpenseFormFields({
                                 }}
                               />
                             </LineField>
-                            <LineField label="Sales Agent *">
-                              {form.payeeType === 'AGENT' ? (
-                                // Paid to a Sales Agent: that agent, on every line.
-                                <div
-                                  aria-label="Sales agent"
-                                  className="flex h-[34px] items-center truncate rounded-lg border border-zinc-100 bg-zinc-50 px-2.5 text-[13px] text-zinc-700"
-                                >
-                                  {agentOptions.find((o) => o.id === form.agentId)?.name ?? '—'}
-                                </div>
-                              ) : (
+                            {/* Paid to a Sales Agent, the entry's agent is already named above and
+                              is the agent on every line, so the line has no column of its own for
+                              it. Any other payee picks the line's agent here. */}
+                            {form.payeeType !== 'AGENT' && (
+                              <LineField label="Sales Agent *">
                                 <CategorySelect
                                   compact
                                   aria-label="Line sales agent"
@@ -2032,57 +2077,9 @@ function ExpenseFormFields({
                                   options={agentOptions}
                                   placeholder="— Select —"
                                 />
-                              )}
-                            </LineField>
+                              </LineField>
+                            )}
                           </>
-                        )}
-                        {/* Scenario 78 — an SMI line names the sale it is paid on. Any
-                          completed sale, whoever sold it: SMI isn't tied to the selling
-                          agent, so there's no Sales Agent here, and the amount is typed —
-                          nothing in the system computes SMI. */}
-                        {kind === 'SMI' && (
-                          <LineField label="Sales Invoice No. *">
-                            <SearchCombobox
-                              key={`${i}-${line.posTransactionId}-smi`}
-                              compact
-                              value={line.posTransactionId}
-                              initialLabel={line.saleLabel}
-                              queryKey={`expense-smi-sales:${otherSaleIds.join(',')}`}
-                              placeholder="— Select —"
-                              typeToSearchMessage="Search sales…"
-                              emptyMessage="No sales without an SMI found"
-                              onChange={(id) => {
-                                if (!id) setLine(i, { posTransactionId: '', saleLabel: '' })
-                              }}
-                              onSelect={(option) => {
-                                const sale = option.meta as ExpenseAgentSale
-                                setLine(i, {
-                                  posTransactionId: sale.id,
-                                  saleLabel: sale.number,
-                                  ...(line.description.trim() === ''
-                                    ? { description: `SMI - ${sale.number}` }
-                                    : {}),
-                                })
-                              }}
-                              search={async (query) => {
-                                const res = await Expenses.commissionSales({
-                                  kind: 'SMI',
-                                  search: query || undefined,
-                                  excludeExpenseId: initial?.id,
-                                })
-                                return (res.data ?? [])
-                                  .filter((x) => !x.releasedOn && !otherSaleIds.includes(x.id))
-                                  .map((x) => ({
-                                    id: x.id,
-                                    primary: x.number,
-                                    secondary: [x.agentName, x.customerName, fmtMoney(x.subtotal)]
-                                      .filter(Boolean)
-                                      .join(' · '),
-                                    meta: x,
-                                  }))
-                              }}
-                            />
-                          </LineField>
                         )}
                         {(kind === 'FUEL' || kind === 'VEHICLE_REPAIR') && (
                           <LineField label="Plate Number *">

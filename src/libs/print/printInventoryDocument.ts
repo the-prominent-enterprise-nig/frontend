@@ -1,5 +1,6 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
 import { locationLabel } from '@/src/libs/format/locationLabel'
+import { ledgerScheme } from '@/src/libs/format/ledgerScheme'
 import { MANILA_TZ, manilaDateOf, manilaMonthOf } from '@/src/libs/format/manila-date'
 import {
   receivingReportSourceName,
@@ -999,8 +1000,9 @@ export function printPurchaseOrderDocument(
  * misalign in the first place, and doesn't match the paper form anyway:
  *   1. Lastname / Firstname / Middle / (Sales Invoice No. + SI Date)
  *   2. Brand / Type / Model / Serial
- *   3. Agent / Sales Commission (only when the viewer may see it) / Collector
- *      (two cells wide without the commission, one with) / FMI
+ *   3. Agent / Collector (two cells wide) / FMI — or, when the viewer may see
+ *      the agent's pay, two rows of four: Agent (two wide) / Sales Commission
+ *      / SMI, then Collector (two wide) / FMI (two wide)
  *   4. LCP / Down / Amt. Financed / Inst. Diff.
  *   5. Scheme (the paper form's "WIP") / MI / Term / Branch
  *   6. PN / IC / Total Price / Phone (Oct 29 UAT CL-01)
@@ -1017,9 +1019,10 @@ export function printPurchaseOrderDocument(
  */
 export function buildCustomerLedgerHtml(
   ledger: InstallmentLedger,
-  // The selling agent's commission is agent data, so it is left off the
-  // printout unless the caller says this user may see it. It takes a cell of
-  // the Collector's two-wide slot on the Agent row, keeping four columns.
+  // The selling agent's commission and SMI are agent data, so they are left
+  // off the printout unless the caller says this user may see them. They sit
+  // on the Agent row, which then takes a second row so the grid keeps four
+  // columns.
   options: { showCommission?: boolean } = {}
 ): string {
   const { account, rows } = ledger
@@ -1039,6 +1042,10 @@ export function buildCustomerLedgerHtml(
   const cell = (label: string, value: string, colspan = 1) =>
     `<td colspan="${colspan}"><p class="cell-value">${esc(value)}</p><p class="cell-label">${esc(label)}</p></td>`
 
+  const collectorLabel = account.collector
+    ? `${account.collector.stubNumber} — ${account.collector.name}`
+    : 'Unassigned'
+
   // The paper form's Total Payments/Penalty/Rebates/Billing/etc. block is
   // plain italic "Label : value" text below the bordered grid, not more
   // boxed cells — mixing it into table.form-grid was what made that row's
@@ -1046,6 +1053,8 @@ export function buildCustomerLedgerHtml(
   const totalLine = (label: string, value: string) =>
     `<p class="totals-line"><span class="totals-label">${esc(label)}</span> : <span class="totals-value">${esc(value)}</span></p>`
 
+  // WIP / SSC / … — or "Price Override" when the sale's price was overridden.
+  const schemeLabel = ledgerScheme(ledger)
   const ledgerRows = rows
     .map(
       (r) => `<tr>
@@ -1138,25 +1147,26 @@ export function buildCustomerLedgerHtml(
           )
           .join('')
       }
-      <tr>
-        ${cell('Agent', account.sellingAgent?.name ?? '—')}
-        ${
-          showCommission
-            ? cell(
-                'Sales Commission',
-                Number(account.salesCommission ?? 0) ? fmt(account.salesCommission ?? 0) : '—'
-              )
-            : ''
-        }
+      ${
+        showCommission
+          ? `<tr>
+        ${cell('Agent', account.sellingAgent?.name ?? '—', 2)}
         ${cell(
-          'Collector',
-          account.collector
-            ? `${account.collector.stubNumber} — ${account.collector.name}`
-            : 'Unassigned',
-          showCommission ? 1 : 2
+          'Sales Commission',
+          Number(account.salesCommission ?? 0) ? fmt(account.salesCommission ?? 0) : '—'
         )}
-        ${cell('FMI', fmtDate(ledger.firstInstallmentDate))}
+        ${cell('SMI', Number(account.salesSmi ?? 0) ? fmt(account.salesSmi ?? 0) : '—')}
       </tr>
+      <tr>
+        ${cell('Collector', collectorLabel, 2)}
+        ${cell('FMI', fmtDate(ledger.firstInstallmentDate), 2)}
+      </tr>`
+          : `<tr>
+        ${cell('Agent', account.sellingAgent?.name ?? '—')}
+        ${cell('Collector', collectorLabel, 2)}
+        ${cell('FMI', fmtDate(ledger.firstInstallmentDate))}
+      </tr>`
+      }
       <tr>
         ${cell('LCP', fmt(account.listedCashPrice))}
         ${cell('Down', fmt(account.downPayment))}
@@ -1164,7 +1174,7 @@ export function buildCustomerLedgerHtml(
         ${cell('Inst. Diff.', fmt(account.interestDifferential))}
       </tr>
       <tr>
-        ${cell('Scheme', account.priceUseType?.name ?? '—')}
+        ${cell('Scheme', schemeLabel)}
         ${cell('MI', fmt(account.monthlyInstallment))}
         ${cell('Term', `${account.termMonths} months`)}
         ${cell('Branch', account.branch?.name ?? '—')}
@@ -1246,6 +1256,9 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
+  // Scheme column — each sale's Price Use (WIP, SSC, …) or "Price Override" on its
+  // own row, same as the on-screen all-purchases ledger.
+  const showScheme = rows.some((r) => r.scheme)
   const ledgerRows = rows
     .map(
       (r) => `<tr>
@@ -1253,6 +1266,7 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
         <td class="mono">${esc(r.ref)}</td>
         <td class="right">${r.inst > 0 ? r.inst : '—'}</td>
         <td>${esc(r.description)}</td>
+        ${showScheme ? `<td>${esc(r.scheme ?? '')}</td>` : ''}
         <td class="right">${r.debit > 0 ? fmt(r.debit) : '—'}</td>
         <td class="right">${r.credit > 0 ? fmt(r.credit) : '—'}</td>
         <td class="right">${fmt(r.due)}</td>
@@ -1268,7 +1282,7 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
   const ledgerTotalRow =
     rows.length > 0
       ? `<tr class="total-row">
-        <td colspan="4"><strong>Total</strong></td>
+        <td colspan="${showScheme ? 5 : 4}"><strong>Total</strong></td>
         <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
         <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
         <td></td>
@@ -1344,6 +1358,7 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
       <thead>
         <tr>
           <th>Date</th><th>Ref</th><th class="right">Inst.</th><th>Description</th>
+          ${showScheme ? '<th>Scheme</th>' : ''}
           <th class="right">Debit</th><th class="right">Credit</th><th class="right">Due</th><th class="right">Outstanding</th>
         </tr>
       </thead>

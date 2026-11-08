@@ -187,13 +187,19 @@ export default function ExpensesList() {
     ...(x.status === 'RECORDED'
       ? [{ label: 'Void — reverses JE', icon: Ban, onClick: () => voidExpense(x.id) }]
       : []),
-    ...(x.status === 'DRAFT'
+    // A recorded expense can be edited too — saving reverses and re-posts its
+    // journal entry when the change reaches the books. Only a draft is deleted.
+    ...(x.status === 'DRAFT' || x.status === 'RECORDED'
       ? [
           {
             label: 'Edit',
             icon: Pencil,
             onClick: () => router.push(`/accounting/expenses/${x.id}/edit`),
           },
+        ]
+      : []),
+    ...(x.status === 'DRAFT'
+      ? [
           {
             label: 'Delete',
             icon: Trash2,

@@ -13,8 +13,9 @@ import type { AgentInvoice, AgentInvoiceRelease } from '@/src/schema/crm/types'
  * Scenario 78 Part 3 — the client's "CRM ledger - Commissions history", on the
  * customer's ledger: each of the customer's sales an agent was credited with,
  * the agent, the commission recorded in Expenses and the Commissions - Sales
- * voucher that released it. The same rows as the agent's own page, seen from
- * the customer's side.
+ * voucher that released it, and beside it the SMI and its Commissions - SMI
+ * voucher. The same rows as the agent's own page, seen from the customer's
+ * side.
  *
  * Quiet when there's nothing to show: no agent-credited sales, or a caller who
  * can't read it (the ledger is also opened from POS) — the ledger above is
@@ -48,6 +49,7 @@ export default function CustomerCommissionHistory({
   if (!rows || rows.length === 0) return null
 
   const totalCommission = rows.reduce((sum, r) => sum + (r.commission ?? 0), 0)
+  const totalSmi = rows.reduce((sum, r) => sum + (r.smi ?? 0), 0)
 
   return (
     <LedgerCard title="Commissions History" icon={Coins} className="mt-4">
@@ -60,6 +62,7 @@ export default function CustomerCommissionHistory({
               <th className="px-3 py-2">Agent</th>
               <th className="px-3 py-2 text-right">Amount</th>
               <th className="px-3 py-2 text-right">Commission</th>
+              <th className="px-3 py-2 text-right">SMI</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -85,7 +88,18 @@ export default function CustomerCommissionHistory({
                   {fmtMoney(r.totalAmount)}
                 </td>
                 <td className="whitespace-nowrap px-3 py-1.5 text-right">
-                  <CommissionCell commission={r.commission} release={r.released} />
+                  <ReleaseCell
+                    amount={r.commission}
+                    release={r.released}
+                    notReleased="Commission not released"
+                  />
+                </td>
+                <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                  <ReleaseCell
+                    amount={r.smi}
+                    release={r.smiReleased}
+                    notReleased="SMI not released"
+                  />
                 </td>
               </tr>
             ))}
@@ -93,9 +107,10 @@ export default function CustomerCommissionHistory({
           <tfoot>
             <tr className="border-t-2 border-prominent-purple-100 bg-prominent-purple-50 font-semibold text-prominent-purple-900">
               <td className="px-3 py-2" colSpan={4}>
-                Total commission
+                Total
               </td>
               <td className="px-4 py-3 text-right tabular-nums">{fmtMoney(totalCommission)}</td>
+              <td className="px-4 py-3 text-right tabular-nums">{fmtMoney(totalSmi)}</td>
             </tr>
           </tfoot>
         </table>
@@ -104,20 +119,23 @@ export default function CustomerCommissionHistory({
   )
 }
 
-/** The commission with the voucher that released it under it, a Draft badge
- * while the entry is still a draft (a draft carries no commission yet). */
-function CommissionCell({
-  commission,
+/** The commission or SMI with the voucher that released it under it, a Draft
+ * badge while the entry is still a draft (a draft carries no amount yet). */
+function ReleaseCell({
+  amount,
   release,
+  notReleased,
 }: {
-  commission: number | null
+  amount: number | null
   release: AgentInvoiceRelease | null
+  /** What an unreleased sale says, e.g. "SMI not released". */
+  notReleased: string
 }) {
-  if (!release) return <span className="text-[13px] text-gray-500">Commission not released</span>
+  if (!release) return <span className="text-[13px] text-gray-500">{notReleased}</span>
   return (
     <>
       <span className="block font-semibold tabular-nums text-emerald-700">
-        {commission != null ? fmtMoney(commission) : '—'}
+        {amount != null ? fmtMoney(amount) : '—'}
       </span>
       <span className="block text-[13px] text-gray-600">
         <Link

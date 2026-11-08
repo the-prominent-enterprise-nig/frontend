@@ -15,6 +15,7 @@ import { useMe } from '@/src/hooks/useMe'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { installmentAccountsApi } from '@/src/libs/api/crm'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
+import { ledgerScheme } from '@/src/libs/format/ledgerScheme'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import { printCustomerLedgerDocument } from '@/src/libs/print/printInventoryDocument'
 import type { InstallmentLedger } from '@/src/schema/crm/types'
@@ -207,6 +208,7 @@ export function InstallmentLedgerBody({
               { label: 'Middle', value: ledger.account.customer.middleName ?? '—' },
               { label: 'Sales Invoice No.', value: ledger.saleReference ?? '—' },
               { label: 'SI Date', value: ledger.saleDate ? fmtDate(ledger.saleDate) : '—' },
+              { label: 'Scheme', value: ledgerScheme(ledger) },
             ]}
           />
         </LedgerCard>
@@ -246,6 +248,12 @@ export function InstallmentLedgerBody({
                       label: 'Sales Commission',
                       value: Number(ledger.account.salesCommission ?? 0)
                         ? fmtMoney(ledger.account.salesCommission ?? 0)
+                        : '—',
+                    },
+                    {
+                      label: 'SMI',
+                      value: Number(ledger.account.salesSmi ?? 0)
+                        ? fmtMoney(ledger.account.salesSmi ?? 0)
                         : '—',
                     },
                   ]

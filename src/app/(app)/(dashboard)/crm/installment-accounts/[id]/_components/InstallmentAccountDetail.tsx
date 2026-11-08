@@ -773,6 +773,12 @@ export default function InstallmentAccountDetail({
                   }
                 />
               )}
+              {canViewCommission && (
+                <Row
+                  label="SMI"
+                  value={Number(account.salesSmi ?? 0) ? peso(account.salesSmi ?? 0) : '—'}
+                />
+              )}
             </dl>
           </Section>
 
