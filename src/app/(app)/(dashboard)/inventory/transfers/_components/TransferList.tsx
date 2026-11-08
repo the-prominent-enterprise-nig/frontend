@@ -257,6 +257,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
   // Only a warehouse branch's own staff act for its region's standalone
   // warehouse — a store branch is limited to itself (mirrors the backend's
   // resolveActorRegion).
+  const isBusinessOwner = hasRole(session, 'Business Owner')
   const ownBranch = branchOptions.find((b) => b.id === session.branchId)
   const currentUserRegion = ownBranch?.type === 'warehouse' ? (ownBranch.region ?? null) : null
   const inScope = (warehouseBranchId: string | null | undefined, warehouseRegion?: string | null) =>
@@ -270,8 +271,9 @@ export default function TransferList({ session }: { session: SessionUser }) {
   function rowAction(tr: TransferSummary): { label: string; primary: boolean } {
     const fromInScope = inScope(tr.fromWarehouse?.branchId, tr.fromWarehouse?.region)
     const toInScope = inScope(tr.toWarehouse?.branchId, tr.toWarehouse?.region)
-    // The dispatcher is never the receiver (WH-01).
-    const canReceiveThis = canReceive && toInScope && tr.dispatchedById !== session.id
+    // The dispatcher is never the receiver (WH-01) — except the Business Owner.
+    const canReceiveThis =
+      canReceive && toInScope && (isBusinessOwner || tr.dispatchedById !== session.id)
 
     if (
       tr.status === 'pending_manager_approval' &&
@@ -824,6 +826,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         canManagerReject={canManagerReject}
         currentUserBranchId={session.branchId}
         currentUserId={session.id}
+        currentUserIsBusinessOwner={isBusinessOwner}
         currentUserRegion={currentUserRegion}
         onAccept={acceptTransfer}
         onReject={rejectTransfer}
