@@ -30,6 +30,9 @@ export interface Turnover {
   reference: string
   /** `YYYY-MM-DD`, local. */
   date: string
+  /** The posted deposit it belongs to, when a correction spans a session's
+   * several deposits. */
+  depositId?: string
 }
 
 /** A blank turnover, dated today (local date). The amount starts empty, as a

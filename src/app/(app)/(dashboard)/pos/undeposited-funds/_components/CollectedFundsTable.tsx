@@ -8,12 +8,17 @@ import { useMe } from '@/src/hooks/useMe'
 import type { PosTurnover } from '../_actions/pos-deposits'
 import {
   ActionDialog,
+  CorrectTurnoverButton,
+  CorrectTurnoverDialog,
   TurnoverActions,
   allowedActions,
+  pendingToCorrect,
   type Action,
   type Allowed,
+  type TurnoverToCorrect,
 } from './TurnoverActions'
 import type { BranchGroup, LedgerRow, Selection } from './CashInTransitList'
+import type { DepositChoice } from './PosDepositsView'
 
 /**
  * Scenario 83 — the Collected Funds table, laid out as the client's mockup:
@@ -54,6 +59,11 @@ export interface LedgerLine {
   settled?: boolean
   /** A banked receipt's line: the deposit it opens. */
   openDepositId?: string
+  /** Every deposit that banked part of it, when more than one did. */
+  openChoices?: DepositChoice[]
+  /** A turnover accounting can still correct: pending, or acknowledged with
+   * its receipt not yet banked. */
+  correctable?: TurnoverToCorrect
 }
 
 const TYPE_LABEL: Record<LineType, [string, string]> = {
@@ -215,6 +225,16 @@ export function receiptLine(receipt: AcknowledgementReceipt, branchName: string)
       slip: receipt.turnoverLine.reference,
       amount: left,
       status: [{ label: 'Acknowledged', tone: 'green' }],
+      correctable: {
+        lineId: receipt.turnoverLine.id,
+        amount: left,
+        reference: receipt.turnoverLine.reference ?? '',
+        date: receipt.paymentDate.slice(0, 10),
+        receivedBy: '',
+        senderName: sender,
+        toBranchName: branchName,
+        acknowledged: true,
+      },
     }
   }
   return {
@@ -260,7 +280,22 @@ export function bankedReceiptLine(receipt: AcknowledgementReceipt, branchName: s
     amount: Number(receipt.depositedAmount ?? 0),
     status: [{ label: 'Deposited', tone: 'green' }],
     openDepositId: deposits[deposits.length - 1]?.id,
+    openChoices: receiptDepositChoices(receipt),
   }
+}
+
+/** The deposits that banked a receipt, oldest first, each labelled by its
+ * slip numbers and how much of the receipt it took. */
+function receiptDepositChoices(receipt: AcknowledgementReceipt): DepositChoice[] {
+  return [...(receipt.depositAllocations ?? [])]
+    .sort((a, b) => a.posDeposit.depositDate.localeCompare(b.posDeposit.depositDate))
+    .map((a) => ({
+      id: a.posDeposit.id,
+      label: [
+        unique(a.posDeposit.lines.map((l) => l.reference)).join(', ') || 'No slip no.',
+        fmtMoney(Number(a.cashAmount)),
+      ].join(' · '),
+    }))
 }
 
 /** A turnover sent to this branch, still waiting for it to acknowledge. */
@@ -280,6 +315,7 @@ export function incomingLine(t: PosTurnover, canAcknowledge: boolean): LedgerLin
         : { label: 'Awaiting acknowledgment', tone: 'amber' },
     ],
     incoming: t,
+    correctable: pendingToCorrect(t),
   }
 }
 
@@ -325,12 +361,41 @@ function moneyOf(group: BranchGroup): { collected: number; deposited: number } {
   return { collected, deposited }
 }
 
+/** Opens a deposit; `choices` are every deposit behind the row, when more
+ * than one banked it. */
+export type OpenDeposit = (id: string, choices?: DepositChoice[]) => void
+
+/**
+ * Every posted deposit behind a session, from its slips and turnovers, each
+ * labelled by its slip numbers and what it banked. A session banked over
+ * several trips to the bank reads as several, so none is hidden behind the
+ * one that happened to finish it.
+ */
+export function depositChoices(row: LedgerRow): DepositChoice[] {
+  const byDeposit = new Map<string, { refs: string[]; amount: number }>()
+  const items = [
+    ...row.bankSlips.map((s) => ({ id: s.depositId, ref: s.reference, amount: s.amount })),
+    ...row.turnovers.map((t) => ({ id: t.depositId, ref: t.reference, amount: t.amount })),
+  ]
+  for (const item of items) {
+    const entry = byDeposit.get(item.id) ?? { refs: [], amount: 0 }
+    if (item.ref && !entry.refs.includes(item.ref)) entry.refs.push(item.ref)
+    entry.amount += item.amount
+    byDeposit.set(item.id, entry)
+  }
+  return [...byDeposit].map(([id, { refs, amount }]) => ({
+    id,
+    label: [refs.join(', ') || 'No slip no.', fmtMoney(amount)].join(' · '),
+  }))
+}
+
 // --- The table -----------------------------------------------------------
 
 export function CollectedFundsTable({
   groups,
   loading,
   canManage,
+  canCorrect = false,
   selection,
   onOpenDeposit,
   onDepositReceipts,
@@ -340,8 +405,10 @@ export function CollectedFundsTable({
   groups: BranchGroup[]
   loading: boolean
   canManage: boolean
+  /** Accounting: may correct a pending turnover from its row. */
+  canCorrect?: boolean
   selection: Selection
-  onOpenDeposit: (id: string) => void
+  onOpenDeposit: OpenDeposit
   onDepositReceipts: (group: BranchGroup) => void
   onTurnoverChanged: () => void
   empty: string
@@ -350,6 +417,7 @@ export function CollectedFundsTable({
   const [acting, setActing] = useState<{ turnover: PosTurnover; kind: Action } | null>(null)
   const { data: me } = useMe()
   const allowed = (t: PosTurnover): Allowed => allowedActions(t, canManage, me)
+  const [correcting, setCorrecting] = useState<TurnoverToCorrect | null>(null)
   const columns = canManage ? 9 : 8
   const shown = groups.map((group) => ({
     group,
@@ -390,12 +458,23 @@ export function CollectedFundsTable({
               selection={selection}
               allowed={allowed}
               onAct={(turnover, kind) => setActing({ turnover, kind })}
+              onCorrect={canCorrect ? setCorrecting : undefined}
               onOpenDeposit={onOpenDeposit}
               onDepositReceipts={() => onDepositReceipts(group)}
             />
           ))
         )}
       </table>
+      {correcting && (
+        <CorrectTurnoverDialog
+          turnover={correcting}
+          onClose={() => setCorrecting(null)}
+          onDone={() => {
+            setCorrecting(null)
+            onTurnoverChanged()
+          }}
+        />
+      )}
       {acting && (
         <ActionDialog
           {...acting}
@@ -444,6 +523,7 @@ function BranchRows({
   selection,
   allowed,
   onAct,
+  onCorrect,
   onOpenDeposit,
   onDepositReceipts,
 }: {
@@ -456,7 +536,9 @@ function BranchRows({
   selection: Selection
   allowed: (t: PosTurnover) => Allowed
   onAct: (t: PosTurnover, kind: Action) => void
-  onOpenDeposit: (id: string) => void
+  /** Accounting only: opens the turnover correction form. */
+  onCorrect?: (t: TurnoverToCorrect) => void
+  onOpenDeposit: OpenDeposit
   onDepositReceipts: () => void
 }): React.JSX.Element {
   const selectable = group.rows.filter((r) => r.status === 'to_deposit')
@@ -518,6 +600,9 @@ function BranchRows({
             selection={selection}
             allowed={line.incoming ? allowed(line.incoming) : null}
             onAct={(kind) => line.incoming && onAct(line.incoming, kind)}
+            onCorrect={
+              onCorrect && line.correctable ? () => onCorrect(line.correctable!) : undefined
+            }
             onOpenDeposit={onOpenDeposit}
           />
         ))}
@@ -545,6 +630,7 @@ function LineRow({
   selection,
   allowed,
   onAct,
+  onCorrect,
   onOpenDeposit,
 }: {
   line: LedgerLine
@@ -553,7 +639,8 @@ function LineRow({
   selection: Selection
   allowed: Allowed | null
   onAct: (kind: Action) => void
-  onOpenDeposit: (id: string) => void
+  onCorrect?: () => void
+  onOpenDeposit: OpenDeposit
 }): React.JSX.Element {
   const row = line.row
   // The still-to-deposit part ticks; the part already gone opens its deposit.
@@ -567,7 +654,7 @@ function LineRow({
     row && pickable
       ? () => selection.toggle(row)
       : opensId
-        ? () => onOpenDeposit(opensId)
+        ? () => onOpenDeposit(opensId, row ? depositChoices(row) : line.openChoices)
         : undefined
   return (
     <tr onClick={onClick} className={`hover:bg-gray-50 ${onClick ? 'cursor-pointer' : ''}`}>
@@ -636,7 +723,10 @@ function LineRow({
         className="px-3 py-3 text-right align-top whitespace-nowrap"
         onClick={(e) => e.stopPropagation()}
       >
-        {allowed && <TurnoverActions allowed={allowed} onAct={onAct} />}
+        <span className="inline-flex items-center gap-2">
+          {onCorrect && <CorrectTurnoverButton onClick={onCorrect} />}
+          {allowed && <TurnoverActions allowed={allowed} onAct={onAct} />}
+        </span>
         {onDepositReceipts && (
           <button
             type="button"
