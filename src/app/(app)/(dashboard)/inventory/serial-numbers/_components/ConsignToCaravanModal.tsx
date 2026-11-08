@@ -111,7 +111,9 @@ function TransferDates({
         <Controller
           name="transferDate"
           control={control}
-          render={({ field }) => <input {...field} type="date" className={inputClass} />}
+          render={({ field }) => (
+            <input {...field} value={field.value ?? ''} type="date" className={inputClass} />
+          )}
         />
       </div>
       <div>
@@ -142,12 +144,17 @@ export default function ConsignToCaravanModal({
 }: Props): React.JSX.Element | null {
   // A Warehouse Custodian's branch hosts no caravan — they pick any host.
   const hostScope = caravanScopeBranchId(warehouses, currentUserBranchId)
+  // Defaults from the first render keep every input controlled; the effect
+  // below re-seeds them with the units ticked when the modal opens.
   const {
     control,
     handleSubmit,
     reset,
     formState: { errors },
-  } = useForm<CreateTransferFormValues>({ resolver: zodResolver(CreateTransferFormSchema) })
+  } = useForm<CreateTransferFormValues>({
+    resolver: zodResolver(CreateTransferFormSchema),
+    defaultValues: initialValues(serials, sourceId, hostScope ?? ''),
+  })
 
   // Seeded on open only — the ticked units can't change while it's up.
   useEffect(() => {
