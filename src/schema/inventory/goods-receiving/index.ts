@@ -580,6 +580,7 @@ export type WithholdingSummaryResponse = z.infer<typeof WithholdingSummaryRespon
 export const StockStateFilterSchema = z.enum([
   'in_stock',
   'in_transit',
+  'sold',
   'out',
   'fully_reserved',
   'low',

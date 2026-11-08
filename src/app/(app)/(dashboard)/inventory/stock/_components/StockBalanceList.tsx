@@ -52,7 +52,8 @@ const REGION_OPTIONS = [
 // after the item roll-up so the filter and the visible badge can never
 // disagree. `in_transit` is a different axis: units on an open transfer,
 // counted off transfer lines rather than the balance row's own quantities, so
-// a row can be both In Stock and have units in transit.
+// a row can be both In Stock and have units in transit. `sold` is another
+// such axis — items with any sold units, matching the Sold column.
 //
 // Deliberately no In Transit column: rows roll up per item across locations, so
 // a single qty there would flatten "3 in transit to Bago, 2 to Ajuy" into an
@@ -64,6 +65,7 @@ const STOCK_STATE_OPTIONS = [
   { value: 'fully_reserved', label: 'Fully Reserved' },
   { value: 'out', label: 'Out of Stock' },
   { value: 'in_transit', label: 'In Transit' },
+  { value: 'sold', label: 'Sold' },
 ]
 
 const CONTROL_CHROME = {
