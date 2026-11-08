@@ -426,21 +426,6 @@ export default function SerialNumberList({
           </div>
         )}
 
-        {/* Locator — the serial search sits above the filters. */}
-        {isLocator && (
-          <label className="flex h-11 items-center gap-3 rounded-xl border border-[#5b21b6] bg-white px-4 focus-within:shadow-[0_0_0_3px_#f0e9fc]">
-            <Search className="h-4 w-4 shrink-0 text-[#5b21b6]" />
-            <input
-              type="search"
-              autoFocus
-              value={search ?? ''}
-              onChange={(e) => setSearch(e.target.value || undefined)}
-              placeholder="Search a serial number…"
-              className="min-w-0 flex-1 border-none bg-transparent p-0 text-[14px] text-[#17171c] outline-none placeholder:text-ink-faint"
-            />
-          </label>
-        )}
-
         {/* Scenario 60 Part 3 — ended caravans still holding stock. The
             Caravan tab's own cards already show them, so only on All Serials.
             Gated on transfers:create: those are the people who can act. */}
@@ -454,23 +439,23 @@ export default function SerialNumberList({
 
         {/* Filter bar */}
         <div className="flex flex-wrap items-center gap-[10px] rounded-xl border border-[#e4e4e9] bg-white p-3 min-[1400px]:flex-nowrap">
-          {!isLocator && (
-            <div
-              className={`flex h-[38px] min-w-[180px] flex-[1_1_180px] items-center gap-[9px] rounded-lg border px-3 transition-colors ${CONTROL_CHROME.idle} focus-within:border-[#5b21b6] focus-within:shadow-[0_0_0_3px_#f0e9fc]`}
-            >
-              <Search className="h-3.25 w-3.25 shrink-0 text-ink-muted" />
-              <input
-                value={search ?? ''}
-                onChange={(e) => setSearch(e.target.value || undefined)}
-                placeholder={
-                  caravanView
-                    ? 'Search serial, item, RR, supplier, caravan or location…'
-                    : 'Search serial, brand, model, category, RR or supplier…'
-                }
-                className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-ink-faint"
-              />
-            </div>
-          )}
+          {/* The Locator shares this bar; it opens with the search focused. */}
+          <div
+            className={`flex h-[38px] min-w-[180px] flex-[1_1_180px] items-center gap-[9px] rounded-lg border px-3 transition-colors ${CONTROL_CHROME.idle} focus-within:border-[#5b21b6] focus-within:shadow-[0_0_0_3px_#f0e9fc]`}
+          >
+            <Search className="h-3.25 w-3.25 shrink-0 text-ink-muted" />
+            <input
+              autoFocus={isLocator}
+              value={search ?? ''}
+              onChange={(e) => setSearch(e.target.value || undefined)}
+              placeholder={
+                caravanView
+                  ? 'Search serial, item, RR, supplier, caravan or location…'
+                  : 'Search serial, brand, model, category, RR or supplier…'
+              }
+              className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-ink-faint"
+            />
+          </div>
 
           {!caravanView && (
             <div
