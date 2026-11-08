@@ -94,6 +94,10 @@ export function caravanDaysLeft(endDate: string | null | undefined): number | nu
 }
 
 /** "Ends today", "3 days left", "Ended 2 days ago", "Closed today". */
+/** `?caravan=all` on the General Stockbook — the Caravan view with no single
+ * caravan picked (the ended-caravans banner links here). */
+export const ALL_CARAVANS = 'all'
+
 export function caravanCountdown(
   endDate: string | null | undefined,
   closedAt?: string | null

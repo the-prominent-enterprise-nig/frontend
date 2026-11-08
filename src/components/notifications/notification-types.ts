@@ -48,7 +48,7 @@ const skuReservationHref = (): string => '/pos/reservations'
 const priceListHref = (): string => '/pos/catalog/price-lists'
 const batchHoldHref = (): string => '/inventory/batches'
 const purchaseRequestHref = (): string => '/inventory/purchase-requests'
-const purchaseOrderHref = (): string => '/inventory/purchase-orders'
+const purchaseOrderHref = (): string => '/inventory/stock-transaction?tab=purchase-orders'
 
 // Status drives both the avatar tint and a small corner badge icon (see
 // STATUS_STYLE below / NotificationListItem.tsx) — the entity icon alone

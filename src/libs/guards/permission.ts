@@ -249,3 +249,15 @@ export function canManagePosSettings(user: PermissionHolder): boolean {
 export function managesOwnBranch(user: PermissionHolder): boolean {
   return !isAdmin(user) && !!user.branchId && can(user, 'pos:config:manage')
 }
+
+/**
+ * Whether supplier prices (unit price, line amounts, totals) show on Purchase
+ * Orders and Receiving Reports — on screen and in print. Per the access
+ * sheet, whoever may see receiving cost (inventory:receive:cost-view: Head
+ * Office inventory roles, Department Heads, Owners); Accounting reads its own
+ * RR copy through its financial-report permission. The "no item cost" roles —
+ * branch staff and warehouse custodians — get quantities only.
+ */
+export function canSeeSupplierPrices(user: SessionUser): boolean {
+  return canAny(user, ['inventory:receive:cost-view', 'accounting:financial_report:read'])
+}

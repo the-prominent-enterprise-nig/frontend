@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { STALE } from '@/src/libs/query/stale-times'
 import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
+import { useSeesSupplierPrices } from '@/src/hooks/useSeesSupplierPrices'
 import type { SessionUser } from '@/src/libs/guards/permission'
 import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-requests'
 import { getPurchaseRequests } from '../../purchase-requests/_actions/get-purchase-requests'
@@ -141,9 +142,11 @@ function ConvertedPoLink({ pr }: { pr: PurchaseRequestSummary }): React.ReactEle
 function OpenRequestRow({
   pr,
   actions,
+  showTotal,
 }: {
   pr: PurchaseRequestSummary
   actions: PurchaseRequestActions
+  showTotal: boolean
 }): React.ReactElement {
   return (
     <tr
@@ -162,9 +165,11 @@ function OpenRequestRow({
       <td className="px-4 py-[10px] text-[12.5px] text-[#3d3d4a]">
         {pr.branch?.name ?? <span className="text-ink-subtle">—</span>}
       </td>
-      <td className={`${MONO} px-4 py-[10px] text-right text-[13px] font-semibold`}>
-        {fmtPHP(prTotal(pr))}
-      </td>
+      {showTotal && (
+        <td className={`${MONO} px-4 py-[10px] text-right text-[13px] font-semibold`}>
+          {fmtPHP(prTotal(pr))}
+        </td>
+      )}
       <td className="px-4 py-[10px] text-[11.5px] text-ink-muted">{fmtDate(pr.createdAt)}</td>
       <td className="px-4 py-[10px]" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-end gap-2">
@@ -255,6 +260,9 @@ function RequestsTableBody({
   actions: PurchaseRequestActions
 }): React.ReactElement {
   const { items, total, isLoading } = page
+  // A converted request's total is its PO's price: hidden like the PO's own.
+  const showPrices = useSeesSupplierPrices()
+  const showTotal = showPrices || view !== 'converted'
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -272,14 +280,14 @@ function RequestsTableBody({
             <th className="px-4 py-[9px] text-left">Supplier</th>
             <th className="px-4 py-[9px] text-left">Status</th>
             <th className="px-4 py-[9px] text-left">Branch</th>
-            <th className="px-4 py-[9px] text-right">Total</th>
+            {showTotal && <th className="px-4 py-[9px] text-right">Total</th>}
             <th className="px-4 py-[9px] text-left">Created</th>
             <th className="px-4 py-[9px] text-right">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[#f4f4f6]">
           {items.map((pr) => (
-            <OpenRequestRow key={pr.id} pr={pr} actions={actions} />
+            <OpenRequestRow key={pr.id} pr={pr} actions={actions} showTotal={showTotal} />
           ))}
         </tbody>
       </table>
@@ -322,10 +330,13 @@ export function RequestGridRows({
   items,
   actions,
   gridClass,
+  showTotal = true,
 }: {
   items: PurchaseRequestSummary[]
   actions: PurchaseRequestActions
   gridClass: string
+  /** Off when the orders grid drops its Total column. */
+  showTotal?: boolean
 }): React.ReactElement {
   return (
     <>
@@ -348,9 +359,11 @@ export function RequestGridRows({
             <div role="cell">
               <RequestStatus pr={pr} />
             </div>
-            <span role="cell" className={`${MONO} text-right text-[13px] font-semibold`}>
-              {fmtPeso(prTotal(pr))}
-            </span>
+            {showTotal && (
+              <span role="cell" className={`${MONO} text-right text-[13px] font-semibold`}>
+                {fmtPeso(prTotal(pr))}
+              </span>
+            )}
             <span role="cell" className="truncate text-[11.5px] text-[#4b4b5a]">
               {pr.branch?.name ?? '—'}
             </span>
@@ -375,9 +388,11 @@ export function RequestGridRows({
 export function RequestCards({
   items,
   actions,
+  showTotal = true,
 }: {
   items: PurchaseRequestSummary[]
   actions: PurchaseRequestActions
+  showTotal?: boolean
 }): React.ReactElement {
   return (
     <>
@@ -396,9 +411,11 @@ export function RequestCards({
           </div>
           <div className="flex min-w-0 items-center gap-[9px]">
             <RequestSupplier pr={pr} />
-            <span className={`${MONO} ml-auto text-[14px] font-semibold`}>
-              {fmtPeso(prTotal(pr))}
-            </span>
+            {showTotal && (
+              <span className={`${MONO} ml-auto text-[14px] font-semibold`}>
+                {fmtPeso(prTotal(pr))}
+              </span>
+            )}
           </div>
           <div
             className="flex items-center justify-end gap-2 border-t border-[#f1f1f4] pt-[9px]"

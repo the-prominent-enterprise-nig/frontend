@@ -1,5 +1,6 @@
 'use client'
 
+import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { useState } from 'react'
 import { Plus, ClipboardList } from 'lucide-react'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -48,6 +49,8 @@ export default function BackordersPageView({ session }: { session: SessionUser }
     error,
     page,
     setPage,
+    limit,
+    setLimit,
     itemOptions,
     createBackorder,
     isCreating,
@@ -187,30 +190,16 @@ export default function BackordersPageView({ session }: { session: SessionUser }
             </div>
           )}
 
-          {pagination.totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-zinc-100 px-4 py-3 text-sm text-zinc-500">
-              <span>
-                Page {page} of {pagination.totalPages}
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.max(1, page - 1))}
-                  disabled={page <= 1}
-                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                  disabled={page >= pagination.totalPages}
-                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
+          {!isLoading && backorders.length > 0 && (
+            <ListFooterPager
+              page={page}
+              pageCount={pagination.totalPages}
+              total={pagination.total}
+              limit={limit}
+              noun="backorders"
+              onPageChange={setPage}
+              onLimitChange={setLimit}
+            />
           )}
         </div>
       </div>
