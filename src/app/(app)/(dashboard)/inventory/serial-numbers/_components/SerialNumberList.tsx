@@ -181,6 +181,10 @@ export default function SerialNumberList({
   // Unit cost is for Business Owner / Accountant, as on receiving.
   const canViewCost = hasPermission(session, INVENTORY_PERMISSIONS.RECEIVE_COST_VIEW)
   const canConsign = canTransfer && canManageCaravan
+  // The overall view across locations is head office's (NIG, 2026-11-09):
+  // branch staff see only their own units — the backend enforces it — so the
+  // Location filter would do nothing for them.
+  const seesAllLocations = !session.branchId
   const [isRegisterOpen, setIsRegisterOpen] = useState(false)
   const [isImportOpen, setIsImportOpen] = useState(false)
 
@@ -509,9 +513,9 @@ export default function SerialNumberList({
               clearable
               options={caravanOptions}
             />
-          ) : (
+          ) : seesAllLocations ? (
             <LocationFilters filter={locationFilter} chrome={CONTROL_CHROME} />
-          )}
+          ) : null}
 
           {!caravanView && (
             <SearchableSelect
