@@ -516,7 +516,6 @@ export default function InventoryPage() {
                     icon: Layers,
                   },
                   { label: 'Quality Hold', href: '/inventory/quality-hold', icon: ShieldAlert },
-                  { label: 'Revaluation', href: '/inventory/revaluation', icon: TrendingUp },
                 ] as const
               ).map(({ label, href, icon: Icon }, i) => (
                 <Link
