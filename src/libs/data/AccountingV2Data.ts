@@ -2485,8 +2485,8 @@ export const Expenses = {
   agentSales: (agentId: string, params?: { search?: string; excludeExpenseId?: string }) =>
     api.get<ExpenseAgentSale[]>(`/expenses/lookups/agents/${agentId}/sales`, params as any),
   /** The sales a commission line can release — one agent's with `agentId`, any agent's without.
-   * With `kind: 'SMI'`, the sales an SMI line can be paid on: any completed sale, and
-   * `releasedOn` means already on another SMI line. */
+   * With `kind: 'SMI'`, the same list for an SMI line, except that `releasedOn` means
+   * already on another SMI line (a commission line on the sale doesn't count). */
   commissionSales: (params?: {
     agentId?: string
     search?: string

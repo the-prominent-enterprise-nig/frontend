@@ -894,8 +894,11 @@ function ExpenseFormFields({
       1 + // Expense Account
       (showSpecialColumn && !k ? 1 : 0) + // Special Account
       (isItemMode ? 2 : 1) + // Qty + Unit Price, or Description
-      (k === 'AGENT_COMMISSION' ? 2 : 0) + // Sales Invoice No., Sales Agent
-      (k === 'SMI' ? 1 : 0) + // Sales Invoice No.
+      (k === 'AGENT_COMMISSION' || k === 'SMI'
+        ? form.payeeType === 'AGENT'
+          ? 1 // Sales Invoice No. — the agent is the payee, named above
+          : 2 // Sales Invoice No., Sales Agent
+        : 0) +
       (k === 'FUEL' ? 2 : 0) + // Plate, Liters
       (k === 'VEHICLE_REPAIR' ? 3 : 0) + // Plate, Repair/Service Type, Service Detail
       3 + // Division, Tax Code, Amount
@@ -1674,13 +1677,8 @@ function ExpenseFormFields({
                       onChange={(id) => {
                         setForm({ ...form, agentId: id ?? '' })
                         // The sales already picked were this agent's, not the next one's.
-                        // An SMI line's sale isn't the agent's, so it stays.
                         setLines((prev) =>
-                          prev.map((l) =>
-                            kindOfAccount(l.categoryAccountId) === 'SMI'
-                              ? l
-                              : { ...l, posTransactionId: '', saleLabel: '' }
-                          )
+                          prev.map((l) => ({ ...l, posTransactionId: '', saleLabel: '' }))
                         )
                       }}
                       options={agentOptions}
@@ -1739,11 +1737,9 @@ function ExpenseFormFields({
             n={2}
             title="Expense Details"
             hint={
-              showCommissionCols
+              showCommissionCols || showSmiCols
                 ? 'Add one or more expense items. Use the “Sales Invoice No.” to select invoices assigned to the chosen Sales Agent.'
-                : showSmiCols
-                  ? 'Add one or more expense items. Use the “Sales Invoice No.” to pick the sale each SMI is paid on.'
-                  : 'Add one or more expense items. Vehicle fields will appear automatically for vehicle-related accounts.'
+                : 'Add one or more expense items. Vehicle fields will appear automatically for vehicle-related accounts.'
             }
             right={
               hasOwnCategoryLines ? (
@@ -1765,8 +1761,8 @@ function ExpenseFormFields({
               <div className="divide-y divide-zinc-200">
                 {lines.map((line, i) => {
                   const kind = kindOfAccount(line.categoryAccountId)
-                  // Whose sales this commission line can release: the entry's agent when it
-                  // is paid to one, else the line's own pick.
+                  // Whose sales this commission or SMI line can release: the entry's agent
+                  // when it is paid to one, else the line's own pick.
                   const lineAgentId = form.payeeType === 'AGENT' ? form.agentId : line.saleAgentId
                   // Sales already on another line of the same kind on this entry — not
                   // offered again. A commission line and an SMI line may share a sale.
@@ -1942,7 +1938,11 @@ function ExpenseFormFields({
                             </LineField>
                           </>
                         )}
-                        {kind === 'AGENT_COMMISSION' && (
+                        {/* A commission line and an SMI line (Scenario 78) are released the
+                          same way: the sale, credited to the entry's agent, and the Sales
+                          Agent it belongs to. They differ only in what the system accrued —
+                          nothing computes SMI, so its amount is always typed. */}
+                        {(kind === 'AGENT_COMMISSION' || kind === 'SMI') && (
                           <>
                             <LineField label="Sales Invoice No. *">
                               <SearchCombobox
@@ -1950,12 +1950,16 @@ function ExpenseFormFields({
                                 compact
                                 value={line.posTransactionId}
                                 initialLabel={line.saleLabel}
-                                queryKey={`expense-commission-sales:${lineAgentId}:${otherSaleIds.join(',')}`}
+                                queryKey={`expense-${kind === 'SMI' ? 'smi' : 'commission'}-sales:${lineAgentId}:${otherSaleIds.join(',')}`}
                                 placeholder="— Select —"
                                 typeToSearchMessage={
                                   lineAgentId ? "Search this agent's sales…" : 'Search sales…'
                                 }
-                                emptyMessage="No unreleased sales found"
+                                emptyMessage={
+                                  kind === 'SMI'
+                                    ? 'No sales without an SMI found'
+                                    : 'No unreleased sales found'
+                                }
                                 onChange={(id) => {
                                   if (!id) setLine(i, { posTransactionId: '', saleLabel: '' })
                                 }}
@@ -1967,17 +1971,23 @@ function ExpenseFormFields({
                                     // Whose commission it is — the line's Sales Agent.
                                     ...(sale.agentId ? { saleAgentId: sale.agentId } : {}),
                                     // What the system accrued on the sale, when it did —
-                                    // a starting point, still editable.
-                                    ...(line.amount === '' && sale.commission != null
+                                    // a starting point, still editable. Never for an SMI:
+                                    // the accrued figure is the commission.
+                                    ...(kind !== 'SMI' &&
+                                    line.amount === '' &&
+                                    sale.commission != null
                                       ? { amount: String(sale.commission) }
                                       : {}),
                                     ...(line.description.trim() === ''
-                                      ? { description: `Commission - ${sale.number}` }
+                                      ? {
+                                          description: `${kind === 'SMI' ? 'SMI' : 'Commission'} - ${sale.number}`,
+                                        }
                                       : {}),
                                   })
                                 }}
                                 search={async (query) => {
                                   const res = await Expenses.commissionSales({
+                                    ...(kind === 'SMI' ? { kind: 'SMI' as const } : {}),
                                     agentId: lineAgentId || undefined,
                                     search: query || undefined,
                                     excludeExpenseId: initial?.id,
@@ -1997,7 +2007,7 @@ function ExpenseFormFields({
                                         .filter(Boolean)
                                         .join(' · '),
                                       badge:
-                                        x.commission != null
+                                        kind !== 'SMI' && x.commission != null
                                           ? `Commission ${fmtMoney(x.commission)}`
                                           : undefined,
                                       meta: x,
@@ -2005,16 +2015,11 @@ function ExpenseFormFields({
                                 }}
                               />
                             </LineField>
-                            <LineField label="Sales Agent *">
-                              {form.payeeType === 'AGENT' ? (
-                                // Paid to a Sales Agent: that agent, on every line.
-                                <div
-                                  aria-label="Sales agent"
-                                  className="flex h-[34px] items-center truncate rounded-lg border border-zinc-100 bg-zinc-50 px-2.5 text-[13px] text-zinc-700"
-                                >
-                                  {agentOptions.find((o) => o.id === form.agentId)?.name ?? '—'}
-                                </div>
-                              ) : (
+                            {/* Paid to a Sales Agent, the entry's agent is already named above and
+                              is the agent on every line, so the line has no column of its own for
+                              it. Any other payee picks the line's agent here. */}
+                            {form.payeeType !== 'AGENT' && (
+                              <LineField label="Sales Agent *">
                                 <CategorySelect
                                   compact
                                   aria-label="Line sales agent"
@@ -2032,57 +2037,9 @@ function ExpenseFormFields({
                                   options={agentOptions}
                                   placeholder="— Select —"
                                 />
-                              )}
-                            </LineField>
+                              </LineField>
+                            )}
                           </>
-                        )}
-                        {/* Scenario 78 — an SMI line names the sale it is paid on. Any
-                          completed sale, whoever sold it: SMI isn't tied to the selling
-                          agent, so there's no Sales Agent here, and the amount is typed —
-                          nothing in the system computes SMI. */}
-                        {kind === 'SMI' && (
-                          <LineField label="Sales Invoice No. *">
-                            <SearchCombobox
-                              key={`${i}-${line.posTransactionId}-smi`}
-                              compact
-                              value={line.posTransactionId}
-                              initialLabel={line.saleLabel}
-                              queryKey={`expense-smi-sales:${otherSaleIds.join(',')}`}
-                              placeholder="— Select —"
-                              typeToSearchMessage="Search sales…"
-                              emptyMessage="No sales without an SMI found"
-                              onChange={(id) => {
-                                if (!id) setLine(i, { posTransactionId: '', saleLabel: '' })
-                              }}
-                              onSelect={(option) => {
-                                const sale = option.meta as ExpenseAgentSale
-                                setLine(i, {
-                                  posTransactionId: sale.id,
-                                  saleLabel: sale.number,
-                                  ...(line.description.trim() === ''
-                                    ? { description: `SMI - ${sale.number}` }
-                                    : {}),
-                                })
-                              }}
-                              search={async (query) => {
-                                const res = await Expenses.commissionSales({
-                                  kind: 'SMI',
-                                  search: query || undefined,
-                                  excludeExpenseId: initial?.id,
-                                })
-                                return (res.data ?? [])
-                                  .filter((x) => !x.releasedOn && !otherSaleIds.includes(x.id))
-                                  .map((x) => ({
-                                    id: x.id,
-                                    primary: x.number,
-                                    secondary: [x.agentName, x.customerName, fmtMoney(x.subtotal)]
-                                      .filter(Boolean)
-                                      .join(' · '),
-                                    meta: x,
-                                  }))
-                              }}
-                            />
-                          </LineField>
                         )}
                         {(kind === 'FUEL' || kind === 'VEHICLE_REPAIR') && (
                           <LineField label="Plate Number *">

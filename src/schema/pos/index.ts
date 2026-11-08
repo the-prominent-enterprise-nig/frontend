@@ -482,6 +482,8 @@ export interface PosSaleAccountSummary {
   agentName: string | null
   /** Null when the viewer may not read agents. */
   commission: number | null
+  /** The SMI paid on the sale; null when the viewer may not read agents. */
+  smi: number | null
   /** Each unit's own share of the credit, keyed by line id. */
   lineCredits: Record<string, number>
 }

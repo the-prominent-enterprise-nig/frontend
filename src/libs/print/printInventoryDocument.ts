@@ -999,8 +999,9 @@ export function printPurchaseOrderDocument(
  * misalign in the first place, and doesn't match the paper form anyway:
  *   1. Lastname / Firstname / Middle / (Sales Invoice No. + SI Date)
  *   2. Brand / Type / Model / Serial
- *   3. Agent / Sales Commission (only when the viewer may see it) / Collector
- *      (two cells wide without the commission, one with) / FMI
+ *   3. Agent / Collector (two cells wide) / FMI — or, when the viewer may see
+ *      the agent's pay, two rows of four: Agent (two wide) / Sales Commission
+ *      / SMI, then Collector (two wide) / FMI (two wide)
  *   4. LCP / Down / Amt. Financed / Inst. Diff.
  *   5. Scheme (the paper form's "WIP") / MI / Term / Branch
  *   6. PN / IC / Total Price / Phone (Oct 29 UAT CL-01)
@@ -1017,9 +1018,10 @@ export function printPurchaseOrderDocument(
  */
 export function buildCustomerLedgerHtml(
   ledger: InstallmentLedger,
-  // The selling agent's commission is agent data, so it is left off the
-  // printout unless the caller says this user may see it. It takes a cell of
-  // the Collector's two-wide slot on the Agent row, keeping four columns.
+  // The selling agent's commission and SMI are agent data, so they are left
+  // off the printout unless the caller says this user may see them. They sit
+  // on the Agent row, which then takes a second row so the grid keeps four
+  // columns.
   options: { showCommission?: boolean } = {}
 ): string {
   const { account, rows } = ledger
@@ -1038,6 +1040,10 @@ export function buildCustomerLedgerHtml(
 
   const cell = (label: string, value: string, colspan = 1) =>
     `<td colspan="${colspan}"><p class="cell-value">${esc(value)}</p><p class="cell-label">${esc(label)}</p></td>`
+
+  const collectorLabel = account.collector
+    ? `${account.collector.stubNumber} — ${account.collector.name}`
+    : 'Unassigned'
 
   // The paper form's Total Payments/Penalty/Rebates/Billing/etc. block is
   // plain italic "Label : value" text below the bordered grid, not more
@@ -1138,25 +1144,26 @@ export function buildCustomerLedgerHtml(
           )
           .join('')
       }
-      <tr>
-        ${cell('Agent', account.sellingAgent?.name ?? '—')}
-        ${
-          showCommission
-            ? cell(
-                'Sales Commission',
-                Number(account.salesCommission ?? 0) ? fmt(account.salesCommission ?? 0) : '—'
-              )
-            : ''
-        }
+      ${
+        showCommission
+          ? `<tr>
+        ${cell('Agent', account.sellingAgent?.name ?? '—', 2)}
         ${cell(
-          'Collector',
-          account.collector
-            ? `${account.collector.stubNumber} — ${account.collector.name}`
-            : 'Unassigned',
-          showCommission ? 1 : 2
+          'Sales Commission',
+          Number(account.salesCommission ?? 0) ? fmt(account.salesCommission ?? 0) : '—'
         )}
-        ${cell('FMI', fmtDate(ledger.firstInstallmentDate))}
+        ${cell('SMI', Number(account.salesSmi ?? 0) ? fmt(account.salesSmi ?? 0) : '—')}
       </tr>
+      <tr>
+        ${cell('Collector', collectorLabel, 2)}
+        ${cell('FMI', fmtDate(ledger.firstInstallmentDate), 2)}
+      </tr>`
+          : `<tr>
+        ${cell('Agent', account.sellingAgent?.name ?? '—')}
+        ${cell('Collector', collectorLabel, 2)}
+        ${cell('FMI', fmtDate(ledger.firstInstallmentDate))}
+      </tr>`
+      }
       <tr>
         ${cell('LCP', fmt(account.listedCashPrice))}
         ${cell('Down', fmt(account.downPayment))}

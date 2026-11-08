@@ -274,6 +274,12 @@ export interface AgentInvoice {
   commission: number | null
   /** The live Commissions - Sales voucher paying this sale's commission. */
   released: AgentInvoiceRelease | null
+  /** What accounting recorded in Expenses for this sale's SMI — the
+   * Commissions - SMI line's amount, read exactly like `commission`. Null
+   * until a recorded entry exists (a draft carries none). */
+  smi: number | null
+  /** The live Commissions - SMI voucher paying this sale's SMI. */
+  smiReleased: AgentInvoiceRelease | null
 }
 
 export interface AgentInvoiceRelease {
@@ -439,6 +445,10 @@ export interface InstallmentAccountDetail extends InstallmentAccount {
   // (Commissions - Sales, recorded entries only). Zero until it is encoded.
   // Shown only to users who can read agents.
   salesCommission?: number | string
+  // The SMI on this sale — what accounting encoded in Expenses (Commissions -
+  // SMI, recorded entries only), shown beside the commission to the same
+  // users. Zero until it is encoded.
+  salesSmi?: number | string
   // The sale's receipt: when it was rung up, by whom, and how it was paid
   // for at the register. Null for hand-entered/imported accounts (POS-only).
   saleReceipt?: {

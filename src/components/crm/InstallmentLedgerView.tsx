@@ -248,6 +248,12 @@ export function InstallmentLedgerBody({
                         ? fmtMoney(ledger.account.salesCommission ?? 0)
                         : '—',
                     },
+                    {
+                      label: 'SMI',
+                      value: Number(ledger.account.salesSmi ?? 0)
+                        ? fmtMoney(ledger.account.salesSmi ?? 0)
+                        : '—',
+                    },
                   ]
                 : []),
               {
