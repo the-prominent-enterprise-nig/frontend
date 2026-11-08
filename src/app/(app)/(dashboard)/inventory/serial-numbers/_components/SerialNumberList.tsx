@@ -226,7 +226,7 @@ export default function SerialNumberList({
     pickedCaravanKey,
     pickCaravan,
     groupSerials,
-  } = useSerialNumbers({ initialCaravanId })
+  } = useSerialNumbers({ initialCaravanId, viewerBranchId: session.branchId })
 
   // Nothing ticked means every class shows; the last class can't be unticked, so
   // the list never goes blank by accident.
