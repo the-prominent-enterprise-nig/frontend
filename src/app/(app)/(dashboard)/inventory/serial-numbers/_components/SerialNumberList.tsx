@@ -541,51 +541,6 @@ export default function SerialNumberList({
           )}
         </div>
 
-        {showTransfer && selection.selected.length > 0 && (
-          <div className="flex flex-wrap items-center gap-3 rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb] p-3">
-            <span className="text-[12.5px] font-medium text-[#3f1490]">
-              {selection.selected.length} selected
-            </span>
-            {showSelection && (
-              <button
-                type="button"
-                onClick={() => setIsConsignOpen(true)}
-                disabled={selection.mixedSources || selection.hasRepairUnits}
-                className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-[#4c1a9b] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Truck className="h-3.5 w-3.5" />
-                Consign to Caravan
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={openStockTransfer}
-              disabled={selection.mixedSources}
-              className="flex items-center gap-1.5 rounded-lg border border-[#5b21b6] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-[#f7f3fd] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <ArrowRightLeft className="h-3.5 w-3.5" />
-              Stock Transfer
-            </button>
-            <button
-              type="button"
-              onClick={selection.clear}
-              className="rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-white"
-            >
-              Clear
-            </button>
-            {selection.mixedSources && (
-              <span className="text-[12px] text-[#8a4b06]">
-                Tick units from one branch only — a transfer leaves from a single source.
-              </span>
-            )}
-            {showSelection && !selection.mixedSources && selection.hasRepairUnits && (
-              <span className="text-[12px] text-[#8a4b06]">
-                Units in repair can go on a Stock Transfer.
-              </span>
-            )}
-          </div>
-        )}
-
         {/* Table card */}
         {(!caravanView || caravanReady) && (
           <>
@@ -886,6 +841,52 @@ export default function SerialNumberList({
               </div>
             )}
           </>
+        )}
+
+        {/* Pinned to the bottom while scrolling the list, so the actions stay in reach. */}
+        {showTransfer && selection.selected.length > 0 && (
+          <div className="sticky bottom-4 z-20 flex flex-wrap items-center gap-3 rounded-[9px] bg-[#5b21b6] p-3 shadow-[0_8px_24px_rgba(63,20,144,0.35)]">
+            <span className="text-[12.5px] font-medium text-white">
+              {selection.selected.length} selected
+            </span>
+            {showSelection && (
+              <button
+                type="button"
+                onClick={() => setIsConsignOpen(true)}
+                disabled={selection.mixedSources || selection.hasRepairUnits}
+                className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Truck className="h-3.5 w-3.5" />
+                Consign to Caravan
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={openStockTransfer}
+              disabled={selection.mixedSources}
+              className="flex items-center gap-1.5 rounded-lg border border-white/70 bg-transparent px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+              Stock Transfer
+            </button>
+            <button
+              type="button"
+              onClick={selection.clear}
+              className="rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-white hover:bg-white/10"
+            >
+              Clear
+            </button>
+            {selection.mixedSources && (
+              <span className="text-[12px] text-[#fde68a]">
+                Tick units from one branch only — a transfer leaves from a single source.
+              </span>
+            )}
+            {showSelection && !selection.mixedSources && selection.hasRepairUnits && (
+              <span className="text-[12px] text-[#fde68a]">
+                Units in repair can go on a Stock Transfer.
+              </span>
+            )}
+          </div>
         )}
       </div>
 
