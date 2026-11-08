@@ -16,6 +16,10 @@ import {
   fmtMoney,
   fmtDate,
 } from '@/src/libs/data/AccountingV2Data'
+import ClearsBankField, {
+  clearsBankPayload,
+  type ClearsBankValue,
+} from '@/src/components/accounting/ClearsBankField'
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -76,6 +80,10 @@ export default function NewReceiptForm({
     reference: '',
     notes: '',
     bankAccountId: '',
+  })
+  const [clears, setClears] = useState<ClearsBankValue>({
+    clearedType: 'SAME_DATE',
+    clearedDate: '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -155,6 +163,8 @@ export default function NewReceiptForm({
       withholdingCertificateNo: form.withholdingCertificateNo || undefined,
       withholdingCertificateStatus: form.withholdingCertificateStatus || undefined,
       bankAccountId: form.bankAccountId || undefined,
+      // Only money that reached a bank clears one.
+      ...(requiresBankAccount && form.bankAccountId ? clearsBankPayload(clears) : {}),
     })
     setSaving(false)
     if (!res.success) {
@@ -432,6 +442,15 @@ export default function NewReceiptForm({
             )}
           </Field>
         </div>
+        {requiresBankAccount && form.bankAccountId && (
+          <ClearsBankField
+            id="receipt-clears"
+            value={clears}
+            onChange={setClears}
+            minDate={form.paymentDate}
+            disabled={!invoice}
+          />
+        )}
         {error && (
           <div className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">
             {error}

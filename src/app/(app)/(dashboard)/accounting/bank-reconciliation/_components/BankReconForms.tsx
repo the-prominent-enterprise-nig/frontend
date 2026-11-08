@@ -247,6 +247,31 @@ export function AdjustingForm({
   )
 }
 
+/** MMYY of a YYYY-MM-DD date — the period in a monthly control series. */
+function controlPeriod(ymd: string): string {
+  return /^\d{4}-\d{2}/.test(ymd) ? `${ymd.slice(5, 7)}${ymd.slice(2, 4)}` : 'MMYY'
+}
+
+/**
+ * A voucher control no. the system assigns on posting: the code, the month
+ * and year of the document's date, and that month's next running number —
+ * BRUD1126-001 for the first one dated November 2026. Shown, never typed.
+ */
+function GeneratedControlNo({ code, date }: { code: string; date: string }): React.ReactElement {
+  return (
+    <div>
+      <span className="block text-xs font-medium text-gray-600 mb-1">Voucher Control No.</span>
+      <div className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-600 tabular-nums">
+        {code}
+        {controlPeriod(date)}-###
+      </div>
+      <p className="mt-1 text-[12px] text-gray-500">
+        Assigned when you post: the next number for the credit date&apos;s month.
+      </p>
+    </div>
+  )
+}
+
 export function UnidentifiedCreditForm({
   accounts,
   onClose,
@@ -261,7 +286,6 @@ export function UnidentifiedCreditForm({
     amount: '',
     creditDate: manilaToday(),
     bankRef: '',
-    voucherControlNo: '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -275,7 +299,6 @@ export function UnidentifiedCreditForm({
       amount: Number(form.amount),
       creditDate: form.creditDate,
       bankRef: form.bankRef || undefined,
-      voucherControlNo: form.voucherControlNo.trim(),
     })
     setSaving(false)
     if (!res.success || !res.data?.journalEntryId) {
@@ -345,10 +368,7 @@ export function UnidentifiedCreditForm({
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </label>
-          <VoucherControlNoField
-            value={form.voucherControlNo}
-            onChange={(v) => setForm({ ...form, voucherControlNo: v })}
-          />
+          <GeneratedControlNo code="BRUD" date={form.creditDate} />
           {error && (
             <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
               {error}

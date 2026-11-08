@@ -16,6 +16,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       <ARInvoiceDetail
         id={id}
         canReleaseRetention={can(session, ACCOUNTING_PERMISSIONS.AR_INVOICES_PAY)}
+        canEditPayments={can(session, ACCOUNTING_PERMISSIONS.AR_INVOICES_PAY)}
         canAdjustRetention={can(session, ACCOUNTING_PERMISSIONS.RETENTION_ADJUST)}
       />
     </div>

@@ -299,7 +299,7 @@ export default function BankRecon({
                             ? []
                             : [
                                 // Only offered once the discrepancy is zero — until then the
-                                // worksheet is where cleared items get checked off.
+                                // worksheet shows what is still outstanding.
                                 ...(!r.reconciled && !awaiting && isZero
                                   ? [
                                       {

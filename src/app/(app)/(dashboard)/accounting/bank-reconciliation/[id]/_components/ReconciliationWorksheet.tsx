@@ -29,11 +29,38 @@ const SOURCE_LABELS: Record<BankReconciliationLineSourceType, string> = {
   EXPENSE_PAYMENT: 'Expense Payment',
 }
 
+/**
+ * Where a line's clearing date is set — the record a person opens to change
+ * it. Bank Reconciliation itself has no clearing step (client, 2026-11-07):
+ * each source document records when its money clears.
+ */
+function sourceHref(l: BankReconciliationLine): string | null {
+  const id = l.sourceDocumentId
+  if (!id) return null
+  switch (l.sourceType) {
+    case 'AR_PAYMENT':
+      return `/accounting/ar-invoices/${id}`
+    case 'AP_PAYMENT':
+      return `/accounting/ap-bills/payments/new?edit=${id}`
+    case 'EXPENSE_PAYMENT':
+      return `/accounting/expenses/${id}`
+    case 'FUND_TRANSFER_OUT':
+    case 'FUND_TRANSFER_IN':
+      return `/accounting/fund-transfers/${id}`
+    case 'POS_DEPOSIT':
+      return '/pos/undeposited-funds'
+    default:
+      return null
+  }
+}
+
 // Scenario 42 — the reconciliation worksheet. Statement Balance and System
 // Balance both come from the backend (typed in once at creation, computed
-// respectively); everything below is generated. Checking a line off against
-// the real bank statement PATCHes it immediately (persisted per-line, not
-// batched at Complete) so progress survives a refresh mid-session.
+// respectively); everything below is generated. Nothing is ticked here: an
+// item is cleared when its own record's clearing date (a transfer's Clearing
+// Date, an expense's / voucher's / payment's Cleared Date, a deposit cleared
+// on Undeposited Funds) is on or before the statement date. The backend
+// re-reads those dates every time the worksheet is opened.
 export default function ReconciliationWorksheet({ id }: { id: string }) {
   // Shown only to those the backend lets through (UAT review 2026-11-04).
   const { data: me } = useMe()
@@ -67,27 +94,6 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
   useEffect(() => {
     load()
   }, [load])
-
-  const toggleLine = async (line: BankReconciliationLine) => {
-    if (!rec || rec.reconciled) return
-    const nextChecked = !line.checked
-    // Optimistic update — reverted below if the PATCH fails.
-    setRec({
-      ...rec,
-      lines: rec.lines.map((l) => (l.id === line.id ? { ...l, checked: nextChecked } : l)),
-      pendingDeposits: (rec.pendingDeposits ?? []).map((l) =>
-        l.id === line.id ? { ...l, checked: nextChecked } : l
-      ),
-      pendingWithdrawals: (rec.pendingWithdrawals ?? []).map((l) =>
-        l.id === line.id ? { ...l, checked: nextChecked } : l
-      ),
-    })
-    const res = await BankAccounts.toggleReconciliationLine(id, line.id, nextChecked)
-    if (!res.success) {
-      setError(res.message || res.error || 'Failed to update line')
-      load()
-    }
-  }
 
   const openEdit = () => {
     if (!rec) return
@@ -125,8 +131,7 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
     if (!rec || draftBalance === '' || draftBalance === '-') return
     setSavingDraftBalance(true)
     setError(null)
-    // A different date rebuilds the worksheet as of that date (ticks are kept);
-    // the same date just records the balance.
+    // A different date rebuilds the worksheet as of that date.
     const res = await BankAccounts.updateReconciliation(id, {
       statementDate: draftDate || String(rec.statementDate).slice(0, 10),
       statementBalance: Number(draftBalance),
@@ -288,8 +293,8 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
           <div>
             <h2 className="text-sm font-semibold text-prominent-purple-900">Edit Reconciliation</h2>
             <p className="text-xs text-gray-500">
-              Changing the statement date regenerates the pending items below from the new cutoff.
-              Anything you&apos;ve already ticked stays ticked if it&apos;s still in range.
+              Changing the statement date regenerates the pending items below from the new cutoff,
+              and what has cleared by then.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -420,17 +425,15 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
 
       <LineSection
         title="Pending Deposits"
-        subtitle="Tick each one that appears on the bank statement (cleared). Unticked items are deposits in transit."
+        subtitle="Cleared when the record's own clearing date is on or before the statement date. The rest are deposits in transit — set the date on the record itself once it clears."
         lines={pendingDeposits}
-        readOnly={rec.reconciled}
-        onToggle={toggleLine}
+        statementDate={rec.statementDate}
       />
       <LineSection
         title="Pending Withdrawals"
-        subtitle="Tick each one that appears on the bank statement (cleared). Unticked items are outstanding checks/withdrawals."
+        subtitle="Cleared when the record's own clearing date is on or before the statement date. The rest are outstanding checks/withdrawals — set the date on the record itself once it clears."
         lines={pendingWithdrawals}
-        readOnly={rec.reconciled}
-        onToggle={toggleLine}
+        statementDate={rec.statementDate}
       />
 
       {!rec.reconciled && (
@@ -443,8 +446,9 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
           ) : (
             !isZero && (
               <p className="text-xs text-amber-700">
-                Tick every item that cleared on the statement. Mark Reconciled unlocks only at a
-                ₱0.00 discrepancy.
+                Mark Reconciled unlocks only at a ₱0.00 discrepancy. Check that every item on the
+                statement has its clearing date set on its own record, or record the difference as
+                an adjusting entry or unidentified bank credit.
               </p>
             )
           )}
@@ -700,18 +704,44 @@ export function BankLedgerView({
   )
 }
 
+function ClearedStatus({
+  line,
+  statementDate,
+}: {
+  line: BankReconciliationLine
+  statementDate: string
+}) {
+  if (line.checked) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+        Cleared{line.clearedDate ? ` ${fmtDate(line.clearedDate)}` : ''}
+      </span>
+    )
+  }
+  if (line.clearedDate && line.clearedDate.slice(0, 10) > statementDate.slice(0, 10)) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+        Clears {fmtDate(line.clearedDate)}
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+      No cleared date yet
+    </span>
+  )
+}
+
 function LineSection({
   title,
   subtitle,
   lines,
-  readOnly,
-  onToggle,
+  statementDate,
 }: {
   title: string
   subtitle: string
   lines: BankReconciliationLine[]
-  readOnly: boolean
-  onToggle: (line: BankReconciliationLine) => void
+  statementDate: string
 }) {
   return (
     <div className="mt-6">
@@ -721,38 +751,51 @@ function LineSection({
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs uppercase text-gray-600">
             <tr>
-              <th className="px-3 py-2 text-left w-16">Cleared</th>
+              <th className="px-3 py-2 text-left">Status</th>
               <th className="px-3 py-2 text-left">Date</th>
               <th className="px-3 py-2 text-left">Type</th>
               <th className="px-3 py-2 text-left">Reference</th>
               <th className="px-3 py-2 text-right">Amount</th>
+              <th className="px-3 py-2 text-right">
+                <span className="sr-only">Record</span>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {lines.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-3 py-8 text-center text-gray-400">
+                <td colSpan={6} className="px-3 py-8 text-center text-gray-400">
                   Nothing pending.
                 </td>
               </tr>
             ) : (
-              lines.map((l) => (
-                <tr key={l.id} className={l.checked ? 'bg-emerald-50/40' : undefined}>
-                  <td className="px-3 py-2">
-                    <input
-                      type="checkbox"
-                      checked={l.checked}
-                      disabled={readOnly}
-                      onChange={() => onToggle(l)}
-                      className="h-4 w-4 rounded border-gray-300"
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-xs">{fmtDate(l.date)}</td>
-                  <td className="px-3 py-2 text-xs text-gray-500">{SOURCE_LABELS[l.sourceType]}</td>
-                  <td className="px-3 py-2 text-xs">{l.reference || '—'}</td>
-                  <td className="px-3 py-2 text-right">{fmtMoney(l.amount)}</td>
-                </tr>
-              ))
+              lines.map((l) => {
+                const href = sourceHref(l)
+                return (
+                  <tr key={l.id} className={l.checked ? 'bg-emerald-50/40' : undefined}>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <ClearedStatus line={l} statementDate={statementDate} />
+                    </td>
+                    <td className="px-3 py-2 text-xs">{fmtDate(l.date)}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500">
+                      {SOURCE_LABELS[l.sourceType]}
+                    </td>
+                    <td className="px-3 py-2 text-xs">{l.reference || '—'}</td>
+                    <td className="px-3 py-2 text-right">{fmtMoney(l.amount)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {href && (
+                        <Link
+                          href={href}
+                          className="text-xs font-medium text-purple-700 hover:underline"
+                          title="Open the record to see or change when it clears"
+                        >
+                          Open
+                        </Link>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>
