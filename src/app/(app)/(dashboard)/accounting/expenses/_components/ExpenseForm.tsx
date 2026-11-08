@@ -406,8 +406,8 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
     if (!expenseId) return
     Expenses.get(expenseId).then((res) => {
       if (res.success && res.data) {
-        if (res.data.status !== 'DRAFT') {
-          setLoadError('Only DRAFT expenses can be edited.')
+        if (res.data.status === 'VOID') {
+          setLoadError('A voided expense cannot be edited.')
         } else {
           setInitial(res.data)
         }
@@ -446,7 +446,15 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
       inventoryAccounts={inventoryAccounts}
       bankAccounts={bankAccounts}
       mappings={mappings}
-      onSaved={() => router.push('/accounting/expenses')}
+      // A recorded expense goes back to its own page, where the journal entry
+      // it now carries can be checked; a draft goes back to the list.
+      onSaved={() =>
+        router.push(
+          initial?.status === 'RECORDED'
+            ? `/accounting/expenses/${initial.id}`
+            : '/accounting/expenses'
+        )
+      }
     />
   )
 }
@@ -1155,6 +1163,10 @@ function ExpenseFormFields({
   // the choice rides in a ref rather than state (no re-render between the
   // click and requestSubmit reading it).
   const submitModeRef = useRef<'draft' | 'record'>('draft')
+  // Already posted to the GL: there is nothing left to record, and Save writes
+  // the change straight through (the server reverses and re-posts the journal
+  // entry when the change reaches the books).
+  const isRecorded = initial?.status === 'RECORDED'
   const submitAs = (mode: 'draft' | 'record') => {
     submitModeRef.current = mode
     formRef.current?.requestSubmit()
@@ -1404,7 +1416,9 @@ function ExpenseFormFields({
               {initial ? 'Edit Expense' : 'New Expense'}
             </h1>
             <p className="mt-1 text-sm text-gray-500">
-              Record and categorize a business expense. Recording posts a journal entry to the GL.
+              {isRecorded
+                ? 'This expense is already recorded. A change that reaches the books reverses its journal entry and posts a new one — the ledger keeps both.'
+                : 'Record and categorize a business expense. Recording posts a journal entry to the GL.'}
             </p>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-2 pt-1">
@@ -1415,23 +1429,38 @@ function ExpenseFormFields({
               >
                 Cancel
               </Link>
-              <button
-                type="button"
-                onClick={() => submitAs('draft')}
-                disabled={saving}
-                className="flex items-center gap-2 rounded-lg border border-prominent-purple-700 px-4 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-60"
-              >
-                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                {saving ? 'Saving...' : 'Save draft'}
-              </button>
-              <button
-                type="button"
-                onClick={() => submitAs('record')}
-                disabled={saving}
-                className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
-              >
-                Record
-              </button>
+              {isRecorded ? (
+                <button
+                  type="button"
+                  data-testid="expense-save-changes"
+                  onClick={() => submitAs('draft')}
+                  disabled={saving}
+                  className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+                >
+                  {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {saving ? 'Saving...' : 'Save changes'}
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => submitAs('draft')}
+                    disabled={saving}
+                    className="flex items-center gap-2 rounded-lg border border-prominent-purple-700 px-4 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-60"
+                  >
+                    {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {saving ? 'Saving...' : 'Save draft'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => submitAs('record')}
+                    disabled={saving}
+                    className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+                  >
+                    Record
+                  </button>
+                </>
+              )}
             </div>
             {expenseChip && (
               <span
@@ -1457,6 +1486,17 @@ function ExpenseFormFields({
           </div>
         )}
       </div>
+
+      {/* Said up front, not after Save refuses: this expense settled a special
+          account, so what it paid and to whom can't move. */}
+      {isRecorded && initial?.editLock && (
+        <div
+          data-testid="expense-edit-lock"
+          className="mt-4 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800"
+        >
+          {initial.editLock}
+        </div>
+      )}
 
       <form ref={formRef} id={FORM_ID} onSubmit={submit} className="mt-6 space-y-6">
         {/* ① Header Information — the client's field order: Date, Cleared, Paid from,

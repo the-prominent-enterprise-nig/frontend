@@ -2265,6 +2265,10 @@ export interface BusinessExpense {
   branch?: { id: string; name: string } | null
   status: BusinessExpenseStatus
   journalEntryId?: string | null
+  /** Set on a RECORDED expense whose payee, accounts and amounts are frozen
+   * (it settled a special account); the text says why. Description, notes,
+   * voucher number and cost center stay editable. */
+  editLock?: string | null
 }
 /** Print-ready expense voucher — same envelope shape as APBillDocument.
  * Also backs the read-only detail view, so it carries record-only fields
