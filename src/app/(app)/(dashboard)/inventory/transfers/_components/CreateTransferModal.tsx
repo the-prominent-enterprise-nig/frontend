@@ -146,9 +146,11 @@ function collapseLinesForEdit(
 // Each branch has exactly one warehouse, so this picker is really choosing a
 // branch — display the branch's own name rather than the warehouse's
 // auto-generated "{branch} Warehouse" name. A caravan names its event and
-// host; one whose event is over says so, since it can still be a source.
+// host; one whose event is over says so — while it's still open it can be a
+// source, for sending its leftover stock back.
 function branchLabel(wh: WarehouseSummary): string {
   const label = warehouseLabel(wh)
+  if (wh.branch?.closedAt) return `${label} (closed)`
   return isCaravanEnded(wh.branch) ? `${label} (ended)` : label
 }
 
@@ -750,8 +752,13 @@ export default function CreateTransferModal({
                               // The branch picked as the destination can't
                               // also be the source — except when it is
                               // sending to a caravan it hosts.
+                              // A closed caravan never appears: head office
+                              // can only close one that's empty with no open
+                              // transfer, so it has nothing to send and no
+                              // request can still point at it.
                               options={warehouses
                                 .filter((wh) => isCaravanDestination || wh.id !== toId)
+                                .filter((wh) => !wh.branch?.closedAt)
                                 .map((wh) => ({ value: wh.id, label: branchLabel(wh) }))}
                             />
                           )}
@@ -993,6 +1000,7 @@ export default function CreateTransferModal({
                     }}
                     placeholder="Add item — search name or SKU…"
                     stockWarehouseId={fromId || undefined}
+                    stockFromOtherBranch
                   />
                 </div>
               </div>

@@ -6,6 +6,7 @@ import { getItem } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/ge
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import { getStockBalances } from '@/src/app/(app)/(dashboard)/inventory/stock/_actions/get-stock-balances'
 import { getSupplierItems } from '@/src/app/(app)/(dashboard)/accounting/suppliers/_actions/get-supplier-items'
+import { getSourceStock } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/get-source-stock'
 
 export type ItemSearchMeta = {
   costPrice: number | null
@@ -32,6 +33,11 @@ type Props = {
   /** Lists items with available stock at this warehouse first, each with
    * its count — for pickers that draw from one source (Stock Transfer). */
   stockWarehouseId?: string
+  /** Reads `stockWarehouseId`'s stock through the transfer source-stock
+   * endpoint instead of stock balances — for a Stock Request, whose source is
+   * another branch that balances (locked to the caller's own branch) can't
+   * see. */
+  stockFromOtherBranch?: boolean
   /** Drops serial-tracked items from the results — for a picker whose flow
    * has no way to capture the arriving unit's actual serial (e.g. a
    * transfer's unlisted-item receipt line, which only records a bare
@@ -110,7 +116,12 @@ async function searchCatalog(
 /** Items with available stock at the warehouse, most units first. Serial-
  * tracked filtering happens later in searchStockedFirst against the catalog,
  * since the stock balance row's item shape doesn't carry isSerialTracked. */
-async function searchStocked(query: string, warehouseId: string): Promise<SearchComboboxOption[]> {
+async function searchStocked(
+  query: string,
+  warehouseId: string,
+  fromOtherBranch?: boolean
+): Promise<SearchComboboxOption[]> {
+  if (fromOtherBranch) return searchSourceStock(query, warehouseId)
   const res = await getStockBalances({ warehouseId, search: query || undefined, limit: 50 })
   const stocked = new Map<string, SearchComboboxOption & { qty: number }>()
   for (const row of res.data?.data ?? []) {
@@ -126,13 +137,28 @@ async function searchStocked(query: string, warehouseId: string): Promise<Search
   return [...stocked.values()].sort((a, b) => b.qty - a.qty).map(({ qty: _qty, ...o }) => o)
 }
 
+/** Same "N in stock" rows, from another branch's warehouse (already sorted). */
+async function searchSourceStock(
+  query: string,
+  warehouseId: string
+): Promise<SearchComboboxOption[]> {
+  const res = await getSourceStock(warehouseId, query)
+  return (res.data ?? []).map((row) => ({
+    id: row.itemId,
+    primary: row.name,
+    secondary: row.sku,
+    badge: `${row.availableQty} in stock`,
+  }))
+}
+
 async function searchStockedFirst(
   query: string,
   warehouseId: string,
-  excludeSerialTracked?: boolean
+  excludeSerialTracked?: boolean,
+  fromOtherBranch?: boolean
 ): Promise<SearchComboboxOption[]> {
   const [stocked, catalog] = await Promise.all([
-    searchStocked(query, warehouseId),
+    searchStocked(query, warehouseId, fromOtherBranch),
     searchCatalog(query, excludeSerialTracked),
   ])
   const catalogById = new Map(catalog.map((o) => [o.id, o]))
@@ -158,6 +184,7 @@ export function ItemSearchCombobox({
   placeholder = 'Search item by name or SKU…',
   disabled,
   stockWarehouseId,
+  stockFromOtherBranch,
   excludeSerialTracked,
   supplierId,
 }: Props) {
@@ -174,7 +201,7 @@ export function ItemSearchCombobox({
         supplierId
           ? `items-search-supplier-${supplierId}`
           : stockWarehouseId
-            ? `items-search-stock-${stockWarehouseId}`
+            ? `items-search-stock-${stockFromOtherBranch ? 'source-' : ''}${stockWarehouseId}`
             : 'items-search'
       }
       placeholder={placeholder}
@@ -184,7 +211,12 @@ export function ItemSearchCombobox({
         supplierId
           ? searchSupplierFirst(query, supplierId, excludeSerialTracked)
           : stockWarehouseId
-            ? searchStockedFirst(query, stockWarehouseId, excludeSerialTracked)
+            ? searchStockedFirst(
+                query,
+                stockWarehouseId,
+                excludeSerialTracked,
+                stockFromOtherBranch
+              )
             : searchCatalog(query, excludeSerialTracked)
       }
     />
