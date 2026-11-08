@@ -270,7 +270,7 @@ export default function StockBalanceList({
 
           {/* Operations — the client's name for region. */}
           <SearchableSelect
-            className="w-[216px]"
+            className="min-w-[180px] flex-1"
             value={region ?? ''}
             onChange={(v) => setRegion((v || undefined) as 'panay' | 'negros' | undefined)}
             placeholder="All Operations"
@@ -283,7 +283,7 @@ export default function StockBalanceList({
               warehouses. */}
           <SearchableSelect
             multiple
-            className="w-[220px]"
+            className="min-w-[200px] flex-1"
             value={locations}
             onChange={setLocations}
             placeholder="All Branches"
@@ -295,7 +295,7 @@ export default function StockBalanceList({
           />
 
           <CategorySelect
-            className="w-[200px]"
+            className="min-w-[180px] flex-1"
             value={categoryId}
             onChange={setCategoryId}
             options={categoryOptions}
@@ -304,7 +304,7 @@ export default function StockBalanceList({
 
           {/* Stock state — settled stock vs units still on an open transfer. */}
           <SearchableSelect
-            className="w-[170px]"
+            className="min-w-[160px] flex-1"
             value={stockStatus ?? ''}
             onChange={(v) => setStockStatus((v || undefined) as StockStateFilter | undefined)}
             placeholder="All Stock"
@@ -317,7 +317,7 @@ export default function StockBalanceList({
             <button
               type="button"
               onClick={resetFilters}
-              className="ml-auto flex items-center gap-1.5 rounded-lg px-[11px] py-[6px] text-[12.5px] text-[#5b21b6] hover:bg-[#f1ebfb]"
+              className="ml-auto flex shrink-0 items-center gap-1.5 rounded-lg px-[11px] py-[6px] text-[12.5px] text-[#5b21b6] hover:bg-[#f1ebfb]"
             >
               <X className="h-3.5 w-3.5" />
               Clear {activeFilterCount > 0 ? activeFilterCount : ''}{' '}

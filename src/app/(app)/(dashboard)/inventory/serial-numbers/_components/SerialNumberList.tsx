@@ -520,7 +520,7 @@ export default function SerialNumberList({
 
           {/* Status — with the other filters, so Clear resets it too. */}
           <SearchableSelect
-            className="w-[150px]"
+            className="min-w-[150px] flex-1"
             value={statusFilter ?? ''}
             onChange={(v) => setStatusFilter((v || undefined) as SerialStatus | undefined)}
             placeholder="All statuses"
@@ -532,7 +532,7 @@ export default function SerialNumberList({
           {caravanView && (
             <SearchableSelect
               multiple
-              className="w-[200px]"
+              className="min-w-[200px] flex-1"
               value={caravanHostIds}
               onChange={setCaravanHostIds}
               placeholder="All host branches"
@@ -545,7 +545,7 @@ export default function SerialNumberList({
 
           {caravanView ? (
             <SearchableSelect
-              className="w-[320px]"
+              className="min-w-[260px] flex-[2]"
               value={caravanId ?? ''}
               onChange={(v) => setCaravanId(v || undefined)}
               placeholder="All caravans"
@@ -554,12 +554,12 @@ export default function SerialNumberList({
               options={caravanOptions}
             />
           ) : seesAllLocations ? (
-            <LocationFilters filter={locationFilter} chrome={CONTROL_CHROME} />
+            <LocationFilters filter={locationFilter} chrome={CONTROL_CHROME} fill />
           ) : null}
 
           {!caravanView && (
             <SearchableSelect
-              className="w-[150px]"
+              className="min-w-[150px] flex-1"
               value={brandFilter ?? ''}
               onChange={(v) => setBrandFilter(v || undefined)}
               placeholder="All brands"
@@ -573,7 +573,7 @@ export default function SerialNumberList({
             <button
               type="button"
               onClick={resetFilters}
-              className="ml-auto flex items-center gap-1.5 rounded-lg px-[11px] py-[6px] text-[12.5px] text-[#5b21b6] hover:bg-[#f1ebfb]"
+              className="ml-auto flex shrink-0 items-center gap-1.5 rounded-lg px-[11px] py-[6px] text-[12.5px] text-[#5b21b6] hover:bg-[#f1ebfb]"
             >
               <X className="h-3.5 w-3.5" />
               Clear
