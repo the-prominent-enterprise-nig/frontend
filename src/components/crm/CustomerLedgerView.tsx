@@ -213,10 +213,19 @@ export default function CustomerLedgerView({
         ? ledger.transactions[0]
         : undefined
 
+    // The screen lists the customer's acknowledgement receipts only when it is
+    // showing everything (a picked purchase leaves them out, and the plan view
+    // beneath it with them). The paper form has to say what the screen says, so
+    // it asks for them on exactly the same terms — and a plan that is not the
+    // customer's only purchase never takes them, or each plan would claim them.
+    const withCustomerReceipts = !transactionId && ledger.transactions.length === 1
+
     let html: string | null = null
     if (singlePlan?.kind === 'inhouse') {
       try {
-        const res = await installmentAccountsApi.getLedger(singlePlan.id.slice('acct:'.length))
+        const res = await installmentAccountsApi.getLedger(singlePlan.id.slice('acct:'.length), {
+          withCustomerReceipts,
+        })
         if (res.success && res.data) {
           html = buildCustomerLedgerHtml(res.data, { showCommission: canViewCommission })
         }
