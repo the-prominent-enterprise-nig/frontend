@@ -60,7 +60,12 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
   const queryClient = useQueryClient()
 
   const [page, setPage] = useState(1)
-  const [limit] = useState(20)
+  const [limit, setLimitState] = useState(25)
+  // A new page size starts back on page 1, or the current page may not exist.
+  const setLimit = (next: number): void => {
+    setLimitState(next)
+    setPage(1)
+  }
   const [statusFilter, setStatusFilter] = useState<TransferStatus | undefined>(undefined)
   // Scenario 56 — multi-select; each OR's within itself.
   const [fromWarehouseFilter, setFromWarehouseFilter] = useState<string[]>([])
@@ -537,6 +542,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
 
     page,
     setPage,
+    limit,
+    setLimit,
 
     selectedTransfer,
     setSelectedTransfer,

@@ -63,7 +63,15 @@ function MetaPair({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-export default function PurchaseOrderSheet({ doc }: { doc: PurchaseOrderPrintDocument }) {
+export default function PurchaseOrderSheet({
+  doc,
+  showPrices = true,
+}: {
+  doc: PurchaseOrderPrintDocument
+  /** Prices (unit, line and total): roles that may see item cost
+   * (see canSeeSupplierPrices) only. Everyone else gets quantities. */
+  showPrices?: boolean
+}) {
   const po = doc.document
   const enterprise = doc.enterprise
   const lines = po.lines ?? []
@@ -145,8 +153,12 @@ export default function PurchaseOrderSheet({ doc }: { doc: PurchaseOrderPrintDoc
               <th className={`${TH} w-[32px]`}>#</th>
               <th className={TH}>Item</th>
               <th className={`${TH} w-[8%]`}>Qty</th>
-              <th className={`${TH} w-[13%]`}>Unit price</th>
-              <th className={`${TH} w-[14%]`}>Total</th>
+              {showPrices && (
+                <>
+                  <th className={`${TH} w-[13%]`}>Unit price</th>
+                  <th className={`${TH} w-[14%]`}>Total</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -161,13 +173,17 @@ export default function PurchaseOrderSheet({ doc }: { doc: PurchaseOrderPrintDoc
                   <td className={TD}>
                     {l.item?.name ?? '—'}
                     {l.isFreebie && ' (Freebie)'}
-                    {discountNote && (
+                    {showPrices && discountNote && (
                       <p className="mt-0.5 text-[11px] text-gray-600">{discountNote}</p>
                     )}
                   </td>
                   <td className={`${TD} text-right tabular-nums`}>{qty}</td>
-                  <td className={`${TD} text-right tabular-nums`}>{fmtPeso(unitPrice)}</td>
-                  <td className={`${TD} text-right tabular-nums`}>{fmtPeso(lineTotal)}</td>
+                  {showPrices && (
+                    <>
+                      <td className={`${TD} text-right tabular-nums`}>{fmtPeso(unitPrice)}</td>
+                      <td className={`${TD} text-right tabular-nums`}>{fmtPeso(lineTotal)}</td>
+                    </>
+                  )}
                 </tr>
               )
             })}
@@ -175,16 +191,18 @@ export default function PurchaseOrderSheet({ doc }: { doc: PurchaseOrderPrintDoc
         </table>
       </div>
 
-      <div className="mt-3 flex justify-end">
-        <table className="border-collapse text-[12.5px] font-bold">
-          <tbody>
-            <tr>
-              <td className={`${TD} text-right`}>Total</td>
-              <td className={`${TD} min-w-[120px] text-right tabular-nums`}>{fmtPeso(total)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      {showPrices && (
+        <div className="mt-3 flex justify-end">
+          <table className="border-collapse text-[12.5px] font-bold">
+            <tbody>
+              <tr>
+                <td className={`${TD} text-right`}>Total</td>
+                <td className={`${TD} min-w-[120px] text-right tabular-nums`}>{fmtPeso(total)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="mt-10 grid gap-10 sm:grid-cols-2">
         <div className="max-w-xs">

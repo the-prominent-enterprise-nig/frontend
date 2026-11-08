@@ -34,6 +34,9 @@ export interface Slip {
   /** The day this slip was banked, `YYYY-MM-DD`. Slips on different days post
    * separate journal entries. */
   depositDate: string
+  /** The posted deposit this slip belongs to, when a correction spans a
+   * session's several deposits. Absent on a slip added in the editor. */
+  depositId?: string
 }
 
 /** The slips' own numbers, joined — the deposit's reference, capped at the
@@ -277,17 +280,28 @@ export function toLineInputs(slips: Slip[]): PosDepositLineInput[] {
 /** A slip to a bank, not a cash turnover to a branch (Scenario 83). */
 export const isBankLine = (l: PosDepositLine): boolean => !l.turnoverToBranch
 
+/** The branch's Cash on Hand fund, if one is set up. A slip from it posts
+ * exactly as a slip naming no fund did — it empties the branch's undeposited
+ * POS cash — so it stands in for one recorded before funds could be picked. */
+export function cashOnHandFundId(accounts: BankAccountOption[]): string {
+  return accounts.find((a) => a.isActive && a.accountType === 'Cash')?.id ?? ''
+}
+
 /** A recorded deposit's slips, back in the editor's shape. A slip with no date
  * of its own takes the deposit's. */
-export function slipsFromLines(lines: PosDepositLine[], depositDate: string): Slip[] {
+export function slipsFromLines(
+  lines: PosDepositLine[],
+  depositDate: string,
+  /** What a slip recorded against 1-01-010 itself — before only its funds
+   * could be picked — opens with: Cash on Hand, the same posting. */
+  cashFundId = ''
+): Slip[] {
   // Scenario 83 — a cash turnover is not a bank slip; see turnoversFromLines.
   return lines.filter(isBankLine).map((l) => ({
     bankAccountId: l.bankAccount?.id ?? '',
     amount: String(Number(l.amount)),
-    // A slip recorded against 1-01-010 itself, before only its funds could
-    // be picked, opens with Deposit from blank for accounting to choose.
     clearsAccountId: l.clearsAccount?.id ?? '',
-    clearsBankAccountId: l.clearsBankAccount?.id ?? '',
+    clearsBankAccountId: l.clearsBankAccount?.id ?? (l.clearsAccount ? '' : cashFundId),
     note: l.note ?? '',
     reference: l.reference ?? '',
     depositDate: (l.depositDate ?? depositDate).slice(0, 10),

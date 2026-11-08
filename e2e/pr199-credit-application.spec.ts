@@ -1,11 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import {
-  clickStable,
-  deleteCustomers,
-  fillPhoneStable,
-  gotoReady,
-  sweepE2ECustomers,
-} from './utils'
+import { deleteCustomers, fillPhoneStable, gotoReady, sweepE2ECustomers } from './utils'
 import {
   fillTheRest,
   getApplication,
@@ -102,21 +96,21 @@ test.describe('PR #199 — credit application', () => {
     customerIds.push(withBirthday.id, without.id)
 
     await openNewApplication(page, withBirthday.name)
-    const header = page.getByRole('button', { name: /Customer Profile/ })
+    // Nov UAT — the Customer Profile is no longer a collapsible button; its
+    // header is plain and the fields are always shown.
+    const header = page.getByTestId('customer-profile-header')
     await expect(header).toBeVisible({ timeout: 15_000 })
     // The header lists every gap ("Missing civil status, gender, … — confirm
     // or add"); birthdate must not be one of them.
     await expect(header).toContainText('Missing', { timeout: 15_000 })
     await expect(header).not.toContainText('birthdate')
-    await clickStable(header, page.locator('label', { hasText: /^Birthdate/ }))
     await expect(input(page, /^Birthdate/)).toHaveValue('1990-09-21')
 
     // Control: a customer genuinely without one is still flagged.
     await openNewApplication(page, without.name)
-    await expect(page.getByRole('button', { name: /Customer Profile/ })).toContainText(
-      /Missing .*birthdate/,
-      { timeout: 15_000 }
-    )
+    await expect(page.getByTestId('customer-profile-header')).toContainText(/Missing .*birthdate/, {
+      timeout: 15_000,
+    })
   })
 
   test('the co-maker row asks Role, then Relationship to applicant — once (point 4)', async ({

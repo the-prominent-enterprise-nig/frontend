@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ChevronRight, Loader2, Printer, RefreshCw, X } from 'lucide-react'
 import { Reports, fmtMoney, fmtDate } from '@/src/libs/data/AccountingV2Data'
+import { useSeesSupplierPrices } from '@/src/hooks/useSeesSupplierPrices'
 import { printReceivingReportDocument } from '@/src/libs/print/printInventoryDocument'
 import ReceivingReportSheet, { type ReceivingReportDocument } from './ReceivingReportSheet'
 import { locationLabel } from '@/src/libs/format/locationLabel'
@@ -29,6 +30,7 @@ interface ReceivingReportRow {
 }
 
 export default function ReceivingReportsList() {
+  const showPrices = useSeesSupplierPrices()
   const [rows, setRows] = useState<ReceivingReportRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -183,7 +185,7 @@ export default function ReceivingReportsList() {
               </h3>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => printReceivingReportDocument(preview.doc)}
+                  onClick={() => printReceivingReportDocument(preview.doc, { showPrices })}
                   className="flex items-center gap-1.5 rounded-lg bg-prominent-orange-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-prominent-orange-700"
                 >
                   <Printer className="w-3.5 h-3.5" />
@@ -215,7 +217,7 @@ export default function ReceivingReportsList() {
                 </span>
               </div>
               <div className="rounded-lg border border-gray-200">
-                <ReceivingReportSheet doc={preview.doc} />
+                <ReceivingReportSheet doc={preview.doc} showPrices={showPrices} />
               </div>
             </div>
           </div>

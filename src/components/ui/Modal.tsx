@@ -114,6 +114,8 @@ interface ConfirmDialogProps {
   confirmLabel?: string
   cancelLabel?: string
   loading?: boolean
+  /** Holds the confirm button back — a form in the message is incomplete. */
+  confirmDisabled?: boolean
   destructive?: boolean
   /** Background classes for the confirm button when a screen's own primary
    * colour should carry over (Stock Transfer's purple). Overrides the
@@ -130,6 +132,7 @@ export function ConfirmDialog({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   loading,
+  confirmDisabled = false,
   destructive,
   confirmColorClassName,
   onConfirm,
@@ -154,7 +157,7 @@ export function ConfirmDialog({
           <button
             type="button"
             onClick={onConfirm}
-            disabled={loading}
+            disabled={loading || confirmDisabled}
             className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
               confirmColorClassName ??
               (destructive
