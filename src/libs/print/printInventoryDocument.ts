@@ -1,10 +1,11 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import {
-  meaningfulSerialReason,
+  serialCorrectionReason,
   splitUnitLabel,
   wrongUnitBySerial,
 } from '@/src/libs/inventory/wrong-unit-notes'
+import { ledgerScheme } from '@/src/libs/format/ledgerScheme'
 import { MANILA_TZ, manilaDateOf, manilaMonthOf } from '@/src/libs/format/manila-date'
 import {
   receivingReportSourceName,
@@ -89,7 +90,7 @@ export function printInventoryDocument(
  */
 export function buildReceivingReportHtml(
   data: unknown,
-  opts: { showAmounts?: boolean } = {}
+  opts: { showAmounts?: boolean; showPrices?: boolean } = {}
 ): string {
   const doc = data as PrintDocumentEnvelope
   const rr = doc.document as Record<string, unknown>
@@ -98,7 +99,10 @@ export function buildReceivingReportHtml(
   // Costs reach the document only for whoever may see them — the Business
   // Owner on the inventory copy, Accounting on its own — so the amounts
   // print whenever it carries them, quantities only otherwise.
-  const { showAmounts = lines.some((l) => l.unitCost != null) } = opts
+  // `showPrices: false` (anyone but roles that may see item cost
+  // (see canSeeSupplierPrices)) prints quantities only: no unit cost, amounts or totals.
+  const showAmounts =
+    opts.showPrices !== false && (opts.showAmounts ?? lines.some((l) => l.unitCost != null))
 
   const fmtDate = (v: unknown) =>
     v ? new Date(v as string).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
@@ -291,7 +295,7 @@ export function buildReceivingReportHtml(
 
 export function printReceivingReportDocument(
   data: unknown,
-  opts: { showAmounts?: boolean } = {}
+  opts: { showAmounts?: boolean; showPrices?: boolean } = {}
 ): void {
   const win = window.open('', '_blank', 'width=950,height=750')
   if (!win) return
@@ -584,7 +588,7 @@ export function buildStockTransferHtml(data: unknown): string {
     const original = (l.receiptCorrectedFromSerial as { serialNumber?: string } | null)
       ?.serialNumber
     if (original) {
-      const reason = meaningfulSerialReason(l.receiptCorrectionReason as string | null | undefined)
+      const reason = serialCorrectionReason(l.receiptCorrectionReason as string | null | undefined)
       return `${esc(serial)}<div class="wrong-unit">Wrong serial: dispatched ${esc(original)}${reason ? ` (reason: ${esc(reason)})` : ''}</div>`
     }
     const main =
@@ -787,7 +791,10 @@ function buildPurchaseOrderHtml(
   // themselves (those live on the goods receipt) — pass in a
   // purchaseOrderLineId -> serials map (see get-purchase-order-receipts.ts)
   // once the PO is closed, so a fully-received PO's printout can show them.
-  serialsByLineId?: Record<string, string[]>
+  serialsByLineId?: Record<string, string[]>,
+  // Prices (unit price, line totals, PO total): roles that may see item cost
+  // (see canSeeSupplierPrices) only. Everyone else gets quantities.
+  showPrices = true
 ): string {
   const doc = data as PrintDocumentEnvelope
   const po = doc.document as Record<string, unknown>
@@ -847,7 +854,7 @@ function buildPurchaseOrderHtml(
         ? (l.discounts as { name?: string; type: string; value: number }[])
         : []
       const discountNote =
-        srp != null && discounts.length > 0
+        showPrices && srp != null && discounts.length > 0
           ? `<div class="discount-note">SRP ${fmt(srp)} · ${discounts
               .map((d) => {
                 const amount = d.type === 'percentage' ? `${d.value}%` : fmt(d.value)
@@ -861,8 +868,7 @@ function buildPurchaseOrderHtml(
         <td class="num">${i + 1}</td>
         <td>${esc(name)}${discountNote}</td>
         <td class="right">${qty}</td>
-        <td class="right">${fmt(unitPrice)}</td>
-        <td class="right">${fmt(lineTotal)}</td>
+        ${showPrices ? `<td class="right">${fmt(unitPrice)}</td><td class="right">${fmt(lineTotal)}</td>` : ''}
       </tr>`
     })
     .join('')
@@ -975,18 +981,21 @@ function buildPurchaseOrderHtml(
           <th class="num">#</th>
           <th>Item</th>
           <th class="right">Qty</th>
-          <th class="right">Unit price</th>
-          <th class="right">Total</th>
+          ${showPrices ? '<th class="right">Unit price</th><th class="right">Total</th>' : ''}
         </tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
 
-    <div class="total-wrap">
+    ${
+      showPrices
+        ? `<div class="total-wrap">
       <table>
         <tr><td class="label">Total</td><td class="value">${fmt(Number(po.totalAmount ?? 0))}</td></tr>
       </table>
-    </div>
+    </div>`
+        : ''
+    }
 
     <div class="signatures">
       <div class="sig-block">
@@ -1023,11 +1032,12 @@ function buildPurchaseOrderHtml(
 
 export function printPurchaseOrderDocument(
   data: unknown,
-  serialsByLineId?: Record<string, string[]>
+  serialsByLineId?: Record<string, string[]>,
+  showPrices = true
 ): void {
   const win = window.open('', '_blank', 'width=950,height=750')
   if (!win) return
-  win.document.write(buildPurchaseOrderHtml(data, serialsByLineId))
+  win.document.write(buildPurchaseOrderHtml(data, serialsByLineId, showPrices))
   win.document.close()
 }
 
@@ -1056,8 +1066,9 @@ export function printPurchaseOrderDocument(
  * misalign in the first place, and doesn't match the paper form anyway:
  *   1. Lastname / Firstname / Middle / (Sales Invoice No. + SI Date)
  *   2. Brand / Type / Model / Serial
- *   3. Agent / Sales Commission (only when the viewer may see it) / Collector
- *      (two cells wide without the commission, one with) / FMI
+ *   3. Agent / Collector (two cells wide) / FMI — or, when the viewer may see
+ *      the agent's pay, two rows of four: Agent (two wide) / Sales Commission
+ *      / SMI, then Collector (two wide) / FMI (two wide)
  *   4. LCP / Down / Amt. Financed / Inst. Diff.
  *   5. Scheme (the paper form's "WIP") / MI / Term / Branch
  *   6. PN / IC / Total Price / Phone (Oct 29 UAT CL-01)
@@ -1074,9 +1085,10 @@ export function printPurchaseOrderDocument(
  */
 export function buildCustomerLedgerHtml(
   ledger: InstallmentLedger,
-  // The selling agent's commission is agent data, so it is left off the
-  // printout unless the caller says this user may see it. It takes a cell of
-  // the Collector's two-wide slot on the Agent row, keeping four columns.
+  // The selling agent's commission and SMI are agent data, so they are left
+  // off the printout unless the caller says this user may see them. They sit
+  // on the Agent row, which then takes a second row so the grid keeps four
+  // columns.
   options: { showCommission?: boolean } = {}
 ): string {
   const { account, rows } = ledger
@@ -1096,6 +1108,10 @@ export function buildCustomerLedgerHtml(
   const cell = (label: string, value: string, colspan = 1) =>
     `<td colspan="${colspan}"><p class="cell-value">${esc(value)}</p><p class="cell-label">${esc(label)}</p></td>`
 
+  const collectorLabel = account.collector
+    ? `${account.collector.stubNumber} — ${account.collector.name}`
+    : 'Unassigned'
+
   // The paper form's Total Payments/Penalty/Rebates/Billing/etc. block is
   // plain italic "Label : value" text below the bordered grid, not more
   // boxed cells — mixing it into table.form-grid was what made that row's
@@ -1103,6 +1119,8 @@ export function buildCustomerLedgerHtml(
   const totalLine = (label: string, value: string) =>
     `<p class="totals-line"><span class="totals-label">${esc(label)}</span> : <span class="totals-value">${esc(value)}</span></p>`
 
+  // WIP / SSC / … — or "Price Override" when the sale's price was overridden.
+  const schemeLabel = ledgerScheme(ledger)
   const ledgerRows = rows
     .map(
       (r) => `<tr>
@@ -1195,25 +1213,26 @@ export function buildCustomerLedgerHtml(
           )
           .join('')
       }
-      <tr>
-        ${cell('Agent', account.sellingAgent?.name ?? '—')}
-        ${
-          showCommission
-            ? cell(
-                'Sales Commission',
-                Number(account.salesCommission ?? 0) ? fmt(account.salesCommission ?? 0) : '—'
-              )
-            : ''
-        }
+      ${
+        showCommission
+          ? `<tr>
+        ${cell('Agent', account.sellingAgent?.name ?? '—', 2)}
         ${cell(
-          'Collector',
-          account.collector
-            ? `${account.collector.stubNumber} — ${account.collector.name}`
-            : 'Unassigned',
-          showCommission ? 1 : 2
+          'Sales Commission',
+          Number(account.salesCommission ?? 0) ? fmt(account.salesCommission ?? 0) : '—'
         )}
-        ${cell('FMI', fmtDate(ledger.firstInstallmentDate))}
+        ${cell('SMI', Number(account.salesSmi ?? 0) ? fmt(account.salesSmi ?? 0) : '—')}
       </tr>
+      <tr>
+        ${cell('Collector', collectorLabel, 2)}
+        ${cell('FMI', fmtDate(ledger.firstInstallmentDate), 2)}
+      </tr>`
+          : `<tr>
+        ${cell('Agent', account.sellingAgent?.name ?? '—')}
+        ${cell('Collector', collectorLabel, 2)}
+        ${cell('FMI', fmtDate(ledger.firstInstallmentDate))}
+      </tr>`
+      }
       <tr>
         ${cell('LCP', fmt(account.listedCashPrice))}
         ${cell('Down', fmt(account.downPayment))}
@@ -1221,7 +1240,7 @@ export function buildCustomerLedgerHtml(
         ${cell('Inst. Diff.', fmt(account.interestDifferential))}
       </tr>
       <tr>
-        ${cell('Scheme', account.priceUseType?.name ?? '—')}
+        ${cell('Scheme', schemeLabel)}
         ${cell('MI', fmt(account.monthlyInstallment))}
         ${cell('Term', `${account.termMonths} months`)}
         ${cell('Branch', account.branch?.name ?? '—')}
@@ -1303,6 +1322,9 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
+  // Scheme column — each sale's Price Use (WIP, SSC, …) or "Price Override" on its
+  // own row, same as the on-screen all-purchases ledger.
+  const showScheme = rows.some((r) => r.scheme)
   const ledgerRows = rows
     .map(
       (r) => `<tr>
@@ -1310,6 +1332,7 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
         <td class="mono">${esc(r.ref)}</td>
         <td class="right">${r.inst > 0 ? r.inst : '—'}</td>
         <td>${esc(r.description)}</td>
+        ${showScheme ? `<td>${esc(r.scheme ?? '')}</td>` : ''}
         <td class="right">${r.debit > 0 ? fmt(r.debit) : '—'}</td>
         <td class="right">${r.credit > 0 ? fmt(r.credit) : '—'}</td>
         <td class="right">${fmt(r.due)}</td>
@@ -1325,7 +1348,7 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
   const ledgerTotalRow =
     rows.length > 0
       ? `<tr class="total-row">
-        <td colspan="4"><strong>Total</strong></td>
+        <td colspan="${showScheme ? 5 : 4}"><strong>Total</strong></td>
         <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.debit, 0))}</strong></td>
         <td class="right"><strong>${fmt(billableRows.reduce((sum, r) => sum + r.credit, 0))}</strong></td>
         <td></td>
@@ -1401,6 +1424,7 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
       <thead>
         <tr>
           <th>Date</th><th>Ref</th><th class="right">Inst.</th><th>Description</th>
+          ${showScheme ? '<th>Scheme</th>' : ''}
           <th class="right">Debit</th><th class="right">Credit</th><th class="right">Due</th><th class="right">Outstanding</th>
         </tr>
       </thead>

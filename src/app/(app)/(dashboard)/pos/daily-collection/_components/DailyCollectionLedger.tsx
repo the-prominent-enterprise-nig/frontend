@@ -193,8 +193,9 @@ function WideLedger({
                 </>
               )}
               {line.type !== 'deposit' && (
-                <td className={CELL}>
+                <td className={`${CELL} whitespace-nowrap`}>
                   <DescChip desc={line.desc} />
+                  <PaymentMode mode={line.mode} />
                 </td>
               )}
               <td className={`${CELL} text-center font-mono text-gray-600`}>{line.office}</td>
@@ -251,6 +252,7 @@ function CardLedger({ lines }: { lines: FormLine[] }): React.JSX.Element {
                 )}
                 {line.field && <span className="text-[11px] text-gray-500">{line.field}</span>}
                 {line.desc && <DescChip desc={line.desc} />}
+                {line.mode && <span className="text-[11px] text-ink-muted">{line.mode}</span>}
               </div>
             </div>
             <div className="shrink-0 text-right">
@@ -276,6 +278,12 @@ function DescChip({ desc }: { desc: string }): React.JSX.Element | null {
       {desc}
     </span>
   )
+}
+
+/** How the customer paid, beside the DESC code — CASH, CARD-BDO. */
+function PaymentMode({ mode }: { mode: string }): React.JSX.Element | null {
+  if (!mode) return null
+  return <span className="ml-1.5 whitespace-nowrap text-[11px] text-ink-muted">{mode}</span>
 }
 
 /** Marks a collection taken at a counter other than this branch's own — a

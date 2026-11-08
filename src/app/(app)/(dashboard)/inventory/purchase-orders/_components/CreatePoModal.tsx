@@ -1,5 +1,6 @@
 'use client'
 
+import { useSeesSupplierPrices } from '@/src/hooks/useSeesSupplierPrices'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -129,6 +130,12 @@ export function CreatePoModal({
 }: Props) {
   const isPrEditMode = !!pr
   const isPoEditMode = !!po
+  // Editing a PO without receiving-cost access: the API blanks its prices and
+  // the save keeps the order's own, so the price fields are hidden rather
+  // than shown empty. A purchase request keeps them — they are the
+  // requester's own estimates.
+  const seesPrices = useSeesSupplierPrices()
+  const showPrices = !isPoEditMode || seesPrices
   const isBusy = isPoEditMode ? isSavingPo : isPrEditMode ? isSaving : isCreating
   // Nothing to save yet if editing and the loaded record hasn't been touched.
   const isEditMode = isPoEditMode || isPrEditMode
@@ -299,6 +306,7 @@ export function CreatePoModal({
           // shows no warning: the destination can be set later, before the
           // PO is sent.
           warnNoDestination={isEditMode}
+          showPrices={showPrices}
         />
       </form>
 

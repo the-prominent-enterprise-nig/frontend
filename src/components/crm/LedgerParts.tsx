@@ -116,13 +116,25 @@ export function LedgerFields({
 
 /** The Date / Ref / Inst. / Description / Debit / Credit / Due / Outstanding
  * table — one row per ledger event, with the debit and credit totals at the
- * foot (a display-only row is shown but never added in). */
-export function LedgerTable({ rows }: { rows: InstallmentLedgerRow[] }) {
+ * foot (a display-only row is shown but never added in).
+ *
+ * `showScheme` adds a Scheme column after Description — each sale's Price Use
+ * (WIP, SSC, …) or "Price Override" — on the sale's own row, blank on the
+ * rest. The all-purchases ledger has no header to carry a Scheme, so its
+ * table does; a single plan's ledger shows it in its Sale card instead. */
+export function LedgerTable({
+  rows,
+  showScheme = false,
+}: {
+  rows: InstallmentLedgerRow[]
+  showScheme?: boolean
+}) {
   if (rows.length === 0) {
     return <p className="py-6 text-center text-sm text-gray-500">No ledger activity yet.</p>
   }
   const sum = (pick: (r: InstallmentLedgerRow) => number) =>
     rows.filter((r) => !r.displayOnly).reduce((total, r) => total + pick(r), 0)
+  const schemeColumn = showScheme && rows.some((r) => r.scheme)
 
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-100">
@@ -133,6 +145,7 @@ export function LedgerTable({ rows }: { rows: InstallmentLedgerRow[] }) {
             <th className="px-3 py-2">Ref</th>
             <th className="px-3 py-2 text-right">Inst.</th>
             <th className="px-3 py-2">Description</th>
+            {schemeColumn && <th className="px-3 py-2">Scheme</th>}
             <th className="px-3 py-2 text-right">Debit</th>
             <th className="px-3 py-2 text-right">Credit</th>
             <th className="px-3 py-2 text-right">Due</th>
@@ -152,6 +165,9 @@ export function LedgerTable({ rows }: { rows: InstallmentLedgerRow[] }) {
               <td className="px-3 py-1.5 font-medium text-prominent-purple-900">
                 {row.description}
               </td>
+              {schemeColumn && (
+                <td className="whitespace-nowrap px-3 py-1.5 text-gray-800">{row.scheme ?? ''}</td>
+              )}
               <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-800">
                 {row.debit > 0 ? fmtMoney(row.debit) : '—'}
               </td>
@@ -173,7 +189,7 @@ export function LedgerTable({ rows }: { rows: InstallmentLedgerRow[] }) {
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-prominent-purple-100 bg-prominent-purple-50 font-semibold text-prominent-purple-900">
-            <td className="px-3 py-2" colSpan={4}>
+            <td className="px-3 py-2" colSpan={schemeColumn ? 5 : 4}>
               Total
             </td>
             <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">

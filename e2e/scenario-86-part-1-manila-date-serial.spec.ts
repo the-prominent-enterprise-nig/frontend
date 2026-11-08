@@ -1,13 +1,11 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { gotoReady, loginAs } from './utils'
 
 // Scenario 86 Part 1.
 //
-// DC-02 follow-up — the collections screen's "today" is the Manila date. It
-// was the UTC date, so between 00:00 and 08:00 Manila the date fields topped
-// out at yesterday and today could not be picked. The browser clock is pinned
-// to exact Manila instants; the same checks also run with the browser set to
-// another timezone, since the screen must not depend on the computer's zone.
+// (The DC-02 follow-up — Collections' "today" being the Manila date — was
+// checked through the "Override current date" field, which has since been
+// removed from the screen; those tests went with it.)
 //
 // STR-02 — the serial number on a transfer's Receive panel is as dark and
 // prominent as everywhere else (it was light grey).
@@ -17,44 +15,6 @@ const RECEIVER_EMAIL = 'technova.stock@test.com' // Stock Controller, all branch
 
 const manilaToday = (now = new Date()) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }).format(now)
-
-async function openCollectionsAt(page: Page, instant: string) {
-  await page.clock.setFixedTime(new Date(instant))
-  await gotoReady(page, '/pos/collections')
-  const field = page.getByTestId('collections-override-date')
-  await expect(field).toBeVisible({ timeout: 20_000 })
-  return field
-}
-
-for (const zone of [undefined, 'America/Los_Angeles'] as const) {
-  test.describe(`Collections date is the Manila date${zone ? ` (browser in ${zone})` : ''}`, () => {
-    if (zone) test.use({ timezoneId: zone })
-
-    test('at 07:30 Manila — still yesterday in UTC — today is the default and the latest date offered', async ({
-      page,
-    }) => {
-      const today = manilaToday()
-      const field = await openCollectionsAt(page, `${today}T07:30:00+08:00`)
-      await expect(field).toHaveAttribute('max', today)
-      await expect(field).toHaveValue(today)
-    })
-
-    test('at 23:59 Manila the latest date offered is still today, never tomorrow', async ({
-      page,
-    }) => {
-      const today = manilaToday()
-      const field = await openCollectionsAt(page, `${today}T23:59:00+08:00`)
-      await expect(field).toHaveAttribute('max', today)
-      await expect(field).toHaveValue(today)
-    })
-
-    test('at 00:00:05 Manila the new day is already today', async ({ page }) => {
-      const today = manilaToday()
-      const field = await openCollectionsAt(page, `${today}T00:00:05+08:00`)
-      await expect(field).toHaveAttribute('max', today)
-    })
-  })
-}
 
 test.describe('Transfer Receive panel — serial number styling (STR-02)', () => {
   test.describe.configure({ timeout: 120_000 })

@@ -1,5 +1,7 @@
 'use client'
 
+import { DocumentUnavailable } from '@/src/components/inventory/DocumentUnavailable'
+import { describeDocumentError } from '@/src/libs/data/document-errors'
 import { useEffect, useRef, useState } from 'react'
 import {
   X,
@@ -19,6 +21,7 @@ import ReceivingReportSheet, {
   type ReceivingReportDocument,
 } from '../../../accounting/receiving-reports/_components/ReceivingReportSheet'
 import ReceivingReportEditForm from '../../../accounting/receiving-reports/_components/ReceivingReportEditForm'
+import { useSeesSupplierPrices } from '@/src/hooks/useSeesSupplierPrices'
 import { printReceivingReportDocument } from '@/src/libs/print/printInventoryDocument'
 import { downloadElementAsPdf } from '@/src/libs/print/htmlToPdf'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
@@ -248,6 +251,7 @@ function DocumentToolbar({
   onDownload: () => void
   downloadingPdf: boolean
 }) {
+  const showPrices = useSeesSupplierPrices()
   const { received, ordered } = lineTotals(grn.lines)
 
   return (
@@ -286,7 +290,7 @@ function DocumentToolbar({
         <button
           type="button"
           disabled={!doc}
-          onClick={() => doc && printReceivingReportDocument(doc)}
+          onClick={() => doc && printReceivingReportDocument(doc, { showPrices })}
           className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12.5px] font-semibold text-white transition-colors hover:bg-[#4a189b] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Printer className="h-3.5 w-3.5" />
@@ -300,6 +304,7 @@ function DocumentToolbar({
 // ─── Panel ────────────────────────────────────────────────────────────────────
 
 export function PoReceiptsPanel({ po, onClose }: Props) {
+  const showPrices = useSeesSupplierPrices()
   const [receipts, setReceipts] = useState<PoReceipt[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -457,9 +462,7 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
           </div>
         ) : error ? (
           <div className="bg-[#f7f7f8] p-6">
-            <div className="rounded-xl border border-[#f3c9c5] bg-[#fdeceb] p-4">
-              <p className="text-[13px] font-medium text-[#b42318]">{error}</p>
-            </div>
+            <DocumentUnavailable {...describeDocumentError(error, 'purchase order')} />
           </div>
         ) : receipts.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center bg-[#f7f7f8] px-6 py-20 text-center">
@@ -506,9 +509,7 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
                     <DocumentSkeleton />
                   </div>
                 ) : docError ? (
-                  <div className="mx-auto max-w-3xl rounded-xl border border-[#f3c9c5] bg-[#fdeceb] p-4">
-                    <p className="text-[13px] font-medium text-[#b42318]">{docError}</p>
-                  </div>
+                  <DocumentUnavailable {...describeDocumentError(docError, 'receiving report')} />
                 ) : (
                   <div className="mx-auto max-w-3xl space-y-4">
                     {editing && record && selectedId && (
@@ -522,7 +523,7 @@ export function PoReceiptsPanel({ po, onClose }: Props) {
                     {doc && (
                       <div className="rounded-lg border border-[#e4e4e9] bg-white shadow-sm">
                         <div ref={sheetRef}>
-                          <ReceivingReportSheet doc={doc} />
+                          <ReceivingReportSheet doc={doc} showPrices={showPrices} />
                         </div>
                       </div>
                     )}

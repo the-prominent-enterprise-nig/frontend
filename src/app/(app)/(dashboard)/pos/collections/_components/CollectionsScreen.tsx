@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   Banknote,
-  CalendarClock,
   CheckCircle2,
   ChevronDown,
   Loader2,
@@ -410,11 +409,6 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
   // checked and still counts toward the payment.
   const [collapsedPlanIds, setCollapsedPlanIds] = useState<Set<string>>(new Set())
   const [pendingScheduleId, setPendingScheduleId] = useState<string | null>(null)
-  // Scenario 54 — lets a collector preview due statuses/rebate eligibility as
-  // of a hypothetical date instead of real today. Local component state only:
-  // never persisted (no localStorage/URL param), so it's gone the moment this
-  // screen unmounts — no other screen or backend "now" is ever affected.
-  const [overrideDateIso, setOverrideDateIso] = useState<string | null>(null)
 
   const debouncedQuery = useDebounced(query, 300)
   const customersQuery = useCollectionsCustomers(branchId || undefined, debouncedQuery || undefined)
@@ -426,17 +420,10 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
   // does not list it (its history lives on the ledger and the AR invoice). A
   // plan with some dues still open keeps its paid ones in view as progress.
   const openSchedules = schedules.filter((s) => s.lines.some((l) => !l.settledAt))
-  // Scenario 54 — the simulated "now" this screen reads dues against: the
-  // override while one's active, real today otherwise. PaymentPanel seeds its
-  // Payment date from this, so Status/Rebate/Penalty are assessed — and the
-  // collection recorded — as of the simulated date, the only way a late
-  // penalty can really be charged against a due that isn't late yet. With no
-  // override this is real today and the Payment date field is capped there.
-  const effectivePaymentDateIso = overrideDateIso ?? manilaToday()
   // Only `ppd` is carried here — NOT a precomputed suggestedRebate/
   // penaltyEligible. PaymentPanel's own Payment date field is freely
-  // editable independently of effectivePaymentDateIso, and the backend
-  // recomputes rebate/penalty caps against whatever date actually submits —
+  // editable (it opens on today), and the backend recomputes rebate/penalty
+  // caps against whatever date actually submits —
   // so PaymentPanel derives its own live preview from dueSuggestions() +
   // its current form.paymentDate, never a value baked in at selection time.
   const selectedPayableLines = schedules.flatMap((s) =>
@@ -503,46 +490,6 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
           </button>
           <h1 className="text-xl font-bold text-prominent-purple-900">Collections</h1>
         </div>
-
-        {/* Scenario 54 — simulate a hypothetical "today" across this screen
-            only. Local state, never persisted: switching screens or
-            reloading always comes back to real today. */}
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
-          <label className="flex items-center gap-2 text-sm font-medium text-zinc-600">
-            <CalendarClock className="h-4 w-4 text-zinc-400" />
-            Override current date
-          </label>
-          {/* Oct 29 UAT DC-02 — never a future date: past days only. */}
-          <input
-            type="date"
-            data-testid="collections-override-date"
-            max={manilaToday()}
-            value={overrideDateIso ?? manilaToday()}
-            onChange={(e) => {
-              const v = e.target.value
-              if (!v || v >= manilaToday()) setOverrideDateIso(null)
-              else setOverrideDateIso(v)
-            }}
-            className={`${fieldClass} w-auto`}
-          />
-          {overrideDateIso && (
-            <button
-              type="button"
-              onClick={() => setOverrideDateIso(null)}
-              className="text-sm font-medium text-prominent-purple-600 hover:underline"
-            >
-              Reset to today
-            </button>
-          )}
-        </div>
-        {overrideDateIso && (
-          <div className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-white">
-            <CalendarClock className="h-4 w-4 shrink-0" />
-            Viewing this screen as of {fmtDate(overrideDateIso)}, not today — due statuses and
-            rebate eligibility below reflect this date. A payment collected now is still dated
-            today; this date only decides whether a due counts as on time or late.
-          </div>
-        )}
 
         {!customer ? (
           <div className="space-y-3">
@@ -761,9 +708,7 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                                           {fmtDate(line.dueDate)}
                                         </div>
                                         <div className="flex items-center gap-2 text-[12px] text-zinc-500">
-                                          <StatusBadge
-                                            status={dueStatus(line, overrideDateIso ?? undefined)}
-                                          />
+                                          <StatusBadge status={dueStatus(line)} />
                                           <span>
                                             {fmtMoney(Number(line.paidAmount))} of{' '}
                                             {fmtMoney(Number(line.amount))} paid
@@ -799,15 +744,7 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                     // the previous selection should never carry over, same as
                     // the old "Pay Selected" opened a brand-new modal each
                     // time (see the component's own doc comment).
-                    //
-                    // Scenario 84 (DC-01 / CL-04) — and whenever the date
-                    // override changes. The panel seeds its Payment date, and
-                    // its rebate/penalty defaults, from the override once, when
-                    // it mounts: an override set AFTER ticking the dues moved
-                    // the banner but left the Payment date on today, so the
-                    // collection saved on the wrong day and never reached the
-                    // overridden day's Collection Report or ledger row.
-                    key={`${Array.from(selectedLineIds).sort().join(',')}|${effectivePaymentDateIso}`}
+                    key={Array.from(selectedLineIds).sort().join(',')}
                     lines={selectedPayableLines}
                     payrollOnly={
                       openSchedules.length > 0 &&
@@ -815,7 +752,6 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                     }
                     customerName={customer?.name}
                     defaultBranchId={branchId || undefined}
-                    initialPaymentDateIso={effectivePaymentDateIso}
                     onClearSelection={() => setSelectedLineIds(new Set())}
                     onCollected={async () => {
                       await Promise.all([schedulesQuery.refetch(), customersQuery.refetch()])
@@ -872,7 +808,6 @@ function PaymentPanel({
   payrollOnly,
   customerName,
   defaultBranchId,
-  initialPaymentDateIso,
   onClearSelection,
   onCollected,
 }: {
@@ -894,11 +829,6 @@ function PaymentPanel({
   /** Falls back to the Collections list's own branch filter, if the cashier
    * had one set — used only until the session's own branch resolves below. */
   defaultBranchId?: string
-  /** Scenario 54 — the screen's simulated "now": its active date override, or
-   * real today with none active. Seeds the Payment date, which drives the
-   * Status/Rebate/Penalty figures and the date the collection is recorded on.
-   * Without an override the field is capped at real today. */
-  initialPaymentDateIso: string
   onClearSelection: () => void
   /** Async: resolves only once the parent's post-payment refetch has
    * actually landed, so the caller can keep the submit button's
@@ -919,9 +849,9 @@ function PaymentPanel({
   const [showIssues, setShowIssues] = useState(false)
   const [form, setForm] = useState({
     withholdingAmount: '0',
-    // The date override, when one is active — so the penalty/rebate the
-    // backend assesses for this date are the ones previewed below.
-    paymentDate: initialPaymentDateIso.slice(0, 10),
+    // Opens on today; the penalty/rebate previewed below follow whatever
+    // this field holds, same as the backend assesses them.
+    paymentDate: manilaToday(),
     // The collection's ONE CR number — every payment's receipt carries it.
     reference: '',
     notes: '',
@@ -977,7 +907,7 @@ function PaymentPanel({
   // rebate granted (see dueSuggestions — no longer auto-forfeited), but
   // defaults unchecked since it's a cashier exception, not the earned norm.
   // Penalty defaults checked whenever a due qualifies (15+ days late) —
-  // developer-confirmed (this feature is "real" now, not simulate-only).
+  // developer-confirmed.
   // Both keyed by line.id so a batch's dues can be applied/waived
   // independently of each other. Seeded once at mount, against the Payment
   // date field's own starting value — this panel remounts fresh whenever
@@ -991,7 +921,7 @@ function PaymentPanel({
   const [rebateChecked, setRebateChecked] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
       lines.map(({ line, ppd }) => {
-        const s = dueSuggestions(line, ppd, initialPaymentDateIso)
+        const s = dueSuggestions(line, ppd, manilaToday())
         return [line.id, !s.isLate && (s.suggestedRebate ?? 0) > 0]
       })
     )
@@ -1004,7 +934,7 @@ function PaymentPanel({
     Object.fromEntries(
       lines.map(({ line, ppd }) => [
         line.id,
-        dueSuggestions(line, ppd, initialPaymentDateIso).penaltyEligible,
+        dueSuggestions(line, ppd, manilaToday()).penaltyEligible,
       ])
     )
   )
@@ -1092,8 +1022,8 @@ function PaymentPanel({
     0
   )
 
-  // Capped at real today (the override can't go forward either — Oct 29 UAT
-  // DC-02), so "not today" can only mean a prior day.
+  // Capped at real today (Oct 29 UAT DC-02), so "not today" can only mean a
+  // prior day.
   const maxPaymentDate = manilaToday()
   // Live per-due split of whatever's currently typed into Total, plus each
   // due's own resolved rebate/penalty — drives both the dues-list preview
@@ -1633,7 +1563,7 @@ function PaymentPanel({
                 // was received, and a forward-dated receipt would be
                 // invisible to the daily collection report (it windows on
                 // CollectionReceipt.paymentDate). No exception since the
-                // Oct 29 UAT (DC-02): the override can't go forward either.
+                // Oct 29 UAT (DC-02).
                 max={maxPaymentDate}
                 value={form.paymentDate}
                 onChange={(e) => setForm({ ...form, paymentDate: e.target.value })}

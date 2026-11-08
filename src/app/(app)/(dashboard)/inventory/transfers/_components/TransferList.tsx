@@ -1,5 +1,6 @@
 'use client'
 
+import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { useCallback, useEffect, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -205,6 +206,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
     resetFilters,
     page,
     setPage,
+    limit,
+    setLimit,
     selectedTransfer,
     setSelectedTransfer,
     transferDetail,
@@ -254,6 +257,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
   // Only a warehouse branch's own staff act for its region's standalone
   // warehouse — a store branch is limited to itself (mirrors the backend's
   // resolveActorRegion).
+  const isBusinessOwner = hasRole(session, 'Business Owner')
   const ownBranch = branchOptions.find((b) => b.id === session.branchId)
   const currentUserRegion = ownBranch?.type === 'warehouse' ? (ownBranch.region ?? null) : null
   const inScope = (warehouseBranchId: string | null | undefined, warehouseRegion?: string | null) =>
@@ -267,8 +271,9 @@ export default function TransferList({ session }: { session: SessionUser }) {
   function rowAction(tr: TransferSummary): { label: string; primary: boolean } {
     const fromInScope = inScope(tr.fromWarehouse?.branchId, tr.fromWarehouse?.region)
     const toInScope = inScope(tr.toWarehouse?.branchId, tr.toWarehouse?.region)
-    // The dispatcher is never the receiver (WH-01).
-    const canReceiveThis = canReceive && toInScope && tr.dispatchedById !== session.id
+    // The dispatcher is never the receiver (WH-01) — except the Business Owner.
+    const canReceiveThis =
+      canReceive && toInScope && (isBusinessOwner || tr.dispatchedById !== session.id)
 
     if (
       tr.status === 'pending_manager_approval' &&
@@ -762,37 +767,17 @@ export default function TransferList({ session }: { session: SessionUser }) {
             </div>
           )}
 
-          {/* Footer — always present alongside rows so the result count stays
-              visible even on a single page. */}
+          {/* Footer — the shared Stock Transactions pager. */}
           {!isLoading && transfers.length > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-[18px] py-[11px]">
-              <span className="text-[11.5px] text-[#3d3d4a]">
-                Showing {transfers.length} of {pagination.total} transfers
-              </span>
-              {pagination.totalPages > 1 && (
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setPage(Math.max(1, page - 1))}
-                    disabled={page <= 1}
-                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-[6px] text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:border-[#e4e4e9] disabled:text-ink-faint"
-                  >
-                    Previous
-                  </button>
-                  <span className="px-2 text-[12px] font-medium text-[#3d3d4a]">
-                    {page} / {pagination.totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                    disabled={page >= pagination.totalPages}
-                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-[6px] text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:border-[#e4e4e9] disabled:text-ink-faint"
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
-            </div>
+            <ListFooterPager
+              page={page}
+              pageCount={pagination.totalPages}
+              total={pagination.total}
+              limit={limit}
+              noun="transfers"
+              onPageChange={setPage}
+              onLimitChange={setLimit}
+            />
           )}
         </div>
       </div>
@@ -840,6 +825,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         canManagerReject={canManagerReject}
         currentUserBranchId={session.branchId}
         currentUserId={session.id}
+        currentUserIsBusinessOwner={isBusinessOwner}
         currentUserRegion={currentUserRegion}
         onAccept={acceptTransfer}
         onReject={rejectTransfer}

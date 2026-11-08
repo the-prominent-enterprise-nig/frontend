@@ -449,7 +449,7 @@ export default function CustomerLedgerView({
             )}
 
             <LedgerCard title="Ledger" icon={BookOpen} className="mt-4">
-              <LedgerTable rows={ledger.rows} />
+              <LedgerTable rows={ledger.rows} showScheme />
             </LedgerCard>
           </>
         )}

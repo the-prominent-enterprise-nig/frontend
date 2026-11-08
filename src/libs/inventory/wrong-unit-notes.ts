@@ -38,13 +38,8 @@ export function splitUnitLabel(label: string): { serial: string; model?: string 
   return { serial: label.slice(0, at), model: label.slice(at + 2, -1) }
 }
 
-/** The Wrong serial reason worth showing — dropped when it only repeats the
- * "Wrong serial" label itself (e.g. a reason typed as "wrong serial"). */
-export function meaningfulSerialReason(reason: string | null | undefined): string | undefined {
-  const trimmed = reason?.trim()
-  if (!trimmed) return undefined
-  const normalized = trimmed.toLowerCase().replace(/[^a-z]/g, '')
-  return ['wrongserial', 'wrongserialreceived', 'wrongserialnumber'].includes(normalized)
-    ? undefined
-    : trimmed
+/** The Wrong serial reason as the receiver typed it — always shown, even
+ * when it only repeats the label (e.g. "wrong serial"); blank reads as none. */
+export function serialCorrectionReason(reason: string | null | undefined): string | undefined {
+  return reason?.trim() || undefined
 }

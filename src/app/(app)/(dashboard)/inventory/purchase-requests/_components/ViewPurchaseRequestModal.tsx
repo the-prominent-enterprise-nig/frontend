@@ -8,6 +8,7 @@ import { discountChainLabel } from '@/src/libs/format/discount-chain'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { StatusBadge, OutlineBtn, PrimaryBtn } from './PurchaseRequestList'
 import { formatManilaDate } from '@/src/libs/format/manila-date'
+import { useSeesSupplierPrices } from '@/src/hooks/useSeesSupplierPrices'
 
 type Props = {
   open: boolean
@@ -93,7 +94,10 @@ export function ViewPurchaseRequestModal({
   onConvert,
   onViewPo,
 }: Props) {
+  const seesPrices = useSeesSupplierPrices()
   if (!open || !pr) return null
+  // A converted request's prices are its PO's: hidden like the PO's own.
+  const showPrices = seesPrices || pr.status !== 'converted'
 
   const total = pr.lines.reduce(
     (sum, line) => (line.isFreebie ? sum : sum + line.quantity * (line.unitPrice ?? 0)),
@@ -235,8 +239,12 @@ export function ViewPurchaseRequestModal({
                 >
                   <th className="px-4 py-2.5 text-left">Item / SKU</th>
                   <th className="px-3 py-2.5 text-right">Qty</th>
-                  <th className="px-3 py-2.5 text-right">Unit Price</th>
-                  <th className="px-4 py-2.5 text-right">Line Total</th>
+                  {showPrices && (
+                    <>
+                      <th className="px-3 py-2.5 text-right">Unit Price</th>
+                      <th className="px-4 py-2.5 text-right">Line Total</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#f4f4f6]">
@@ -267,27 +275,33 @@ export function ViewPurchaseRequestModal({
                         {line.notes && (
                           <p className="mt-0.5 text-[11.5px] text-[#4b4b5a]">{line.notes}</p>
                         )}
-                        {chain && <p className="mt-0.5 text-[11.5px] text-[#4b4b5a]">{chain}</p>}
+                        {showPrices && chain && (
+                          <p className="mt-0.5 text-[11.5px] text-[#4b4b5a]">{chain}</p>
+                        )}
                       </td>
                       <td className={`${MONO} px-3 py-3 text-right text-[13px] text-[#3d3d4a]`}>
                         {line.quantity}
                       </td>
-                      <td className={`${MONO} px-3 py-3 text-right text-[13px] text-[#3d3d4a]`}>
-                        {line.isFreebie
-                          ? 'Freebie'
-                          : line.unitPrice != null
-                            ? fmtPHP(line.unitPrice)
-                            : '—'}
-                      </td>
-                      <td
-                        className={`${MONO} px-4 py-3 text-right text-[13.5px] font-semibold text-[#17171c]`}
-                      >
-                        {line.isFreebie
-                          ? fmtPHP(0)
-                          : line.unitPrice != null
-                            ? fmtPHP(line.quantity * line.unitPrice)
-                            : '—'}
-                      </td>
+                      {showPrices && (
+                        <>
+                          <td className={`${MONO} px-3 py-3 text-right text-[13px] text-[#3d3d4a]`}>
+                            {line.isFreebie
+                              ? 'Freebie'
+                              : line.unitPrice != null
+                                ? fmtPHP(line.unitPrice)
+                                : '—'}
+                          </td>
+                          <td
+                            className={`${MONO} px-4 py-3 text-right text-[13.5px] font-semibold text-[#17171c]`}
+                          >
+                            {line.isFreebie
+                              ? fmtPHP(0)
+                              : line.unitPrice != null
+                                ? fmtPHP(line.quantity * line.unitPrice)
+                                : '—'}
+                          </td>
+                        </>
+                      )}
                     </tr>
                   )
                 })}
@@ -295,7 +309,7 @@ export function ViewPurchaseRequestModal({
             </table>
           </div>
 
-          {total > 0 && (
+          {showPrices && total > 0 && (
             <div className="flex justify-end border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-3.5">
               <div className="flex items-baseline gap-6">
                 <span className="text-[13px] font-semibold">Total</span>

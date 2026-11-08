@@ -16,6 +16,7 @@ import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-req
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
 import { formatManilaDate } from '@/src/libs/format/manila-date'
+import { useSeesSupplierPrices } from '@/src/hooks/useSeesSupplierPrices'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // Same #5b21b6 palette as procurementTokens/PurchaseOrderList —
@@ -201,6 +202,8 @@ export function prTotal(pr: PurchaseRequestSummary): number {
 }
 
 export function PurchaseRequestList({ session }: { session: SessionUser }) {
+  // A converted request's total is its PO's price: hidden like the PO's own.
+  const showPrices = useSeesSupplierPrices()
   const {
     items,
     pagination,
@@ -225,6 +228,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
 
   const isNoResults = !isLoading && items.length === 0
   const filtersActive = statusFilter !== undefined || search !== ''
+  const showTotalColumn = showPrices || statusFilter !== 'converted'
   const clearAll = (): void => {
     setStatusFilter(undefined)
     setSearch('')
@@ -374,7 +378,7 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                     <th className="px-4 py-[9px] text-left">Status</th>
                     <th className="px-4 py-[9px] text-left">Branch</th>
                     <th className="px-4 py-[9px] text-left">Lines</th>
-                    <th className="px-4 py-[9px] text-right">Total</th>
+                    {showTotalColumn && <th className="px-4 py-[9px] text-right">Total</th>}
                     <th className="px-4 py-[9px] text-left">Created</th>
                     <th className="px-4 py-[9px] text-right">Actions</th>
                   </tr>
@@ -408,11 +412,13 @@ export function PurchaseRequestList({ session }: { session: SessionUser }) {
                       <td className={`${MONO} px-4 py-[11px] text-[12.5px] text-[#3d3d4a]`}>
                         {pr.lines.length}
                       </td>
-                      <td
-                        className={`${MONO} px-4 py-[11px] text-right text-[13px] font-semibold text-[#17171c]`}
-                      >
-                        {fmtPHP(prTotal(pr))}
-                      </td>
+                      {showTotalColumn && (
+                        <td
+                          className={`${MONO} px-4 py-[11px] text-right text-[13px] font-semibold text-[#17171c]`}
+                        >
+                          {showPrices || pr.status !== 'converted' ? fmtPHP(prTotal(pr)) : ''}
+                        </td>
+                      )}
                       <td className="px-4 py-[11px] text-[11.5px] text-ink-muted">
                         {fmtDate(pr.createdAt)}
                       </td>

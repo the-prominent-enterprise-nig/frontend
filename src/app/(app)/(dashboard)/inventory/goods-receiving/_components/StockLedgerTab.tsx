@@ -121,8 +121,8 @@ function SourceCell({ entry }: { entry: StockLedgerEntry }) {
         <Link
           href={
             entry.purchaseOrderId
-              ? `/inventory/purchase-orders?tab=orders&po=${entry.purchaseOrderId}`
-              : '/inventory/purchase-orders?tab=orders'
+              ? `/inventory/stock-transaction?tab=purchase-orders&po=${entry.purchaseOrderId}`
+              : '/inventory/stock-transaction?tab=purchase-orders'
           }
           className={`${MONO} truncate text-[13px] text-ink-muted hover:text-[#5b21b6] hover:underline`}
           title="Purchase order"

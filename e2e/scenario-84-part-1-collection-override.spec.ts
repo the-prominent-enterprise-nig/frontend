@@ -9,22 +9,18 @@ import {
   openCustomerOnCollections,
   type PlanFixtures,
 } from './collections-plan'
-// Scenario 84 Part 1 (DC-01 / CL-04) — the Collections screen's Payment date
-// follows "Override current date", whenever the override is set.
+// Scenario 84 Part 1 (DC-01 / CL-04), reduced after the "Override current
+// date" control was removed from Collections. What is left is the Payment date
+// field inside the payment panel: picking an earlier day on an open session
+// leaves the receipt dated today and only judges rebate/penalty lateness as of
+// that day. That the saved date then lands on the right report and ledger is
+// the backend's scenario-84-part-1-collection-penalty e2e.
 //
-// The panel used to seed its Payment date from the override once, when it
-// opened: a cashier who ticked the dues FIRST and set the override after saw
-// the amber "Viewing this screen as of …" banner move, while the Payment date
-// stayed on today — so the collection saved on today, and never reached the
-// overridden day's Collection Report or ledger row. That the saved date then
-// lands on the right report and ledger is the backend's
-// scenario-84-part-1-collection-penalty e2e.
-//
-// The tests themselves are read-only: nothing is collected. The plan they
-// look at is built in beforeAll through checkout (collections-plan.ts), so a
-// freshly seeded test DB, which has no open due, still runs every test
-// instead of skipping. Building it also leaves Bago with an open session, so
-// S84-FE-1.4 always exercises the on-session branch.
+// The test itself is read-only: nothing is collected. The plan it looks at is
+// built in beforeAll through checkout (collections-plan.ts), so a freshly
+// seeded test DB, which has no open due, still runs it instead of skipping.
+// Building it also leaves Bago with an open session, so S84-FE-1.4 always
+// exercises the on-session branch.
 
 const PREFIX = 'E2E S84 Override'
 
@@ -34,11 +30,10 @@ const localDay = (offsetDays = 0): string => {
   return d.toLocaleDateString('en-CA')
 }
 
-const overrideInput = (page: Page) => page.locator('input[type="date"]:not([required])')
-// The panel's own field is the required one.
+// The panel's own Payment date field is the only date input on the screen.
 const paymentDateInput = (page: Page) => page.locator('input[type="date"][required]')
 
-test.describe('Scenario 84 Part 1 — Payment date follows the date override', () => {
+test.describe('Scenario 84 Part 1 — Payment date on an open session', () => {
   let customerName: string
   let fx: PlanFixtures | undefined
 
@@ -71,60 +66,20 @@ test.describe('Scenario 84 Part 1 — Payment date follows the date override', (
     await expect(paymentDateInput(page)).toBeVisible({ timeout: 10_000 })
   }
 
-  test('S84-FE-1.1: an override set after ticking the dues moves the Payment date with it', async ({
-    page,
-  }) => {
-    await tickFirstDue(page)
-    await expect(paymentDateInput(page)).toHaveValue(localDay())
-
-    const yesterday = localDay(-1)
-    await fillStable(overrideInput(page), yesterday)
-    await expect(page.getByText(/Viewing this screen as of/)).toBeVisible()
-    await expect(paymentDateInput(page)).toHaveValue(yesterday)
-  })
-
-  test('S84-FE-1.2: changing the override again, then resetting it, keeps the Payment date in step', async ({
-    page,
-  }) => {
-    await tickFirstDue(page)
-
-    const threeDaysAgo = localDay(-3)
-    await fillStable(overrideInput(page), localDay(-1))
-    await fillStable(overrideInput(page), threeDaysAgo)
-    await expect(paymentDateInput(page)).toHaveValue(threeDaysAgo)
-
-    await page.getByRole('button', { name: 'Reset to today' }).click()
-    await expect(page.getByText(/Viewing this screen as of/)).not.toBeVisible()
-    await expect(paymentDateInput(page)).toHaveValue(localDay())
-  })
-
-  test('S84-FE-1.3: the ticked dues stay ticked when the override changes', async ({ page }) => {
-    await tickFirstDue(page)
-    await fillStable(overrideInput(page), localDay(-1))
-    // The panel reopens for the new date, but over the same selection.
-    await expect(
-      page
-        .locator('li')
-        .filter({ has: page.getByRole('checkbox') })
-        .first()
-        .getByRole('checkbox')
-    ).toBeChecked()
-    await expect(paymentDateInput(page)).toBeVisible()
-  })
-
-  test('S84-FE-1.4: on an open session the override only judges on time or late — the receipt stays today', async ({
+  test('S84-FE-1.4: on an open session an earlier Payment date only judges on time or late — the receipt stays today', async ({
     page,
   }) => {
     // Option 1 (2026-11-05). beforeAll opened a Bago session, so the screen
-    // attaches the collection to it: the receipt is today's, and the
-    // override only decides on time or late.
+    // attaches the collection to it: the receipt is today's, and the Payment
+    // date only decides on time or late.
     await tickFirstDue(page)
+    await expect(paymentDateInput(page)).toHaveValue(localDay())
     await expect(page.getByText('Rebate / penalty as of')).toBeVisible()
     // On today itself there is nothing to assess as of: no note.
     await expect(page.getByTestId('collection-assessed-as-of')).toHaveCount(0)
 
     const yesterday = localDay(-1)
-    await fillStable(overrideInput(page), yesterday)
+    await fillStable(paymentDateInput(page), yesterday)
     await expect(paymentDateInput(page)).toHaveValue(yesterday)
     const note = page.getByTestId('collection-assessed-as-of')
     await expect(note).toBeVisible()

@@ -36,6 +36,9 @@ type Props = {
   /** Whether the "Where should this be delivered?" warning may show yet — held back
    * on a brand-new, untouched form so it doesn't greet every buyer. */
   warnNoDestination?: boolean
+  /** Off when editing a PO without receiving-cost access: no SRP, discounts,
+   * unit price, line totals or money summary — quantities only. */
+  showPrices?: boolean
 }
 
 const EMPTY_LINE = {
@@ -90,6 +93,7 @@ export function PurchaseOrderFormFields({
   initialWarehouseLabel,
   submitted,
   warnNoDestination,
+  showPrices = true,
 }: Props): React.ReactElement {
   const [openLines, setOpenLines] = useState<Record<string, boolean>>({})
   const searchRef = useRef<HTMLDivElement>(null)
@@ -108,7 +112,7 @@ export function PurchaseOrderFormFields({
           submitted={submitted}
           warnNoDestination={warnNoDestination}
         />
-        <OrderSummaryRail control={control} />
+        <OrderSummaryRail control={control} showPrices={showPrices} />
       </div>
 
       <LineItemsCard
@@ -121,6 +125,7 @@ export function PurchaseOrderFormFields({
         openLines={openLines}
         setOpenLines={setOpenLines}
         searchRef={searchRef}
+        showPrices={showPrices}
       />
     </div>
   )
@@ -287,8 +292,10 @@ function ErrorLine({ message }: { message: string }): React.ReactElement {
 // input focus and the Item combobox's selection.
 function OrderSummaryRail({
   control,
+  showPrices,
 }: {
   control: Control<CreatePoFormValues>
+  showPrices: boolean
 }): React.ReactElement {
   const lines = useWatch({ control, name: 'lines' })
 
@@ -322,12 +329,20 @@ function OrderSummaryRail({
         </div>
 
         <div className="flex flex-1 flex-col gap-[9px] px-4 py-3.5">
-          <SummaryRow label="Subtotal at SRP" value={peso(totals.gross)} />
-          <SummaryRow
-            label="Total discounts"
-            value={`−${peso(Math.max(0, totals.gross - totals.net))}`}
-            valueClass="text-[#0b6644]"
-          />
+          {showPrices ? (
+            <>
+              <SummaryRow label="Subtotal at SRP" value={peso(totals.gross)} />
+              <SummaryRow
+                label="Total discounts"
+                value={`−${peso(Math.max(0, totals.gross - totals.net))}`}
+                valueClass="text-[#0b6644]"
+              />
+            </>
+          ) : (
+            <p className="text-[12px] leading-[1.5] text-ink-muted">
+              Prices are kept as they are on this order — Head Office sets them.
+            </p>
+          )}
           <div className="flex items-baseline justify-between gap-2.5 border-t border-[#eeeef1] pt-[9px] text-[11.5px] text-ink-muted">
             <span>Lines / units</span>
             <span className={MONO}>
@@ -342,12 +357,14 @@ function OrderSummaryRail({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[#eee7fb] bg-[#faf7ff] px-4 py-[13px]">
-          <span className="text-[11.5px] text-[#4b4b5a]">Grand total</span>
-          <span className={`${MONO} text-[20px] font-semibold tracking-[-.01em] text-[#3f1490]`}>
-            ₱{peso(totals.net)}
-          </span>
-        </div>
+        {showPrices && (
+          <div className="flex flex-wrap items-end justify-between gap-3 border-t border-[#eee7fb] bg-[#faf7ff] px-4 py-[13px]">
+            <span className="text-[11.5px] text-[#4b4b5a]">Grand total</span>
+            <span className={`${MONO} text-[20px] font-semibold tracking-[-.01em] text-[#3f1490]`}>
+              ₱{peso(totals.net)}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -378,6 +395,10 @@ const LINE_GRID =
 // drag the numeric cells down with it.
 const LINE_GRID_ROW =
   'grid grid-cols-[28px_minmax(0,1fr)_60px_112px_136px_112px_116px_44px_52px] gap-x-2 items-start'
+// The same rows without SRP, Discounts, Unit price and Line total.
+const LINE_GRID_NO_PRICE = 'grid grid-cols-[28px_minmax(0,1fr)_60px_44px_52px] gap-x-2 items-center'
+const LINE_GRID_ROW_NO_PRICE =
+  'grid grid-cols-[28px_minmax(0,1fr)_60px_44px_52px] gap-x-2 items-start'
 
 function LineItemsCard({
   control,
@@ -389,6 +410,7 @@ function LineItemsCard({
   openLines,
   setOpenLines,
   searchRef,
+  showPrices,
 }: {
   control: Control<CreatePoFormValues>
   register: UseFormRegister<CreatePoFormValues>
@@ -399,6 +421,7 @@ function LineItemsCard({
   openLines: Record<string, boolean>
   setOpenLines: React.Dispatch<React.SetStateAction<Record<string, boolean>>>
   searchRef: React.RefObject<HTMLDivElement | null>
+  showPrices: boolean
 }): React.ReactElement {
   const { fields, append, insert, remove } = useFieldArray({ control, name: 'lines' })
   // Scenario 71 — the search lists the chosen supplier's approved items.
@@ -521,15 +544,19 @@ function LineItemsCard({
             {/* Wide: table */}
             <div className="hidden min-[1240px]:block">
               <div
-                className={`${LINE_GRID} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-[18px] py-[9px] text-[10px] uppercase tracking-[.09em] text-ink-muted`}
+                className={`${showPrices ? LINE_GRID : LINE_GRID_NO_PRICE} ${MONO} border-b border-[#eeeef1] bg-[#fbfbfc] px-[18px] py-[9px] text-[10px] uppercase tracking-[.09em] text-ink-muted`}
               >
                 <span />
                 <span>Item / SKU</span>
                 <span className="text-right">Qty</span>
-                <span className="text-right">SRP</span>
-                <span>Discounts</span>
-                <span className="text-right">Unit price</span>
-                <span className="text-right">Line total</span>
+                {showPrices && (
+                  <>
+                    <span className="text-right">SRP</span>
+                    <span>Discounts</span>
+                    <span className="text-right">Unit price</span>
+                    <span className="text-right">Line total</span>
+                  </>
+                )}
                 <span className="text-center">Free</span>
                 <span />
               </div>
@@ -545,6 +572,7 @@ function LineItemsCard({
                   lineCount={fields.length}
                   labels={merged}
                   submitted={submitted}
+                  showPrices={showPrices}
                   open={!!openLines[String(index)]}
                   onToggle={() =>
                     setOpenLines((s) => ({ ...s, [String(index)]: !s[String(index)] }))
@@ -570,6 +598,7 @@ function LineItemsCard({
                   lineCount={fields.length}
                   labels={merged}
                   submitted={submitted}
+                  showPrices={showPrices}
                   open={!!openLines[String(index)]}
                   onToggle={() =>
                     setOpenLines((s) => ({ ...s, [String(index)]: !s[String(index)] }))
@@ -599,6 +628,7 @@ type LineRowProps = {
   lineCount: number
   labels: Record<string, ItemLabel>
   submitted?: boolean
+  showPrices: boolean
   open: boolean
   onToggle: () => void
   onRemove: () => void
@@ -679,7 +709,7 @@ function LineRow(props: LineRowProps): React.ReactElement {
   const badQty = !!submitted && (!quantity || qty < 1)
   // A line priced by hand needs no SRP: one or the other has to give the
   // line a cost, and either alone is enough.
-  const badSrp = !!submitted && !srp && !isFreebie && unit <= 0
+  const badSrp = props.showPrices && !!submitted && !srp && !isFreebie && unit <= 0
   const badItem = !!submitted && !itemId
   const errorText = badItem
     ? 'Item is required.'
@@ -873,7 +903,9 @@ function LineRowWide(p: RenderProps): React.ReactElement {
         errorText ? 'bg-[#fffbfa]' : open ? 'bg-[#fdfcff]' : 'bg-white'
       }`}
     >
-      <div className={`${LINE_GRID_ROW} px-[18px] py-[9px]`}>
+      <div
+        className={`${p.showPrices ? LINE_GRID_ROW : LINE_GRID_ROW_NO_PRICE} px-[18px] py-[9px]`}
+      >
         <span
           className={`${MONO} flex min-h-8 items-center justify-end text-[11px] text-ink-subtle`}
         >
@@ -927,60 +959,64 @@ function LineRowWide(p: RenderProps): React.ReactElement {
           />
         </div>
 
-        <div className={cellBox(p.badSrp)}>
-          <Controller
-            name={`lines.${index}.srp`}
-            control={control}
-            render={({ field }) => (
-              <MoneyInput
-                label="Supplier SRP"
-                value={field.value}
-                onChange={field.onChange}
-                emptyIsUndefined
+        {p.showPrices && (
+          <>
+            <div className={cellBox(p.badSrp)}>
+              <Controller
+                name={`lines.${index}.srp`}
+                control={control}
+                render={({ field }) => (
+                  <MoneyInput
+                    label="Supplier SRP"
+                    value={field.value}
+                    onChange={field.onChange}
+                    emptyIsUndefined
+                  />
+                )}
               />
-            )}
-          />
-        </div>
+            </div>
 
-        <button
-          type="button"
-          onClick={p.onOpenDiscounts}
-          className={`flex w-full items-center justify-between gap-1.5 rounded-md px-2.5 py-1.5 hover:border-[#a3a3b2] ${
-            open ? 'border border-[#ddd0f7] bg-[#f1ebfb]' : 'border border-[#e4e4e9] bg-white'
-          }`}
-        >
-          {p.discounted ? (
-            <span className="flex min-w-0 items-center gap-1.5">
-              <span
-                className={`${MONO} rounded px-1.5 py-px text-[10px] bg-[#f1ebfb] text-[#3f1490]`}
-              >
-                {p.discCount}
-              </span>
-              <span
-                className={`${MONO} whitespace-nowrap text-[11.5px] font-medium text-[#3f1490]`}
-              >
-                −{p.effective.toFixed(1)}%
-              </span>
+            <button
+              type="button"
+              onClick={p.onOpenDiscounts}
+              className={`flex w-full items-center justify-between gap-1.5 rounded-md px-2.5 py-1.5 hover:border-[#a3a3b2] ${
+                open ? 'border border-[#ddd0f7] bg-[#f1ebfb]' : 'border border-[#e4e4e9] bg-white'
+              }`}
+            >
+              {p.discounted ? (
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span
+                    className={`${MONO} rounded px-1.5 py-px text-[10px] bg-[#f1ebfb] text-[#3f1490]`}
+                  >
+                    {p.discCount}
+                  </span>
+                  <span
+                    className={`${MONO} whitespace-nowrap text-[11.5px] font-medium text-[#3f1490]`}
+                  >
+                    −{p.effective.toFixed(1)}%
+                  </span>
+                </span>
+              ) : (
+                <span className="whitespace-nowrap text-[12px] text-ink-muted">+ Add discount</span>
+              )}
+              {open ? (
+                <ChevronUp className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
+              )}
+            </button>
+
+            <UnitPriceCell {...p} />
+
+            <span
+              className={`${MONO} flex min-h-8 items-center justify-end text-right text-[13px] font-semibold ${
+                p.isFreebie ? 'text-[#0b6644]' : 'text-[#17171c]'
+              }`}
+            >
+              {peso(p.lineTotal)}
             </span>
-          ) : (
-            <span className="whitespace-nowrap text-[12px] text-ink-muted">+ Add discount</span>
-          )}
-          {open ? (
-            <ChevronUp className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
-          ) : (
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-ink-muted" />
-          )}
-        </button>
-
-        <UnitPriceCell {...p} />
-
-        <span
-          className={`${MONO} flex min-h-8 items-center justify-end text-right text-[13px] font-semibold ${
-            p.isFreebie ? 'text-[#0b6644]' : 'text-[#17171c]'
-          }`}
-        >
-          {peso(p.lineTotal)}
-        </span>
+          </>
+        )}
 
         <div className="flex min-h-8 items-center justify-center">
           <FreebieBox index={index} control={control} setValue={p.setValue} />
@@ -1028,7 +1064,7 @@ function LineRowWide(p: RenderProps): React.ReactElement {
         </div>
       )}
 
-      {open && <DiscountStack {...p} />}
+      {open && p.showPrices && <DiscountStack {...p} />}
     </div>
   )
 }
@@ -1362,69 +1398,77 @@ function LineCardNarrow(p: RenderProps): React.ReactElement {
               </div>
             )}
           />
-          <div className="flex min-w-0 flex-1 items-center gap-2.5">
-            <span className="shrink-0 text-[12px] text-[#4b4b5a]">Unit price</span>
-            <div className="min-w-0 flex-1">
-              <UnitPriceCell {...p} />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2.5">
-          <span className="text-[12px] text-[#4b4b5a]">SRP</span>
-          <Controller
-            name={`lines.${index}.srp`}
-            control={control}
-            render={({ field }) => (
-              <div className={`flex-1 ${cellBox(p.badSrp)}`}>
-                <MoneyInput
-                  label="Supplier SRP"
-                  value={field.value}
-                  onChange={field.onChange}
-                  emptyIsUndefined
-                />
+          {p.showPrices && (
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <span className="shrink-0 text-[12px] text-[#4b4b5a]">Unit price</span>
+              <div className="min-w-0 flex-1">
+                <UnitPriceCell {...p} />
               </div>
-            )}
-          />
+            </div>
+          )}
         </div>
 
-        <button
-          type="button"
-          onClick={p.onOpenDiscounts}
-          className="flex min-h-11 w-full items-center justify-between gap-2.5 rounded-lg border border-[#ddd0f7] bg-[#f7f3ff] px-[11px] py-2.5"
-        >
-          <span className="flex items-center gap-1.5 text-[12px] font-medium text-[#3f1490]">
-            {p.discounted && (
-              <span className={`${MONO} rounded bg-white px-1.5 py-px text-[10px]`}>
-                {p.discCount}
+        {p.showPrices && (
+          <>
+            <div className="flex items-center gap-2.5">
+              <span className="text-[12px] text-[#4b4b5a]">SRP</span>
+              <Controller
+                name={`lines.${index}.srp`}
+                control={control}
+                render={({ field }) => (
+                  <div className={`flex-1 ${cellBox(p.badSrp)}`}>
+                    <MoneyInput
+                      label="Supplier SRP"
+                      value={field.value}
+                      onChange={field.onChange}
+                      emptyIsUndefined
+                    />
+                  </div>
+                )}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={p.onOpenDiscounts}
+              className="flex min-h-11 w-full items-center justify-between gap-2.5 rounded-lg border border-[#ddd0f7] bg-[#f7f3ff] px-[11px] py-2.5"
+            >
+              <span className="flex items-center gap-1.5 text-[12px] font-medium text-[#3f1490]">
+                {p.discounted && (
+                  <span className={`${MONO} rounded bg-white px-1.5 py-px text-[10px]`}>
+                    {p.discCount}
+                  </span>
+                )}
+                {p.discounted ? `discounts · −${p.effective.toFixed(1)}%` : 'Add discount'}
               </span>
-            )}
-            {p.discounted ? `discounts · −${p.effective.toFixed(1)}%` : 'Add discount'}
-          </span>
-          {open ? (
-            <ChevronUp className="h-4 w-4 shrink-0 text-[#7c4fd1]" />
-          ) : (
-            <ChevronDown className="h-4 w-4 shrink-0 text-[#7c4fd1]" />
-          )}
-        </button>
+              {open ? (
+                <ChevronUp className="h-4 w-4 shrink-0 text-[#7c4fd1]" />
+              ) : (
+                <ChevronDown className="h-4 w-4 shrink-0 text-[#7c4fd1]" />
+              )}
+            </button>
+          </>
+        )}
 
         {errorText && <ErrorLine message={errorText} />}
       </div>
 
-      {open && <DiscountStack {...p} />}
+      {open && p.showPrices && <DiscountStack {...p} />}
 
       <div className="flex items-center justify-between gap-2.5 border-t border-[#eeeef1] bg-[#fbfbfc] px-3 py-2.5">
         <FreebieToggleNarrow index={index} control={control} setValue={p.setValue} />
-        <div className="flex items-baseline gap-2">
-          <span className="text-[11.5px] text-ink-muted">Line total</span>
-          <span
-            className={`${MONO} text-[13px] font-semibold ${
-              p.isFreebie ? 'text-[#0b6644]' : 'text-[#17171c]'
-            }`}
-          >
-            ₱{peso(p.lineTotal)}
-          </span>
-        </div>
+        {p.showPrices && (
+          <div className="flex items-baseline gap-2">
+            <span className="text-[11.5px] text-ink-muted">Line total</span>
+            <span
+              className={`${MONO} text-[13px] font-semibold ${
+                p.isFreebie ? 'text-[#0b6644]' : 'text-[#17171c]'
+              }`}
+            >
+              ₱{peso(p.lineTotal)}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   )

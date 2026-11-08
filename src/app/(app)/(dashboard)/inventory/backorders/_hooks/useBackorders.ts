@@ -1,5 +1,6 @@
 'use client'
 
+import { DEFAULT_PAGE_SIZE } from '@/src/components/inventory/ListFooterPager'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useState } from 'react'
 import { showToast } from '@/src/components/ui/toast'
@@ -15,7 +16,12 @@ import type {
 export function useBackorders() {
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
-  const [limit] = useState(20)
+  const [limit, setLimitState] = useState<number>(DEFAULT_PAGE_SIZE)
+  // A new page size starts back on page 1, or the current page may not exist.
+  const setLimit = (next: number): void => {
+    setLimitState(next)
+    setPage(1)
+  }
 
   const listQuery = useQuery({
     queryKey: ['inventory-backorders', { page, limit }],
@@ -75,6 +81,8 @@ export function useBackorders() {
     error: listQuery.error,
     page,
     setPage,
+    limit,
+    setLimit,
     itemOptions: itemsQuery.data?.data?.data ?? [],
     createBackorder: createMutation.mutateAsync,
     isCreating: createMutation.isPending,

@@ -1,5 +1,6 @@
 'use client'
 
+import { ALL_CARAVANS } from '@/src/schema/inventory/warehouses'
 import {
   useQuery,
   useQueries,
@@ -55,7 +56,8 @@ function hostOptions(
 }
 
 export function useSerialNumbers(
-  // Scenario 60 Part 3 — opens straight onto one caravan (`?caravan=` deep link).
+  // Scenario 60 Part 3 — opens straight onto one caravan (`?caravan=` deep
+  // link), or onto the Caravan view with every caravan (`?caravan=all`).
   opts: { initialCaravanId?: string } = {}
 ) {
   const queryClient = useQueryClient()
@@ -77,7 +79,9 @@ export function useSerialNumbers(
   // caravan; a branch-restricted viewer only ever sees the caravans their
   // own branch hosts, enforced server-side.
   const [caravanView, setCaravanView] = useState(!!opts.initialCaravanId)
-  const [caravanId, setCaravanId] = useState<string | undefined>(opts.initialCaravanId)
+  const [caravanId, setCaravanId] = useState<string | undefined>(
+    opts.initialCaravanId === ALL_CARAVANS ? undefined : opts.initialCaravanId
+  )
   // Narrows the Caravan tab (and its caravan picker) to these host branches.
   const [caravanHostIds, setCaravanHostIds] = useState<string[]>([])
 

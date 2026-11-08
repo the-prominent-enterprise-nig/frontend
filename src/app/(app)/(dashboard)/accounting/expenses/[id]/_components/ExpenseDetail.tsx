@@ -151,7 +151,14 @@ export default function ExpenseDetail({ id }: { id: string }) {
         ]
       : []),
     ...(e.status === 'RECORDED'
-      ? [{ label: 'Void — reverses JE', icon: Ban, onClick: voidExpense }]
+      ? [
+          {
+            label: 'Edit',
+            icon: Pencil,
+            onClick: () => router.push(`/accounting/expenses/${id}/edit`),
+          },
+          { label: 'Void — reverses JE', icon: Ban, onClick: voidExpense },
+        ]
       : []),
   ]
   // Item/Qty/Unit price only ever apply to a Supplier entry (see the form's

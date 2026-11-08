@@ -1,17 +1,23 @@
 'use server'
 
 import { api, ApiResponse } from '@/src/libs/api/client'
-import { VehicleSearchResponseSchema, type VehicleSummary } from '@/src/schema/inventory/vehicles'
+import {
+  VehicleListResponseSchema,
+  type VehicleListItem,
+  type VehicleListResponse,
+} from '@/src/schema/inventory/vehicles'
 
 type Params = {
   q?: string
-  branchId?: string
 }
 
-export async function searchVehicles(params: Params = {}): Promise<ApiResponse<VehicleSummary[]>> {
-  const result = await api.get<VehicleSummary[]>('/inventory/vehicles', {
+// The dispatch form's Plate suggestions: every vehicle on the roster, any
+// branch — not scoped to the branch the stock leaves from or to the caller's
+// own. A short list — it is a type-ahead, not a page.
+export async function searchVehicles(params: Params = {}): Promise<ApiResponse<VehicleListItem[]>> {
+  const result = await api.get<VehicleListResponse>('/inventory/vehicles/lookup', {
     q: params.q,
-    branchId: params.branchId,
+    limit: 20,
   })
 
   if (!result.success || !result.data) {
@@ -22,10 +28,6 @@ export async function searchVehicles(params: Params = {}): Promise<ApiResponse<V
     }
   }
 
-  const validated = VehicleSearchResponseSchema.safeParse(result.data)
-  if (!validated.success) {
-    return { success: true, data: result.data }
-  }
-
-  return { success: true, data: validated.data }
+  const validated = VehicleListResponseSchema.safeParse(result.data)
+  return { success: true, data: validated.success ? validated.data.data : result.data.data }
 }

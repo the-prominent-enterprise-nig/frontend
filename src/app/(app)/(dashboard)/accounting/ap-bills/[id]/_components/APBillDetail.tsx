@@ -79,7 +79,10 @@ export default function APBillDetail({ id }: { id: string }) {
   const cameFrom = useSearchParams().get('from')
   const back =
     cameFrom === 'purchase-orders'
-      ? { href: '/inventory/purchase-orders', label: 'Back to Purchase Orders' }
+      ? {
+          href: '/inventory/stock-transaction?tab=purchase-orders',
+          label: 'Back to Purchase Orders',
+        }
       : { href: '/accounting/ap-bills', label: 'Back to AP Invoices' }
 
   const router = useRouter()

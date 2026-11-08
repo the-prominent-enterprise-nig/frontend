@@ -23,7 +23,9 @@ export default async function CashInTransitPage() {
   // canVerify only matters for a draft left from before that change.
   const canManage = can(session, ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_MANAGE)
   const canVerify = can(session, ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_VERIFY)
-  const canCorrect = can(session, ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_CORRECT)
+  // Correcting a posted deposit is accounting's, from its own Collected Funds
+  // view (accounting/cash-in-transit) — never offered on POS, even to a role
+  // that holds the permission.
 
   // A branch-assigned caller (the Cashier, a Branch Manager) is restricted to
   // their own branch server-side too (PosDepositsService and
@@ -36,7 +38,7 @@ export default async function CashInTransitPage() {
       title="Collected Funds History"
       canManage={canManage}
       canVerify={canVerify}
-      canCorrect={canCorrect}
+      canCorrect={false}
       restrictedBranchId={restrictedBranchId}
       isUnrestricted={restrictedBranchId === null}
     />

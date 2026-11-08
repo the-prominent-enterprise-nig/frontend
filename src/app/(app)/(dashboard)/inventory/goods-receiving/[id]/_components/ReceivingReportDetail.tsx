@@ -1,5 +1,7 @@
 'use client'
 
+import { DocumentUnavailable } from '@/src/components/inventory/DocumentUnavailable'
+import { describeDocumentError } from '@/src/libs/data/document-errors'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Loader2, Paperclip, Pencil, Printer } from 'lucide-react'
@@ -9,6 +11,7 @@ import ReceivingReportSheet, {
 } from '../../../../accounting/receiving-reports/_components/ReceivingReportSheet'
 import ReturnReceiptEditForm from '../../../../accounting/receiving-reports/_components/ReturnReceiptEditForm'
 import ReceivingReportEditForm from '../../../../accounting/receiving-reports/_components/ReceivingReportEditForm'
+import { useSeesSupplierPrices } from '@/src/hooks/useSeesSupplierPrices'
 import { printReceivingReportDocument } from '@/src/libs/print/printInventoryDocument'
 import { getReceivingDocument } from '../../_actions/get-receiving-document'
 import { getReceivingReport } from '../../_actions/get-receiving-report'
@@ -105,6 +108,7 @@ export default function ReceivingReportDetail({
   backLabel?: string
 }) {
   const [doc, setDoc] = useState<ReceivingReportDocument | null>(null)
+  const showPrices = useSeesSupplierPrices()
   const [record, setRecord] = useState<ReceivingReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -158,14 +162,15 @@ export default function ReceivingReportDetail({
         >
           <ArrowLeft className="h-4 w-4" /> {backLabel}
         </Link>
-        <p className="text-red-600">{error ?? 'Not found'}</p>
+        <DocumentUnavailable {...describeDocumentError(error, 'receiving report')} />
       </div>
     )
   }
 
   const lines = record?.lines ?? []
   // Costs reach the inventory RR document for the Business Owner only.
-  const showsAmounts = (doc.document.lines ?? []).some((l) => l.unitCost != null)
+  // …and to roles that may see item cost on screen as well.
+  const showsAmounts = showPrices && (doc.document.lines ?? []).some((l) => l.unitCost != null)
   // VAT-inclusive, as on the printed RR, so it reads the same as the PO price.
   const grossUnitCosts = receivingReportGrossUnitCosts(doc.document)
   const grossById = new Map(
@@ -200,7 +205,7 @@ export default function ReceivingReportDetail({
             </button>
           )}
           <button
-            onClick={() => printReceivingReportDocument(doc)}
+            onClick={() => printReceivingReportDocument(doc, { showPrices })}
             className="inline-flex items-center gap-1.5 rounded-md bg-prominent-orange-600 px-3 py-1.5 text-[13px] font-semibold text-white shadow-sm hover:bg-prominent-orange-700"
           >
             <Printer className="h-4 w-4" /> Print
@@ -258,7 +263,7 @@ export default function ReceivingReportDetail({
         ))}
 
       <div className="mt-2.5">
-        <ReceivingReportSheet doc={doc} />
+        <ReceivingReportSheet doc={doc} showPrices={showPrices} />
       </div>
 
       {/* Pricing as received — the discount chain the receipt itself carries,

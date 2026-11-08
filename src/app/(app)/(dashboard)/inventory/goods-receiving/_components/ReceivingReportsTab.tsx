@@ -1,5 +1,6 @@
 'use client'
 
+import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { useCallback, useEffect, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -266,7 +267,7 @@ function PoLink({ report }: { report: ReceivingReport }) {
   const href = report.stockTransfer
     ? `/inventory/stock-transaction?tab=transfers&transfer=${encodeURIComponent(code)}`
     : poId
-      ? `/inventory/purchase-orders?tab=orders&po=${poId}`
+      ? `/inventory/stock-transaction?tab=purchase-orders&po=${poId}`
       : null
 
   // A typed-in (unlinked) PO number names a document the system doesn't
@@ -338,6 +339,7 @@ export default function ReceivingReportsTab({
     setStatus,
     resetFilters,
     setPage,
+    setLimit,
   } = useReceivingReports()
 
   const queryClient = useQueryClient()
@@ -866,36 +868,15 @@ export default function ReceivingReportsTab({
               })}
             </div>
 
-            {/* Pagination */}
-            <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
-              <span className="text-[11.5px] text-ink-muted">
-                Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of{' '}
-                {total.toLocaleString()} receipts
-              </span>
-              {totalPages > 1 && (
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setPage(Math.max(1, page - 1))}
-                    disabled={page <= 1}
-                    className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-ink-faint"
-                  >
-                    Previous
-                  </button>
-                  <span className="px-2 py-1.5 text-[12px] tabular-nums text-[#4b4b5a]">
-                    {page} / {totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setPage(Math.min(totalPages, page + 1))}
-                    disabled={page >= totalPages}
-                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-ink-faint"
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
-            </div>
+            <ListFooterPager
+              page={page}
+              pageCount={totalPages}
+              total={total}
+              limit={limit}
+              noun="receipts"
+              onPageChange={setPage}
+              onLimitChange={setLimit}
+            />
           </>
         )}
       </div>
