@@ -16,7 +16,7 @@ import {
   STOCK_LEDGER_PAGE_SIZES,
 } from '@/src/components/inventory/ListFooterPager'
 import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
-import { stockStatusOf, type StockStatus } from '@/src/libs/inventory/stock-status'
+import { stockStatusOf, stockTotalOf, type StockStatus } from '@/src/libs/inventory/stock-status'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // This screen follows the Purchase Orders / Receiving Reports design's own
@@ -190,7 +190,12 @@ export default function StockBalanceList({
                 Total
               </span>
               <span className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>
-                {(summary?.totalOnHandQty ?? 0).toLocaleString()}
+                {stockTotalOf({
+                  availableQty: summary?.totalAvailableQty ?? 0,
+                  reservedQty: summary?.totalReservedQty ?? 0,
+                  soldQty: summary?.totalSoldQty ?? 0,
+                  inTransitQty: summary?.totalInTransitQty ?? 0,
+                }).toLocaleString()}
               </span>
             </div>
             <div className="flex flex-col gap-1 px-4 py-3">
@@ -404,7 +409,7 @@ export default function StockBalanceList({
                       role="cell"
                       className={`${MONO} text-right text-[13.5px] font-semibold text-[#17171c]`}
                     >
-                      {bal.onHandQty.toLocaleString()}
+                      {stockTotalOf(bal).toLocaleString()}
                     </span>
 
                     <span
@@ -491,7 +496,7 @@ export default function StockBalanceList({
 
                     <div className="grid grid-cols-5 gap-[6px]">
                       {[
-                        { label: 'Total', value: bal.onHandQty, tone: 'text-[#17171c]' },
+                        { label: 'Total', value: stockTotalOf(bal), tone: 'text-[#17171c]' },
                         {
                           label: 'Transferred',
                           value: bal.inTransitQty,

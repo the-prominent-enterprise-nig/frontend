@@ -55,3 +55,25 @@ export function inTransitQtyOf(
   const rows = Array.isArray(balances) ? balances : [balances]
   return rows.reduce((s, b) => s + Number(b.inTransitQty ?? 0), 0)
 }
+
+type TallyQty = Pick<StockBalance, 'availableQty' | 'reservedQty' | 'soldQty' | 'inTransitQty'>
+
+/**
+ * The Stock Balance "Total" column — every unit attributed to the row, so the
+ * row tallies: Total − Transferred − Sold − Reserved = Available.
+ *
+ * Deliberately NOT `onHandQty`: the server's on-hand already excludes sold
+ * units (a sale decrements it) and in-transit units (dispatch decrements the
+ * source, the destination only counts them on receipt), so subtracting Sold
+ * and Transferred from on-hand counted them twice. Non-sellable on-hand units
+ * (in repair / defective / returned serials) are not part of any column and
+ * so are left out of this total too.
+ */
+export function stockTotalOf(b: TallyQty): number {
+  return (
+    Number(b.availableQty ?? 0) +
+    Number(b.reservedQty ?? 0) +
+    Number(b.soldQty ?? 0) +
+    Number(b.inTransitQty ?? 0)
+  )
+}
