@@ -81,7 +81,7 @@ function hostOptions(
 
 function UnitList({ serials }: { serials: SerialNumberSummary[] }): React.JSX.Element {
   return (
-    <div className="max-h-[132px] overflow-y-auto rounded-[10px] border border-[#eeeef1] bg-[#fbfbfc]">
+    <div className="max-h-33 shrink-0 overflow-y-auto rounded-[10px] border border-[#eeeef1] bg-[#fbfbfc]">
       {serials.map((s) => (
         <div
           key={s.id}
