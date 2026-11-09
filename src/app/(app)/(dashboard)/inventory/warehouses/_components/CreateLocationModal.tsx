@@ -10,6 +10,14 @@ import {
   WarehouseSummary,
 } from '@/src/schema/inventory/warehouses'
 import type { ApiResponse } from '@/src/libs/api/client'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
+
+const LOCATION_TYPE_OPTIONS = [
+  { value: 'shelf', label: 'Shelf' },
+  { value: 'bin', label: 'Bin' },
+  { value: 'zone', label: 'Zone' },
+  { value: 'dock', label: 'Dock' },
+]
 
 type Props = {
   isOpen: boolean
@@ -98,15 +106,12 @@ export default function CreateLocationModal({
                 name="locationType"
                 control={control}
                 render={({ field }) => (
-                  <select
-                    {...field}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="shelf">Shelf</option>
-                    <option value="bin">Bin</option>
-                    <option value="zone">Zone</option>
-                    <option value="dock">Dock</option>
-                  </select>
+                  <SearchableSelect
+                    value={field.value ?? 'shelf'}
+                    onChange={(v) => field.onChange(v || 'shelf')}
+                    options={LOCATION_TYPE_OPTIONS}
+                    portal
+                  />
                 )}
               />
               {errors.locationType && (
@@ -143,7 +148,7 @@ export default function CreateLocationModal({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+              className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-sm font-medium text-white hover:bg-[#4a189b] disabled:opacity-60"
             >
               {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
               {isSubmitting ? 'Saving…' : 'Add Location'}

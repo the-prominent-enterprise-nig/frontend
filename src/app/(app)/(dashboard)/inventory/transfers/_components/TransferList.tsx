@@ -295,10 +295,9 @@ export default function TransferList({ session }: { session: SessionUser }) {
       return { label: 'Review', primary: true }
     if (tr.status === 'draft' && canDispatch && fromInScope)
       return { label: 'Dispatch', primary: true }
-    if (tr.status === 'in_transit' && canReceiveThis)
-      return { label: 'Mark received', primary: true }
+    if (tr.status === 'in_transit' && canReceiveThis) return { label: 'Receive', primary: true }
     if (tr.status === 'partially_received' && canReceiveThis)
-      return { label: 'Receive more', primary: true }
+      return { label: 'Receive', primary: true }
 
     return { label: 'View', primary: false }
   }
@@ -763,7 +762,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                           <button
                             type="button"
                             onClick={() => openDetail(tr)}
-                            className={`w-[112px] rounded-[7px] px-[10px] py-[7px] text-[12.5px] font-medium transition-colors ${
+                            className={`w-[112px] whitespace-nowrap rounded-[7px] px-[10px] py-[7px] text-[12.5px] font-medium transition-colors ${
                               action.primary
                                 ? 'bg-[#5b21b6] text-white hover:bg-[#4a189b]'
                                 : 'border border-[#e4e4e9] bg-white text-[#4b4b5a] hover:bg-[#fbfbfc]'

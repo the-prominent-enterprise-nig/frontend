@@ -19,7 +19,7 @@ import { setRepairProvider } from '../_actions/set-repair-provider'
 import { writeOffUds } from '../_actions/write-off-uds'
 import { receiveFromProvider } from '../_actions/receive-from-provider'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
+import { getRepairProviders } from '../../purchase-orders/_actions/get-repair-providers'
 import type {
   CreateUdsFormValues,
   UpdateUdsStatusFormValues,
@@ -105,7 +105,8 @@ export function useUdsManager() {
 
   const suppliersQuery = useQuery({
     queryKey: ['inventory-uds-repair-providers'],
-    queryFn: () => getSuppliers({ limit: 200 }),
+    // Service centers only — every supplier until any is marked one.
+    queryFn: () => getRepairProviders(),
     staleTime: STALE.LOOKUP,
   })
 

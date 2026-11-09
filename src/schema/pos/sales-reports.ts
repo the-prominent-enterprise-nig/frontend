@@ -61,7 +61,8 @@ export const SalesLineSchema = z.object({
   serialNumbers: z.string(),
   quantity: z.number(),
   lcp: z.number(),
-  unitCost: z.number(),
+  /** Null for a branch-tied user, who never sees cost. */
+  unitCost: z.number().nullable(),
   priceUseName: z.string(),
   agentName: z.string(),
   commission: z.number(),
@@ -120,10 +121,12 @@ const ScorecardFiguresSchema = z.object({
 })
 
 export const ScorecardSchema = z.object({
+  /** From–To; asOf is the last day with figures (To, or today if earlier). */
   period: z.object({
     from: z.string(),
+    to: z.string(),
     asOf: z.string(),
-    daysInMonth: z.number(),
+    daysInPeriod: z.number(),
     daysElapsed: z.number(),
     pace: z.number(),
   }),

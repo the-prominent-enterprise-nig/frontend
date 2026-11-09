@@ -3353,6 +3353,9 @@ export default function CheckoutPage() {
           // till, remembered on the application so coming back to sell it
           // does not ask for a serial that has already been chosen.
           serialNumberId: l.serialNumberId,
+          // Nov UAT — the application takes a ₱0 down payment only when an
+          // item on it was price-overridden, so the cart's override goes along.
+          priceOverridden: l.priceOverridden === true ? true : undefined,
           // Item 29 — so the form's unit picker shows that unit, and offers
           // one for a serial line whose unit was not picked yet.
           serialNumberLabel: l.serialNumberLabel,

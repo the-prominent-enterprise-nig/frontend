@@ -49,9 +49,13 @@ export async function updateCreditApplication(
     // Scenario 64 item 29 — the unit goes back every time, null when there is
     // none: the items are replaced on save, and an explicit null is what tells
     // the server "no unit" rather than "keep whatever was there".
-    items: parsed.data.items?.map(({ itemId, serialNumberId }) => ({
+    items: parsed.data.items?.map(({ itemId, serialNumberId, priceOverridden }) => ({
       itemId,
       serialNumberId: serialNumberId ?? null,
+      // Nov UAT — sent every time too, true or false: the rows are replaced on
+      // save, and the server keeps a flag only for an item that arrives
+      // without one. An explicit false is what takes the override away.
+      priceOverridden: priceOverridden === true,
     })),
     // The edit form's two paper-record boxes arrive as text. A blank PPD
     // rebate means none (null clears it, since the box is optional); a blank

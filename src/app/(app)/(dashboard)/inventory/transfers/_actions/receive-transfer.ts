@@ -2,7 +2,29 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, ApiResponse } from '@/src/libs/api/client'
-import { ReceiveTransferFormSchema } from '@/src/schema/inventory/transfers'
+import {
+  ReceiveTransferFormSchema,
+  type ReceiveTransferFormValues,
+} from '@/src/schema/inventory/transfers'
+
+/** Each "Wrong unit" flag that named a registered unit becomes an extra line
+ * the backend moves here (`serialNumberId`) — received, not just noted. */
+function arrivedUnitExtras(
+  lines: ReceiveTransferFormValues['lines']
+): { itemId: string; quantity: number; serialNumberId: string; notes: string }[] {
+  return lines.flatMap((line) =>
+    line.arrivedSerialNumberId && line.arrivedItemId
+      ? [
+          {
+            itemId: line.arrivedItemId,
+            quantity: 1,
+            serialNumberId: line.arrivedSerialNumberId,
+            notes: 'Wrong unit — arrived in place of a dispatched unit',
+          },
+        ]
+      : []
+  )
+}
 
 export async function receiveTransfer(
   id: string,
@@ -33,12 +55,15 @@ export async function receiveTransfer(
       replacementSerialNumberId: line.replacementSerialNumberId || undefined,
       correctionReason: line.correctionReason || undefined,
     })),
-    extraLines: parsed.data.extraLines?.map((line) => ({
-      itemId: line.itemId,
-      quantity: line.quantity,
-      notes: line.notes || undefined,
-      serialNumbers: line.serialNumbers?.length ? line.serialNumbers : undefined,
-    })),
+    extraLines: [
+      ...(parsed.data.extraLines ?? []).map((line) => ({
+        itemId: line.itemId,
+        quantity: line.quantity,
+        notes: line.notes || undefined,
+        serialNumbers: line.serialNumbers?.length ? line.serialNumbers : undefined,
+      })),
+      ...arrivedUnitExtras(parsed.data.lines),
+    ],
   }
 
   const result = await api.patch<{

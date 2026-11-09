@@ -94,11 +94,22 @@ const DELIVERY_LABEL = { partial: 'Partial delivery', complete: 'PO complete' } 
  * straight away, so "has a bill" says nothing; "has an SI" is what tells
  * you the supplier has actually invoiced this delivery. */
 /** A receipt with nothing to invoice: a transfer from another branch, or
- * units coming back from a customer (repair/return, repossession). */
+ * units coming back from a customer (repair, repossession, a return). */
 function hasNoSupplierInvoice(report: ReceivingReport): boolean {
   return (
-    !!report.stockTransfer || report.reason === 'repair_return' || report.reason === 'repossession'
+    !!report.stockTransfer ||
+    report.reason === 'repair_return' ||
+    report.reason === 'repossession' ||
+    report.reason === 'customer_return'
   )
+}
+
+/** Where a row opens. Ticket #27 — a customer return has no goods receipt,
+ * so it opens its RRC receipt at {detailBasePath}/returns/{id}. */
+function reportHref(report: ReceivingReport, detailBasePath: string): string {
+  return report.sourceType === 'customer_return'
+    ? `${detailBasePath}/returns/${report.id}`
+    : `${detailBasePath}/${report.id}`
 }
 
 function invoiceNumberOf(report: ReceivingReport): string | null {
@@ -340,7 +351,7 @@ export default function ReceivingReportsTab({
     resetFilters,
     setPage,
     setLimit,
-  } = useReceivingReports()
+  } = useReceivingReports({ includeCustomerReturns: true })
 
   const queryClient = useQueryClient()
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -423,6 +434,9 @@ export default function ReceivingReportsTab({
         queryClient.invalidateQueries({ queryKey: ['inventory-stock-balances'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
+        // Open the receipt just posted, the same page a row click opens, so it
+        // can be checked and printed straight away.
+        if (result.data?.id) router.push(`${detailBasePath}/${result.data.id}`)
       } else if (result.errorCode !== 'receiving_warehouse_mismatch') {
         // That one code is a confirmable warning, not a failure — the modal
         // shows its own banner and "Receive anyway" instead of this toast.
@@ -745,7 +759,7 @@ export default function ReceivingReportsTab({
                   <div
                     key={report.id}
                     role="row"
-                    onClick={() => router.push(`${detailBasePath}/${report.id}`)}
+                    onClick={() => router.push(reportHref(report, detailBasePath))}
                     className={`cursor-pointer border-t border-[#f4f4f6] bg-white hover:bg-[#fcfcfd] ${grid} px-4 py-[11px]`}
                   >
                     <div role="cell" className="flex min-w-0 flex-col gap-0.5">
@@ -819,7 +833,7 @@ export default function ReceivingReportsTab({
                 return (
                   <div
                     key={report.id}
-                    onClick={() => router.push(`${detailBasePath}/${report.id}`)}
+                    onClick={() => router.push(reportHref(report, detailBasePath))}
                     className="flex cursor-pointer flex-col gap-[10px] rounded-[11px] border border-[#e4e4e9] bg-white p-3"
                   >
                     <div className="flex items-start justify-between gap-[10px]">

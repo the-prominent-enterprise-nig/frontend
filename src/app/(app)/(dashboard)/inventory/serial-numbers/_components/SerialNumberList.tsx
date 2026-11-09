@@ -55,7 +55,9 @@ import SerialHistoryContent from '@/src/components/inventory/serial-history/Seri
 const STOCK_CLASSES: { id: StockClassification; label: string }[] = [
   { id: 'brand_new', label: 'Brand New' },
   { id: 'repo', label: 'Repo' },
-  { id: 'repair_return', label: 'Repair / Return' },
+  // Ticket #27 — Repair and Return are separate.
+  { id: 'repair_return', label: 'Repair' },
+  { id: 'returned', label: 'Return' },
 ]
 
 const statusOptions = SERIAL_STATUS_FILTER_GROUPS.flatMap(({ group, statuses }) =>

@@ -194,6 +194,8 @@ export default function CreditApplicationDetail({
         // Scenario 64 item 29 — the unit already recorded, shown in the row's
         // unit picker and sent back on save so the edit does not drop it.
         serialNumberId: i.serialNumberId ?? undefined,
+        // Nov UAT — kept through an edit; it is what lets a ₱0 down payment stand.
+        priceOverridden: i.priceOverridden === true ? true : undefined,
         serialNumberLabel: i.serialNumber?.serialNumber,
         isSerialTracked: i.item?.isSerialTracked === true,
       })),
@@ -903,7 +905,17 @@ export default function CreditApplicationDetail({
                 ) : (
                   application.items.map((i) => (
                     <div key={i.id} className="flex items-center justify-between gap-3 py-0.5">
-                      <span className="font-medium text-zinc-900">{i.item?.name ?? '—'}</span>
+                      <span className="font-medium text-zinc-900">
+                        {i.item?.name ?? '—'}
+                        {i.priceOverridden && (
+                          <span
+                            data-testid="credit-application-detail-overridden"
+                            className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
+                          >
+                            Price overridden
+                          </span>
+                        )}
+                      </span>
                       <div className="flex items-center gap-2">
                         <span className="text-zinc-500">
                           ₱

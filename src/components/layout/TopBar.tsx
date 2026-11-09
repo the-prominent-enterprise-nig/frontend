@@ -9,7 +9,7 @@ import { MODULES } from '@/src/libs/guards/modules'
 import { Key, Lock, LogOut, ShieldCheck, Users, UserCircle } from 'lucide-react'
 import { logoutAndRedirect } from '@/src/libs/auth/actions'
 import ChangePasswordModal from '@/src/components/workspace/ChangePasswordModal'
-import { usePosPendingRefundStore } from '@/src/stores/pos-pending-refund.store'
+import { clearClientSession } from '@/src/libs/auth/clear-client-session'
 import NotificationBell from '@/src/components/notifications/NotificationBell'
 
 interface SessionUser {
@@ -172,11 +172,10 @@ export default function TopBar({ session }: { session: SessionUser | null }) {
                       <button
                         onClick={async () => {
                           setProfileOpen(false)
-                          // Persists to localStorage keyed by name only, not by
-                          // user — without this it'd leak the previous account's
-                          // pending-refund badge into the next login on the same
-                          // browser.
-                          usePosPendingRefundStore.getState().clear()
+                          // Query cache + localStorage-persisted stores aren't
+                          // scoped per account — clear them so the next login
+                          // on this browser doesn't see this account's data.
+                          clearClientSession()
                           await logoutAndRedirect()
                         }}
                         className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 cursor-pointer"

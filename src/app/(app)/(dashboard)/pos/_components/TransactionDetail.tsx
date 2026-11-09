@@ -1,7 +1,7 @@
 'use client'
 
 import { MANILA_TZ } from '@/src/libs/format/manila-date'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useVoidRequests, useSubmitVoidRequest, useSessions } from '../_hooks/usePos'
 import Link from 'next/link'
@@ -15,7 +15,7 @@ import {
   Undo2,
   Receipt,
   MapPin,
-  ArrowLeft,
+  PencilLine,
 } from 'lucide-react'
 import { getTransaction, getCustomerById, createTransaction } from '../_actions/pos-actions'
 import type { PosTransaction, PosTransactionInvoice, PosVoidRequest } from '@/src/schema/pos'
@@ -33,6 +33,15 @@ import { deliveryFeeReceiptTenderLabel, qrTenderLabel } from '../checkout/_utils
 import { outputVatLabel } from '@/src/libs/tax/output-vat'
 import { TaxOverrideSummary } from '@/src/components/accounting/TaxOverride'
 import { saleDocNo } from '@/src/libs/format/saleDocNo'
+import { useOwnerEdit } from '@/src/components/accounting/EditReasonSection'
+import { RECORDED_SALES_EDIT } from '@/src/libs/guards/explicit-only-permissions'
+import {
+  AgentInput,
+  DocNoInput,
+  EditEntryBar,
+  useEditEntryForm,
+  type EditEntryForm,
+} from './EditEntry'
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
@@ -67,17 +76,18 @@ export function TransactionDetail({
   canRefund?: boolean
   onVoid?: () => void
   onRefunded?: () => void
-  /** 'page' lays the same content out as cards on a full page (the
-   * Transactions screen); 'modal' is the overlay Customer 360 and the POS
-   * dashboard still open. */
-  variant?: 'modal' | 'page'
+  /** 'full' is the Transactions screen's view of one sale (Ticket #24, NIG's
+   * mockup): a wide modal over the list, with the Sale / Account details /
+   * Agent and credit cards. 'modal' is the compact overlay Customer 360 and
+   * the POS dashboard still open. */
+  variant?: 'modal' | 'full'
 }) {
   const canRequestVoid = can(session, POS_PERMISSIONS.TRANSACTIONS_VOID)
-  const isPage = variant === 'page'
-  // On the page each section is its own card; in the modal they are plain
-  // blocks inside the one white box.
-  const card = 'rounded-xl border border-gray-200 bg-white p-5 shadow-sm'
-  const section = (modalClass: string): string => (isPage ? card : modalClass)
+  const isFull = variant === 'full'
+  // In the full view each section is its own bordered card, titled above it
+  // (NIG's mockup); in the compact modal they are plain blocks.
+  const card = 'rounded-xl border border-gray-200 bg-white px-5 py-4'
+  const section = (modalClass: string): string => (isFull ? card : modalClass)
 
   const { data: detailRes, isLoading: detailLoading } = useQuery({
     queryKey: ['pos-transaction', summary.id],
@@ -101,9 +111,38 @@ export function TransactionDetail({
   const [activeTab, setActiveTab] = useState<'details' | 'void-requests'>('details')
   const [showRefund, setShowRefund] = useState(false)
   const isRefundable = tx.transactionType === 'sale' && tx.status === 'completed'
+  // Ticket #24 follow-up — "Edit entry" beside Refund, in the Transactions
+  // screen's view of a sale: the Business Owner or Sales Admin Clerk
+  // (pos:recorded-sales:edit) puts a sale's numbers and agent right, in place.
+  // No reason is asked; the audit log keeps what each field read before and
+  // after.
+  const canEditEntry = useOwnerEdit(RECORDED_SALES_EDIT) && isFull && tx.transactionType === 'sale'
+  const editEntry = useEditEntryForm(tx)
+  const editing = canEditEntry && editEntry.editing
   // Price Used and Credit are per-unit figures of an installment account, so
-  // only a sale that opened one has them — and only the page has room.
-  const showUnitFigures = isPage && !!tx.accountSummary
+  // only a sale that opened one has them — and only the full view has room.
+  const showUnitFigures = isFull && !!tx.accountSummary
+  // Escape closes the full view, as the × does — not while Edit entry or the
+  // Refund pop-up is open (Cancel / their own close handle those).
+  useEffect(() => {
+    if (!isFull) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape' && !editing && !showRefund) onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isFull, editing, showRefund, onClose])
+  // Edit entry opens with the modal scrolled up to the first box to edit (the
+  // SI / DR No.), the cursor in it: Edit entry sits at the very bottom.
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!editing) return
+    const first = dialogRef.current?.querySelector<HTMLInputElement>(
+      '[data-testid="edit-entry-doc-no"]'
+    )
+    first?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    first?.focus({ preventScroll: true })
+  }, [editing])
 
   const { data: voidReqRes, isLoading: voidReqLoading } = useVoidRequests(tx.id)
   const voidRequests: PosVoidRequest[] = voidReqRes?.data ?? []
@@ -130,33 +169,39 @@ export function TransactionDetail({
 
   return (
     <>
-      {!isPage && <div className="fixed inset-0 z-40 bg-black/30" onClick={onClose} />}
-      <div className={isPage ? '' : 'fixed inset-0 z-50 flex items-center justify-center p-4'}>
+      <div
+        className="fixed inset-0 z-40 bg-black/30"
+        onClick={() => !(isFull && editing) && onClose()}
+      />
+      <div
+        className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${isFull ? 'pointer-events-none' : ''}`}
+      >
         <div
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={`transaction-title-${tx.id}`}
+          data-testid={isFull ? 'transaction-modal' : undefined}
           className={
-            isPage
-              ? 'relative w-full space-y-4'
+            isFull
+              ? 'pointer-events-auto relative w-full max-w-4xl max-h-[92vh] space-y-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl sm:p-8'
               : 'relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl'
           }
         >
-          {!isPage && (
-            <button
-              onClick={onClose}
-              className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
-            >
-              <X size={18} />
-            </button>
-          )}
-          {isPage && (
-            <Link
-              href="/pos/transactions"
-              className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800"
-            >
-              <ArrowLeft size={14} />
-              Transactions
-            </Link>
-          )}
-          <div className={isPage ? card : ''}>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className={`absolute z-10 text-gray-400 hover:text-gray-700 ${isFull ? 'right-6 top-6 sm:right-8 sm:top-8' : 'right-4 top-4'}`}
+          >
+            <X size={18} />
+          </button>
+          <div
+            className={
+              isFull
+                ? 'grid grid-cols-[auto_auto] items-center justify-start gap-x-6 gap-y-1 pr-10'
+                : ''
+            }
+          >
             {/* Lead with the Sales Invoice No. (or the Delivery Receipt No. on a
               DR sale, which is stored here too and labelled in the rows
               below) — that's the document anyone looking this up actually
@@ -164,18 +209,23 @@ export function TransactionDetail({
               rows without one (refunds, and sales predating the
               required-SI rule). */}
             <h2
+              id={`transaction-title-${tx.id}`}
               className={
-                isPage
-                  ? 'mb-1 text-2xl font-bold text-prominent-purple-900'
+                isFull
+                  ? 'col-start-1 row-start-1 text-2xl font-bold text-gray-900'
                   : 'mb-1 text-lg font-bold text-gray-900'
               }
             >
               {tx.salesInvoiceNumber ?? tx.transactionNumber}
             </h2>
             <div
-              className={`flex flex-wrap items-center justify-between gap-3 ${isPage ? '' : 'mb-4'}`}
+              className={
+                isFull ? 'contents' : 'mb-4 flex flex-wrap items-center justify-between gap-3'
+              }
             >
-              <p className="flex items-center gap-2 text-sm text-gray-500 capitalize">
+              <p
+                className={`flex items-center gap-2 text-sm text-gray-500 capitalize ${isFull ? 'col-start-1 row-start-2' : ''}`}
+              >
                 {tx.transactionType} · {tx.status}
                 {tx.isXDeal && <XDealBadge reference={tx.xDealReference} />}
               </p>
@@ -203,9 +253,13 @@ export function TransactionDetail({
                   href={`${
                     canAccessModule(session, 'crm') ? '/crm/customers' : '/pos/customers'
                   }/${tx.customerId}/ledger?transactionId=txn:${tx.id}`}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50"
+                  className={
+                    isFull
+                      ? 'inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 col-start-2 row-span-2 row-start-1 justify-self-start'
+                      : 'inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50'
+                  }
                 >
-                  <Receipt size={13} />
+                  {!isFull && <Receipt size={13} />}
                   View customer ledger →
                 </Link>
               )}
@@ -213,7 +267,7 @@ export function TransactionDetail({
           </div>
 
           {/* Tab switcher */}
-          <div className={`flex gap-1 rounded-lg bg-gray-100 p-1 ${isPage ? '' : 'mb-4'}`}>
+          <div className={`flex gap-1 rounded-lg bg-gray-100 p-1 ${isFull ? '' : 'mb-4'}`}>
             <button
               onClick={() => setActiveTab('details')}
               className={`flex-1 rounded-md py-1.5 text-xs font-semibold transition-colors ${
@@ -242,17 +296,22 @@ export function TransactionDetail({
           {/* ── Details tab ── */}
           {activeTab === 'details' && (
             <>
-              {isPage && (
+              {isFull && (
                 <SaleAccountCards
                   tx={tx}
                   customerName={customerName}
                   card={card}
                   canSeeCommission={tx.accountSummary?.commission != null}
+                  edit={editing ? editEntry : null}
                 />
               )}
-              <div className={section('mb-4')}>
-                <p className="mb-2 text-xs font-semibold uppercase text-gray-500">
-                  Items{isPage && tx.lines ? ` (${tx.lines.length})` : ''}
+              <div className={isFull ? '' : 'mb-4'}>
+                <p
+                  className={
+                    isFull ? sectionTitle : 'mb-2 text-xs font-semibold uppercase text-gray-500'
+                  }
+                >
+                  Items{isFull && tx.lines ? ` (${unitsLabel(tx.lines)})` : ''}
                 </p>
                 {detailLoading ? (
                   <div className="space-y-2">
@@ -267,31 +326,59 @@ export function TransactionDetail({
                 ) : tx.lines && tx.lines.length > 0 ? (
                   <table className="w-full table-fixed text-sm">
                     <thead>
-                      <tr className="border-b text-left text-xs text-gray-500">
-                        <th className="w-auto pb-1">Item</th>
-                        {showUnitFigures && <th className="w-28 pb-1 pl-2">Price Used</th>}
+                      <tr
+                        className={
+                          isFull
+                            ? 'border-b border-gray-200 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500'
+                            : 'border-b text-left text-xs text-gray-500'
+                        }
+                      >
+                        <th className={isFull ? 'w-auto pb-2' : 'w-auto pb-1'}>Item</th>
+                        {showUnitFigures && (
+                          <th className="w-28 pb-2 pl-2 text-center">
+                            <span className={unitFigureHeader}>Price Used</span>
+                          </th>
+                        )}
                         <th className="w-12 pb-1 pl-2 text-right">Qty</th>
-                        <th className="w-24 pb-1 pl-2 text-right">Unit Price</th>
-                        <th className="w-24 pb-1 pl-2 text-right">Total</th>
-                        {showUnitFigures && <th className="w-24 pb-1 pl-2 text-right">Credit</th>}
+                        <th className="w-28 pb-1 pl-2 text-right">Unit Price</th>
+                        <th className="w-28 pb-1 pl-2 text-right">Total</th>
+                        {showUnitFigures && (
+                          <th className="w-32 pb-2 pl-2 text-right">
+                            <span className={`${unitFigureHeader} block`}>Credit</span>
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {tx.lines.map((l) => (
                         <tr key={l.id}>
-                          <td className="py-1.5 pr-2 text-gray-800">
+                          <td
+                            className={
+                              isFull
+                                ? 'py-3 pr-2 font-medium text-gray-900'
+                                : 'py-1.5 pr-2 text-gray-800'
+                            }
+                          >
                             {l.itemName}
                             {l.serialNumber && (
-                              <p className="font-mono text-[10px] text-purple-500">
+                              <p
+                                className={
+                                  isFull
+                                    ? 'mt-0.5 text-[11px] font-normal text-purple-500'
+                                    : 'font-mono text-[10px] text-purple-500'
+                                }
+                              >
                                 SN: {l.serialNumber}
                                 {l.secondarySerialNumber && ` / ${l.secondarySerialNumber}`}
                               </p>
                             )}
                           </td>
                           {showUnitFigures && (
-                            <td className="py-1.5 pl-2">
+                            <td className="py-3 pl-2 text-center">
                               {l.priceUseName && (
-                                <span className="rounded-full bg-prominent-purple-50 px-2 py-0.5 text-[11px] font-medium text-prominent-purple-700">
+                                <span
+                                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${priceUseTone(l.priceUseName)}`}
+                                >
                                   {l.priceUseName}
                                 </span>
                               )}
@@ -301,7 +388,9 @@ export function TransactionDetail({
                           <td className="py-1.5 pl-2 text-right text-gray-600">
                             {formatCurrency(l.unitPrice)}
                           </td>
-                          <td className="py-1.5 pl-2 text-right font-medium text-gray-900">
+                          <td
+                            className={`py-1.5 pl-2 text-right text-gray-900 ${isFull ? 'font-semibold' : 'font-medium'}`}
+                          >
                             {formatCurrency(l.lineTotal)}
                           </td>
                           {showUnitFigures && (
@@ -326,9 +415,7 @@ export function TransactionDetail({
 
               <div
                 className={
-                  isPage
-                    ? `${card} space-y-1 text-sm`
-                    : 'rounded-xl bg-gray-50 p-4 text-sm space-y-1'
+                  isFull ? 'space-y-1 px-1 text-sm' : 'rounded-xl bg-gray-50 p-4 text-sm space-y-1'
                 }
               >
                 <Row label="Subtotal" value={formatCurrency(tx.subtotal)} />
@@ -399,11 +486,11 @@ export function TransactionDetail({
                   </div>
                 )}
                 {/* On the page these three are in the Sale and Agent cards above. */}
-                {!isPage && tx.session?.terminal?.branch?.name && (
+                {!isFull && tx.session?.terminal?.branch?.name && (
                   <Row label="Branch" value={tx.session.terminal.branch.name} />
                 )}
-                {!isPage && customerName && <Row label="Customer" value={customerName} />}
-                {!isPage && tx.sellingAgent && (
+                {!isFull && customerName && <Row label="Customer" value={customerName} />}
+                {!isFull && tx.sellingAgent && (
                   <Row label="Selling Agent" value={tx.sellingAgent.name} />
                 )}
                 {tx.deliveryReceiptNumber && (
@@ -412,23 +499,52 @@ export function TransactionDetail({
                 {tx.isXDeal && tx.xDealReference && (
                   <Row label="X-Deal Reference" value={tx.xDealReference} />
                 )}
-                <div className="border-t border-gray-200 pt-2">
-                  <Row label="Total" value={formatCurrency(tx.totalAmount)} bold />
-                </div>
+                {!isFull && (
+                  <div className="border-t border-gray-200 pt-2">
+                    <Row label="Total" value={formatCurrency(tx.totalAmount)} bold />
+                  </div>
+                )}
               </div>
+              {/* NIG's mockup: the Total on its own grey bar. */}
+              {isFull && (
+                <div
+                  className="flex items-center justify-between rounded-xl bg-gray-50 px-5 py-4 text-base font-bold text-gray-900"
+                  data-testid="transaction-total"
+                >
+                  <span>Total</span>
+                  <span>{formatCurrency(tx.totalAmount)}</span>
+                </div>
+              )}
 
               {tx.payments && tx.payments.length > 0 && (
-                <div className={section('mt-4')}>
-                  <p className="mb-2 text-xs font-semibold uppercase text-gray-500">Payments</p>
+                <div className={isFull ? '' : 'mt-4'}>
+                  <p
+                    className={
+                      isFull ? sectionTitle : 'mb-2 text-xs font-semibold uppercase text-gray-500'
+                    }
+                  >
+                    Payments
+                  </p>
                   {tx.payments.map((p) => (
                     <div key={p.id} className="flex justify-between gap-2 py-1 text-sm">
-                      <span className="capitalize text-gray-600">
-                        {p.paymentMethod === 'qr'
-                          ? qrTenderLabel(p.paymentMethodOption?.name)
-                          : p.paymentMethod.replace('_', ' ')}
+                      <span className={isFull ? 'text-gray-900' : 'capitalize text-gray-600'}>
+                        {/* An installment sale's payment at the counter is its
+                            downpayment (the mockup's "Downpayment · Cash"). */}
+                        {isFull && tx.accountSummary && 'Downpayment · '}
+                        <span className="capitalize">
+                          {p.paymentMethod === 'qr'
+                            ? qrTenderLabel(p.paymentMethodOption?.name)
+                            : p.paymentMethod.replace('_', ' ')}
+                        </span>
                         {p.referenceNumber && (
-                          <span className="block font-mono text-[10px] normal-case text-gray-400">
-                            CR# {p.referenceNumber}
+                          <span
+                            className={
+                              isFull
+                                ? 'mt-0.5 block text-xs normal-case text-gray-500'
+                                : 'block font-mono text-[10px] normal-case text-gray-400'
+                            }
+                          >
+                            {isFull ? 'Reference #' : 'CR#'} {p.referenceNumber}
                           </span>
                         )}
                       </span>
@@ -549,15 +665,28 @@ export function TransactionDetail({
                 </div>
               )}
 
-              {canRefund && isRefundable && (
-                <div className={`flex gap-2 ${isPage ? '' : 'mt-4'}`}>
-                  <button
-                    onClick={() => setShowRefund(true)}
-                    className="flex items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-medium text-orange-700 hover:bg-orange-100"
-                  >
-                    <Undo2 size={12} />
-                    Refund
-                  </button>
+              {editing && <EditEntryBar form={editEntry} card={isFull ? card : ''} />}
+
+              {!editing && ((canRefund && isRefundable) || canEditEntry) && (
+                <div className={`flex gap-2 ${isFull ? '' : 'mt-4'}`}>
+                  {canRefund && isRefundable && (
+                    <button
+                      onClick={() => setShowRefund(true)}
+                      className="flex items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-medium text-orange-700 hover:bg-orange-100"
+                    >
+                      <Undo2 size={12} />
+                      Refund
+                    </button>
+                  )}
+                  {canEditEntry && (
+                    <button
+                      onClick={editEntry.start}
+                      className="flex items-center gap-1.5 rounded-lg border border-prominent-purple-200 bg-prominent-purple-50 px-4 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-100"
+                    >
+                      <PencilLine size={12} />
+                      Edit entry
+                    </button>
+                  )}
                 </div>
               )}
             </>
@@ -565,7 +694,7 @@ export function TransactionDetail({
 
           {/* ── Void Requests tab ── */}
           {activeTab === 'void-requests' && (
-            <div className={`space-y-3 ${isPage ? card : ''}`}>
+            <div className={`space-y-3 ${isFull ? card : ''}`}>
               {voidReqLoading ? (
                 <div className="space-y-3 py-2">
                   {[...Array(2)].map((_, i) => (
@@ -873,11 +1002,28 @@ function RefundModal({
   )
 }
 
+/** A Field while Edit entry is open: its label over an input (a block, not a
+ * paragraph, so a picker can sit in it). */
+function EditField({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <div className="min-w-0">
+      <p className="mb-1 text-xs text-gray-500">{label}</p>
+      {children}
+    </div>
+  )
+}
+
 function Field({ label, value }: { label: string; value: React.ReactNode }): React.JSX.Element {
   return (
     <div className="min-w-0">
       <p className="text-xs text-gray-500">{label}</p>
-      <p className="mt-0.5 break-words text-sm font-semibold text-gray-900">{value}</p>
+      <p className="mt-1 break-words text-base font-semibold text-gray-900">{value}</p>
     </div>
   )
 }
@@ -892,11 +1038,39 @@ function CardGrid({
   children: React.ReactNode
 }): React.JSX.Element {
   return (
-    <div className={card}>
-      <p className="mb-3 text-xs font-semibold uppercase text-gray-500">{title}</p>
-      <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">{children}</div>
-    </div>
+    <section>
+      <p className={sectionTitle}>{title}</p>
+      <div className={`${card} grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3`}>{children}</div>
+    </section>
   )
+}
+
+/** A section's small heading, above its card (NIG's mockup). */
+const sectionTitle = 'mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500'
+
+/** The Price Used and Credit column headings: tinted, as in the mockup. */
+const unitFigureHeader = 'rounded-md bg-prominent-purple-50 px-2 py-1 text-prominent-purple-700'
+
+/** "2 units": the items heading counts units, not lines. */
+function unitsLabel(lines: { quantity: number }[]): string {
+  const units = lines.reduce((n, l) => n + Number(l.quantity || 0), 0)
+  return `${units} unit${units === 1 ? '' : 's'}`
+}
+
+/** Each price use keeps one colour wherever it shows (the mockup has WIP in
+ * green, CR-BR in blue). */
+const PRICE_USE_TONES = [
+  'bg-green-50 text-green-700',
+  'bg-blue-50 text-blue-700',
+  'bg-amber-50 text-amber-700',
+  'bg-pink-50 text-pink-700',
+  'bg-prominent-purple-50 text-prominent-purple-700',
+  'bg-teal-50 text-teal-700',
+]
+function priceUseTone(name: string): string {
+  let h = 0
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0
+  return PRICE_USE_TONES[h % PRICE_USE_TONES.length]
 }
 
 function termsLabel(months: number[]): string {
@@ -912,11 +1086,14 @@ function SaleAccountCards({
   customerName,
   card,
   canSeeCommission,
+  edit,
 }: {
   tx: PosTransaction
   customerName: string | null
   card: string
   canSeeCommission: boolean
+  /** Edit entry is open: the SI / DR No. and the agent are inputs, in place. */
+  edit: EditEntryForm | null
 }): React.JSX.Element {
   const account = tx.accountSummary
   const priceUses = [...new Set((tx.lines ?? []).map((l) => l.priceUseName).filter(Boolean))]
@@ -925,7 +1102,21 @@ function SaleAccountCards({
   return (
     <>
       <CardGrid title="Sale" card={card}>
-        <Field label="SI / DR No." value={saleDocNo(tx)} />
+        {edit ? (
+          <EditField
+            label={tx.deliveryReceiptNumber ? 'Delivery Receipt No.' : 'Sales Invoice No.'}
+          >
+            <DocNoInput
+              form={edit}
+              label={tx.deliveryReceiptNumber ? 'Delivery Receipt No.' : 'Sales Invoice No.'}
+            />
+          </EditField>
+        ) : (
+          <Field
+            label={tx.deliveryReceiptNumber ? 'Delivery Receipt No.' : 'Sales Invoice No.'}
+            value={saleDocNo(tx)}
+          />
+        )}
         <Field label="Customer" value={customerName ?? '—'} />
         <Field label="Branch" value={tx.session?.terminal?.branch?.name ?? '—'} />
       </CardGrid>
@@ -941,9 +1132,15 @@ function SaleAccountCards({
         </CardGrid>
       )}
 
-      {(account || agentName) && (
+      {(account || agentName || edit) && (
         <CardGrid title={account ? 'Agent and credit' : 'Agent'} card={card}>
-          <Field label="Agent" value={agentName ?? '—'} />
+          {edit ? (
+            <EditField label="Agent">
+              <AgentInput form={edit} />
+            </EditField>
+          ) : (
+            <Field label="Agent" value={agentName ?? '—'} />
+          )}
           {account && <Field label="Credit" value={formatCurrency(account.amountFinanced)} />}
           {account && canSeeCommission && (
             <Field label="Commission" value={formatCurrency(account.commission ?? 0)} />

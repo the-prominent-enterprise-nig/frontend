@@ -243,18 +243,18 @@ export default function CustomerLedgerView({
   return (
     <div className="w-full h-full p-4 md:p-6 lg:p-8">
       <div>
-        <Link
-          href={backHref}
-          className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          {backLabel}
-        </Link>
-
-        {/* Own row — the back link above is inline-flex, so rendering these
-            as siblings let them collide on one line. Kept outside the loading
+        {/* The back link on the left, the Transaction picker on the right (the
+            Existing customer mockup's top row). Kept outside the loading
             branch so the filters stay visible and clickable while refetching. */}
-        <div className="mb-3 flex flex-wrap items-center gap-3">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          <Link
+            href={backHref}
+            className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            {backLabel}
+          </Link>
+
           {/* Transaction picker — shown once there's a purchase to choose
               between. Every kind of sale is listed, not just the financed
               ones, so any one transaction can be read as its own ledger.
@@ -262,7 +262,7 @@ export default function CustomerLedgerView({
               option (those are keyed by what the sale became), so it shows
               as its own entry rather than silently reading "All". */}
           {(ledger?.transactions.length ?? 0) > 0 && (
-            <div className="flex w-full max-w-4xl flex-wrap items-center gap-3 sm:flex-nowrap">
+            <div className="flex w-full flex-wrap items-center gap-3 sm:w-[38rem] sm:max-w-full sm:flex-nowrap">
               <span className="shrink-0 text-sm font-medium text-gray-700">Transaction</span>
               <SearchableSelect
                 className="min-w-0 flex-1"

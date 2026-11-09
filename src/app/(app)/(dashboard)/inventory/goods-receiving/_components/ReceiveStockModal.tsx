@@ -23,7 +23,7 @@ import type { InstallmentAccountMeta } from '@/src/components/inventory/Installm
 import { uploadRrAttachment } from '../_actions/upload-rr-attachment'
 import { getServiceCenters } from '../_actions/service-center-units'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
+import { getRepairProviders } from '../../purchase-orders/_actions/get-repair-providers'
 import type { ServiceCenterUnit } from '@/src/schema/inventory/goods-receiving/service-center-units'
 import {
   getInstallmentAccount,
@@ -39,6 +39,11 @@ import {
   type IssueFix,
 } from '../../purchase-orders/_components/receive-po/receiveIssues'
 import { PoLinkPicker, outstandingOf } from './create-rr/PoLinkPicker'
+import { customerReturnPayload } from './create-rr/customerReturnPayload'
+import { recordCustomerReturn, type RrReturnDisposition } from '../_actions/record-customer-return'
+import { useMe } from '@/src/hooks/useMe'
+import { hasPermission } from '@/src/hooks/usePermission'
+import { useQueryClient } from '@tanstack/react-query'
 import { ReturnedUnitsPanel, type ReturnBlock } from './create-rr/ReturnedUnitsPanel'
 import { ServiceCenterUnitsPanel } from './create-rr/ServiceCenterUnitsPanel'
 import {
@@ -260,6 +265,12 @@ export default function ReceiveStockModal({
   // Withholding is previewed at the rates the tax code master holds for the
   // goods / services codes — the ones the server posts at.
   const ewt = useEwtCodes()
+  const { data: me } = useMe()
+  const queryClient = useQueryClient()
+  // Ticket #27 — Return: what happens to each checked unit, and the sales
+  // picked (by id) so the post can credit their own lines.
+  const [dispositions, setDispositions] = useState<Record<string, RrReturnDisposition>>({})
+  const salesById = useRef(new Map<string, RepairIntakeSale>())
 
   useEffect(() => {
     if (isOpen) return
@@ -279,6 +290,8 @@ export default function ReceiveStockModal({
     setSourceMode('registered')
     setDefaultTaxCode('VAT')
     setDefaultWithholdingClass('goods')
+    setDispositions({})
+    salesById.current.clear()
   }, [isOpen, reset])
 
   const watched = watch()
@@ -292,7 +305,10 @@ export default function ReceiveStockModal({
   // Repossession and Repair/Return share one layout: units picked off a
   // customer's invoice, no Source / Location / Reference #.
   const isRepo = watched.reason === 'repossession'
-  const isUnitReturn = isRepo || watched.reason === 'repair_return'
+  // Ticket #27 (Karms's review) — Return uses Repair's fields and posts the
+  // POS customer return itself (stock back, customer credited, RRC #).
+  const customerReturn = watched.reason === 'customer_return'
+  const isUnitReturn = isRepo || watched.reason === 'repair_return' || customerReturn
   // Scenario 73 — a Repair/Return coming back from a service center rather
   // than handed in by a customer: no invoice, no Repair Type, no UDS/RFS.
   const fromServiceCenter =
@@ -314,13 +330,14 @@ export default function ReceiveStockModal({
     enabled: isOpen && fromServiceCenter,
   })
   const serviceCenters = serviceCentersQuery.data?.data ?? []
-  // Every supplier can be the service center: one whose units went out on a
-  // paper DR, or before the system, holds none on record and is only
-  // reachable through the search-by-serial fallback once picked. Those with
-  // units out lead, with their count.
+  // Every service center can be picked: one whose units went out on a paper
+  // DR, or before the system, holds none on record and is only reachable
+  // through the search-by-serial fallback once picked. Those with units out
+  // lead, with their count — even one not marked a service center, since its
+  // units still have to come back.
   const suppliersQuery = useQuery({
     queryKey: ['rr-service-center-suppliers'],
-    queryFn: () => getSuppliers({ limit: 500 }),
+    queryFn: () => getRepairProviders(),
     enabled: isOpen && fromServiceCenter,
   })
   const serviceCenterOptions = [
@@ -429,6 +446,23 @@ export default function ReceiveStockModal({
   // unitCost, which can genuinely be a recorded zero for a historical sale).
   // Caught here rather than left for the server to reject after the fact:
   // ReturnedUnitsPanel already offers a Cost field the moment this applies.
+  if (customerReturn) {
+    if (!hasPermission(me ?? null, 'inventory:stock:return')) {
+      blockers.push({
+        key: 'return-permission',
+        kind: 'error',
+        text: 'Recording a return needs the stock return permission.',
+      })
+    }
+    const location = locationWarehouses.find((w) => w.id === watched.warehouseId)
+    if (watched.warehouseId && location && !location.branchId) {
+      blockers.push({
+        key: 'return-branch',
+        kind: 'error',
+        text: 'A return is received at a branch — pick a branch location.',
+      })
+    }
+  }
   if (watched.reason === 'repossession') {
     lines.forEach((line, index) => {
       if (!line.itemId || Number(line.unitCost) > 0) return
@@ -531,6 +565,13 @@ export default function ReceiveStockModal({
   const ownBranchWarehouseId = actorBranchId
     ? warehouses.find((w) => w.branchId === actorBranchId)?.id
     : undefined
+  // Ticket #27 — a Return lands at the receiver's own branch unless they pick
+  // another branch location.
+  useEffect(() => {
+    if (customerReturn && !watched.warehouseId && ownBranchWarehouseId)
+      setValue('warehouseId', ownBranchWarehouseId, { shouldValidate: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerReturn, ownBranchWarehouseId])
   useEffect(() => {
     if (!isRepo || !ownBranchWarehouseId) return
     if (watched.warehouseId !== ownBranchWarehouseId)
@@ -583,8 +624,9 @@ export default function ReceiveStockModal({
   useEffect(() => {
     const prev = prevReason.current
     prevReason.current = watched.reason
-    const unitReturnReasons = ['repossession', 'repair_return']
+    const unitReturnReasons = ['repossession', 'repair_return', 'customer_return']
     if (prev === watched.reason) return
+    setDispositions({})
     if (
       !unitReturnReasons.includes(prev ?? '') ||
       !unitReturnReasons.includes(watched.reason ?? '')
@@ -743,6 +785,7 @@ export default function ReceiveStockModal({
     patchBlock(key, {
       accountId: id,
       invoiceLabel: label ?? '',
+      soldAtBranch: undefined,
       units: undefined,
       exhausted: false,
       loading: !!id,
@@ -780,6 +823,7 @@ export default function ReceiveStockModal({
    * so Returned by, Customer ID and the unit list fill in at once. A sale
    * with one unit out is pre-checked, same as an installment invoice. */
   function pickSale(key: string, sale: RepairIntakeSale): void {
+    salesById.current.set(sale.id, sale)
     if (returnBlocks.some((b) => b.key !== key && b.accountId === sale.id)) {
       showToast({ title: 'That invoice is already on this receipt', status: 'error' })
       return
@@ -792,6 +836,7 @@ export default function ReceiveStockModal({
     patchBlock(key, {
       accountId: sale.id,
       invoiceLabel: sale.siNumber,
+      soldAtBranch: sale.soldAtBranch?.name,
       units: available,
       exhausted: available.length === 0,
       loading: false,
@@ -1188,7 +1233,39 @@ export default function ReceiveStockModal({
     return out
   }
 
+  /** Ticket #27 — Return: posts the POS customer return for the checked
+   * units (one record — stock back, customer credited, RRC # issued). */
+  async function postCustomerReturn(data: ReceiveStockFormValues): Promise<void> {
+    const serialNumberIds = data.lines
+      .map((l) => l.existingSerialNumberIds?.[0])
+      .filter((id): id is string => !!id)
+    const sale = salesById.current.get(data.lines[0]?.salesTransactionId ?? '')
+    if (!sale || !data.warehouseId) return
+    const res = await recordCustomerReturn(
+      customerReturnPayload({
+        sale,
+        serialNumberIds,
+        dispositions,
+        warehouseId: data.warehouseId,
+        notes: data.notes,
+      })
+    )
+    if (!res.success || !res.data) {
+      showToast({ title: 'Could not record the return', description: res.message, status: 'error' })
+      return
+    }
+    showToast({
+      title: `Return recorded — ${res.data.receivingReportNumber}`,
+      description: res.data.accountingNote ?? `Return # ${res.data.returnNumber}`,
+      status: 'success',
+    })
+    void queryClient.invalidateQueries({ queryKey: ['inventory-returns'] })
+    void queryClient.invalidateQueries({ queryKey: ['inventory-receiving-reports'] })
+    onClose()
+  }
+
   async function post(data: ReceiveStockFormValues): Promise<void> {
+    if (data.reason === 'customer_return') return postCustomerReturn(data)
     const reason = data.reason || undefined
     const unitReturn = reason === 'repossession' || reason === 'repair_return'
     const scReturn = reason === 'repair_return' && data.origin === 'service_center'
@@ -1283,12 +1360,16 @@ export default function ReceiveStockModal({
             Inventory › Receiving › New
           </div>
           <h2 className="text-[21px] font-semibold tracking-[-.02em]">{title}</h2>
-          <p className="text-[12.5px] text-[#4b4b5a]">{subtitle}</p>
+          <p className="text-[12.5px] text-[#4b4b5a]">
+            {customerReturn ? 'Record a customer bringing back what they bought.' : subtitle}
+          </p>
         </div>
 
         <div className="flex items-start gap-4">
           <div className="flex flex-col items-end gap-0.5">
-            <span className="text-[11px] text-[#4b4b5a]">Receiving</span>
+            <span className="text-[11px] text-[#4b4b5a]">
+              {customerReturn ? 'Returning' : 'Receiving'}
+            </span>
             <span
               className={`${MONO} text-[18px] font-semibold tracking-[-.02em] ${
                 totals.units > 0 ? 'text-[#17171c]' : 'text-ink-subtle'
@@ -1352,7 +1433,11 @@ export default function ReceiveStockModal({
         ) : isUnitReturn ? (
           <>
             <ReturnedUnitsPanel
-              mode={isRepo ? 'repossession' : 'repair_return'}
+              mode={isRepo ? 'repossession' : customerReturn ? 'customer_return' : 'repair_return'}
+              dispositions={dispositions}
+              onDisposition={(serialNumberId, value) =>
+                setDispositions((prev) => ({ ...prev, [serialNumberId]: value }))
+              }
               blocks={returnBlocks}
               lines={lines}
               canViewCost={canViewCost}
@@ -1584,8 +1669,15 @@ export default function ReceiveStockModal({
         isSubmitting={isSubmitting}
         onCancel={onClose}
         onPrimary={postNow}
-        primaryLabel={warehouseMismatchWarning ? 'Receive anyway' : submitLabel}
-        submittingLabel={submittingLabel}
+        primaryLabel={
+          customerReturn
+            ? 'Record return'
+            : warehouseMismatchWarning
+              ? 'Receive anyway'
+              : submitLabel
+        }
+        submittingLabel={customerReturn ? 'Recording…' : submittingLabel}
+        verb={customerReturn ? 'Returning' : undefined}
       />
 
       {poPickerOpen && (

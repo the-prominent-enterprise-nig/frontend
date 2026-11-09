@@ -3,7 +3,11 @@
 import ReportDateRange, { type DateRange } from '@/src/components/common/ReportDateRange'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import type { SalesFilterOptions } from '@/src/schema/pos/sales-reports'
-import type { SalesFilterKey, SalesReportFilters } from '../_hooks/useSalesReportFilters'
+import {
+  activeRange,
+  type SalesFilterKey,
+  type SalesReportFilters,
+} from '../_hooks/useSalesReportFilters'
 
 interface Props {
   filters: SalesReportFilters
@@ -14,8 +18,6 @@ interface Props {
   onRegion: (region: string, branchStillValid: boolean) => void
   onClear: () => void
   hasFilters: boolean
-  /** Hide Region and Branch (everyone but the Business Owner). */
-  hideScope?: boolean
 }
 
 type Option = { id: string; name: string }
@@ -34,7 +36,6 @@ export default function SalesReportFilters({
   onRegion,
   onClear,
   hasFilters,
-  hideScope = false,
 }: Props): React.JSX.Element {
   const branches = (options?.branches ?? []).filter(
     (b) => !filters.region || b.region === filters.region
@@ -48,11 +49,14 @@ export default function SalesReportFilters({
   return (
     <section className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
       <div className="flex flex-wrap items-end gap-3">
-        <ReportDateRange value={filters.range} onChange={onRange} showPresets={false} />
+        {/* Sales per Branch keeps its own dates (this month to date by
+            default), so switching tabs never drags a twelve-month range
+            onto the scorecard. */}
+        <ReportDateRange value={activeRange(filters)} onChange={onRange} showPresets={false} />
         {/* A branch-tied user (Branch Manager) only ever sees their own
             branch, so Region and Branch would do nothing — name the branch
             instead of offering filters that can't change the figures. */}
-        {hideScope ? null : options?.branchLocked ? (
+        {options?.branchLocked ? (
           <div className="flex flex-col gap-1 text-xs text-zinc-600">
             Branch
             <span className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-900">
