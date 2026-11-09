@@ -1,7 +1,7 @@
 'use client'
 
 import { MANILA_TZ } from '@/src/libs/format/manila-date'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useVoidRequests, useSubmitVoidRequest, useSessions } from '../_hooks/usePos'
 import Link from 'next/link'
@@ -133,6 +133,17 @@ export function TransactionDetail({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [isFull, editing, showRefund, onClose])
+  // Edit entry opens with the modal scrolled up to the first box to edit (the
+  // SI / DR No.), the cursor in it: Edit entry sits at the very bottom.
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!editing) return
+    const first = dialogRef.current?.querySelector<HTMLInputElement>(
+      '[data-testid="edit-entry-doc-no"]'
+    )
+    first?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    first?.focus({ preventScroll: true })
+  }, [editing])
 
   const { data: voidReqRes, isLoading: voidReqLoading } = useVoidRequests(tx.id)
   const voidRequests: PosVoidRequest[] = voidReqRes?.data ?? []
@@ -167,6 +178,7 @@ export function TransactionDetail({
         className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${isFull ? 'pointer-events-none' : ''}`}
       >
         <div
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby={`transaction-title-${tx.id}`}
@@ -184,7 +196,13 @@ export function TransactionDetail({
           >
             <X size={18} />
           </button>
-          <div className={isFull ? 'relative pr-10' : ''}>
+          <div
+            className={
+              isFull
+                ? 'grid grid-cols-[auto_auto] items-center justify-start gap-x-6 gap-y-1 pr-10'
+                : ''
+            }
+          >
             {/* Lead with the Sales Invoice No. (or the Delivery Receipt No. on a
               DR sale, which is stored here too and labelled in the rows
               below) — that's the document anyone looking this up actually
@@ -195,16 +213,20 @@ export function TransactionDetail({
               id={`transaction-title-${tx.id}`}
               className={
                 isFull
-                  ? 'mb-1 text-2xl font-bold text-gray-900'
+                  ? 'col-start-1 row-start-1 text-2xl font-bold text-gray-900'
                   : 'mb-1 text-lg font-bold text-gray-900'
               }
             >
               {tx.salesInvoiceNumber ?? tx.transactionNumber}
             </h2>
             <div
-              className={`flex flex-wrap items-center justify-between gap-3 ${isFull ? '' : 'mb-4'}`}
+              className={
+                isFull ? 'contents' : 'mb-4 flex flex-wrap items-center justify-between gap-3'
+              }
             >
-              <p className="flex items-center gap-2 text-sm text-gray-500 capitalize">
+              <p
+                className={`flex items-center gap-2 text-sm text-gray-500 capitalize ${isFull ? 'col-start-1 row-start-2' : ''}`}
+              >
                 {tx.transactionType} · {tx.status}
                 {tx.isXDeal && <XDealBadge reference={tx.xDealReference} />}
               </p>
@@ -234,7 +256,7 @@ export function TransactionDetail({
                   }/${tx.customerId}/ledger?transactionId=txn:${tx.id}`}
                   className={
                     isFull
-                      ? 'inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 sm:absolute sm:left-1/2 sm:top-1 sm:-translate-x-1/2'
+                      ? 'inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 col-start-2 row-span-2 row-start-1 justify-self-start'
                       : 'inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-[12px] font-medium text-prominent-orange-700 hover:bg-gray-50'
                   }
                 >
