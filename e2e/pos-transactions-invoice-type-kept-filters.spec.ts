@@ -265,26 +265,30 @@ test('the Invoice Type filter narrows the list to cash or installment sales, and
   const stamp = Date.now()
   const { si } = await threeSales(page, stamp)
   const invoiceTypeSelect = page.getByLabel('Invoice Type', { exact: true })
+  const pickInvoiceType = async (label: string) => {
+    await invoiceTypeSelect.click()
+    await page.getByTestId('searchable-select-option').filter({ hasText: label }).first().click()
+  }
 
   await gotoReady(page, '/pos/transactions')
   await fillStable(page.getByPlaceholder('Search…'), `T24B-${stamp}`)
   await expect(rowOf(page, si('3'))).toBeVisible({ timeout: 15_000 })
 
   // Like Type / Status / dates, it waits for Apply.
-  await invoiceTypeSelect.selectOption('cash')
+  await pickInvoiceType('Cash')
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect.poll(async () => (await listedDocNos(page)).sort()).toEqual([si('10'), si('2')])
 
-  await invoiceTypeSelect.selectOption('installment_inhouse')
+  await pickInvoiceType('Installment (In-house)')
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect.poll(() => listedDocNos(page)).toEqual([si('3')])
 
   // None of ours is TPF.
-  await invoiceTypeSelect.selectOption('installment_tpf')
+  await pickInvoiceType('Installment (TPF)')
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect(page.getByText('No transactions found.')).toBeVisible({ timeout: 15_000 })
 
-  await invoiceTypeSelect.selectOption('installment')
+  await pickInvoiceType('Installment (all)')
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect.poll(() => listedDocNos(page)).toEqual([si('3')])
 
@@ -292,12 +296,12 @@ test('the Invoice Type filter narrows the list to cash or installment sales, and
   await rowOf(page, si('3')).click()
   await expect(page.getByText('Account details', { exact: true })).toBeVisible({ timeout: 15_000 })
   await page.getByRole('link', { name: 'Transactions', exact: true }).click()
-  await expect(invoiceTypeSelect).toHaveValue('installment', { timeout: 15_000 })
+  await expect(invoiceTypeSelect).toHaveValue('Installment (all)', { timeout: 15_000 })
   await expect.poll(() => listedDocNos(page)).toEqual([si('3')])
 
   // Clear brings every type back.
   await page.getByRole('button', { name: 'Clear' }).click()
-  await expect(invoiceTypeSelect).toHaveValue('')
+  await expect(invoiceTypeSelect).toHaveValue(/^(All invoice types)?$/)
 })
 
 test('filters, branch and sort are still set after opening a transaction and coming back', async ({
@@ -414,4 +418,80 @@ test('an old ?id= link still lands on the transaction, not on the list', async (
 
   await gotoReady(page, `/pos/transactions?id=${cashBago}`)
   await expect(page).toHaveURL(new RegExp(`/pos/transactions/${cashBago}`), { timeout: 15_000 })
+})
+
+// ── More edge cases ──────────────────────────────────────────────────────
+
+test('Invoice Type, Branch and Status together narrow the list to what all three allow', async ({
+  page,
+}) => {
+  const stamp = Date.now()
+  const { si, bago } = await threeSales(page, stamp)
+
+  await gotoReady(page, '/pos/transactions')
+  await fillStable(page.getByPlaceholder('Search…'), `T24B-${stamp}`)
+  await expect(rowOf(page, si('3'))).toBeVisible({ timeout: 15_000 })
+
+  await pickBranch(page, bago.name)
+  await page.getByLabel('Invoice Type', { exact: true }).click()
+  await page.getByTestId('searchable-select-option').filter({ hasText: 'Cash' }).first().click()
+  await page.locator('select').filter({ hasText: 'All statuses' }).selectOption('completed')
+  await page.getByRole('button', { name: 'Apply' }).click()
+  // Bago's cash sale only: not Antique's cash sale, not Bago's installment one.
+  await expect.poll(() => listedDocNos(page)).toEqual([si('2')])
+
+  // Voided: none of ours.
+  await page.locator('select').filter({ hasText: 'All statuses' }).selectOption('voided')
+  await page.getByRole('button', { name: 'Apply' }).click()
+  await expect(page.getByText('No transactions found.')).toBeVisible({ timeout: 15_000 })
+})
+
+test('a new browser tab opens the list unfiltered; the first tab keeps its own filters (edge)', async ({
+  page,
+}) => {
+  const stamp = Date.now()
+  const { si, antique } = await threeSales(page, stamp)
+
+  await gotoReady(page, '/pos/transactions')
+  await fillStable(page.getByPlaceholder('Search…'), `T24B-${stamp}`)
+  await expect(rowOf(page, si('2'))).toBeVisible({ timeout: 15_000 })
+  await pickBranch(page, antique.name)
+  await expect.poll(() => listedDocNos(page)).toEqual([si('10')])
+
+  const second = await page.context().newPage()
+  await gotoReady(second, '/pos/transactions')
+  await expect(second.getByPlaceholder('Search…')).toHaveValue('', { timeout: 15_000 })
+  await expect(branchBox(second)).toHaveValue(/^(All branches)?$/)
+  await second.close()
+
+  await page.reload()
+  await expect(branchBox(page)).toHaveValue(antique.name, { timeout: 15_000 })
+})
+
+test('a damaged saved filter does not break the page: the list opens unfiltered (edge)', async ({
+  page,
+}) => {
+  await gotoReady(page, '/pos/transactions')
+  await page.evaluate(() =>
+    window.sessionStorage.setItem('pos.transactions.listFilters', '{not json')
+  )
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Transactions' })).toBeVisible({
+    timeout: 15_000,
+  })
+  await expect(page.getByPlaceholder('Search…')).toHaveValue('')
+  await expect(page.getByRole('button', { name: 'Apply' })).toBeVisible()
+
+  // A saved value of the wrong shape is read field by field, not trusted.
+  await page.evaluate(() =>
+    window.sessionStorage.setItem(
+      'pos.transactions.listFilters',
+      JSON.stringify({ search: 42, sort: 'sideways', filters: { invoiceType: ['x'] } })
+    )
+  )
+  await page.reload()
+  await expect(page.getByPlaceholder('Search…')).toHaveValue('', { timeout: 15_000 })
+  await expect(page.getByLabel('Invoice Type', { exact: true })).toHaveValue(
+    /^(All invoice types)?$/
+  )
 })

@@ -282,32 +282,16 @@ function TransactionsListView({
               />
             </div>
           </div>
-          <div>
-            <label
-              htmlFor="transactions-invoice-type"
-              className="mb-1 block text-xs font-semibold text-gray-600"
-            >
-              Invoice Type
-            </label>
-            <div className="relative">
-              <select
-                id="transactions-invoice-type"
-                className="select"
-                value={filters.invoiceType}
-                onChange={(e) => setFilters((p) => ({ ...p, invoiceType: e.target.value }))}
-              >
-                <option value="">All invoice types</option>
-                {INVOICE_TYPE_FILTER_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown
-                size={14}
-                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"
-              />
-            </div>
+          <div className="w-52">
+            <label className="mb-1 block text-xs font-semibold text-gray-600">Invoice Type</label>
+            {/* Same picker as Branch; like Type / Status / dates it waits for Apply. */}
+            <SearchableSelect
+              value={filters.invoiceType}
+              onChange={(v) => setFilters((p) => ({ ...p, invoiceType: v }))}
+              options={[{ value: '', label: 'All invoice types' }, ...INVOICE_TYPE_FILTER_OPTIONS]}
+              placeholder="All invoice types"
+              ariaLabel="Invoice Type"
+            />
           </div>
           {branchPickerVisible && (
             <div className="w-48">

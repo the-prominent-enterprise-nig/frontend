@@ -62,7 +62,7 @@ async function unitInStock(page: Page, branchId: string) {
   throw new Error('No priced unit in stock at the branch')
 }
 
-async function saleWithAgentAndPayment(page: Page, stamp: number) {
+async function saleWithAgentAndPayment(page: Page, stamp: number, opts: { dr?: boolean } = {}) {
   const customer = await (
     await page.request.post('/api/crm/customers', {
       data: {
@@ -98,7 +98,7 @@ async function saleWithAgentAndPayment(page: Page, stamp: number) {
     data: {
       sessionId: await openSession(page, bago.id),
       customerId: customer.id,
-      salesInvoiceNumber: si,
+      ...(opts.dr ? { deliveryReceiptNumber: si } : { salesInvoiceNumber: si }),
       sellingAgentId: firstAgent.id,
       subtotal: unit.price,
       totalAmount: unit.price,
@@ -226,4 +226,64 @@ test('a cashier and a branch manager see Refund but no Edit entry', async ({ bro
     expect(res.status(), email).toBe(403)
     await context.close()
   }
+})
+
+// ── More edge cases ──────────────────────────────────────────────────────
+
+test('a Delivery Receipt sale is edited as a DR: the box is labelled Delivery Receipt No.', async ({
+  page,
+}) => {
+  const stamp = Date.now()
+  const { id, si } = await saleWithAgentAndPayment(page, stamp, { dr: true })
+
+  await gotoReady(page, `/pos/transactions/${id}`)
+  await page.getByRole('button', { name: 'Edit entry' }).click({ timeout: 15_000 })
+  const docNo = page.getByLabel('Delivery Receipt No.', { exact: true })
+  await expect(docNo).toHaveValue(si)
+  await expect(page.getByLabel('Sales Invoice No.', { exact: true })).toHaveCount(0)
+  await fillStable(docNo, `${si}-DR`)
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page.getByText('Entry updated')).toBeVisible({ timeout: 15_000 })
+
+  const detail = await (await page.request.get(`/api/pos/transactions/${id}`)).json()
+  expect(detail.deliveryReceiptNumber).toBe(`${si}-DR`)
+  expect(detail.salesInvoiceNumber).toBe(`${si}-DR`)
+})
+
+test('a blank SI No. is refused before anything is sent (edge)', async ({ page }) => {
+  const stamp = Date.now()
+  const { id, si } = await saleWithAgentAndPayment(page, stamp)
+
+  await gotoReady(page, `/pos/transactions/${id}`)
+  await page.getByRole('button', { name: 'Edit entry' }).click({ timeout: 15_000 })
+  await page.getByLabel('Sales Invoice No.', { exact: true }).fill('   ')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page.getByTestId('edit-entry-error')).toContainText("can't be blank")
+  const detail = await (await page.request.get(`/api/pos/transactions/${id}`)).json()
+  expect(detail.salesInvoiceNumber).toBe(si)
+})
+
+test('the agent can be taken off the sale with "No agent" (edge)', async ({ page }) => {
+  const stamp = Date.now()
+  const { id } = await saleWithAgentAndPayment(page, stamp)
+
+  await gotoReady(page, `/pos/transactions/${id}`)
+  await page.getByRole('button', { name: 'Edit entry' }).click({ timeout: 15_000 })
+  await pickAgent(page, 'No agent')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page.getByText('Entry updated')).toBeVisible({ timeout: 15_000 })
+  const detail = await (await page.request.get(`/api/pos/transactions/${id}`)).json()
+  expect(detail.sellingAgent ?? null).toBeNull()
+})
+
+test('a refund has no Edit entry (edge)', async ({ page }) => {
+  const body = await (
+    await page.request.get('/api/pos/transactions', { params: { transactionType: 'refund' } })
+  ).json()
+  const refund = ((body.data ?? body) as { id: string }[])[0]
+  test.skip(!refund, 'no refund on this database')
+
+  await gotoReady(page, `/pos/transactions/${refund.id}`)
+  await expect(page.getByRole('heading', { level: 2 })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('button', { name: 'Edit entry' })).toHaveCount(0)
 })

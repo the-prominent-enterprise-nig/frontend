@@ -114,7 +114,8 @@ export function TransactionDetail({
   const isRefundable = tx.transactionType === 'sale' && tx.status === 'completed'
   // Ticket #24 follow-up — "Edit entry" beside Refund, on the transaction's
   // own page: the Business Owner (pos:recorded-sales:edit) puts a sale's
-  // numbers and agent right, with a reason.
+  // numbers and agent right. No reason is asked; the audit log keeps what
+  // each field read before and after.
   const canEditEntry = useOwnerEdit(RECORDED_SALES_EDIT) && isPage && tx.transactionType === 'sale'
   const editEntry = useEditEntryForm(tx)
   const editing = canEditEntry && editEntry.editing
