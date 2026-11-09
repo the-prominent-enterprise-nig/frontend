@@ -233,7 +233,7 @@ function CombinedDepositDetail({
               lines={lines}
               fallbackDate={deposits[0].depositDate}
               onEdit={canEdit ? () => setEditing(true) : undefined}
-              editLabel="Edit deposit"
+              editLabel="Correct deposit"
             />
           )}
           <DepositHistory ids={deposits.map((d) => d.id)} />
@@ -449,7 +449,7 @@ export function DepositDetail({
               lines={deposit.lines ?? []}
               fallbackDate={deposit.depositDate}
               onEdit={canEditSlips ? () => setEditing(true) : undefined}
-              editLabel={correcting ? 'Edit deposit' : 'Edit slips'}
+              editLabel={correcting ? 'Correct deposit' : 'Edit slips'}
             />
           )}
           {deposit.status !== 'draft' && <DepositHistory ids={[deposit.id]} />}

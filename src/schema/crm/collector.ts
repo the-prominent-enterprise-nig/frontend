@@ -22,10 +22,6 @@ export const createCollectorSchema = z.object({
   areaCode: z.string().max(50, 'Area code is too long').optional(),
   supervisorName: z.string().max(255, 'Supervisor is too long').optional(),
   areaBarangayCodes: z.array(z.string().max(20)).optional(),
-  // The towns/cities this collector covers — PSGC city_code plus its name.
-  areaTowns: z
-    .array(z.object({ cityCode: z.string().max(20), cityName: z.string().max(255) }))
-    .optional(),
 })
 
 export type CreateCollectorInput = z.infer<typeof createCollectorSchema>

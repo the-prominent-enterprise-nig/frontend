@@ -1102,9 +1102,6 @@ export interface UpdateAcknowledgementReceiptInput {
   reason?: string
   amount?: number
   correctionReason?: string
-  /** Why the receipt is being changed. Required of the Business Owner
-   * (pos:new-receipts:edit); kept in the audit log. */
-  editReason?: string
   paymentDate?: string
   receiptType?: 'COLLECTION' | 'ACKNOWLEDGEMENT'
   method?: PaymentMethod
@@ -3080,23 +3077,9 @@ export const BankTransfers = {
     branchId?: string
   }) => api.get<FundTransfer[]>('/bank-accounts/transfers', params),
   get: (id: string) => api.get<FundTransfer>(`/bank-accounts/transfers/${id}`),
-  // Anyone who may transfer can change the clearing date and the reference once
-  // posted (null clears a field). The rest is the Business Owner's, with a reason:
-  // the journal entry is reversed and posted again.
-  update: (
-    id: string,
-    body: {
-      clearingDate?: string | null
-      reference?: string | null
-      date?: string
-      amount?: number
-      sourceBankAccountId?: string
-      destinationBankAccountId?: string
-      description?: string | null
-      branchId?: string | null
-      editReason?: string
-    }
-  ) => api.patch<FundTransfer>(`/bank-accounts/transfers/${id}`, body),
+  // Only these two fields are editable once posted; null clears a field.
+  update: (id: string, body: { clearingDate?: string | null; reference?: string | null }) =>
+    api.patch<FundTransfer>(`/bank-accounts/transfers/${id}`, body),
   getDocument: (id: string) => api.get<unknown>(`/bank-accounts/transfers/${id}/document`),
   // Scenario 72 — reverses the transfer's journal entry; the reason is required.
   void: (id: string, reason: string) =>

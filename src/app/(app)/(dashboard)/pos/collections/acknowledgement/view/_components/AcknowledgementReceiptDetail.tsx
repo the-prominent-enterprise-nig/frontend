@@ -1,10 +1,5 @@
 'use client'
 
-import EditReasonSection, {
-  EDIT_REASON_REQUIRED,
-  useOwnerEdit,
-} from '@/src/components/accounting/EditReasonSection'
-import { NEW_RECEIPTS_EDIT } from '@/src/libs/guards/explicit-only-permissions'
 import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -267,11 +262,6 @@ function AcknowledgementReceiptDetailBody({
   // either requires correctionReason and the backend posts a new adjusting
   // entry for the delta, same as the create form's own field set.
   const [editing, setEditing] = useState(false)
-  // The Business Owner (pos:new-receipts:edit) says why for every edit, kept in
-  // the audit log; the same reason labels the adjusting entry when the amount or
-  // account moves. A changed date also moves the receipt's journal entry.
-  const ownerEdit = useOwnerEdit(NEW_RECEIPTS_EDIT)
-  const [editReason, setEditReason] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<{
@@ -374,7 +364,6 @@ function AcknowledgementReceiptDetailBody({
       branchId: receipt.branchId ?? '',
     })
     setEditError(null)
-    setEditReason('')
     setEditing(true)
   }
 
@@ -435,11 +424,7 @@ function AcknowledgementReceiptDetailBody({
 
   const saveEdit = async () => {
     if (!editForm) return
-    if (ownerEdit && !editReason.trim()) {
-      setEditError(EDIT_REASON_REQUIRED)
-      return
-    }
-    if (financialChange && !ownerEdit && !editForm.correctionReason.trim()) {
+    if (financialChange && !editForm.correctionReason.trim()) {
       setEditError('A correction reason is required when amount or account changes.')
       return
     }
@@ -451,7 +436,6 @@ function AcknowledgementReceiptDetailBody({
       reason: editForm.reason || undefined,
       amount: Number(editForm.amount),
       correctionReason: editForm.correctionReason || undefined,
-      ...(ownerEdit ? { editReason: editReason.trim() } : {}),
       paymentDate: editForm.paymentDate,
       receiptType: editForm.receiptType,
       method: editForm.method,
@@ -708,15 +692,7 @@ function AcknowledgementReceiptDetailBody({
               </Field>
             </div>
 
-            {ownerEdit && (
-              <EditReasonSection
-                value={editReason}
-                onChange={setEditReason}
-                testId="receipt-edit-reason"
-                what="receipt"
-              />
-            )}
-            {financialChange && !ownerEdit && (
+            {financialChange && (
               <Field label="Correction Reason">
                 <input
                   required

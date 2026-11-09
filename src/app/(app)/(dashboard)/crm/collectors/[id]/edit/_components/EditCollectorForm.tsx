@@ -9,7 +9,6 @@ import { getBranches } from '../../../_actions/get-branches'
 import { updateCollectorSchema, type UpdateCollectorInput } from '@/src/schema/crm/collector'
 import type { CollectorStatus } from '@/src/schema/crm/types'
 import CollectorAreaPicker from '@/src/components/crm/CollectorAreaPicker'
-import CollectorTownPicker, { type CollectorTown } from '@/src/components/crm/CollectorTownPicker'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
 type FormState = {
@@ -21,7 +20,6 @@ type FormState = {
   areaCode: string
   supervisorName: string
   areaBarangayCodes: string[]
-  areaTowns: CollectorTown[]
 }
 
 const empty: FormState = {
@@ -33,7 +31,6 @@ const empty: FormState = {
   areaCode: '',
   supervisorName: '',
   areaBarangayCodes: [],
-  areaTowns: [],
 }
 
 export default function EditCollectorForm({ id }: { id: string }) {
@@ -66,7 +63,6 @@ export default function EditCollectorForm({ id }: { id: string }) {
           areaCode: c.areaCode ?? '',
           supervisorName: c.supervisorName ?? '',
           areaBarangayCodes: c.areas.map((a) => a.barangayCode),
-          areaTowns: c.towns.map((t) => ({ cityCode: t.cityCode, cityName: t.cityName })),
         })
       } else {
         setServerError(collectorRes.error ?? 'Collector not found')
@@ -94,7 +90,6 @@ export default function EditCollectorForm({ id }: { id: string }) {
       areaCode: form.areaCode,
       supervisorName: form.supervisorName,
       areaBarangayCodes: form.areaBarangayCodes,
-      areaTowns: form.areaTowns,
     }
 
     const parsed = updateCollectorSchema.safeParse(payload)
@@ -207,23 +202,10 @@ export default function EditCollectorForm({ id }: { id: string }) {
         </div>
 
         <div>
-          <label className="block text-[13px] font-medium text-gray-700">Towns covered</label>
-          <p className="mt-0.5 mb-2 text-[12px] text-gray-500">
-            Towns this collector covers — a new installment account is assigned to the collector who
-            covers the customer&apos;s town, and its Area is filled in from it. Where several
-            collectors cover one town, the one with the fewest active accounts gets it.
-          </p>
-          <CollectorTownPicker
-            value={form.areaTowns}
-            onChange={(next) => setField('areaTowns', next)}
-          />
-        </div>
-
-        <div>
           <label className="block text-[13px] font-medium text-gray-700">Coverage areas</label>
           <p className="mt-0.5 mb-2 text-[12px] text-gray-500">
-            Barangays this collector covers — optional and more specific than a town: a collector
-            covering the customer&apos;s barangay is preferred over one who only covers the town.
+            Barangays this collector covers — used to auto-assign or filter collectors when creating
+            an installment account for a customer in one of these areas.
           </p>
           <CollectorAreaPicker
             value={form.areaBarangayCodes}

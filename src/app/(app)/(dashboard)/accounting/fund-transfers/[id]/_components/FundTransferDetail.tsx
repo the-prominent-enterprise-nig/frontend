@@ -4,21 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { ArrowLeft, Ban, CheckCircle2, Pencil, Printer } from 'lucide-react'
-import {
-  BankAccounts,
-  BankTransfers,
-  type BankAccount,
-  type FundTransfer,
-  fmtMoney,
-} from '@/src/libs/data/AccountingV2Data'
-import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
-import SearchableSelect from '@/src/components/ui/SearchableSelect'
-import MoneyInput from '@/src/components/ui/MoneyInput'
-import EditReasonSection, {
-  EDIT_REASON_REQUIRED,
-  useOwnerEdit,
-} from '@/src/components/accounting/EditReasonSection'
-import { RECORDED_ENTRIES_EDIT } from '@/src/libs/guards/explicit-only-permissions'
+import { BankTransfers, type FundTransfer, fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import { printInterAccountTransferVoucherDocument } from '@/src/libs/print/printInventoryDocument'
 import TransferStatusBadge from '../../_components/TransferStatusBadge'
 import { Select } from '@/src/components/ui/Select'
@@ -44,23 +30,10 @@ export default function FundTransferDetail({ id, canEdit }: { id: string; canEdi
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [editing, setEditing] = useState(false)
-  // The Business Owner may change the rest of a posted transfer too (date,
-  // amount, both accounts, description, branch), with a reason. The journal entry
-  // is reversed and posted again, so the dates the bank reconciles against follow.
-  const ownerEdit = useOwnerEdit(RECORDED_ENTRIES_EDIT)
-  const [accounts, setAccounts] = useState<BankAccount[]>([])
-  const [branches, setBranches] = useState<BranchLite[]>([])
   const [draft, setDraft] = useState({
     clearedType: 'SAME_DATE' as ClearedType,
     clearingDate: '',
     reference: '',
-    date: '',
-    amount: '',
-    sourceBankAccountId: '',
-    destinationBankAccountId: '',
-    description: '',
-    branchId: '',
-    editReason: '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -94,49 +67,15 @@ export default function FundTransferDetail({ id, canEdit }: { id: string; canEdi
         clearing !== '' && clearing === transfer.date.slice(0, 10) ? 'SAME_DATE' : 'LATER_DATE',
       clearingDate: clearing,
       reference: transfer.reference ?? '',
-      date: transfer.date.slice(0, 10),
-      amount: String(transfer.amount),
-      sourceBankAccountId: transfer.sourceBankAccountId,
-      destinationBankAccountId: transfer.destinationBankAccountId,
-      description: transfer.description ?? '',
-      branchId: transfer.branchId ?? '',
-      editReason: '',
     })
     setError(null)
     setEditing(true)
-    if (ownerEdit) {
-      void BankAccounts.list().then((res) => {
-        if (res.success && res.data) setAccounts(res.data)
-      })
-      void BranchesApi.list().then((r) =>
-        setBranches((r.data?.data ?? []).filter((b) => ('isActive' in b ? b.isActive : true)))
-      )
-    }
   }
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!transfer) return
-    // The owner can move the transfer's own date; the clearing date is held to it.
-    const transferDate = ownerEdit && draft.date ? draft.date : transfer.date.slice(0, 10)
-    if (ownerEdit) {
-      if (!draft.editReason.trim()) {
-        setError(EDIT_REASON_REQUIRED)
-        return
-      }
-      if (!draft.sourceBankAccountId || !draft.destinationBankAccountId) {
-        setError('Pick the source and destination accounts.')
-        return
-      }
-      if (draft.sourceBankAccountId === draft.destinationBankAccountId) {
-        setError('Source and destination must be different accounts.')
-        return
-      }
-      if (!(Number(draft.amount) > 0)) {
-        setError('Enter an amount greater than 0.')
-        return
-      }
-    }
+    const transferDate = transfer.date.slice(0, 10)
     if (draft.clearedType === 'LATER_DATE') {
       if (!draft.clearingDate) {
         setError('Pick the date this transfer is expected to clear.')
@@ -152,17 +91,6 @@ export default function FundTransferDetail({ id, canEdit }: { id: string; canEdi
     const res = await BankTransfers.update(transfer.id, {
       clearingDate: draft.clearedType === 'SAME_DATE' ? transferDate : draft.clearingDate,
       reference: draft.reference.trim() || null,
-      ...(ownerEdit
-        ? {
-            date: draft.date,
-            amount: Number(draft.amount),
-            sourceBankAccountId: draft.sourceBankAccountId,
-            destinationBankAccountId: draft.destinationBankAccountId,
-            description: draft.description.trim() || null,
-            branchId: draft.branchId || null,
-            editReason: draft.editReason.trim(),
-          }
-        : {}),
     })
     setSaving(false)
     if (!res.success) {
@@ -333,95 +261,9 @@ export default function FundTransferDetail({ id, canEdit }: { id: string; canEdi
         <div className="mt-6 border-t pt-5">
           {editing ? (
             <form onSubmit={save} className="space-y-3">
-              {ownerEdit ? (
-                <>
-                  <p className="text-xs text-gray-500">
-                    This transfer is already posted. A change to the date, amount or accounts
-                    reverses its journal entry and posts a new one, and both balances follow. It
-                    cannot be changed once a completed bank reconciliation has cleared it.
-                  </p>
-                  <EditReasonSection
-                    value={draft.editReason}
-                    onChange={(editReason) => setDraft({ ...draft, editReason })}
-                    testId="transfer-edit-reason"
-                    what="transfer"
-                  />
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <label className="block">
-                      <span className="block text-xs font-medium text-gray-600 mb-1">Date *</span>
-                      <input
-                        required
-                        type="date"
-                        data-testid="transfer-edit-date"
-                        value={draft.date}
-                        onChange={(e) => setDraft({ ...draft, date: e.target.value })}
-                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="block text-xs font-medium text-gray-600 mb-1">From *</span>
-                      <SearchableSelect
-                        portal
-                        value={draft.sourceBankAccountId}
-                        onChange={(v) => setDraft({ ...draft, sourceBankAccountId: v })}
-                        options={accounts.map((a) => ({
-                          value: a.id,
-                          label: `${a.name} (${a.accountType})`,
-                        }))}
-                        placeholder="Source account"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="block text-xs font-medium text-gray-600 mb-1">To *</span>
-                      <SearchableSelect
-                        portal
-                        value={draft.destinationBankAccountId}
-                        onChange={(v) => setDraft({ ...draft, destinationBankAccountId: v })}
-                        options={accounts.map((a) => ({
-                          value: a.id,
-                          label: `${a.name} (${a.accountType})`,
-                        }))}
-                        placeholder="Destination account"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="block text-xs font-medium text-gray-600 mb-1">Amount *</span>
-                      <MoneyInput
-                        value={draft.amount}
-                        onChange={(amount) => setDraft({ ...draft, amount })}
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="block text-xs font-medium text-gray-600 mb-1">
-                        Branch / Location
-                      </span>
-                      <SearchableSelect
-                        portal
-                        clearable
-                        value={draft.branchId}
-                        onChange={(v) => setDraft({ ...draft, branchId: v })}
-                        options={branches.map((b) => ({ value: b.id, label: b.name }))}
-                        placeholder="— Head office (no branch) —"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="block text-xs font-medium text-gray-600 mb-1">
-                        Description
-                      </span>
-                      <input
-                        maxLength={500}
-                        value={draft.description}
-                        onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                      />
-                    </label>
-                  </div>
-                </>
-              ) : (
-                <p className="text-xs text-gray-500">
-                  Only the clearing date and reference can be changed on a posted transfer.
-                </p>
-              )}
+              <p className="text-xs text-gray-500">
+                Only the clearing date and reference can be changed on a posted transfer.
+              </p>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <label className="block">
                   <span className="block text-xs font-medium text-gray-600 mb-1">Cleared</span>
@@ -450,7 +292,7 @@ export default function FundTransferDetail({ id, canEdit }: { id: string; canEdi
                     <input
                       required
                       type="date"
-                      min={ownerEdit && draft.date ? draft.date : transfer.date.slice(0, 10)}
+                      min={transfer.date.slice(0, 10)}
                       value={draft.clearingDate}
                       onChange={(e) => setDraft({ ...draft, clearingDate: e.target.value })}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"

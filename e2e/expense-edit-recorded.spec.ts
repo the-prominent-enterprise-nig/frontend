@@ -113,11 +113,6 @@ test.describe('Expenses — editing a recorded expense', () => {
     await expect(page.getByTestId('expense-edit-lock')).toHaveCount(0)
 
     await fillStable(page.locator('input[aria-label="Amount"]').first(), '22400')
-    // The Business Owner says why a recorded expense is being changed; Save is
-    // refused without it, and nothing is sent.
-    await page.getByTestId('expense-save-changes').click()
-    await expect(page.getByText('Say why this recorded entry is being changed.')).toBeVisible()
-    await fillStable(page.getByTestId('expense-edit-reason'), 'Quotation was 22,400, not 11,200')
     const [saved] = await Promise.all([
       page.waitForResponse(
         (r) => r.url().endsWith(`/api/expenses/${id}`) && r.request().method() === 'PATCH'
@@ -143,10 +138,9 @@ test.describe('Expenses — editing a recorded expense', () => {
     await gotoReady(page, `/accounting/expenses/${id}/edit`)
     await expect(page.getByTestId('expense-save-changes')).toBeVisible({ timeout: 15_000 })
     await fillStable(
-      page.locator('textarea:not([data-testid="expense-edit-reason"])').first(),
+      page.locator('textarea[aria-label="Notes"], textarea').first(),
       'Paid out of petty cash'
     )
-    await fillStable(page.getByTestId('expense-edit-reason'), 'Added the note')
     const [saved] = await Promise.all([
       page.waitForResponse(
         (r) => r.url().endsWith(`/api/expenses/${id}`) && r.request().method() === 'PATCH'

@@ -17,11 +17,6 @@ import {
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 import { discountChainLabel } from '@/src/libs/format/discount-chain'
 import { EwtCodeSelect } from '@/src/components/accounting/EwtCodeSelect'
-import EditReasonSection, {
-  EDIT_REASON_REQUIRED,
-  useOwnerEdit,
-} from '@/src/components/accounting/EditReasonSection'
-import { RECORDED_ENTRIES_EDIT } from '@/src/libs/guards/explicit-only-permissions'
 import { TaxOverrideBox, TaxOverrideSummary } from '@/src/components/accounting/TaxOverride'
 import { useMe } from '@/src/hooks/useMe'
 import { can } from '@/src/libs/guards/permission'
@@ -352,10 +347,6 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
   // GL) locks everything except how it's paid. See ap-bills.service.ts's
   // update() for the matching backend guard.
   const isLocked = !!initial && initial.status !== 'DRAFT'
-  // A posted invoice is a recorded entry: the Business Owner who changes it says
-  // why (kept in the audit log). A draft has nothing posted.
-  const askReason = useOwnerEdit(RECORDED_ENTRIES_EDIT, isLocked)
-  const [editReason, setEditReason] = useState('')
   // The changes this bill would carry from its supplier's defaults: each line's
   // input VAT code, and the withholding code. Worked out only once the supplier
   // is known (before that the defaults are guesses), and never on a bill that is
@@ -448,10 +439,6 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
       setError(reasonMissingMessage(freshOverrides))
       return
     }
-    if (askReason && !editReason.trim()) {
-      setError(EDIT_REASON_REQUIRED)
-      return
-    }
     // Scenario 41 required the SI number to create a bill by hand; Scenario 46
     // relaxes that (client: "allow create w/o SI just add flag/warning") — the
     // goods often arrive days before the invoice, and the bill is flagged
@@ -517,11 +504,7 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
               }))
             : undefined,
         }
-    const body = {
-      ...payload,
-      confirmDuplicateBillNumber: duplicateSi !== null,
-      ...(askReason ? { editReason: editReason.trim() } : {}),
-    }
+    const body = { ...payload, confirmDuplicateBillNumber: duplicateSi !== null }
     const res = initial ? await APBills.update(initial.id, body) : await APBills.create(body)
     if (!res.success) {
       setSaving(false)
@@ -561,14 +544,6 @@ function BillFormFields({ initial, onSaved }: { initial: APBill | null; onSaved:
         onSubmit={submit}
         className="mt-6 space-y-3 rounded-xl border border-gray-200 bg-white p-5"
       >
-        {askReason && (
-          <EditReasonSection
-            value={editReason}
-            onChange={setEditReason}
-            testId="bill-edit-reason"
-            what="invoice"
-          />
-        )}
         {isReceiptSourced && initial && (
           <>
             <ReceivingReportReadOnly bill={initial} />

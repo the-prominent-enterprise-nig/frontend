@@ -1,10 +1,5 @@
 'use client'
 
-import EditReasonSection, {
-  EDIT_REASON_REQUIRED,
-  useOwnerEdit,
-} from '@/src/components/accounting/EditReasonSection'
-import { RECORDED_ENTRIES_EDIT } from '@/src/libs/guards/explicit-only-permissions'
 import { manilaDateOf, manilaToday, formatManilaDate } from '@/src/libs/format/manila-date'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -285,10 +280,6 @@ export default function RecordPaymentForm() {
         : {},
     [amendingPaid, settling]
   )
-  // A paid voucher is a recorded entry: the Business Owner who corrects it says
-  // why (kept in the audit log). An unpaid one has nothing posted.
-  const askReason = useOwnerEdit(RECORDED_ENTRIES_EDIT, amendingPaid)
-  const [editReason, setEditReason] = useState('')
   const outstandingFor = useCallback(
     (b: APBill) => outstandingOf(b) + (ownPaid[b.id] ?? 0),
     [ownPaid]
@@ -734,8 +725,6 @@ export default function RecordPaymentForm() {
         )
     }
 
-    if (askReason && !editReason.trim()) return setError(EDIT_REASON_REQUIRED)
-
     setSaving(true)
     // Amending an unpaid voucher keeps its number — that is the whole point of
     // editing rather than cancelling — and replaces what it covers and how it
@@ -762,7 +751,6 @@ export default function RecordPaymentForm() {
           form.clearedType === 'LATER_DATE' && form.clearedDate
             ? new Date(form.clearedDate).toISOString()
             : undefined,
-        ...(askReason ? { editReason: editReason.trim() } : {}),
       })
       setSaving(false)
       if (!amended.success) {
@@ -881,17 +869,6 @@ export default function RecordPaymentForm() {
               ))}
             </p>
           )}
-        </div>
-      )}
-
-      {askReason && (
-        <div className="mb-4 max-w-xl">
-          <EditReasonSection
-            value={editReason}
-            onChange={setEditReason}
-            testId="voucher-edit-reason"
-            what="payment"
-          />
         </div>
       )}
 

@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Search, Plus, Printer, ChevronRight, Pencil } from 'lucide-react'
+import { ArrowLeft, Search, Plus, Printer, ChevronRight } from 'lucide-react'
 import { getApPaymentDocument } from '../../_actions/get-ap-payment-document'
 import { getApDisbursementDocument } from '../../_actions/get-ap-disbursement-document'
 import {
@@ -18,8 +18,6 @@ import {
   fmtDate,
   type APDisbursementListItem,
 } from '@/src/libs/data/AccountingV2Data'
-import { useOwnerEdit } from '@/src/components/accounting/EditReasonSection'
-import { RECORDED_ENTRIES_EDIT } from '@/src/libs/guards/explicit-only-permissions'
 
 // Scenario 43 Part D — the standalone Payments list the client's own legacy
 // tool has and this app never did (a payment was only ever visible nested
@@ -104,9 +102,6 @@ function ExpenseSummary({
 }
 
 export default function APPaymentsList() {
-  // The Business Owner can open a payment that has already been made and put
-  // its date right; a reason is asked on the form it opens.
-  const canEditRecorded = useOwnerEdit(RECORDED_ENTRIES_EDIT)
   const router = useRouter()
   const [items, setItems] = useState<APDisbursementListItem[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -239,7 +234,7 @@ export default function APPaymentsList() {
               <th className="px-3 py-2 text-left">Reference</th>
               <th className="px-3 py-2 text-left">Invoices</th>
               <th className="px-3 py-2 text-right">Amount</th>
-              <th className="px-3 py-2 text-right">Actions</th>
+              <th className="px-3 py-2 text-right">Print</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -296,25 +291,7 @@ export default function APPaymentsList() {
                       {/* Scenario 46 Part F — any voucher can be reopened as a
                           PDF from here, which is the read-only "what was paid"
                           view. One document for the whole transaction. */}
-                      <td className="whitespace-nowrap px-3 py-2 text-right">
-                        {canEditRecorded && row.kind !== 'payment' && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              router.push(
-                                row.kind === 'expense'
-                                  ? `/accounting/expenses/${row.id}/edit`
-                                  : `/accounting/ap-bills/payments/new?edit=${row.id}`
-                              )
-                            }}
-                            title="Edit payment"
-                            aria-label={`Edit payment ${row.voucherNumber ?? ''}`}
-                            data-testid="payment-edit"
-                            className="rounded p-1.5 text-gray-500 hover:bg-gray-100"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                        )}
+                      <td className="px-3 py-2 text-right">
                         <button
                           onClick={(e) => {
                             e.stopPropagation()

@@ -157,12 +157,6 @@ export const ACCOUNTING_PERMISSIONS = {
   CASH_IN_TRANSIT_VERIFY: 'accounting:cash-in-transit:verify',
   /** Correct a posted deposit the cashier mistyped, against the bank's slip. */
   CASH_IN_TRANSIT_CORRECT: 'accounting:cash-in-transit:correct',
-  /**
-   * Edit a recorded Expense, Payables entry, Inter-Account Transfer or Collected
-   * Funds History deposit, with a reason. Business Owner only, and never reached
-   * through a module wildcard (see explicit-only-permissions.ts).
-   */
-  RECORDED_ENTRIES_EDIT: 'accounting:recorded-entries:edit',
 
   BUDGET_READ: 'accounting:budget:read',
   BUDGET_CREATE: 'accounting:budget:create',
@@ -337,8 +331,6 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:cash-in-transit:verify':
     "Check a POS deposit draft's attachments and clear (post) it",
   'accounting:cash-in-transit:correct': "Correct a posted POS deposit against the bank's slip",
-  'accounting:recorded-entries:edit':
-    'Edit a recorded Expense, Payables entry, Inter-Account Transfer or Collected Funds History deposit, with a reason (Business Owner only)',
   'accounting:bank-accounts:adjust':
     'Post an adjusting JE during bank reconciliation (bank charges/interest income)',
   'accounting:bank-accounts:transfer':

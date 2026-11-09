@@ -1,4 +1,3 @@
-import { isExplicitOnlyPermission } from './explicit-only-permissions'
 type Permission = string // e.g. "hr:attendance:update"
 
 export interface SessionEmployee {
@@ -122,10 +121,6 @@ export function adminManageCovers(userParts: string[], requiredParts: string[]):
 
 function matchesPermission(userPermission: string, requiredPermission: string): boolean {
   if (userPermission === requiredPermission) return true
-
-  // A permission a wildcard never hands out (explicit-only-permissions.ts):
-  // only the row itself, or the all-permissions row, holds it.
-  if (isExplicitOnlyPermission(requiredPermission)) return userPermission === '*:*:*'
 
   const userParts = userPermission.split(':')
   const requiredParts = requiredPermission.split(':')
