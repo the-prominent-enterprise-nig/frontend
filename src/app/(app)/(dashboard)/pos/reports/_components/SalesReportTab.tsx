@@ -11,9 +11,9 @@ import { money } from './SalesStatCards'
  * Scenario 85 Part 2 — the Sales Report tab: "every unit sold, as in the
  * sales export". Paged server-side (a twelve-month range is thousands of
  * units); the totals cover every unit the filters match, not just this page.
- * The Excel export (header button) carries the full column set, including
- * the client's Credit and SMI columns, which are not yet defined (waiting on
- * NIG, 2026-11-09). Unit Cost is left out for a branch-tied user, who never
+ * The Excel export (header button) carries the same column set. Credit is an
+ * installment sale's PN value; SMI the Commissions - SMI recorded for the sale
+ * in Expenses (2026-11-09). Unit Cost is left out for a branch-tied user, who never
  * gets it from the API either (NIG UAT 2026-11-09).
  */
 
@@ -40,15 +40,16 @@ const COLUMNS: Column[] = [
   { header: 'LCP', cell: (l) => money(l.lcp), numeric: true },
   {
     header: 'Unit Cost',
-    cell: (l) => (l.unitCost === null ? '' : money(l.unitCost)),
+    cell: (l) => (l.unitCost == null ? '' : money(l.unitCost)),
     numeric: true,
   },
   { header: 'Price Used', cell: (l) => l.priceUseName },
   { header: 'Agent', cell: (l) => l.agentName },
   { header: 'Commission', cell: (l) => (l.commission ? money(l.commission) : ''), numeric: true },
-  // Same as the Excel: in the client's layout, empty until NIG defines them.
-  { header: 'Credit', cell: () => '' },
-  { header: 'SMI', cell: () => '' },
+  // Credit: an installment sale's PN value (MI × term). SMI: the Commissions -
+  // SMI recorded for the sale in Expenses. Same as the Excel; blank if none.
+  { header: 'Credit', cell: (l) => (l.credit == null ? '' : money(l.credit)), numeric: true },
+  { header: 'SMI', cell: (l) => (l.smi == null ? '' : money(l.smi)), numeric: true },
 ]
 
 function columnsFor(showCost: boolean): Column[] {
