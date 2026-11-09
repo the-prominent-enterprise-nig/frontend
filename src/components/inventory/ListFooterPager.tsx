@@ -6,8 +6,12 @@ import { CONTROL_CHROME } from '@/src/libs/design/plex'
 /** Rows-per-page choices every Stock Transactions table offers. */
 export const PAGE_SIZE_OPTIONS = [25, 50, 100] as const
 export const DEFAULT_PAGE_SIZE = 25
+/** Rows-per-page choices the Stock Ledger tables offer (they open on 20). */
+export const STOCK_LEDGER_PAGE_SIZES = [20, 50, 100] as const
 
-const ROW_OPTIONS = PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))
+function rowOptions(sizes: readonly number[]): { value: string; label: string }[] {
+  return sizes.map((n) => ({ value: String(n), label: String(n) }))
+}
 
 const pagerButtonClass =
   'rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-[6px] text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:border-[#e4e4e9] disabled:text-ink-faint'
@@ -25,6 +29,10 @@ type Props = {
   onLimitChange?: (limit: number) => void
   /** Replaces the "Showing 1–25 of N noun" text, e.g. to add a note after it. */
   summary?: React.ReactNode
+  /** Rows picker choices — PAGE_SIZE_OPTIONS unless a screen opens on another size. */
+  pageSizes?: readonly number[]
+  /** The "2 / 5" page counter. The Stock Ledger tables (Stock Balance's layout) leave it out. */
+  showPageNumber?: boolean
 }
 
 function rangeText(page: number, limit: number, total: number, noun: string): string {
@@ -49,6 +57,8 @@ export function ListFooterPager({
   onPageChange,
   onLimitChange,
   summary,
+  pageSizes = PAGE_SIZE_OPTIONS,
+  showPageNumber = true,
 }: Props): React.JSX.Element {
   const pages = Math.max(1, pageCount)
   return (
@@ -64,7 +74,7 @@ export function ListFooterPager({
               className="w-[84px]"
               value={String(limit)}
               onChange={(v) => v && onLimitChange(Number(v))}
-              options={ROW_OPTIONS}
+              options={rowOptions(pageSizes)}
               ariaLabel="Rows per page"
               chrome={CONTROL_CHROME}
               inputMode="numeric"
@@ -72,9 +82,11 @@ export function ListFooterPager({
             />
           </>
         )}
-        <span className="text-[12px] font-medium text-[#3d3d4a]">
-          {page} / {pages}
-        </span>
+        {showPageNumber && (
+          <span className="text-[12px] font-medium text-[#3d3d4a]">
+            {page} / {pages}
+          </span>
+        )}
         <div className="flex gap-1">
           <button
             type="button"

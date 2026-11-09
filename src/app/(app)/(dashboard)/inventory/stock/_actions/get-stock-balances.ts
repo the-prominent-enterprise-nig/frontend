@@ -26,6 +26,8 @@ type Params = {
   /** 'item' rolls every location into one row per item. */
   groupBy?: 'item'
   stockStatus?: StockStateFilter
+  /** Every branch, not just the caller's — the Stock Balance list only. */
+  allBranches?: boolean
 }
 
 export async function getStockBalances(
@@ -45,6 +47,7 @@ export async function getStockBalances(
     region: params.region,
     groupBy: params.groupBy,
     stockStatus: params.stockStatus,
+    allBranches: params.allBranches || undefined,
   }
 
   const result = await api.get<StockBalanceListResponse>('/inventory/stock/balances', query, {

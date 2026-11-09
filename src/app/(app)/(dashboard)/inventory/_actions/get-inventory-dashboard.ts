@@ -1,9 +1,10 @@
 'use server'
 
+import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
 import { getValuationReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-valuation-report'
 import { getTurnoverReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-turnover-report'
-import { getAgingSummary } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-aging-summary'
+import { getAgingUnitCounts } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-aging-unit-counts'
 import { getTransfers } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/get-transfers'
 import { getStockoutAlerts } from '@/src/app/(app)/(dashboard)/inventory/projection/_actions/get-stockout-alerts'
 import { getExpiringBatches } from '@/src/app/(app)/(dashboard)/inventory/batches/_actions/get-batches'
@@ -11,7 +12,7 @@ import { getStockBalances } from '@/src/app/(app)/(dashboard)/inventory/stock/_a
 import { getWarehouses } from '@/src/app/(app)/(dashboard)/inventory/warehouses/_actions/get-warehouses'
 import { getReservations } from '@/src/app/(app)/(dashboard)/inventory/reservations/_actions/get-reservations'
 import { getNegativeStockViolations } from '@/src/app/(app)/(dashboard)/inventory/negative-stock/_actions/get-negative-stock-violations'
-import { getBackorders } from '@/src/app/(app)/(dashboard)/inventory/backorders/_actions/get-backorders'
+import { getActionQueue } from '@/src/app/(app)/(dashboard)/inventory/_actions/get-action-queue'
 import { getReturns } from '@/src/app/(app)/(dashboard)/inventory/returns/_actions/get-returns'
 import { getPurchaseRequests } from '@/src/app/(app)/(dashboard)/inventory/purchase-requests/_actions/get-purchase-requests'
 import { getPurchaseOrders } from '@/src/app/(app)/(dashboard)/inventory/purchase-orders/_actions/get-purchase-orders'
@@ -36,9 +37,13 @@ export type InventoryDashboardRead = { success?: boolean; data?: unknown } | nul
  * entry of the `allSettled` it replaces — so one failing card leaves the rest.
  */
 export async function getInventoryDashboard(): Promise<InventoryDashboardRead[]> {
+  // Amounts stay with Head Office: a branch user's dashboard never fetches
+  // valuation, so no peso figure reaches their browser (the page shows units).
+  const session = await getSessionOrNull()
+  const headOffice = !session?.branchId
   const reads: Promise<InventoryDashboardRead>[] = [
     getItems({ limit: 1 }), // 0
-    getValuationReport({ limit: 1 }), // 1 — only the pre-aggregated `summary` is used, not `data`
+    headOffice ? getValuationReport({ limit: 1 }) : Promise.resolve(null), // 1 — only the pre-aggregated `summary` is used, not `data`
     getTurnoverReport({ periodDays: 90 }), // 2
     getTransfers({ limit: 20 }), // 3
     getStockoutAlerts({ days: 30 }), // 4
@@ -47,9 +52,9 @@ export async function getInventoryDashboard(): Promise<InventoryDashboardRead[]>
     getWarehouses({ status: 'active', limit: 50 }), // 7
     getReservations({ limit: 1 }), // 8 — only the pre-aggregated `summary` is used, not `data`
     getNegativeStockViolations({ limit: 50 }), // 9
-    getBackorders({ limit: 50 }), // 10
+    getActionQueue(), // 10 — open transfers/PRs/POs; the page keeps the ones waiting on the viewer
     getReturns({ limit: 20 }), // 11
-    getAgingSummary(), // 12 — only `summary` is used; the summary view skips the unit rows and their joins
+    getAgingUnitCounts(), // 12 — bucket counts only, no cost, so roles without item cost get it too
     getPurchaseRequests({ limit: 50 }), // 13
     getPurchaseOrders({ limit: 50 }), // 14
   ]
