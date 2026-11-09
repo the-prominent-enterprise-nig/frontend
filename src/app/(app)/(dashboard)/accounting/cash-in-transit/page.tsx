@@ -35,7 +35,11 @@ export default async function AccountingCashInTransitPage() {
   // POS, so Accounting's view never offers Record deposit, even to a Business
   // Owner who could. Accounting views deposits and corrects a mistyped one.
   const canVerify = can(session, ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_VERIFY)
-  const canCorrect = can(session, ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_CORRECT)
+  // The Business Owner's edit of a recorded entry opens it too: the correction
+  // already asks for a reason, which is kept with the change.
+  const canCorrect =
+    can(session, ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_CORRECT) ||
+    can(session, ACCOUNTING_PERMISSIONS.RECORDED_ENTRIES_EDIT)
 
   // A branch-assigned caller (Accountant, Branch Manager) is restricted to
   // their own branch server-side too — PosDepositsService and
