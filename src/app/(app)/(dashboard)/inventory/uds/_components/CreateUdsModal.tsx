@@ -16,11 +16,8 @@ import { uploadRfsForm } from '../_actions/upload-rfs-form'
 import { showToast } from '@/src/components/ui/toast'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { UdsSerialSearchCombobox } from './UdsSerialSearchCombobox'
-import {
-  NoSupplierOnFileNote,
-  ProviderCoverageWarning,
-  useProviderOptions,
-} from './ProviderCoverageWarning'
+import { providerOptions as toProviderOptions } from '../_lib/providerOptions'
+import { RepairProvidersFallbackNote } from '@/src/components/inventory/RepairProvidersFallbackNote'
 
 type WarehouseOption = {
   id: string
@@ -102,11 +99,7 @@ export default function CreateUdsModal({
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
   const reason = watch('reason')
   const providerId = watch('repairProviderId')
-  const lineSerialIds = (watch('lines') ?? []).map((l) => l.serialNumberId)
-  const { options: providerOptions, noneOnFile } = useProviderOptions(
-    supplierOptions,
-    lineSerialIds
-  )
+  const providerOptions = toProviderOptions(supplierOptions)
 
   const [isUploading, setIsUploading] = useState(false)
   const [rfsFormName, setRfsFormName] = useState<string | null>(null)
@@ -275,8 +268,7 @@ export default function CreateUdsModal({
                     />
                   )}
                 />
-                <NoSupplierOnFileNote show={noneOnFile} />
-                <ProviderCoverageWarning supplierId={providerId} serialIds={lineSerialIds} />
+                <RepairProvidersFallbackNote />
               </div>
 
               <div>

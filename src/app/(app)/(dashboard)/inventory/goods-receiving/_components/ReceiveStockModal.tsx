@@ -23,7 +23,7 @@ import type { InstallmentAccountMeta } from '@/src/components/inventory/Installm
 import { uploadRrAttachment } from '../_actions/upload-rr-attachment'
 import { getServiceCenters } from '../_actions/service-center-units'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
+import { getRepairProviders } from '../../purchase-orders/_actions/get-repair-providers'
 import type { ServiceCenterUnit } from '@/src/schema/inventory/goods-receiving/service-center-units'
 import {
   getInstallmentAccount,
@@ -314,13 +314,14 @@ export default function ReceiveStockModal({
     enabled: isOpen && fromServiceCenter,
   })
   const serviceCenters = serviceCentersQuery.data?.data ?? []
-  // Every supplier can be the service center: one whose units went out on a
-  // paper DR, or before the system, holds none on record and is only
-  // reachable through the search-by-serial fallback once picked. Those with
-  // units out lead, with their count.
+  // Every service center can be picked: one whose units went out on a paper
+  // DR, or before the system, holds none on record and is only reachable
+  // through the search-by-serial fallback once picked. Those with units out
+  // lead, with their count — even one not marked a service center, since its
+  // units still have to come back.
   const suppliersQuery = useQuery({
     queryKey: ['rr-service-center-suppliers'],
-    queryFn: () => getSuppliers({ limit: 500 }),
+    queryFn: () => getRepairProviders(),
     enabled: isOpen && fromServiceCenter,
   })
   const serviceCenterOptions = [

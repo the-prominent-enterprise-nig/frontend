@@ -71,7 +71,7 @@ export default function LocationsPanel({
             <button
               type="button"
               onClick={() => setIsAddOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-prominent-purple-800"
+              className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#4a189b]"
             >
               <Plus className="h-3.5 w-3.5" />
               Add

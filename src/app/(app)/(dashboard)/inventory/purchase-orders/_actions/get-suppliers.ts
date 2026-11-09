@@ -17,6 +17,8 @@ interface SupplierListResponse {
 export async function getSuppliers(params?: {
   search?: string
   limit?: number
+  /** true: only service centers — the repair-provider pickers. */
+  isServiceCenter?: boolean
 }): Promise<ApiResponse<SupplierListResponse>> {
   try {
     const result = await api.get<SupplierListResponse>(

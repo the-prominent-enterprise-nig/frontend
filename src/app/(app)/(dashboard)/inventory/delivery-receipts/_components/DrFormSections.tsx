@@ -373,6 +373,7 @@ function CounterpartyField(): React.JSX.Element | null {
         name="supplierId"
         render={({ field }) => (
           <SupplierSearchCombobox
+            serviceCentersOnly={purpose === 'to_service_center'}
             value={field.value}
             initialLabel={supplierLabel}
             onChange={(id) => field.onChange(id)}
