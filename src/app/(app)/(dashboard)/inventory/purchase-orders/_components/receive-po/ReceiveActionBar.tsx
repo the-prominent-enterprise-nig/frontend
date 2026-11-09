@@ -18,6 +18,8 @@ type Props = {
    * sent here to produce. */
   primaryLabel?: string
   submittingLabel?: string
+  /** The headline's verb — "Returning" for a customer return (ticket #27). */
+  verb?: string
 }
 
 /** Fixed to the bottom of the working surface: on a long delivery the receive
@@ -32,6 +34,7 @@ export function ReceiveActionBar({
   onPrimary,
   primaryLabel = 'Receive stock',
   submittingLabel = 'Receiving…',
+  verb = 'Receiving',
 }: Props) {
   const blocked = blockerCount > 0
 
@@ -44,7 +47,7 @@ export function ReceiveActionBar({
 
   const headline =
     totals.units > 0
-      ? `Receiving ${totals.units} units on ${totals.lines} ${totals.lines === 1 ? 'line' : 'lines'}`
+      ? `${verb} ${totals.units} ${totals.units === 1 ? 'unit' : 'units'} on ${totals.lines} ${totals.lines === 1 ? 'line' : 'lines'}`
       : 'Enter the quantities delivered'
 
   return (

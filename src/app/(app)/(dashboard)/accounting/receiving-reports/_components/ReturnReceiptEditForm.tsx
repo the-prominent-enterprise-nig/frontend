@@ -61,7 +61,7 @@ export default function ReturnReceiptEditForm({ id, record, onCancel, onSaved }:
     <section className="mt-3 rounded-lg border border-purple-200 bg-white p-5">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-[14px] font-semibold text-prominent-purple-900">
-          Edit {isRepo ? 'repossession' : 'repair / return'} receipt
+          Edit {isRepo ? 'repossession' : 'repair'} receipt
         </h2>
         <span className="text-[11px] text-amber-700">
           Units and customer are fixed once posted — only the notes can change

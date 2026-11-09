@@ -19,6 +19,8 @@ import { PANEL } from './rrTokens'
 import { invoiceKeyOf, type RrLine } from './rrTotals'
 import { RepairIntakeSaleSearchCombobox } from './RepairIntakeSaleSearchCombobox'
 import type { RepairIntakeSale } from '../../_actions/get-repair-intake-sales'
+import type { RrReturnDisposition } from '../../_actions/record-customer-return'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 
 /** One invoice the units are coming back from. Its checked units are the
  * receipt's lines (linked through invoiceKeyOf), so this holds only what the
@@ -32,6 +34,8 @@ export type ReturnBlock = {
   customerLabel: string
   /** Customer ID shown on the form — the customer's code. */
   customerCode?: string
+  /** Ticket #27 — repair: the branch that sold the unit, from the invoice. */
+  soldAtBranch?: string
   /** undefined until the invoice's units have loaded. */
   units?: InstallmentAccountUnitItem[]
   loading: boolean
@@ -41,7 +45,10 @@ export type ReturnBlock = {
 }
 
 type Props = {
-  mode: 'repossession' | 'repair_return'
+  mode: 'repossession' | 'repair_return' | 'customer_return'
+  /** Ticket #27 — Return: what happens to each checked unit (by serial id). */
+  dispositions?: Record<string, RrReturnDisposition>
+  onDisposition?: (serialNumberId: string, value: RrReturnDisposition) => void
   blocks: ReturnBlock[]
   lines: RrLine[]
   canViewCost: boolean
@@ -61,6 +68,14 @@ type Props = {
   onRemoveBlock: (key: string) => void
 }
 
+/** What can happen to a returned unit from Create RR — exchange stays on the
+ * POS Returns screen (it needs a replacement unit). */
+const DISPOSITION_OPTIONS: { value: RrReturnDisposition; label: string }[] = [
+  { value: 'restock', label: 'Back on the shelf' },
+  { value: 'quarantine', label: 'On hold (not sellable)' },
+  { value: 'scrap', label: 'Written off' },
+]
+
 const CAPTION = `${MONO} mb-1 block text-[9.5px] uppercase tracking-[.09em] text-[#3f1490]`
 
 /**
@@ -71,6 +86,8 @@ const CAPTION = `${MONO} mb-1 block text-[9.5px] uppercase tracking-[.09em] text
  */
 export function ReturnedUnitsPanel({
   mode,
+  dispositions,
+  onDisposition,
   blocks,
   lines,
   canViewCost,
@@ -87,6 +104,7 @@ export function ReturnedUnitsPanel({
   onRemoveBlock,
 }: Props): React.ReactElement {
   const isRepo = mode === 'repossession'
+  const isReturn = mode === 'customer_return'
   const checkedCount = lines.filter((l) => l?.itemId && l.existingSerialNumberIds?.[0]).length
   const noneChecked = checkedCount === 0
   const totalCost = lines.reduce((sum, line) => sum + (Number(line?.unitCost) || 0), 0)
@@ -102,7 +120,7 @@ export function ReturnedUnitsPanel({
         <div className="flex min-w-0 flex-col gap-0.5">
           <div className="flex items-center gap-2.5">
             <span className="text-[13.5px] font-semibold">
-              {isRepo ? 'Repossessed Items' : 'Units for Repair/Return'}{' '}
+              {isRepo ? 'Repossessed Items' : isReturn ? 'Units for Return' : 'Units for Repair'}{' '}
               <span className="text-[#b42318]">*</span>
             </span>
             <span className="text-[11px] text-ink-muted">
@@ -117,14 +135,17 @@ export function ReturnedUnitsPanel({
               : 'Search the invoice, then check the units coming back. Only checked units go on the receipt.'}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={onAddBlock}
-          className="flex items-center gap-1 rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-3 py-1.5 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add another invoice
-        </button>
+        {/* One invoice per return, the same as the POS Returns screen. */}
+        {!isReturn && (
+          <button
+            type="button"
+            onClick={onAddBlock}
+            className="flex items-center gap-1 rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-3 py-1.5 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add another invoice
+          </button>
+        )}
       </div>
 
       {blocks.map((block) => (
@@ -132,6 +153,9 @@ export function ReturnedUnitsPanel({
           key={block.key}
           block={block}
           isRepo={isRepo}
+          isReturn={isReturn}
+          dispositions={dispositions}
+          onDisposition={onDisposition}
           lines={lines}
           canViewCost={canViewCost}
           showErrors={showErrors}
@@ -166,6 +190,9 @@ export function ReturnedUnitsPanel({
 function Block({
   block,
   isRepo,
+  isReturn,
+  dispositions,
+  onDisposition,
   lines,
   canViewCost,
   showErrors,
@@ -182,6 +209,9 @@ function Block({
 }: {
   block: ReturnBlock
   isRepo: boolean
+  isReturn: boolean
+  dispositions?: Record<string, RrReturnDisposition>
+  onDisposition?: Props['onDisposition']
   lines: RrLine[]
   canViewCost: boolean
   showErrors: boolean
@@ -216,7 +246,7 @@ function Block({
         <div className="min-w-0 flex-1">
           <span className={CAPTION}>Invoice #</span>
           {/* Repossession takes back a financed unit, so it searches
-              installment accounts; a repair/return can be any sale, cash or
+              installment accounts; a repair can be any sale, cash or
               financed, found by its Sales Invoice No. */}
           {isRepo ? (
             <InstallmentAccountSearchCombobox
@@ -259,7 +289,11 @@ function Block({
             />
           )}
 
-          <div className="mt-2.5 grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2">
+          <div
+            className={`mt-2.5 grid grid-cols-1 gap-x-4 gap-y-2.5 ${
+              isRepo ? 'sm:grid-cols-2' : 'sm:grid-cols-3'
+            }`}
+          >
             <div className="min-w-0">
               <span className={CAPTION}>{isRepo ? 'Repossessed from' : 'Returned by'}</span>
               {block.customerId ? (
@@ -300,6 +334,18 @@ function Block({
                 {block.customerCode ?? 'Fills in from the customer'}
               </div>
             </div>
+            {!isRepo && (
+              <div className="min-w-0">
+                <span className={CAPTION}>Sold at</span>
+                <div
+                  className={`flex h-9.5 items-center rounded-lg border border-[#e4e4e9] bg-[#f5f5f7] px-3 text-[12.5px] ${
+                    block.soldAtBranch ? 'text-[#17171c]' : 'text-ink-subtle'
+                  }`}
+                >
+                  {block.soldAtBranch ?? 'Fills in from the invoice'}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -356,6 +402,26 @@ function Block({
                       </span>
                     )}
                   </label>
+                  {/* Outside the <label>, so picking doesn't toggle the checkbox. */}
+                  {isReturn && checked && unit.serialNumberId && (
+                    <div className="flex flex-wrap items-center gap-2 border-t border-[#eee8fb] bg-[#faf7ff] px-3 py-2">
+                      <span className="text-[11.5px] text-ink-muted">What happens</span>
+                      <div className="min-w-56">
+                        <SearchableSelect
+                          portal
+                          ariaLabel={`What happens to ${unit.serialNumber ?? 'this unit'}`}
+                          value={dispositions?.[unit.serialNumberId] ?? 'restock'}
+                          onChange={(value) =>
+                            onDisposition?.(
+                              unit.serialNumberId as string,
+                              value as RrReturnDisposition
+                            )
+                          }
+                          options={DISPOSITION_OPTIONS}
+                        />
+                      </div>
+                    </div>
+                  )}
                   {isRepo && canViewCost && checked && !(unit.repoCost > 0) && (
                     <UnitCostInput
                       line={lines.find(
@@ -374,7 +440,16 @@ function Block({
         </div>
       )}
 
-      {manual && (
+      {/* A Return credits the unit's own sale line, so no hand-entered unit. */}
+      {manual && isReturn && (
+        <div className="mt-2.5 rounded-[9px] border border-[#f7dfc0] bg-[#fffdf8] px-3 py-2.5 text-[11px] text-[#8a4b06]">
+          {block.exhausted
+            ? 'Every unit on this invoice is already back — pick a different invoice.'
+            : 'This invoice has no units on record, so it can’t be returned here.'}
+        </div>
+      )}
+
+      {manual && !isReturn && (
         <div className="mt-2.5 flex flex-col gap-2.5 rounded-[9px] border border-[#f7dfc0] bg-[#fffdf8] px-3 py-2.5">
           <span className="text-[11px] text-[#8a4b06]">
             {block.exhausted

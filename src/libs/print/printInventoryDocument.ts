@@ -201,6 +201,7 @@ export function buildReceivingReportHtml(
     .total-wrap td.label { text-align: right; }
     .total-wrap td.value { text-align: right; min-width: 120px; }
     .signatures { margin-top: 40px; display: flex; gap: 56px; }
+    /* One signature on an RR: a signing line, not a rule across the page. */
     .sig-block { flex: 0 1 320px; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
     .sig-line { border-bottom: 1px solid #333; }
@@ -341,9 +342,9 @@ export function buildCustomerReturnReceiptHtml(data: unknown): string {
   const ret = doc.document as Record<string, unknown>
   const enterprise = doc.enterprise
   const customer = ret.customer as { name?: string; customerCode?: string } | null | undefined
-  const warehouse = ret.warehouse as
-    | { name?: string; branch?: { name?: string } | null }
-    | undefined
+  // Where the goods came back in — printed above the table as the supplier RR
+  // prints it: "Branch: name, address".
+  const branch = receivingReportBranchLine(ret as Parameters<typeof receivingReportBranchLine>[0])
   const lines = Array.isArray(ret.lines) ? (ret.lines as CustomerReturnDocLine[]) : []
 
   const fmtDate = (v: unknown) =>
@@ -387,6 +388,7 @@ export function buildCustomerReturnReceiptHtml(data: unknown): string {
     .brand-logo { height: 160px; width: auto; object-fit: contain; }
     .info { display: flex; gap: 28px; margin-bottom: 20px; }
     .info > div { flex: 1; }
+    .rr-branch { margin: 0 0 10px; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
     .party-address { margin: 0; color: #333; }
@@ -406,7 +408,8 @@ export function buildCustomerReturnReceiptHtml(data: unknown): string {
     .note { margin-top: 16px; font-size: 12px; color: #333; }
     .note .meta-label { margin-bottom: 4px; }
     .signatures { margin-top: 40px; display: flex; gap: 56px; }
-    .sig-block { flex: 1; }
+    /* Signing lines, not rules across the page — same as the supplier RR. */
+    .sig-block { flex: 0 0 240px; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
     .sig-line { border-bottom: 1px solid #333; }
     .sig-name { margin: 4px 0 0; font-size: 12px; color: #333; }
@@ -438,9 +441,14 @@ export function buildCustomerReturnReceiptHtml(data: unknown): string {
       <div class="enterprise">
         <p class="party-name">${esc(enterprise?.companyLegalName) || '—'}</p>
         <p class="party-address">${esc(enterprise?.address) || '—'}</p>
-        <p class="party-address">Branch: ${esc(warehouse?.branch?.name ?? warehouse?.name) || '—'}</p>
       </div>
     </div>
+
+    ${
+      branch
+        ? `<p class="rr-branch"><strong>Branch:</strong> ${esc(branch.name)}${branch.address ? `, ${esc(branch.address)}` : ''}</p>`
+        : ''
+    }
 
     <table>
       <thead>
@@ -479,7 +487,6 @@ export function buildCustomerReturnReceiptHtml(data: unknown): string {
       <div class="sig-block">
         <p class="sig-label">Customer:</p>
         <div class="sig-line"></div>
-        ${customer?.name ? `<p class="sig-name">${esc(customer.name)}</p>` : ''}
       </div>
     </div>
 

@@ -143,7 +143,11 @@ export const ReceiveStockFormSchema = z
     // picker's "unset" state (SearchableSelect has no undefined value of
     // its own) — accepted here so the resolver doesn't reject an untouched
     // form, normalized to undefined only when building the submit payload.
-    reason: z.union([z.enum(['repair_return', 'repossession', 'other']), z.literal('')]).optional(),
+    // 'customer_return' (ticket #27) is a lookup only — the POS return already
+    // received the unit — so it never reaches the submit payload.
+    reason: z
+      .union([z.enum(['repair_return', 'repossession', 'other', 'customer_return']), z.literal('')])
+      .optional(),
     // Repair/Return only — where the unit is serviced. Decides which
     // documents are required (UDS/RFS, see rrAttachments.ts).
     repairType: z.enum(['in_store', 'home_service']).optional(),
@@ -471,7 +475,7 @@ export const ReceivingReportSchema = z.object({
   // Present on every row from getReceivingReports() (see stock.service.ts) —
   // optional here only so this schema still fits the single-receipt detail
   // response, which never sets it since a merged list is meaningless there.
-  sourceType: z.enum(['goods_receipt', 'manual_rr']).optional(),
+  sourceType: z.enum(['goods_receipt', 'manual_rr', 'customer_return']).optional(),
   applicationType: z.string().optional(),
   modeOfTransfer: z.string().optional().nullable(),
   // Why the stock came in. A repair_return / repossession receipt takes units

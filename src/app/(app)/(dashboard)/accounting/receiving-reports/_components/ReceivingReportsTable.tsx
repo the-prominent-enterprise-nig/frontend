@@ -73,12 +73,15 @@ function StatusCell({ report }: { report: ReceivingReport }) {
   return <DiscrepancyBadge report={report} />
 }
 
-/** Manual Receiving Reports live at their own route, not
- * {detailBasePath}/{id} — a merged row has to know which one it is. */
+/** Manual Receiving Reports and customer returns (ticket #27) live at their
+ * own routes, not {detailBasePath}/{id} — a merged row has to know which one
+ * it is. */
 function detailHref(report: ReceivingReport, detailBasePath: string): string {
-  return report.sourceType === 'manual_rr'
-    ? `/accounting/receiving-reports/manual-rr/${report.id}`
-    : `${detailBasePath}/${report.id}`
+  if (report.sourceType === 'manual_rr') {
+    return `/accounting/receiving-reports/manual-rr/${report.id}`
+  }
+  if (report.sourceType === 'customer_return') return `${detailBasePath}/returns/${report.id}`
+  return `${detailBasePath}/${report.id}`
 }
 
 type Props = {

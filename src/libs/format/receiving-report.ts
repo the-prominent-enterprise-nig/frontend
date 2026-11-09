@@ -138,7 +138,13 @@ export function receivingReportMetaSlots(
     | null
     | undefined
 ): ReceivingReportMetaSlot[] {
-  if (report?.reason === 'repair_return' || report?.reason === 'repossession') {
+  // Ticket #27 — a customer return's RRC points back at its sales invoice the
+  // same way a Repair or Repossession RR does.
+  if (
+    report?.reason === 'repair_return' ||
+    report?.reason === 'repossession' ||
+    report?.reason === 'customer_return'
+  ) {
     const invoices = report.returnedInvoices ?? []
     if (!invoices.length) return []
     return [
@@ -242,9 +248,12 @@ export function receivingReportReasonLabel(
         : report.repairType === 'home_service'
           ? ' — Home Service'
           : ''
-    return `Repair / Return${where}`
+    // Ticket #27 — Repair and Return are separate; this reason is Repair.
+    return `Repair${where}`
   }
   if (report?.reason === 'repossession') return 'Repossession'
+  // Ticket #27 — a posted customer return listed in Receiving.
+  if (report?.reason === 'customer_return') return 'Return'
   return null
 }
 

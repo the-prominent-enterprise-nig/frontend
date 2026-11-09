@@ -56,7 +56,11 @@ const ORIGIN_OPTIONS: SearchableSelectOption[] = [
 const REASON_OPTIONS: SearchableSelectOption[] = [
   { value: REGULAR_DELIVERY, label: 'Regular Supplier Delivery' },
   { value: 'repossession', label: 'Repossession' },
-  { value: 'repair_return', label: 'Repair/Return' },
+  // Ticket #27 — Repair and Return are separate. Repair keeps the old value
+  // (and every receipt already posted under it); Return only looks up the
+  // receiving report a POS return already made — it never posts stock.
+  { value: 'repair_return', label: 'Repair' },
+  { value: 'customer_return', label: 'Return' },
   { value: 'other', label: 'Other' },
 ]
 
@@ -138,7 +142,10 @@ export function RrDeliveryPanel({
 
   // Repossession and Repair/Return share one layout: no Source or Reference #
   // — the unit comes back from a customer's invoice.
-  const isUnitReturn = reason === 'repossession' || reason === 'repair_return'
+  // Ticket #27 (Karms's review) — Return is a unit return too, with Repair's
+  // own fields: it posts the POS customer return from here.
+  const customerReturn = reason === 'customer_return'
+  const isUnitReturn = reason === 'repossession' || reason === 'repair_return' || customerReturn
   // Scenario 73 — units back from a service center: Service Center replaces
   // Repair Type, and the service center's own DR is worth a reference.
   const fromServiceCenter = reason === 'repair_return' && origin === 'service_center'
@@ -148,7 +155,8 @@ export function RrDeliveryPanel({
   // Where a unit from a customer lands. A repossession still hides the field
   // for a branch receiver (it's filled with their own branch); head office
   // sees it for every unit return and has to choose — there's no default.
-  const showLocation = !isUnitReturn || fromServiceCenter || repairIntake || !ownBranchWarehouseId
+  const showLocation =
+    !isUnitReturn || fromServiceCenter || repairIntake || customerReturn || !ownBranchWarehouseId
   // Read off the value, not the resolver: posting stops at the blockers list
   // before the resolver runs, and the field should still say why.
   const serviceCenterId = useWatch({ control, name: 'serviceCenterId' })
@@ -158,6 +166,35 @@ export function RrDeliveryPanel({
   const repairType = useWatch({ control, name: 'repairType' })
   const homeService =
     reason === 'repair_return' && !fromServiceCenter && repairType === 'home_service'
+
+  const reasonField = (
+    <div className="sm:col-span-2 xl:col-span-3">
+      <Field
+        label="Reason"
+        hint="optional"
+        footer={
+          <Hint>
+            Getting your own stock back — a repossession, a repair or a return — rather than a
+            purchase. Drops the supplier requirement below.
+          </Hint>
+        }
+      >
+        <Controller
+          name="reason"
+          control={control}
+          render={({ field }) => (
+            <SearchableSelect
+              portal
+              value={field.value || REGULAR_DELIVERY}
+              onChange={(v) => field.onChange(v === REGULAR_DELIVERY ? '' : v)}
+              chrome={CONTROL_CHROME}
+              options={REASON_OPTIONS}
+            />
+          )}
+        />
+      </Field>
+    </div>
+  )
 
   return (
     <div className={`${PANEL} flex flex-col overflow-hidden`}>
@@ -180,34 +217,7 @@ export function RrDeliveryPanel({
             fields on this panel mean (Source becomes optional, PO/Supplier
             Invoice disappear), so it reads as the one decision that comes
             before the rest rather than competing for space with them. */}
-        {!linkedPo && (
-          <div className="sm:col-span-2 xl:col-span-3">
-            <Field
-              label="Reason"
-              hint="optional"
-              footer={
-                <Hint>
-                  Getting your own stock back — a repossession or a repair/return — rather than a
-                  purchase. Drops the supplier requirement below.
-                </Hint>
-              }
-            >
-              <Controller
-                name="reason"
-                control={control}
-                render={({ field }) => (
-                  <SearchableSelect
-                    portal
-                    value={field.value || REGULAR_DELIVERY}
-                    onChange={(v) => field.onChange(v === REGULAR_DELIVERY ? '' : v)}
-                    chrome={CONTROL_CHROME}
-                    options={REASON_OPTIONS}
-                  />
-                )}
-              />
-            </Field>
-          </div>
-        )}
+        {!linkedPo && reasonField}
 
         {!linkedPo && reason === 'repair_return' && (
           <div className="sm:col-span-2 xl:col-span-3">
@@ -275,7 +285,7 @@ export function RrDeliveryPanel({
           </div>
         )}
 
-        {/* Repair/Return only: where the unit is being serviced. Decides which
+        {/* Repair only: where the unit is being serviced. Decides which
             documents the receipt has to carry (see rrAttachments.ts). */}
         {!linkedPo && reason === 'repair_return' && !fromServiceCenter && (
           <div className="sm:col-span-2 xl:col-span-3">
@@ -454,20 +464,23 @@ export function RrDeliveryPanel({
             matching ManualRrForm.tsx's own Date Received field exactly; the
             time-of-day this form previously also collected was never
             something Manual RR asked for. */}
-        <Field label="Date Received" tooltip="Leave blank to stamp it as posted.">
-          <Controller
-            name="receivedAt"
-            control={control}
-            render={({ field }) => (
-              <input
-                {...field}
-                value={field.value ?? ''}
-                type="date"
-                className={`${INPUT} text-[#3d3d4a]`}
-              />
-            )}
-          />
-        </Field>
+        {/* A Return is dated when it's recorded, like the POS return. */}
+        {!customerReturn && (
+          <Field label="Date Received" tooltip="Leave blank to stamp it as posted.">
+            <Controller
+              name="receivedAt"
+              control={control}
+              render={({ field }) => (
+                <input
+                  {...field}
+                  value={field.value ?? ''}
+                  type="date"
+                  className={`${INPUT} text-[#3d3d4a]`}
+                />
+              )}
+            />
+          </Field>
+        )}
 
         {(!isUnitReturn || fromServiceCenter) && (
           <Field
