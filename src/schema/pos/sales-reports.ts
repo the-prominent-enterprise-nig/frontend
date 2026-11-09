@@ -66,11 +66,6 @@ export const SalesLineSchema = z.object({
   priceUseName: z.string(),
   agentName: z.string(),
   commission: z.number(),
-  /** In-house installment only: PN value (MI × term). Null otherwise. */
-  credit: z.number().nullable(),
-  /** The SMI Accounting recorded for the sale in Expenses (Commissions - SMI),
-   * this line's share. Null when none is recorded. */
-  smi: z.number().nullable(),
   isRefund: z.boolean(),
 })
 
