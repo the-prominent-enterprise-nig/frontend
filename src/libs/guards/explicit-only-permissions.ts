@@ -15,7 +15,15 @@ export const RECORDED_ENTRIES_EDIT = 'accounting:recorded-entries:edit'
 /** Edit a New Receipt in POS. A reason is required with every edit. */
 export const NEW_RECEIPTS_EDIT = 'pos:new-receipts:edit'
 
-const EXPLICIT_ONLY: ReadonlySet<string> = new Set([RECORDED_ENTRIES_EDIT, NEW_RECEIPTS_EDIT])
+/** "Edit entry" on a recorded POS sale: its SI / DR No., payment reference
+ * numbers and selling agent. Each change is kept in the audit log. */
+export const RECORDED_SALES_EDIT = 'pos:recorded-sales:edit'
+
+const EXPLICIT_ONLY: ReadonlySet<string> = new Set([
+  RECORDED_ENTRIES_EDIT,
+  NEW_RECEIPTS_EDIT,
+  RECORDED_SALES_EDIT,
+])
 
 export function isExplicitOnlyPermission(permission: string): boolean {
   return EXPLICIT_ONLY.has(permission)

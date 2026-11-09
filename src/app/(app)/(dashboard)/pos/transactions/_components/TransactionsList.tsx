@@ -22,6 +22,16 @@ import { saleDocNo } from '@/src/libs/format/saleDocNo'
 import Link from 'next/link'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { INVOICE_TYPE_FILTER_OPTIONS, invoiceTypeTag } from '../_utils/invoice-type'
+import {
+  EMPTY_APPLY_FILTERS,
+  type BranchPick,
+  type ListFilters,
+  type SortDir,
+  initialListFilters,
+  saveListFilters,
+  useHydrated,
+} from '../_utils/list-filters'
 
 const typeColor: Record<string, string> = {
   sale: 'bg-blue-100 text-blue-700',
@@ -38,8 +48,6 @@ function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
 }
 
-type SortDir = 'none' | 'asc' | 'desc'
-
 /** Sorts by the SI / DR No. the way a person reads it: 2 before 10, not after. */
 function sortByDocNo(list: PosTransaction[], dir: SortDir): PosTransaction[] {
   if (dir === 'none') return list
@@ -55,11 +63,62 @@ function nextSortDir(dir: SortDir): SortDir {
   return dir === 'none' ? 'asc' : dir === 'asc' ? 'desc' : 'none'
 }
 
+function InvoiceTypeCell({ tx }: { tx: PosTransaction }): React.JSX.Element {
+  const tag = invoiceTypeTag(tx)
+  return (
+    <span
+      data-testid="invoice-type"
+      className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${tag.className}`}
+    >
+      {tag.label}
+    </span>
+  )
+}
+
 interface Props {
   session: SessionUser
 }
 
-export default function TransactionsList({ session }: Props) {
+/** Ticket #24 follow-up — the list comes back as this tab left it (see
+ * list-filters.ts). What was left is only known in the browser, so the list
+ * starts once hydrated; until then it shows the same loading state it shows
+ * while fetching. */
+export default function TransactionsList({ session }: Props): React.JSX.Element {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const hydrated = useHydrated()
+  // A link to /pos/transactions?id=<transactionId> (the POS Overview's Recent
+  // Transactions, a source-document link) lands on that transaction's own
+  // page now that it is no longer a modal over this list. Sent from here, on
+  // the first commit: started from the list below, after hydration, the
+  // navigation never went through.
+  const redirectId = searchParams.get('id')
+  useEffect(() => {
+    if (redirectId) router.replace(`/pos/transactions/${redirectId}`)
+  }, [router, redirectId])
+  if (!hydrated || redirectId) return <ListLoading />
+  return <TransactionsListView session={session} initial={initialListFilters(searchParams)} />
+}
+
+function ListLoading(): React.JSX.Element {
+  return (
+    <div className="min-h-full bg-zinc-50 px-3 py-4 sm:px-6 sm:py-6">
+      <div className="mx-auto max-w-7xl space-y-4 sm:space-y-6" aria-label="Loading transactions">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
+          <p className="mt-1 text-sm text-gray-500">All sales, refunds, and exchanges.</p>
+        </div>
+        <Skeleton className="h-20 w-full rounded-xl" />
+        <Skeleton className="h-64 w-full rounded-xl" />
+      </div>
+    </div>
+  )
+}
+
+function TransactionsListView({
+  session,
+  initial,
+}: Props & { initial: ListFilters }): React.JSX.Element {
   // Scenario 59 — an installment sale held for manager release approval has
   // no PosTransaction yet: createdTransactionId is set only once the request
   // is approved. So it is correctly absent from the list below, and to the
@@ -96,7 +155,7 @@ export default function TransactionsList({ session }: Props) {
   // way to narrow the list. This page-level pick starts from the shared POS
   // branch (so the switcher still works where it exists) and, unlike it,
   // changes only this list — never the branch every other POS page filters by.
-  const [branchPick, setBranchPick] = useState<{ under: string | null; value: string } | null>(null)
+  const [branchPick, setBranchPick] = useState<BranchPick | null>(initial.branchPick)
   // A pick lapses when the top-bar branch changes under it, so the switcher
   // still wins whenever someone uses it.
   const branchFilter =
@@ -110,35 +169,27 @@ export default function TransactionsList({ session }: Props) {
     { value: '', label: 'All branches' },
     ...(branches.data?.data ?? []).map((b) => ({ value: b.id, label: b.name })),
   ]
-  const [sortDir, setSortDir] = useState<SortDir>('none')
+  const [sortDir, setSortDir] = useState<SortDir>(initial.sort)
 
-  const [filters, setFilters] = useState({
-    transactionType: '',
-    status: '',
-    dateFrom: '',
-    dateTo: '',
-  })
-  const [applied, setApplied] = useState(filters)
+  const [filters, setFilters] = useState(initial.filters)
+  const [applied, setApplied] = useState(initial.filters)
   // Scenario 23 Gap 3 — kept separate from filters/applied above: the
   // Type/Status/Date filters still wait for an explicit Apply click (you're
   // usually setting several before submitting), but a plain search box
   // should just search as you stop typing, no button needed.
-  const searchParams = useSearchParams()
-  // Lets an AR Invoice "Sale: <transactionNumber>" link deep-link straight
-  // into a prefilled search, rather than landing on an empty list.
-  const [search, setSearch] = useState(searchParams.get('search') ?? '')
-  const [debouncedSearch, setDebouncedSearch] = useState(searchParams.get('search') ?? '')
+  // ?search= also lets an AR Invoice "Sale: <transactionNumber>" link
+  // deep-link straight into a prefilled search.
+  const [search, setSearch] = useState(initial.search)
+  const [debouncedSearch, setDebouncedSearch] = useState(initial.search)
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 400)
     return () => clearTimeout(timer)
   }, [search])
-  // A link to /pos/transactions?id=<transactionId> (the POS Overview's Recent
-  // Transactions, a source-document link) lands on that transaction's own
-  // page now that it is no longer a modal over this list.
+  // Remember what is in force — the applied filters, the searched text, this
+  // page's own branch pick and the sort — for when the clerk comes back.
   useEffect(() => {
-    const id = searchParams.get('id')
-    if (id) router.replace(`/pos/transactions/${id}`)
-  }, [router, searchParams])
+    saveListFilters({ search: debouncedSearch, filters: applied, branchPick, sort: sortDir })
+  }, [debouncedSearch, applied, branchPick, sortDir])
   const { data, isLoading, isFetching, refetch } = useTransactions(
     Object.fromEntries(
       Object.entries({
@@ -231,6 +282,33 @@ export default function TransactionsList({ session }: Props) {
               />
             </div>
           </div>
+          <div>
+            <label
+              htmlFor="transactions-invoice-type"
+              className="mb-1 block text-xs font-semibold text-gray-600"
+            >
+              Invoice Type
+            </label>
+            <div className="relative">
+              <select
+                id="transactions-invoice-type"
+                className="select"
+                value={filters.invoiceType}
+                onChange={(e) => setFilters((p) => ({ ...p, invoiceType: e.target.value }))}
+              >
+                <option value="">All invoice types</option>
+                {INVOICE_TYPE_FILTER_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={14}
+                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+            </div>
+          </div>
           {branchPickerVisible && (
             <div className="w-48">
               <label className="mb-1 block text-xs font-semibold text-gray-600">Branch</label>
@@ -288,9 +366,8 @@ export default function TransactionsList({ session }: Props) {
           </button>
           <button
             onClick={() => {
-              const cleared = { transactionType: '', status: '', dateFrom: '', dateTo: '' }
-              setFilters(cleared)
-              setApplied(cleared)
+              setFilters(EMPTY_APPLY_FILTERS)
+              setApplied(EMPTY_APPLY_FILTERS)
               setSearch('')
               setDebouncedSearch('')
               setBranchFilter('')
@@ -325,6 +402,9 @@ export default function TransactionsList({ session }: Props) {
                     Type
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Invoice Type
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                     Branch
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
@@ -346,6 +426,9 @@ export default function TransactionsList({ session }: Props) {
                     </td>
                     <td className="px-5 py-3">
                       <Skeleton className="h-5 w-16 rounded-full" />
+                    </td>
+                    <td className="px-5 py-3">
+                      <Skeleton className="h-5 w-24 rounded-full" />
                     </td>
                     <td className="px-5 py-3">
                       <Skeleton className="h-4 w-20" />
@@ -398,6 +481,9 @@ export default function TransactionsList({ session }: Props) {
                     Type
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
+                    Invoice Type
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
                     Branch
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-gray-500">
@@ -441,6 +527,9 @@ export default function TransactionsList({ session }: Props) {
                         </span>
                         {tx.isXDeal && <XDealBadge reference={tx.xDealReference} />}
                       </span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <InvoiceTypeCell tx={tx} />
                     </td>
                     <td className="px-5 py-3 text-gray-600">
                       {tx.session?.terminal?.branch?.name ?? '—'}

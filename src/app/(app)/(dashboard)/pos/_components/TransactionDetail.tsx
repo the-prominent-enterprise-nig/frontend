@@ -16,6 +16,7 @@ import {
   Receipt,
   MapPin,
   ArrowLeft,
+  PencilLine,
 } from 'lucide-react'
 import { getTransaction, getCustomerById, createTransaction } from '../_actions/pos-actions'
 import type { PosTransaction, PosTransactionInvoice, PosVoidRequest } from '@/src/schema/pos'
@@ -33,6 +34,16 @@ import { deliveryFeeReceiptTenderLabel, qrTenderLabel } from '../checkout/_utils
 import { outputVatLabel } from '@/src/libs/tax/output-vat'
 import { TaxOverrideSummary } from '@/src/components/accounting/TaxOverride'
 import { saleDocNo } from '@/src/libs/format/saleDocNo'
+import { useOwnerEdit } from '@/src/components/accounting/EditReasonSection'
+import { RECORDED_SALES_EDIT } from '@/src/libs/guards/explicit-only-permissions'
+import {
+  AgentInput,
+  DocNoInput,
+  EditEntryBar,
+  PaymentRefInput,
+  useEditEntryForm,
+  type EditEntryForm,
+} from './EditEntry'
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
@@ -101,6 +112,12 @@ export function TransactionDetail({
   const [activeTab, setActiveTab] = useState<'details' | 'void-requests'>('details')
   const [showRefund, setShowRefund] = useState(false)
   const isRefundable = tx.transactionType === 'sale' && tx.status === 'completed'
+  // Ticket #24 follow-up — "Edit entry" beside Refund, on the transaction's
+  // own page: the Business Owner (pos:recorded-sales:edit) puts a sale's
+  // numbers and agent right, with a reason.
+  const canEditEntry = useOwnerEdit(RECORDED_SALES_EDIT) && isPage && tx.transactionType === 'sale'
+  const editEntry = useEditEntryForm(tx)
+  const editing = canEditEntry && editEntry.editing
   // Price Used and Credit are per-unit figures of an installment account, so
   // only a sale that opened one has them — and only the page has room.
   const showUnitFigures = isPage && !!tx.accountSummary
@@ -248,6 +265,7 @@ export function TransactionDetail({
                   customerName={customerName}
                   card={card}
                   canSeeCommission={tx.accountSummary?.commission != null}
+                  edit={editing ? editEntry : null}
                 />
               )}
               <div className={section('mb-4')}>
@@ -426,10 +444,18 @@ export function TransactionDetail({
                         {p.paymentMethod === 'qr'
                           ? qrTenderLabel(p.paymentMethodOption?.name)
                           : p.paymentMethod.replace('_', ' ')}
-                        {p.referenceNumber && (
-                          <span className="block font-mono text-[10px] normal-case text-gray-400">
-                            CR# {p.referenceNumber}
-                          </span>
+                        {editing ? (
+                          <PaymentRefInput
+                            form={editEntry}
+                            paymentId={p.id}
+                            label={`Reference no. for the ${p.paymentMethod.replace('_', ' ')} payment of ${formatCurrency(p.amount)}`}
+                          />
+                        ) : (
+                          p.referenceNumber && (
+                            <span className="block font-mono text-[10px] normal-case text-gray-400">
+                              CR# {p.referenceNumber}
+                            </span>
+                          )
                         )}
                       </span>
                       <span className="shrink-0 font-medium text-gray-900">
@@ -549,15 +575,28 @@ export function TransactionDetail({
                 </div>
               )}
 
-              {canRefund && isRefundable && (
+              {editing && <EditEntryBar form={editEntry} card={isPage ? card : ''} />}
+
+              {!editing && ((canRefund && isRefundable) || canEditEntry) && (
                 <div className={`flex gap-2 ${isPage ? '' : 'mt-4'}`}>
-                  <button
-                    onClick={() => setShowRefund(true)}
-                    className="flex items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-medium text-orange-700 hover:bg-orange-100"
-                  >
-                    <Undo2 size={12} />
-                    Refund
-                  </button>
+                  {canRefund && isRefundable && (
+                    <button
+                      onClick={() => setShowRefund(true)}
+                      className="flex items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-medium text-orange-700 hover:bg-orange-100"
+                    >
+                      <Undo2 size={12} />
+                      Refund
+                    </button>
+                  )}
+                  {canEditEntry && (
+                    <button
+                      onClick={editEntry.start}
+                      className="flex items-center gap-1.5 rounded-lg border border-prominent-purple-200 bg-prominent-purple-50 px-3 py-2 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-100"
+                    >
+                      <PencilLine size={12} />
+                      Edit entry
+                    </button>
+                  )}
                 </div>
               )}
             </>
@@ -873,6 +912,23 @@ function RefundModal({
   )
 }
 
+/** A Field while Edit entry is open: its label over an input (a block, not a
+ * paragraph, so a picker can sit in it). */
+function EditField({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <div className="min-w-0">
+      <p className="mb-1 text-xs text-gray-500">{label}</p>
+      {children}
+    </div>
+  )
+}
+
 function Field({ label, value }: { label: string; value: React.ReactNode }): React.JSX.Element {
   return (
     <div className="min-w-0">
@@ -912,11 +968,14 @@ function SaleAccountCards({
   customerName,
   card,
   canSeeCommission,
+  edit,
 }: {
   tx: PosTransaction
   customerName: string | null
   card: string
   canSeeCommission: boolean
+  /** Edit entry is open: the SI / DR No. and the agent are inputs, in place. */
+  edit: EditEntryForm | null
 }): React.JSX.Element {
   const account = tx.accountSummary
   const priceUses = [...new Set((tx.lines ?? []).map((l) => l.priceUseName).filter(Boolean))]
@@ -925,7 +984,18 @@ function SaleAccountCards({
   return (
     <>
       <CardGrid title="Sale" card={card}>
-        <Field label="SI / DR No." value={saleDocNo(tx)} />
+        {edit ? (
+          <EditField
+            label={tx.deliveryReceiptNumber ? 'Delivery Receipt No.' : 'Sales Invoice No.'}
+          >
+            <DocNoInput
+              form={edit}
+              label={tx.deliveryReceiptNumber ? 'Delivery Receipt No.' : 'Sales Invoice No.'}
+            />
+          </EditField>
+        ) : (
+          <Field label="SI / DR No." value={saleDocNo(tx)} />
+        )}
         <Field label="Customer" value={customerName ?? '—'} />
         <Field label="Branch" value={tx.session?.terminal?.branch?.name ?? '—'} />
       </CardGrid>
@@ -941,9 +1011,15 @@ function SaleAccountCards({
         </CardGrid>
       )}
 
-      {(account || agentName) && (
+      {(account || agentName || edit) && (
         <CardGrid title={account ? 'Agent and credit' : 'Agent'} card={card}>
-          <Field label="Agent" value={agentName ?? '—'} />
+          {edit ? (
+            <EditField label="Agent">
+              <AgentInput form={edit} />
+            </EditField>
+          ) : (
+            <Field label="Agent" value={agentName ?? '—'} />
+          )}
           {account && <Field label="Credit" value={formatCurrency(account.amountFinanced)} />}
           {account && canSeeCommission && (
             <Field label="Commission" value={formatCurrency(account.commission ?? 0)} />

@@ -71,6 +71,8 @@ export const POS_PERMISSIONS = {
   ACKNOWLEDGEMENT_RECEIPTS_CREATE: 'pos:acknowledgement-receipts:create',
   /** Edit a New Receipt, with a reason. Business Owner only; never a wildcard. */
   NEW_RECEIPTS_EDIT: 'pos:new-receipts:edit',
+  /** "Edit entry" on a recorded sale. Business Owner only; never a wildcard. */
+  RECORDED_SALES_EDIT: 'pos:recorded-sales:edit',
   /** POS › Reservations; the routes also take Inventory's sku-reservations. */
   RESERVATIONS_READ: 'pos:reservations:read',
   RESERVATIONS_CREATE: 'pos:reservations:create',
@@ -140,6 +142,8 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
   'pos:acknowledgement-receipts:create':
     'Create acknowledgment receipts on New Receipts, and no other receipt type',
   'pos:new-receipts:edit': 'Edit a New Receipt, with a reason (Business Owner only)',
+  'pos:recorded-sales:edit':
+    "Edit a recorded sale's SI / DR No., payment reference numbers and selling agent (Business Owner only)",
   'pos:reservations:read': 'View reservations on POS',
   'pos:reservations:create': 'Reserve an item by SKU or model at POS',
   'pos:reservations:fulfil':

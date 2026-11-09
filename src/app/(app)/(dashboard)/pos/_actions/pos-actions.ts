@@ -311,6 +311,9 @@ export async function getTransactions(filters?: {
   sessionId?: string
   branchId?: string
   transactionType?: string
+  /** Ticket #24 follow-up — cash · installment · installment_inhouse ·
+   * installment_tpf · charge · mixed (see INVOICE_TYPE_FILTER_OPTIONS). */
+  invoiceType?: string
   customerId?: string
   transactionNumber?: string
   dateFrom?: string
@@ -1762,6 +1765,29 @@ export async function searchUsers(
     return { success: true, data: users }
   } catch {
     return { success: false, error: 'Failed to search users' }
+  }
+}
+
+/** Ticket #24 follow-up — "Edit entry" on a recorded sale (Business Owner
+ * only). Send only what changes. */
+export interface EditRecordedSaleInput {
+  documentNumber?: string
+  sellingAgentId?: string | null
+  payments?: { id: string; referenceNumber: string | null }[]
+}
+
+export async function editRecordedSale(
+  id: string,
+  input: EditRecordedSaleInput
+): Promise<ApiResponse<PosTransaction>> {
+  try {
+    const result = await api.patch<PosTransaction>(`/pos/transactions/${id}/recorded`, input)
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Failed to save the changes' }
+    }
+    return { success: true, data: result.data }
+  } catch {
+    return { success: false, error: 'Failed to save the changes' }
   }
 }
 
