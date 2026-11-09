@@ -239,7 +239,8 @@ export function receivingReportReasonLabel(
         : report.repairType === 'home_service'
           ? ' — Home Service'
           : ''
-    return `Repair / Return${where}`
+    // Ticket #27 — Repair and Return are separate; this reason is Repair.
+    return `Repair${where}`
   }
   if (report?.reason === 'repossession') return 'Repossession'
   return null

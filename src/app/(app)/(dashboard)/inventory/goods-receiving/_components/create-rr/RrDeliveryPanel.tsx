@@ -55,7 +55,11 @@ const ORIGIN_OPTIONS: SearchableSelectOption[] = [
 const REASON_OPTIONS: SearchableSelectOption[] = [
   { value: REGULAR_DELIVERY, label: 'Regular Supplier Delivery' },
   { value: 'repossession', label: 'Repossession' },
-  { value: 'repair_return', label: 'Repair/Return' },
+  // Ticket #27 — Repair and Return are separate. Repair keeps the old value
+  // (and every receipt already posted under it); Return only looks up the
+  // receiving report a POS return already made — it never posts stock.
+  { value: 'repair_return', label: 'Repair' },
+  { value: 'customer_return', label: 'Return' },
   { value: 'other', label: 'Other' },
 ]
 
@@ -158,6 +162,51 @@ export function RrDeliveryPanel({
   const homeService =
     reason === 'repair_return' && !fromServiceCenter && repairType === 'home_service'
 
+  const reasonField = (
+    <div className="sm:col-span-2 xl:col-span-3">
+      <Field
+        label="Reason"
+        hint="optional"
+        footer={
+          <Hint>
+            Getting your own stock back — a repossession, a repair or a return — rather than a
+            purchase. Drops the supplier requirement below.
+          </Hint>
+        }
+      >
+        <Controller
+          name="reason"
+          control={control}
+          render={({ field }) => (
+            <SearchableSelect
+              portal
+              value={field.value || REGULAR_DELIVERY}
+              onChange={(v) => field.onChange(v === REGULAR_DELIVERY ? '' : v)}
+              chrome={CONTROL_CHROME}
+              options={REASON_OPTIONS}
+            />
+          )}
+        />
+      </Field>
+    </div>
+  )
+
+  // Ticket #27 — Return has nothing to post: just the reason, and the lookup
+  // panel below it.
+  if (reason === 'customer_return') {
+    return (
+      <div className={`${PANEL} flex flex-col overflow-hidden`}>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-2.5">
+          <span className="text-[13.5px] font-semibold">Delivery details</span>
+          <span className="text-[11.5px] text-ink-muted">
+            Customer return, already received at the POS
+          </span>
+        </div>
+        <div className="px-4.5 pb-4 pt-3.5">{reasonField}</div>
+      </div>
+    )
+  }
+
   return (
     <div className={`${PANEL} flex flex-col overflow-hidden`}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-2.5">
@@ -179,34 +228,7 @@ export function RrDeliveryPanel({
             fields on this panel mean (Source becomes optional, PO/Supplier
             Invoice disappear), so it reads as the one decision that comes
             before the rest rather than competing for space with them. */}
-        {!linkedPo && (
-          <div className="sm:col-span-2 xl:col-span-3">
-            <Field
-              label="Reason"
-              hint="optional"
-              footer={
-                <Hint>
-                  Getting your own stock back — a repossession or a repair/return — rather than a
-                  purchase. Drops the supplier requirement below.
-                </Hint>
-              }
-            >
-              <Controller
-                name="reason"
-                control={control}
-                render={({ field }) => (
-                  <SearchableSelect
-                    portal
-                    value={field.value || REGULAR_DELIVERY}
-                    onChange={(v) => field.onChange(v === REGULAR_DELIVERY ? '' : v)}
-                    chrome={CONTROL_CHROME}
-                    options={REASON_OPTIONS}
-                  />
-                )}
-              />
-            </Field>
-          </div>
-        )}
+        {!linkedPo && reasonField}
 
         {!linkedPo && reason === 'repair_return' && (
           <div className="sm:col-span-2 xl:col-span-3">

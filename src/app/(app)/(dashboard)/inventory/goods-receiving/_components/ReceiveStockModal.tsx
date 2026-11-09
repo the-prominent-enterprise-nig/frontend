@@ -39,6 +39,7 @@ import {
   type IssueFix,
 } from '../../purchase-orders/_components/receive-po/receiveIssues'
 import { PoLinkPicker, outstandingOf } from './create-rr/PoLinkPicker'
+import { CustomerReturnLookupPanel } from './create-rr/CustomerReturnLookupPanel'
 import { ReturnedUnitsPanel, type ReturnBlock } from './create-rr/ReturnedUnitsPanel'
 import { ServiceCenterUnitsPanel } from './create-rr/ServiceCenterUnitsPanel'
 import {
@@ -292,6 +293,8 @@ export default function ReceiveStockModal({
   // Repossession and Repair/Return share one layout: units picked off a
   // customer's invoice, no Source / Location / Reference #.
   const isRepo = watched.reason === 'repossession'
+  // Ticket #27 — Return only looks up what the POS return already received.
+  const lookupOnly = watched.reason === 'customer_return'
   const isUnitReturn = isRepo || watched.reason === 'repair_return'
   // Scenario 73 — a Repair/Return coming back from a service center rather
   // than handed in by a customer: no invoice, no Repair Type, no UDS/RFS.
@@ -743,6 +746,7 @@ export default function ReceiveStockModal({
     patchBlock(key, {
       accountId: id,
       invoiceLabel: label ?? '',
+      soldAtBranch: undefined,
       units: undefined,
       exhausted: false,
       loading: !!id,
@@ -792,6 +796,7 @@ export default function ReceiveStockModal({
     patchBlock(key, {
       accountId: sale.id,
       invoiceLabel: sale.siNumber,
+      soldAtBranch: sale.soldAtBranch?.name,
       units: available,
       exhausted: available.length === 0,
       loading: false,
@@ -1336,7 +1341,9 @@ export default function ReceiveStockModal({
           serviceCentersLoading={serviceCentersQuery.isLoading || suppliersQuery.isLoading}
         />
 
-        {fromServiceCenter ? (
+        {lookupOnly ? (
+          <CustomerReturnLookupPanel />
+        ) : fromServiceCenter ? (
           <ServiceCenterUnitsPanel
             serviceCenterId={watched.serviceCenterId ?? ''}
             serviceCenterName={serviceCenterName(watched.serviceCenterId)}
@@ -1547,27 +1554,29 @@ export default function ReceiveStockModal({
             )}
           </div>
         )}
-        <div className={`${PANEL} flex flex-col gap-2 px-4.5 py-3.5`}>
-          <label className="text-[12px] font-medium text-[#3d3d4a]">
-            Notes <span className="font-normal text-ink-muted">optional</span>
-          </label>
-          <Controller
-            name="notes"
-            control={control}
-            render={({ field }) => (
-              <textarea
-                {...field}
-                value={field.value ?? ''}
-                rows={2}
-                placeholder="Damage on arrival, short-shipped cartons, anything the next person should know…"
-                className="w-full resize-y rounded-lg border border-[#d3d3db] bg-white px-3 py-2.5 text-[13px] leading-[1.5] text-[#17171c] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
-              />
+        {!lookupOnly && (
+          <div className={`${PANEL} flex flex-col gap-2 px-4.5 py-3.5`}>
+            <label className="text-[12px] font-medium text-[#3d3d4a]">
+              Notes <span className="font-normal text-ink-muted">optional</span>
+            </label>
+            <Controller
+              name="notes"
+              control={control}
+              render={({ field }) => (
+                <textarea
+                  {...field}
+                  value={field.value ?? ''}
+                  rows={2}
+                  placeholder="Damage on arrival, short-shipped cartons, anything the next person should know…"
+                  className="w-full resize-y rounded-lg border border-[#d3d3db] bg-white px-3 py-2.5 text-[13px] leading-[1.5] text-[#17171c] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
+                />
+              )}
+            />
+            {errors.notes && (
+              <span className="text-[11.5px] text-[#b42318]">{errors.notes.message}</span>
             )}
-          />
-          {errors.notes && (
-            <span className="text-[11.5px] text-[#b42318]">{errors.notes.message}</span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {warehouseMismatchWarning && (
@@ -1576,17 +1585,29 @@ export default function ReceiveStockModal({
           continue.
         </div>
       )}
-      <ReceiveActionBar
-        blockerCount={blockers.length}
-        showBlockers={showErrors}
-        totals={barTotals}
-        deliveryReceiptNumber={watched.deliveryReceiptNumber ?? ''}
-        isSubmitting={isSubmitting}
-        onCancel={onClose}
-        onPrimary={postNow}
-        primaryLabel={warehouseMismatchWarning ? 'Receive anyway' : submitLabel}
-        submittingLabel={submittingLabel}
-      />
+      {lookupOnly ? (
+        <div className="sticky bottom-0 flex justify-end border-t border-[#e4e4e9] bg-white px-4 py-3 lg:px-5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-[#d3d3db] px-4 py-2 text-[13px] font-medium text-[#3d3d4a] hover:bg-[#f6f6f8]"
+          >
+            Close
+          </button>
+        </div>
+      ) : (
+        <ReceiveActionBar
+          blockerCount={blockers.length}
+          showBlockers={showErrors}
+          totals={barTotals}
+          deliveryReceiptNumber={watched.deliveryReceiptNumber ?? ''}
+          isSubmitting={isSubmitting}
+          onCancel={onClose}
+          onPrimary={postNow}
+          primaryLabel={warehouseMismatchWarning ? 'Receive anyway' : submitLabel}
+          submittingLabel={submittingLabel}
+        />
+      )}
 
       {poPickerOpen && (
         <PoLinkPicker

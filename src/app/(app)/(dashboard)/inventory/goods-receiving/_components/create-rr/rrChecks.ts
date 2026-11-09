@@ -142,7 +142,7 @@ export type HeaderState = {
    * return, a repossession) isn't a purchase, so there's no supplier to
    * name. '' is the picker's unset state, same falsy treatment as
    * undefined. */
-  reason?: 'repair_return' | 'repossession' | 'other' | ''
+  reason?: 'repair_return' | 'repossession' | 'other' | 'customer_return' | ''
 }
 
 /** Everything standing between the receiver and a posted receipt. */

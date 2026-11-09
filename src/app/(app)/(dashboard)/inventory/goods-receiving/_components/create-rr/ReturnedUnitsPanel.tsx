@@ -32,6 +32,8 @@ export type ReturnBlock = {
   customerLabel: string
   /** Customer ID shown on the form — the customer's code. */
   customerCode?: string
+  /** Ticket #27 — repair: the branch that sold the unit, from the invoice. */
+  soldAtBranch?: string
   /** undefined until the invoice's units have loaded. */
   units?: InstallmentAccountUnitItem[]
   loading: boolean
@@ -102,7 +104,7 @@ export function ReturnedUnitsPanel({
         <div className="flex min-w-0 flex-col gap-0.5">
           <div className="flex items-center gap-2.5">
             <span className="text-[13.5px] font-semibold">
-              {isRepo ? 'Repossessed Items' : 'Units for Repair/Return'}{' '}
+              {isRepo ? 'Repossessed Items' : 'Units for Repair'}{' '}
               <span className="text-[#b42318]">*</span>
             </span>
             <span className="text-[11px] text-ink-muted">
@@ -259,7 +261,11 @@ function Block({
             />
           )}
 
-          <div className="mt-2.5 grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2">
+          <div
+            className={`mt-2.5 grid grid-cols-1 gap-x-4 gap-y-2.5 ${
+              isRepo ? 'sm:grid-cols-2' : 'sm:grid-cols-3'
+            }`}
+          >
             <div className="min-w-0">
               <span className={CAPTION}>{isRepo ? 'Repossessed from' : 'Returned by'}</span>
               {block.customerId ? (
@@ -300,6 +306,18 @@ function Block({
                 {block.customerCode ?? 'Fills in from the customer'}
               </div>
             </div>
+            {!isRepo && (
+              <div className="min-w-0">
+                <span className={CAPTION}>Sold at</span>
+                <div
+                  className={`flex h-9.5 items-center rounded-lg border border-[#e4e4e9] bg-[#f5f5f7] px-3 text-[12.5px] ${
+                    block.soldAtBranch ? 'text-[#17171c]' : 'text-ink-subtle'
+                  }`}
+                >
+                  {block.soldAtBranch ?? 'Fills in from the invoice'}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

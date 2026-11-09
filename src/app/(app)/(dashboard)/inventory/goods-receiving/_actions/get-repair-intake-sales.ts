@@ -12,6 +12,8 @@ export interface RepairIntakeSale {
   occurredAt: string
   /** Fills Returned by and Customer ID once picked. Null for a walk-in sale. */
   customer: { id: string; name: string; customerCode: string } | null
+  /** Ticket #27 — the branch that sold it, shown beside the invoice #. */
+  soldAtBranch: { id: string; name: string } | null
   /** Same shape as an installment account's units, so the panel lists and
    * checks them the same way. */
   unitItems: InstallmentAccountUnitItem[]
