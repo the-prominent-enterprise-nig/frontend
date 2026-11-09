@@ -26,13 +26,15 @@ const TAG_CLASS: Record<PosInvoiceType, string> = {
 /** The Invoice Type filter's choices — the same names the column shows. The
  * server reads them the same way (backend transactions.service.ts,
  * invoiceTypeWhere). */
-export const INVOICE_TYPE_FILTER_OPTIONS: { value: string; label: string }[] = [
+// The installment choices sit under an "Installment" heading with short
+// labels, so the filter box stays narrow enough for the one-row filter bar.
+export const INVOICE_TYPE_FILTER_OPTIONS: { value: string; label: string; group?: string }[] = [
   { value: 'cash', label: 'Cash' },
-  { value: 'installment', label: 'Installment (all)' },
-  { value: 'installment_inhouse', label: 'Installment (In-house)' },
-  { value: 'installment_tpf', label: 'Installment (TPF)' },
   { value: 'charge', label: 'Charge' },
   { value: 'mixed', label: 'Mixed' },
+  { value: 'installment', label: 'All installment', group: 'Installment' },
+  { value: 'installment_inhouse', label: 'In-house', group: 'Installment' },
+  { value: 'installment_tpf', label: 'TPF', group: 'Installment' },
 ]
 
 /** "Installment (TPF)" when every installment line is TPF, "Installment

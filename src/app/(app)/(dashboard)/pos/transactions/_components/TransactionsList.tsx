@@ -281,7 +281,7 @@ function TransactionsListView({
               ariaLabel="Type"
             />
           </div>
-          <div className="w-[13.5rem]">
+          <div className="w-36">
             <label className="mb-1 block text-xs font-semibold text-gray-600">Invoice Type</label>
             <SearchableSelect
               value={filters.invoiceType}
@@ -314,7 +314,7 @@ function TransactionsListView({
               ariaLabel="Status"
             />
           </div>
-          <div className="w-36">
+          <div className="w-[10.5rem]">
             <label className="mb-1 block text-xs font-semibold text-gray-600">From</label>
             <input
               className="input px-2"
@@ -323,7 +323,7 @@ function TransactionsListView({
               onChange={(e) => setFilters((p) => ({ ...p, dateFrom: e.target.value }))}
             />
           </div>
-          <div className="w-36">
+          <div className="w-[10.5rem]">
             <label className="mb-1 block text-xs font-semibold text-gray-600">To</label>
             <input
               className="input px-2"

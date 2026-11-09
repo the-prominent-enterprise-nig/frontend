@@ -285,7 +285,7 @@ test('the filters, Apply and Clear sit on one row, and Type / Invoice Type / Bra
   await page.getByLabel('Invoice Type', { exact: true }).click()
   await page
     .getByTestId('searchable-select-option')
-    .filter({ hasText: /^Installment \(In-house\)$/ })
+    .filter({ hasText: /^In-house$/ })
     .click()
   await pickStatus(page, 'Completed')
   await allOnOneRow()
@@ -335,16 +335,16 @@ test('the Invoice Type filter narrows the list to cash or installment sales, and
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect.poll(async () => (await listedDocNos(page)).sort()).toEqual([si('10'), si('2')])
 
-  await pickInvoiceType('Installment (In-house)')
+  await pickInvoiceType('In-house')
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect.poll(() => listedDocNos(page)).toEqual([si('3')])
 
   // None of ours is TPF.
-  await pickInvoiceType('Installment (TPF)')
+  await pickInvoiceType('TPF')
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect(page.getByText('No transactions found.')).toBeVisible({ timeout: 15_000 })
 
-  await pickInvoiceType('Installment (all)')
+  await pickInvoiceType('All installment')
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect.poll(() => listedDocNos(page)).toEqual([si('3')])
 
@@ -352,7 +352,7 @@ test('the Invoice Type filter narrows the list to cash or installment sales, and
   await rowOf(page, si('3')).click()
   await expect(page.getByText('Account details', { exact: true })).toBeVisible({ timeout: 15_000 })
   await page.getByRole('link', { name: 'Transactions', exact: true }).click()
-  await expect(invoiceTypeSelect).toHaveValue('Installment (all)', { timeout: 15_000 })
+  await expect(invoiceTypeSelect).toHaveValue('All installment', { timeout: 15_000 })
   await expect.poll(() => listedDocNos(page)).toEqual([si('3')])
 
   // Clear brings every type back.
