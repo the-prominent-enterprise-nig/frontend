@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { can, hasPrivilegedRole } from '@/src/libs/guards/permission'
+import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import SalesReportsView from './_components/SalesReportsView'
 
@@ -17,8 +17,9 @@ export default async function PosReportsPage() {
     redirect('/login')
   }
 
-  // Branch-Manager tier: these expose unit cost and margin. Business Owner is
-  // covered by the enterprise-owner bypass inside can().
+  // Branch staff hold this too (NIG UAT 2026-11-09): the API holds a
+  // branch-tied user to their own branch and drops unit cost. Business Owner
+  // is covered by the enterprise-owner bypass inside can().
   if (!can(session, POS_PERMISSIONS.REPORTS_READ)) {
     redirect('/403')
   }
@@ -27,7 +28,7 @@ export default async function PosReportsPage() {
   return (
     <div className="min-h-screen bg-zinc-50">
       <Suspense>
-        <SalesReportsView isOwner={Boolean(session.isSuperAdmin || hasPrivilegedRole(session))} />
+        <SalesReportsView />
       </Suspense>
     </div>
   )
