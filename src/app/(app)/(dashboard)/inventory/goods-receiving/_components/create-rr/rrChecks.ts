@@ -41,7 +41,7 @@ export function toIssueLines(
     quantityReceived: line.quantityReceived || 0,
     isSerialTracked: context(index).isSerialTracked,
     serialNumbers:
-      reason === 'repossession' || reason === 'repair_return'
+      reason === 'repossession' || reason === 'repair_return' || reason === 'customer_return'
         ? line.existingSerialNumberIds
         : line.serialNumbers,
     qualityHold: line.qualityHold ?? false,
@@ -142,7 +142,7 @@ export type HeaderState = {
    * return, a repossession) isn't a purchase, so there's no supplier to
    * name. '' is the picker's unset state, same falsy treatment as
    * undefined. */
-  reason?: 'repair_return' | 'repossession' | 'other' | ''
+  reason?: 'repair_return' | 'repossession' | 'other' | 'customer_return' | ''
 }
 
 /** Everything standing between the receiver and a posted receipt. */

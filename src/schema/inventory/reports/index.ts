@@ -109,13 +109,15 @@ export const SERIAL_AGING_BUCKET_LABELS: Record<SerialAgingBucket, string> = {
 
 /** The client's Classification of a unit: how it last came into stock
  * (SerialNumber.receivedAs, set by Receive Stock from the receipt's reason). */
-export const UnitClassificationSchema = z.enum(['brand_new', 'repair_return', 'repo'])
+export const UnitClassificationSchema = z.enum(['brand_new', 'repair_return', 'repo', 'returned'])
 export type UnitClassification = z.infer<typeof UnitClassificationSchema>
 
 export const UNIT_CLASSIFICATION_LABELS: Record<UnitClassification, string> = {
   brand_new: 'Brand New',
-  repair_return: 'Repair/Return',
+  // Ticket #27 — Repair and Return are separate.
+  repair_return: 'Repair',
   repo: 'Repo',
+  returned: 'Return',
 }
 
 export const AgingReportItemSchema = z.object({
