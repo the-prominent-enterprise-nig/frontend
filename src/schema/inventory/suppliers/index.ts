@@ -107,6 +107,7 @@ export const SupplierListItemSchema = z.object({
   contactPerson: z.string().optional().nullable(),
   email: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
   paymentTerms: z.string(),
   currency: z.string(),
   onboardingStatus: z.enum(SUPPLIER_ONBOARDING_STATUSES),
