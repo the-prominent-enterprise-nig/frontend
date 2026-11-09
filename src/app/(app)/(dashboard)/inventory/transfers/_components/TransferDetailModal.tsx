@@ -67,6 +67,7 @@ import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbe
 import { getSenderSerials, type SenderSerial } from '../_actions/get-sender-serials'
 import {
   buildWrongUnitNote,
+  hasWrongUnitNote,
   serialCorrectionReason,
   splitUnitLabel,
   wrongUnitBySerial,
@@ -590,10 +591,10 @@ function unitLabel(serial: string | undefined, itemName: string | undefined): st
 // sender could have shipped by mistake: anything in stock at the source
 // warehouse (any model) plus this transfer's other dispatched units. Nothing
 // is repointed — a note naming the picked unit is added to the receipt notes.
-// Flagging ticks the line Received; unticking keeps the flag and leaves the
-// line for a later receive, where the earlier receipt's note shows it again
-// (`flaggedUnit`) and the receiver ticks it themselves. Open to every
-// receiver; no override needed.
+// Flagging leaves the line unticked — the dispatched unit never arrived — so
+// it stays outstanding for a later receive, where the earlier receipt's note
+// shows it again (`flaggedUnit`) and the receiver ticks it themselves. Open
+// to every receiver; no override needed.
 function SerialReceiveCorrection({
   control,
   setValue,
@@ -636,13 +637,12 @@ function SerialReceiveCorrection({
     setValue(`lines.${index}.correctionReason`, '')
   }
 
-  // Record the discrepancy in the receipt notes and tick the line — naming
-  // the unit that arrived means the receiver has it in hand. Unticking keeps
-  // the note: the wrong unit is flagged, but left for a later receive.
+  // Record the discrepancy in the receipt notes and untick the line — a
+  // different unit arrived, so the dispatched one hasn't been received yet.
   function flagWithNote(note: string): void {
     setMode(null)
     setAddedNote(note)
-    setValue(`lines.${index}.quantityReceived`, 1, { shouldDirty: true })
+    setValue(`lines.${index}.quantityReceived`, 0, { shouldDirty: true })
     const bullet = `• ${note}`
     if (!notes.includes(bullet)) {
       setValue('notes', notes.trim() ? `${notes.trim()}\n${bullet}` : bullet, {
@@ -947,9 +947,9 @@ function WrongSerialPanel({
   )
 }
 
-/** Row 2 of a received "Wrong unit" line: the unit that actually arrived,
- * marked Received. It fills the dispatched line's slot, so it adds nothing to
- * "N of N units received". The receipt note only holds its serial and
+/** Row 2 of a "Wrong unit" line: the unit that actually arrived, marked
+ * Received while the dispatched line above stays Not received yet. It counts
+ * as one more unit in "N of N units received", on both sides. The receipt note only holds its serial and
  * brand/model — there's no SKU or serial id to link. */
 function ArrivedUnitRow({
   label,
@@ -1356,10 +1356,17 @@ export default function TransferDetailModal({
   )
   const isReceivedStatus = status === 'received' || status === 'partially_received'
   const totalUnits = (transfer?.lines ?? []).reduce((sum, l) => sum + Number(l.quantity), 0)
-  const receivedUnits = (transfer?.lines ?? []).reduce(
-    (sum, l) => sum + Number(l.receivedQuantity ?? 0),
-    0
-  )
+  // Receive-time "Wrong unit" notes, keyed by the serial each was logged against.
+  const wrongUnits = wrongUnitBySerial(transfer?.goodsReceipts)
+  // Each unit that arrived in place of a flagged one is its own received row
+  // in the items table — count it on both sides of "N of N units received",
+  // while the dispatched line it was flagged on still waits to be received.
+  const arrivedUnits = (transfer?.lines ?? []).filter(
+    (l) => !!l.serialNumber?.serialNumber && wrongUnits.has(l.serialNumber.serialNumber)
+  ).length
+  const receivedUnits =
+    (transfer?.lines ?? []).reduce((sum, l) => sum + Number(l.receivedQuantity ?? 0), 0) +
+    arrivedUnits
 
   // A serial-tracked item requested with quantity > 1 is stored as several
   // separate quantity-1 lines (CreateTransferModal splits it so the backend's
@@ -1395,8 +1402,6 @@ export default function TransferDetailModal({
   // receive call, so there can be more than one — aggregate extras across
   // all of them, not just the first.
   const extraLinesReceived = (transfer?.goodsReceipts ?? []).flatMap((grn) => grn.lines ?? [])
-  // Receive-time "Wrong unit" notes, keyed by the serial each was logged against.
-  const wrongUnits = wrongUnitBySerial(transfer?.goodsReceipts)
   // When the last receipt was actually saved. `receivedDate` is only the date
   // picked on the form (stored as midnight UTC, so it reads 8:00 AM in
   // Manila) — kept as the fallback when no receipt came back.
@@ -1535,8 +1540,12 @@ export default function TransferDetailModal({
     if (!transfer) return
     // With serials unticked by default, an untouched form would post a
     // receipt of nothing — refuse it rather than record an empty RR.
+    // A Wrong unit flag leaves its line unticked, so a receipt carrying only
+    // flags is still worth saving — the note is what keeps the flag.
     const receivedAny =
-      data.lines.some((l) => Number(l.quantityReceived) > 0) || (data.extraLines?.length ?? 0) > 0
+      data.lines.some((l) => Number(l.quantityReceived) > 0) ||
+      (data.extraLines?.length ?? 0) > 0 ||
+      hasWrongUnitNote(data.notes)
     if (!receivedAny) {
       receiveForm.setError('root', {
         message: 'Tick at least one unit (or enter a quantity) to record a receipt.',
@@ -1921,7 +1930,7 @@ export default function TransferDetailModal({
                   <span
                     className={`${MONO} rounded-full bg-white px-2.5 py-1 text-[10.5px] uppercase tracking-[0.07em] text-[#4b4b5a] ring-1 ring-[#e4e4e9]`}
                   >
-                    {receivedUnits} of {totalUnits} units received
+                    {receivedUnits} of {totalUnits + arrivedUnits} units received
                   </span>
                 </div>
                 <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
@@ -1957,9 +1966,9 @@ export default function TransferDetailModal({
                     <tbody className="divide-y divide-[#f1f1f4]">
                       {displayLines.map((line, i) => {
                         // A "Wrong unit" flag: this row stays the unit that was
-                        // dispatched, with a remark. Once the line is received,
-                        // the unit that actually arrived gets its own row
-                        // below, marked Received.
+                        // dispatched, with a remark (Not received yet — the
+                        // flag leaves it unticked). The unit that actually
+                        // arrived gets its own row below, marked Received.
                         const wrongUnit = line.serialNumber?.serialNumber
                           ? wrongUnits.get(line.serialNumber.serialNumber)
                           : undefined
@@ -2059,7 +2068,7 @@ export default function TransferDetailModal({
                                 </td>
                               )}
                             </tr>
-                            {wrongUnitReceived && line.serialNumber?.serialNumber && (
+                            {wrongUnit && line.serialNumber?.serialNumber && (
                               <ArrivedUnitRow
                                 label={wrongUnit}
                                 dispatchedSerial={line.serialNumber.serialNumber}

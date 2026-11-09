@@ -580,9 +580,8 @@ export function buildStockTransferHtml(data: unknown): string {
   // Same layout as the drawer's Items table. A "Wrong serial" swap repointed
   // the line: the serial received leads, with the dispatched one in
   // the note. A "Wrong unit" keeps the dispatched unit on its row with a
-  // remark; once received, the unit that arrived gets its own row under it.
-  // That row fills the line's slot, so it adds nothing to
-  // the total.
+  // remark, and the unit that arrived gets its own row under it — one more
+  // unit in the total, like the drawer's "N of N units received".
   const serialCell = (l: Record<string, unknown>, serial?: string): string => {
     const item = l.item as { isSerialTracked?: boolean } | undefined
     const original = (l.receiptCorrectedFromSerial as { serialNumber?: string } | null)
@@ -622,7 +621,7 @@ export function buildStockTransferHtml(data: unknown): string {
 
   const arrivedUnitRow = (l: Record<string, unknown>, serial?: string): string => {
     const wrongUnit = serial ? wrongUnits.get(serial) : undefined
-    if (!wrongUnit || Number(l.receivedQuantity ?? 0) < 1) return ''
+    if (!wrongUnit) return ''
     const arrived = splitUnitLabel(wrongUnit)
     return `<tr>
         <td class="num"></td>
@@ -640,13 +639,14 @@ export function buildStockTransferHtml(data: unknown): string {
         | string
         | undefined
       const qty = Number(l.quantity ?? 0)
-      totalQty += qty
+      const arrived = hasSerialLine ? arrivedUnitRow(l, serial) : ''
+      totalQty += qty + (arrived ? 1 : 0)
       return `<tr>
         <td class="num">${i + 1}</td>
         <td>${esc(item?.name) || '—'}${shortfallNote(l)}</td>
         ${hasSerialLine ? `<td class="mono">${serialCell(l, serial)}</td>` : ''}
         <td class="right">${qty}</td>
-      </tr>${hasSerialLine ? arrivedUnitRow(l, serial) : ''}`
+      </tr>${arrived}`
     })
     .join('')
 

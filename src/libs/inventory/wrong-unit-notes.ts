@@ -30,6 +30,11 @@ export function wrongUnitBySerial(
   return map
 }
 
+/** Whether these receipt notes flag at least one Wrong unit. */
+export function hasWrongUnitNote(notes: string | null | undefined): boolean {
+  return wrongUnitBySerial([{ notes }]).size > 0
+}
+
 /** Splits a received-unit label — "0925MGS-25GLS00427 (MINAMI MGS25GLS)" —
  * into its serial and the brand/model in brackets (absent when none was known). */
 export function splitUnitLabel(label: string): { serial: string; model?: string } {
