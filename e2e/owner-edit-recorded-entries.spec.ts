@@ -159,3 +159,25 @@ test.describe('New Receipts — money the server fixes is not offered for editin
     expect(saved.status()).toBe(200)
   })
 })
+
+test.describe('Audit Logs — an owner edit shows why it was made', () => {
+  test('the reason sits on the row, and above the before/after when it is opened', async ({
+    page,
+  }) => {
+    const { id } = await recordTransfer(page, '2026-10-30')
+    const reason = `E2E reason ${Date.now()}`
+    const patched = await page.request.patch(`/api/bank-accounts/transfers/${id}`, {
+      data: { date: '2026-11-02', clearingDate: '2026-11-02', editReason: reason },
+    })
+    expect(patched.status()).toBe(200)
+
+    await gotoReady(page, '/settings/audit-logs')
+    const onRow = page.getByTestId('audit-log-reason').filter({ hasText: reason })
+    await expect(onRow).toBeVisible({ timeout: 15_000 })
+
+    await onRow.locator('xpath=ancestor::tr').click()
+    await expect(
+      page.getByTestId('audit-log-reason-detail').filter({ hasText: reason })
+    ).toBeVisible()
+  })
+})
