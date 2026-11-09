@@ -6,6 +6,7 @@ import {
   useForm,
   useFieldArray,
   useWatch,
+  useFormState,
   Controller,
   type Control,
   type UseFormSetValue,
@@ -586,7 +587,10 @@ function SerialReceiveCorrection({
     control,
     name: `lines.${index}.replacementSerialLabel`,
   })
-  const correctionReason = useWatch({ control, name: `lines.${index}.correctionReason` }) ?? ''
+  const { errors } = useFormState({ control, name: `lines.${index}` })
+  const lineErrors = errors.lines?.[index]
+  const reasonError = lineErrors?.correctionReason?.message
+  const serialError = lineErrors?.correctedSerialNumber?.message
 
   if (!canOverrideSerial) return null
 
@@ -717,15 +721,50 @@ function SerialReceiveCorrection({
         </>
       )}
 
-      <input
-        value={correctionReason}
-        onChange={(e) => setValue(`lines.${index}.correctionReason`, e.target.value)}
-        type="text"
-        placeholder="Reason for the correction (required)"
-        className="mt-1.5 w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-500"
+      {serialError && <p className="mt-1 text-[11px] text-red-600">{serialError}</p>}
+
+      {/* A Controller (not a bare setValue input) so RHF can focus this box
+          on a failed submit and revalidate as the user types the reason. */}
+      <Controller
+        name={`lines.${index}.correctionReason`}
+        control={control}
+        render={({ field }) => (
+          <input
+            {...field}
+            value={field.value ?? ''}
+            type="text"
+            placeholder="Reason for the correction (required)"
+            aria-invalid={!!reasonError}
+            className={`mt-1.5 w-full rounded border bg-white px-2 py-1 text-xs outline-none ${
+              reasonError
+                ? 'border-red-400 focus:border-red-500'
+                : 'border-amber-300 focus:border-amber-500'
+            }`}
+          />
+        )}
       />
+      {reasonError && (
+        <p className="mt-1 text-[11px] text-red-600">
+          Type why the serial is being corrected (e.g. &quot;label misprinted&quot;) before you
+          submit. To skip the correction, cancel it with the ✕ above.
+        </p>
+      )}
     </div>
   )
+}
+
+/** Summary line under the receive lines when a serial correction is missing
+ * its reason — names the serial(s) so the user knows exactly which box to
+ * fill, instead of the generic "some entries are invalid". */
+function missingCorrectionReasonMessage(
+  lineErrors: FieldErrors<ReceiveTransferFormValues>['lines']
+): string | null {
+  if (!Array.isArray(lineErrors)) return null
+  const count = lineErrors.filter((e) => e?.correctionReason).length
+  if (count === 0) return null
+  return count === 1
+    ? 'A serial correction is missing its reason. Fill in the highlighted reason box, or cancel the correction, then submit again.'
+    : `${count} serial corrections are missing a reason. Fill in each highlighted reason box, or cancel those corrections, then submit again.`
 }
 
 /** One label/value cell in the drawer's facts strip. Missing values read as
@@ -2358,7 +2397,8 @@ export default function TransferDetailModal({
                   </div>
                   {receiveForm.formState.errors.lines && (
                     <p className="mt-1 text-xs text-red-600">
-                      Check the values above — some entries are invalid.
+                      {missingCorrectionReasonMessage(receiveForm.formState.errors.lines) ??
+                        'Check the values above — some entries are invalid.'}
                     </p>
                   )}
                 </div>
