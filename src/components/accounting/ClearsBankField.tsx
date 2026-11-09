@@ -1,6 +1,7 @@
 'use client'
 
 import type { ReactElement } from 'react'
+import { Select } from '@/src/components/ui/Select'
 
 export type ClearedType = 'SAME_DATE' | 'LATER_DATE'
 
@@ -43,29 +44,24 @@ export default function ClearsBankField({
   const later = value.clearedType === 'LATER_DATE'
   return (
     <div className="grid grid-cols-2 gap-3">
-      <label className="block" htmlFor={`${id}-type`}>
+      <div className="block">
         <span className="mb-1 block text-xs font-medium text-gray-600">Clears the bank</span>
-        <select
-          id={`${id}-type`}
+        {/* The same dropdown the Expense form's Cleared field uses. */}
+        <Select
+          compact
           disabled={disabled}
           value={value.clearedType}
-          onChange={(e) => {
-            const clearedType = e.target.value as ClearedType
+          onChange={(next) => {
+            const clearedType = next as ClearedType
             // Back to same-date drops a date that no longer means anything.
             onChange({
               clearedType,
               clearedDate: clearedType === 'LATER_DATE' ? value.clearedDate : '',
             })
           }}
-          className={INPUT_CLASS}
-        >
-          {CLEARED_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </label>
+          options={CLEARED_OPTIONS}
+        />
+      </div>
       {later && (
         <label className="block" htmlFor={`${id}-date`}>
           <span className="mb-1 block text-xs font-medium text-gray-600">Cleared date</span>
@@ -88,14 +84,12 @@ export default function ClearsBankField({
   )
 }
 
-/** The request fields for a value: a blank later date is simply not sent. */
+/** The request fields for a value. A later date left blank is sent as null —
+ * "not cleared yet" — so blanking a date on an existing payment erases it. */
 export function clearsBankPayload(value: ClearsBankValue): {
   clearedType: ClearedType
-  clearedDate?: string
+  clearedDate?: string | null
 } {
-  return {
-    clearedType: value.clearedType,
-    clearedDate:
-      value.clearedType === 'LATER_DATE' && value.clearedDate ? value.clearedDate : undefined,
-  }
+  if (value.clearedType !== 'LATER_DATE') return { clearedType: value.clearedType }
+  return { clearedType: value.clearedType, clearedDate: value.clearedDate || null }
 }

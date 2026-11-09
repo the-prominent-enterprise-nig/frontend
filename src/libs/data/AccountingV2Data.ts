@@ -470,7 +470,7 @@ export interface RecordArPaymentInput {
    * a tick. SAME_DATE (default) clears on paymentDate; LATER_DATE on
    * clearedDate, outstanding while that is still blank. */
   clearedType?: 'SAME_DATE' | 'LATER_DATE'
-  clearedDate?: string
+  clearedDate?: string | null
   branchId?: string
   collectorId?: string
   /**
@@ -957,7 +957,7 @@ export const ARInvoices = {
       reference?: string
       notes?: string
       clearedType?: 'SAME_DATE' | 'LATER_DATE'
-      clearedDate?: string
+      clearedDate?: string | null
     }
   ) => api.patch<ARPayment>(`/ar-invoices/${invoiceId}/payments/${paymentId}`, body),
   remove: (id: string) => api.delete(`/ar-invoices/${id}`),
