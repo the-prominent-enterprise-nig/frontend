@@ -2,6 +2,7 @@
 
 import { Fragment, useState, type ReactElement, type ReactNode } from 'react'
 import { BarChart3, Bookmark, ChevronRight, Layers, Plus, Trash2, X } from 'lucide-react'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import type {
   DateBucket,
   QueryColumn,
@@ -108,38 +109,33 @@ function GroupByRows({
         const col = colByKey(g.column)
         return (
           <div key={i} className="flex flex-wrap items-center gap-2 rounded-lg bg-gray-50 p-2">
-            <select
-              aria-label={`Group by column ${i + 1}`}
-              value={g.column}
-              onChange={(e) => {
-                const next = colByKey(e.target.value)
-                update(i, {
-                  column: e.target.value,
-                  bucket: next?.type === 'date' ? 'month' : undefined,
-                })
-              }}
-              className={`${inputCls} min-w-44`}
-            >
-              <option value="">Choose a column…</option>
-              {dataset.columns.map((c) => (
-                <option key={c.key} value={c.key}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
+            {/* Searchable, like the rest of the app's long dropdowns. */}
+            <div className="min-w-56">
+              <SearchableSelect
+                portal
+                ariaLabel={`Group by column ${i + 1}`}
+                placeholder="Choose a column…"
+                value={g.column}
+                onChange={(value) => {
+                  const next = colByKey(value)
+                  update(i, {
+                    column: value,
+                    bucket: next?.type === 'date' ? 'month' : undefined,
+                  })
+                }}
+                options={dataset.columns.map((c) => ({ value: c.key, label: c.label }))}
+              />
+            </div>
             {col?.type === 'date' && (
-              <select
-                aria-label={`Group ${col.label} by`}
-                value={g.bucket ?? 'month'}
-                onChange={(e) => update(i, { bucket: e.target.value as DateBucket })}
-                className={inputCls}
-              >
-                {BUCKETS.map((b) => (
-                  <option key={b.bucket} value={b.bucket}>
-                    {b.label}
-                  </option>
-                ))}
-              </select>
+              <div className="min-w-36">
+                <SearchableSelect
+                  portal
+                  ariaLabel={`Group ${col.label} by`}
+                  value={g.bucket ?? 'month'}
+                  onChange={(value) => update(i, { bucket: value as DateBucket })}
+                  options={BUCKETS.map((b) => ({ value: b.bucket, label: b.label }))}
+                />
+              </div>
             )}
             <RemoveButton
               label="Remove group column"
@@ -489,44 +485,75 @@ export function SavedReportsList({
   onOpen: (r: SavedReport) => void
   onDelete: (r: SavedReport) => void
 }): ReactElement | null {
+  // Chloe's review: confirm on the page, not with the browser's pop-up.
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
   if (reports.length === 0) return null
   return (
     <div className="mb-2">
       <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-purple-700">
         <Bookmark className="h-3.5 w-3.5" /> Saved reports
       </div>
-      {reports.map((r) => (
-        <div
-          key={r.id}
-          className={`group flex items-center rounded-md ${
-            activeId === r.id ? 'bg-purple-100' : 'hover:bg-gray-100'
-          }`}
-        >
-          <button
-            onClick={() => onOpen(r)}
-            className="min-w-0 flex-1 px-2.5 py-1.5 text-left"
-            title={`${r.name} — ${datasetLabel(r.datasetKey)}`}
+      {reports.map((r) =>
+        confirmingId === r.id ? (
+          <div
+            key={r.id}
+            role="alertdialog"
+            aria-label={`Delete saved report ${r.name}?`}
+            className="flex flex-wrap items-center gap-2 rounded-md bg-red-50 px-2.5 py-1.5"
           >
-            <span
-              className={`block truncate text-sm ${
-                activeId === r.id ? 'font-medium text-purple-800' : 'text-gray-700'
-              }`}
+            <span className="min-w-0 flex-1 truncate text-sm text-red-800">
+              Delete “{r.name}”? It can&rsquo;t be undone.
+            </span>
+            <button
+              onClick={() => {
+                setConfirmingId(null)
+                onDelete(r)
+              }}
+              className="rounded bg-red-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-red-700"
             >
-              {r.name}
-            </span>
-            <span className="block truncate text-[11px] text-gray-400">
-              {r.kind === 'summary' ? 'Summary' : 'Rows'} · {datasetLabel(r.datasetKey)}
-            </span>
-          </button>
-          <button
-            onClick={() => onDelete(r)}
-            aria-label={`Delete saved report ${r.name}`}
-            className="mr-1 rounded p-1 text-gray-300 opacity-0 hover:text-red-600 focus:opacity-100 group-hover:opacity-100"
+              Delete
+            </button>
+            <button
+              onClick={() => setConfirmingId(null)}
+              className="rounded px-2 py-0.5 text-xs text-gray-600 hover:bg-white"
+            >
+              Keep
+            </button>
+          </div>
+        ) : (
+          <div
+            key={r.id}
+            className={`group flex items-center rounded-md ${
+              activeId === r.id ? 'bg-purple-100' : 'hover:bg-gray-100'
+            }`}
           >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      ))}
+            <button
+              onClick={() => onOpen(r)}
+              className="min-w-0 flex-1 px-2.5 py-1.5 text-left"
+              title={`${r.name} — ${datasetLabel(r.datasetKey)}`}
+            >
+              <span
+                className={`block truncate text-sm ${
+                  activeId === r.id ? 'font-medium text-purple-800' : 'text-gray-700'
+                }`}
+              >
+                {r.name}
+              </span>
+              <span className="block truncate text-[11px] text-gray-400">
+                {r.kind === 'multi' ? 'Custom query' : r.kind === 'summary' ? 'Summary' : 'Rows'}
+                {r.kind !== 'multi' && ` · ${datasetLabel(r.datasetKey)}`}
+              </span>
+            </button>
+            <button
+              onClick={() => setConfirmingId(r.id)}
+              aria-label={`Delete saved report ${r.name}`}
+              className="mr-1 rounded p-1 text-gray-300 opacity-0 hover:text-red-600 focus:opacity-100 group-hover:opacity-100"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )
+      )}
     </div>
   )
 }
@@ -568,8 +595,12 @@ export function SaveReportControl({
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g. Monthly sales by branch"
           maxLength={150}
+          aria-invalid={name.length > 0 && !name.trim()}
           className={`${inputCls} w-64`}
         />
+        {name.length > 0 && !name.trim() && (
+          <span className="text-xs text-red-600">Please enter a name.</span>
+        )}
         <button
           type="submit"
           disabled={!name.trim() || saving}

@@ -521,7 +521,7 @@ export default function QueryCenter() {
   }
 
   const deleteReport = async (r: SavedReport) => {
-    if (!window.confirm(`Delete the saved report “${r.name}”? This can't be undone.`)) return
+    // Confirmed on the page by SavedReportsList (no browser pop-up).
     const res = await QueryCenterApi.reports.remove(r.id)
     if (!res.success) {
       setError(res.message || res.error || 'Could not delete the report.')

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { FileSpreadsheet, Play, Plus, SlidersHorizontal, X } from 'lucide-react'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import {
   MULTI_DATASET_KEY,
   QueryCenter as QueryCenterApi,
@@ -25,7 +26,6 @@ import {
   card,
   defaultColumns,
   friendlyName,
-  inputCls,
 } from './QueryCenter'
 import {
   GroupByField,
@@ -82,9 +82,25 @@ export default function CustomQuery({
   const readyBlocks = (which: keyof SectionQuery): QueryBlock[] =>
     sections.map((s) => defs.current.get(s.uid)?.[which]).filter((b): b is QueryBlock => !!b)
 
+  /** Chloe's review: a half-filled section is never silently left out of a
+   * save, an update or an export — the user is told which one and nothing
+   * is saved until it's finished or removed. */
+  const unfinishedMessage = (): string | null => {
+    const numbers = sections
+      .map((s, i) => (defs.current.get(s.uid) ? null : i + 1))
+      .filter((n): n is number => n !== null)
+    if (!numbers.length) return null
+    const which =
+      numbers.length === 1
+        ? `Section ${numbers[0]} isn't finished`
+        : `Sections ${numbers.slice(0, -1).join(', ')} and ${numbers.at(-1)} aren't finished`
+    return `${which} — pick its data, at least one column, and a column for every Group by. Finish it or remove it (✕), then try again.`
+  }
+
   const save = async (name: string): Promise<void> => {
+    const problem = unfinishedMessage()
+    if (problem) return setMessage({ ok: false, text: problem })
     const blocks = readyBlocks('saved')
-    if (!blocks.length) return setMessage({ ok: false, text: 'Pick data in a section first.' })
     setSaving(true)
     const res = await QueryCenterApi.reports.save({
       name,
@@ -102,6 +118,8 @@ export default function CustomQuery({
 
   const update = async (): Promise<void> => {
     if (!report) return
+    const problem = unfinishedMessage()
+    if (problem) return setMessage({ ok: false, text: problem })
     setSaving(true)
     const res = await QueryCenterApi.reports.update(report.id, {
       definition: { blocks: readyBlocks('saved') },
@@ -115,8 +133,9 @@ export default function CustomQuery({
   }
 
   const exportAll = async (): Promise<void> => {
+    const problem = unfinishedMessage()
+    if (problem) return setMessage({ ok: false, text: problem })
     const blocks = readyBlocks('exported')
-    if (!blocks.length) return
     setExporting(true)
     await QueryCenterApi.exportMulti(report?.name ?? 'Custom query', blocks)
     setExporting(false)
@@ -131,7 +150,7 @@ export default function CustomQuery({
     <div className="space-y-4">
       <div className={`${card} flex flex-wrap items-center gap-3 p-5`}>
         <div className="min-w-0 flex-1">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-prominent-purple-900">
             <SlidersHorizontal className="h-5 w-5 text-purple-700" />
             {report?.name ?? 'Custom query'}
           </h2>
@@ -424,33 +443,27 @@ function DatasetSelect({
   value: QueryDataset | null
   onPick: (d: QueryDataset) => void
 }): ReactElement {
-  const modules = useMemo(() => {
-    const map = new Map<string, QueryDataset[]>()
-    for (const d of datasets) map.set(d.module, [...(map.get(d.module) ?? []), d])
-    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
-  }, [datasets])
+  // Grouped by module and searchable — 231 datasets is a list nobody scrolls.
+  const options = useMemo(
+    () =>
+      [...datasets]
+        .sort((a, b) => a.module.localeCompare(b.module))
+        .map((d) => ({ value: d.key, label: friendlyName(d), group: d.module })),
+    [datasets]
+  )
   return (
-    <select
-      aria-label="Data for this section"
-      value={value?.key ?? ''}
-      onChange={(e) => {
-        const d = datasets.find((x) => x.key === e.target.value)
-        if (d) onPick(d)
-      }}
-      className={`${inputCls} min-w-64`}
-    >
-      <option value="" disabled>
-        Choose data…
-      </option>
-      {modules.map(([module, items]) => (
-        <optgroup key={module} label={module}>
-          {items.map((d) => (
-            <option key={d.key} value={d.key}>
-              {friendlyName(d)}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </select>
+    <div className="min-w-72">
+      <SearchableSelect
+        portal
+        ariaLabel="Data for this section"
+        placeholder="Choose data…"
+        value={value?.key ?? ''}
+        onChange={(key) => {
+          const d = datasets.find((x) => x.key === key)
+          if (d) onPick(d)
+        }}
+        options={options}
+      />
+    </div>
   )
 }
