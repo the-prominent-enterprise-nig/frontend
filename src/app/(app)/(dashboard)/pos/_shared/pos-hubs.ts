@@ -42,6 +42,7 @@ import {
   canManageSalesQuotas,
   canNavigate,
   isAdmin,
+  isHeadOffice,
   type SessionUser,
 } from '@/src/libs/guards/permission'
 
@@ -55,11 +56,11 @@ import {
  * renders the strip for whichever hub owns the current path.
  *
  * Two departures from the revision. Product Catalog is not a Sales Counter tab: it
- * is its own group with Price Lists beside it (the revision has Price List Upload
- * under Operations & Admin) — the catalog shows the prices the lists set. And
- * Customers, Credit Applications and Collections are one group, Credit &
- * Collections, rather than the revision's Cash & Collections: all three follow the
- * customer's account.
+ * is its own group, a view-only page of brands, models, prices and stock. (Price
+ * Lists sat beside it until 2026-11-09; the client has them under Operations &
+ * Admin, Head Office only, as the revision does.) And Customers, Credit
+ * Applications and Collections are one group, Credit & Collections, rather than
+ * the revision's Cash & Collections: all three follow the customer's account.
  *
  * A tab can front a second row (`subTabs`): Management is Sessions | Cash Drawer
  * and Promotions is Promo Codes | Gift Cards | Loyalty — one tab in the doc, but
@@ -111,6 +112,12 @@ export type PosHubTab = {
    * permission alone can't gate it.
    */
   ownerOnly?: boolean
+  /**
+   * Business Owner or Head Office only (isHeadOffice: no branch assigned) —
+   * hidden from every branch-assigned role, Branch Manager included, whatever
+   * their permission rows say. The tab's `permissions` still apply on top.
+   */
+  headOfficeOnly?: boolean
   /**
    * The sidebar row lights on exactly this path, not on everything under it — for
    * a tab whose route is a prefix of another group's (Collections is
@@ -242,11 +249,9 @@ export const PRICING_PROMOTION_HUB: PosHub = {
 }
 
 // Not a sale, so not a Sales Counter tab: brands, models, prices and stock for the
-// branch's sellable items, with the price lists behind those prices beside it. Price
-// Lists moved here from Inventory, so it keeps that module's permission — a user
-// without it sees the catalog alone, and the group's strip is hidden. Its entry route
-// redirects, because someone who may open Price Lists but not sell would 403 on the
-// catalog.
+// branch's sellable items. View-only — items are edited in the Item Master, and the
+// prices come from the price lists (Operations & Admin). One tab, so the group's
+// strip is hidden; the entry route stays for the sidebar row.
 export const PRODUCT_CATALOG_HUB: PosHub = {
   entryHref: '/pos/product-catalog',
   tabs: [
@@ -258,17 +263,6 @@ export const PRODUCT_CATALOG_HUB: PosHub = {
       permissions: [POS_PERMISSIONS.TRANSACTIONS_READ],
       // Stock is per branch, so the catalog keeps the shared switcher.
       branchSwitcher: true,
-    },
-    {
-      // The price-list manager — lists, versions, approval and the uploads. Its
-      // list, detail and upload pages all keep the strip. Scoped by its own branch
-      // filter, not the POS branch, so no switcher here.
-      id: 'price-lists',
-      label: 'Price Lists',
-      href: '/pos/catalog/price-lists',
-      icon: Tags,
-      permissions: [INVENTORY_PERMISSIONS.PRICE_LISTS_READ],
-      prefixes: ['/pos/catalog/price-lists/'],
     },
   ],
 }
@@ -488,6 +482,20 @@ export const OPERATIONS_ADMIN_HUB: PosHub = {
       permissions: [POS_PERMISSIONS.CASHIER_PIN_VERIFY],
     },
     {
+      // The price-list manager — lists, versions, approval and the uploads. Moved
+      // here from beside Product Catalog (client, 2026-11-09): Business Owner and
+      // Head Office only; a branch-assigned role gets no tab and a 403 on the
+      // route. Its list, detail and upload pages all keep the strip. Scoped by its
+      // own branch filter, not the POS branch, so no switcher here.
+      id: 'price-lists',
+      label: 'Price Lists',
+      href: '/pos/price-lists',
+      icon: Tags,
+      permissions: [INVENTORY_PERMISSIONS.PRICE_LISTS_READ],
+      prefixes: ['/pos/price-lists/'],
+      headOfficeOnly: true,
+    },
+    {
       // Whoever may change POS settings (canManagePosSettings: the owner, the
       // Branch Manager, any role given one of the POS "manage" toggles). The
       // check is one of several permissions rather than a single one, which is
@@ -616,6 +624,7 @@ export function visiblePosTabHrefs(session: SessionUser | null): string[] {
   return POS_HUBS.flatMap((hub) => hub.tabs).flatMap((tab) => {
     if (tab.configOnly && !configurable) return []
     if (tab.ownerOnly && !canManageSalesQuotas(session)) return []
+    if (tab.headOfficeOnly && !isHeadOffice(session)) return []
     if (tab.subTabs) {
       return tab.subTabs.filter((s) => holdsAny(session, s.permissions)).map((s) => s.href)
     }
@@ -638,6 +647,22 @@ export function posHubNavPermissions(hub: PosHub): string[] {
     ? [...POS_SETTINGS_PERMISSIONS, ...ADMIN_ROLE_PERMISSIONS]
     : []
   return [...(hub.permission ?? tabs.flatMap((tab) => posTabPermissions(tab))), ...settings]
+}
+
+/**
+ * The permissions in `posHubNavPermissions` that hold the row open only for Head
+ * Office — those of a headOfficeOnly tab that no other tab of the hub also lists.
+ * A branch-assigned role holding only these would get a row whose every tab is
+ * hidden from it, so the sidebar leaves them out unless the viewer is Head Office.
+ */
+export function posHubHeadOfficeOnlyPermissions(hub: PosHub): string[] {
+  const shared = new Set(
+    hub.tabs.filter((tab) => !tab.headOfficeOnly).flatMap((tab) => posTabPermissions(tab))
+  )
+  return hub.tabs
+    .filter((tab) => tab.headOfficeOnly)
+    .flatMap((tab) => posTabPermissions(tab))
+    .filter((p) => !shared.has(p))
 }
 
 /**

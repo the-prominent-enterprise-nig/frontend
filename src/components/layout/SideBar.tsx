@@ -12,7 +12,7 @@ import {
   hasPermission,
 } from '@/src/hooks/usePermission'
 import { MODULES } from '@/src/libs/guards/modules'
-import { canManagePosSettings, managesOwnBranch } from '@/src/libs/guards/permission'
+import { canManagePosSettings, isHeadOffice, managesOwnBranch } from '@/src/libs/guards/permission'
 import { sidebarSegmentForHome } from '@/src/libs/guards/home-module'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import { REMINDERS_ENABLED } from '@/src/libs/features'
@@ -78,6 +78,7 @@ import {
   REPORTS_HUB,
   SALES_COUNTER_HUB,
   posHubActiveHrefs,
+  posHubHeadOfficeOnlyPermissions,
   posHubNavPermissions,
   type PosHub,
 } from '@/src/app/(app)/(dashboard)/pos/_shared/pos-hubs'
@@ -105,6 +106,12 @@ type NavItem = {
   requiresModuleAccess?: string
   /** Must hold this exact permission row — wildcards don't count. */
   exactPermission?: string
+  /**
+   * Entries of requiredPermission that count only for Head Office (isHeadOffice).
+   * A hub row that a Head Office-only tab (Price Lists) would hold open for a
+   * branch-assigned role with nothing else to open would land it on /403.
+   */
+  headOfficeOnlyPermissions?: string[]
   badge?: { text: string; variant: 'count' | 'new'; color?: string }
   subItems?: Array<{
     label: string
@@ -201,12 +208,14 @@ function posHubNavItem(hub: PosHub, label: string, icon: LucideIcon): NavItem {
   // adds those rows to the hub's, so a role that holds only a settings toggle
   // (Terminals, say) still gets the row; it doesn't make the hub ungated.
   const permissions = posHubNavPermissions(hub)
+  const headOfficeOnlyPermissions = posHubHeadOfficeOnlyPermissions(hub)
   const { exact, prefix } = posHubActiveHrefs(hub)
   return {
     label,
     href: hub.entryHref,
     icon,
     requiredPermission: permissions.length ? permissions : undefined,
+    ...(headOfficeOnlyPermissions.length ? { headOfficeOnlyPermissions } : {}),
     requiresModuleAccess: permissions.length ? undefined : 'pos',
     ...(exact.length ? { activeWhen: exact } : {}),
     ...(prefix.length ? { activePrefixes: prefix } : {}),
@@ -339,10 +348,9 @@ const navItemsBySegment: Record<string, NavConfig> = {
         ...posHubNavItem(SALES_COUNTER_HUB, 'Sales Counter', ShoppingBag),
         keepBesideModuleRow: true,
       },
-      // Product Catalog | Price Lists. Not a sale, so not a Sales Counter tab (client
-      // decision, against the revision doc), and Price Lists sits beside it rather than
-      // under Operations & Admin: the catalog shows the prices the lists set. The row
-      // shows when either is held. Entry route: /pos/product-catalog.
+      // Product Catalog — view-only. Not a sale, so not a Sales Counter tab (client
+      // decision, against the revision doc). Price Lists is under Operations & Admin.
+      // Entry route: /pos/product-catalog.
       posHubNavItem(PRODUCT_CATALOG_HUB, 'Product Catalog', BookOpen),
       // Collections | Credit Applications | Customers — the customer's account, in the
       // order the client wants (client decision, against the revision doc, which has
@@ -364,9 +372,9 @@ const navItemsBySegment: Record<string, NavConfig> = {
       // Sales Reports (Branch-Manager tier) and Daily Collection (the cashier's
       // end-of-day sheet). Entry route: /pos/reporting.
       posHubNavItem(REPORTS_HUB, 'Reports', BarChart3),
-      // Service Jobs, POS PIN, Settings. The row shows for
-      // any POS role (POS PIN needs no permission); each tab is gated on its
-      // own. Entry route: /pos/admin.
+      // Service Jobs, POS PIN, Price Lists (Head Office and Business Owner only),
+      // Settings. The row shows for any POS role (POS PIN needs no permission);
+      // each tab is gated on its own. Entry route: /pos/admin.
       posHubNavItem(OPERATIONS_ADMIN_HUB, 'Operations & Admin', Wrench),
     ],
     bottom: [],
@@ -988,6 +996,7 @@ function buildSearchEntries(args: {
         icon?: LucideIcon
         configOnly?: boolean
         ownerOnly?: boolean
+        headOfficeOnly?: boolean
         /** A tab that fronts a second row (POS Management) — the pages are what is searchable. */
         subTabs?: ReadonlyArray<{
           label: string
@@ -1004,6 +1013,8 @@ function buildSearchEntries(args: {
         if (tab.configOnly && !canConfigurePos) continue
         // Sales Quotas: Branch Manager's pos:*:* would match its permission.
         if (tab.ownerOnly && !isOwner(session)) continue
+        // Price Lists: Head Office only, whatever a wildcard would match.
+        if (tab.headOfficeOnly && !(session && isHeadOffice(session))) continue
         for (const page of tab.subTabs ?? [tab]) {
           if (page.permissions.length > 0 && !hasAnyPermission(page.permissions)) continue
           add({
@@ -1122,14 +1133,22 @@ export default function SideBar({ session }: { session: SessionUser | null }) {
     return list.some((p) => hasNavPermission(session, p))
   }
 
+  const isHeadOfficeViewer = !!session && isHeadOffice(session)
+
   // A parent with sub-items shows only while at least one child is visible.
   const filterItem = (item: NavItem) => {
     if (item.requiresModuleAccess && !hasModuleAccess(session, item.requiresModuleAccess)) {
       return false
     }
     if (item.exactPermission) return hasExactPermission(session, item.exactPermission)
+    // Head Office-only entries drop out for a branch-assigned viewer.
+    const headOfficeOnly = item.headOfficeOnlyPermissions
+    const required =
+      headOfficeOnly?.length && Array.isArray(item.requiredPermission) && !isHeadOfficeViewer
+        ? item.requiredPermission.filter((p) => !headOfficeOnly.includes(p))
+        : item.requiredPermission
     return (
-      hasAnyPermission(item.requiredPermission) &&
+      hasAnyPermission(required) &&
       (!item.subItems || item.subItems.some((sub) => hasAnyPermission(sub.requiredPermission)))
     )
   }

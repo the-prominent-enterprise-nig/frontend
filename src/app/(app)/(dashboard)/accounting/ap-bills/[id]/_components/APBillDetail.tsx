@@ -31,6 +31,8 @@ import {
 import { getApDisbursementDocument } from '../../_actions/get-ap-disbursement-document'
 import ReceiptChangesNotice from '../../_components/ReceiptChangesNotice'
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
+import { useOwnerEdit } from '@/src/components/accounting/EditReasonSection'
+import { RECORDED_ENTRIES_EDIT } from '@/src/libs/guards/explicit-only-permissions'
 
 const STATUS_BADGE: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-600',
@@ -72,6 +74,9 @@ function MetaPair({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default function APBillDetail({ id }: { id: string }) {
+  // The Business Owner can open a voucher that has already been paid and put its
+  // date (or anything else) right; the form it opens asks for the reason.
+  const canEditRecorded = useOwnerEdit(RECORDED_ENTRIES_EDIT)
   // Where "back" goes depends on where the reader came from: opening an
   // invoice from a purchase order's row action and then being dropped in the
   // AP Invoices list loses the PO they were working on. Callers say so with
@@ -378,11 +383,11 @@ export default function APBillDetail({ id }: { id: string }) {
                     >
                       <Printer className="h-4 w-4" />
                     </button>
-                    {/* Only while it is unpaid. Once the cheque is cut the
-                        voucher has posted to the GL and amending it would put
-                        the paper and the ledger out of step — the server
-                        refuses it too. */}
-                    {unpaid && (
+                    {/* An unpaid voucher has nothing posted, so anyone who may
+                        edit can. A paid one has posted to the GL: correcting it
+                        reverses its entry and posts a new one, which only the
+                        Business Owner does (with a reason). */}
+                    {(unpaid || canEditRecorded) && (
                       <button
                         onClick={() =>
                           router.push(`/accounting/ap-bills/payments/new?edit=${d.id}`)

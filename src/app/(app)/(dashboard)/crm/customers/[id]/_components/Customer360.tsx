@@ -27,6 +27,7 @@ import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import { REMINDERS_ENABLED } from '@/src/libs/features'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { type SessionUser } from '@/src/libs/guards/permission'
+import { CUSTOMER_TYPE_LABELS } from '@/src/schema/crm/types'
 import type { Customer, Lead, Reminder } from '@/src/schema/crm/types'
 import type { InstallmentSchedule, PosTransaction, PosInvoiceType } from '@/src/schema/pos'
 import {
@@ -47,6 +48,43 @@ import {
 // Customer Ledger.
 
 /** Server-side page size for the customer's transaction history. */
+/** What kind of customer this is, for the profile header: the type, and for
+ *  a business its category — e.g. "Individual", "Business · Government". */
+function customerTypeLine(c: Customer): string {
+  const label = CUSTOMER_TYPE_LABELS[c.customerType] ?? c.customerType
+  if (c.customerType !== 'business' || !c.businessCategory) return label
+  return `${label} · ${c.businessCategory === 'government' ? 'Government' : 'Private'}`
+}
+
+/** Same colours as the customer list's avatar for each type. */
+const TYPE_CHIP_CLASSES: Record<Customer['customerType'], string> = {
+  business: 'bg-prominent-orange-50 text-prominent-orange-800 ring-prominent-orange-200',
+  employee: 'bg-prominent-purple-50 text-prominent-purple-800 ring-prominent-purple-200',
+  individual: 'bg-sky-50 text-sky-800 ring-sky-200',
+  self_employed: 'bg-sky-50 text-sky-800 ring-sky-200',
+}
+
+/** The customer's type under their name — a small "TYPE" caption beside the
+ *  value, so it reads at a glance. */
+function HeaderChip({
+  label,
+  value,
+  className,
+}: {
+  label: string
+  value: string
+  className: string
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[13px] ring-1 ring-inset ${className}`}
+    >
+      <span className="text-[10.5px] font-medium uppercase tracking-wider opacity-70">{label}</span>
+      <span className="font-semibold">{value}</span>
+    </span>
+  )
+}
+
 const HISTORY_PAGE_SIZE = 20
 
 /** What a sale line shows as its unit: the item, its quantity when more than
@@ -279,21 +317,51 @@ export default function Customer360({
 
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="font-mono text-[12px] text-gray-500">{data.customerCode}</div>
           <h1 className="text-2xl font-semibold text-gray-900">{data.name}</h1>
-          <div className="mt-1 text-sm text-gray-500">
-            {data.companyName ? `${data.companyName} · ` : ''}
-            {data.customerType === 'business' && data.businessCategory
-              ? `${data.businessCategory === 'government' ? 'Government' : 'Private'} · `
-              : ''}
-            {data.customerType === 'employee' && data.employeeNumber
-              ? `Employee ID: ${data.employeeNumber} · `
-              : ''}
-            {data.birthday
-              ? `Birthday: ${new Date(data.birthday).toLocaleDateString(undefined, { timeZone: MANILA_TZ })} · `
-              : ''}
-            Source: {data.sourceChannel} · Status: {data.status}
+          {/* The customer's code sits beside the type, labelled, rather than
+              bare over the name. An employee buyer's code is their employee
+              ID (CustomerService.create), so it's named that; one who also
+              has a separate CUS- code keeps both. */}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <HeaderChip
+              label="Type"
+              value={customerTypeLine(data)}
+              className={TYPE_CHIP_CLASSES[data.customerType] ?? TYPE_CHIP_CLASSES.individual}
+            />
+            {data.customerType === 'employee' && data.employeeNumber === data.customerCode ? (
+              <HeaderChip
+                label="Employee ID"
+                value={data.customerCode}
+                className={TYPE_CHIP_CLASSES.employee}
+              />
+            ) : (
+              <>
+                <HeaderChip
+                  label="Customer ID"
+                  value={data.customerCode}
+                  className="bg-gray-50 text-gray-800 ring-gray-200"
+                />
+                {data.customerType === 'employee' && data.employeeNumber && (
+                  <HeaderChip
+                    label="Employee ID"
+                    value={data.employeeNumber}
+                    className={TYPE_CHIP_CLASSES.employee}
+                  />
+                )}
+              </>
+            )}
           </div>
+          {(() => {
+            const details = [
+              data.companyName,
+              data.birthday
+                ? `Birthday: ${new Date(data.birthday).toLocaleDateString(undefined, { timeZone: MANILA_TZ })}`
+                : null,
+            ].filter(Boolean)
+            return details.length > 0 ? (
+              <div className="mt-1.5 text-sm text-gray-500">{details.join(' · ')}</div>
+            ) : null
+          })()}
         </div>
         <div className="flex items-center gap-2">
           {/* Developer-requested (2026-08-09): previously the only path to
@@ -1147,7 +1215,7 @@ function InstallmentScheduleDetailModal({
             <Row label="Term" value={`${schedule.termMonths} months`} />
             <Row label="Down payment" value={formatPeso(schedule.downPayment)} />
             {schedule.installmentAccount && (
-              <Row label="Rebate" value={formatPeso(schedule.installmentAccount.ppd)} />
+              <Row label="Rebate" value={formatPeso(schedule.installmentAccount.ppd ?? 0)} />
             )}
             <div className="border-t border-gray-200 pt-2">
               <Row label="Total price (contract)" value={formatPeso(contractTotal)} bold />

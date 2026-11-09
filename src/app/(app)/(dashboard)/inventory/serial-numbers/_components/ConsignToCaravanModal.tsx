@@ -10,6 +10,7 @@ import {
 } from '@/src/schema/inventory/transfers'
 import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 import {
+  caravanScopeBranchId,
   isCaravanBranch,
   warehouseLabel,
   type WarehouseSummary,
@@ -80,7 +81,7 @@ function hostOptions(
 
 function UnitList({ serials }: { serials: SerialNumberSummary[] }): React.JSX.Element {
   return (
-    <div className="max-h-[132px] overflow-y-auto rounded-[10px] border border-[#eeeef1] bg-[#fbfbfc]">
+    <div className="max-h-33 shrink-0 overflow-y-auto rounded-[10px] border border-[#eeeef1] bg-[#fbfbfc]">
       {serials.map((s) => (
         <div
           key={s.id}
@@ -110,7 +111,9 @@ function TransferDates({
         <Controller
           name="transferDate"
           control={control}
-          render={({ field }) => <input {...field} type="date" className={inputClass} />}
+          render={({ field }) => (
+            <input {...field} value={field.value ?? ''} type="date" className={inputClass} />
+          )}
         />
       </div>
       <div>
@@ -139,16 +142,23 @@ export default function ConsignToCaravanModal({
   warehouses,
   currentUserBranchId,
 }: Props): React.JSX.Element | null {
+  // A Warehouse Custodian's branch hosts no caravan — they pick any host.
+  const hostScope = caravanScopeBranchId(warehouses, currentUserBranchId)
+  // Defaults from the first render keep every input controlled; the effect
+  // below re-seeds them with the units ticked when the modal opens.
   const {
     control,
     handleSubmit,
     reset,
     formState: { errors },
-  } = useForm<CreateTransferFormValues>({ resolver: zodResolver(CreateTransferFormSchema) })
+  } = useForm<CreateTransferFormValues>({
+    resolver: zodResolver(CreateTransferFormSchema),
+    defaultValues: initialValues(serials, sourceId, hostScope ?? ''),
+  })
 
   // Seeded on open only — the ticked units can't change while it's up.
   useEffect(() => {
-    if (isOpen) reset(initialValues(serials, sourceId, currentUserBranchId ?? ''))
+    if (isOpen) reset(initialValues(serials, sourceId, hostScope ?? ''))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, reset])
 
@@ -193,8 +203,8 @@ export default function ConsignToCaravanModal({
             <NewCaravanFields
               control={control as unknown as Control<CaravanFieldsForm>}
               errors={errors}
-              hostBranchOptions={hostOptions(warehouses, currentUserBranchId)}
-              hostLocked={!!currentUserBranchId}
+              hostBranchOptions={hostOptions(warehouses, hostScope)}
+              hostLocked={!!hostScope}
             />
             <TransferDates control={control} arrivalError={errors.expectedArrival?.message} />
             <div>

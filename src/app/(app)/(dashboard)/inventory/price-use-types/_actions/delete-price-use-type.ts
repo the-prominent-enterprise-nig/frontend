@@ -27,7 +27,7 @@ export async function deletePriceUseType(id: string): Promise<ApiResponse<unknow
   }
 
   revalidatePath('/inventory/price-use-types')
-  revalidatePath('/pos/catalog/price-lists')
+  revalidatePath('/pos/price-lists')
 
   return { success: true, data: result.data, message: 'Price use type deleted' }
 }

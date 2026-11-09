@@ -47,6 +47,11 @@ import ExpenseAttachmentsPanel, { uploadStagedExpenseAttachments } from './Expen
 import { showToast } from '@/src/components/ui/toast'
 import { importSpreadsheetLines, nameKeys, type ImportResult } from './importSpreadsheetLines'
 import { SpecialAccountPicker } from './SpecialAccountPicker'
+import EditReasonSection, {
+  EDIT_REASON_REQUIRED,
+  useOwnerEdit,
+} from '@/src/components/accounting/EditReasonSection'
+import { RECORDED_ENTRIES_EDIT } from '@/src/libs/guards/explicit-only-permissions'
 import { downloadCsv } from '@/src/libs/format/csv-export'
 import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { useEwtCodes } from '@/src/hooks/useEwtCodes'
@@ -1167,12 +1172,17 @@ function ExpenseFormFields({
   // the change straight through (the server reverses and re-posts the journal
   // entry when the change reaches the books).
   const isRecorded = initial?.status === 'RECORDED'
+  // The Business Owner's edit of a recorded expense says why (kept in the audit
+  // log). Anyone else edits as before and is asked for nothing.
+  const askReason = useOwnerEdit(RECORDED_ENTRIES_EDIT, isRecorded)
+  const [editReason, setEditReason] = useState('')
   const submitAs = (mode: 'draft' | 'record') => {
     submitModeRef.current = mode
     formRef.current?.requestSubmit()
   }
 
   const validate = (): string | null => {
+    if (askReason && !editReason.trim()) return EDIT_REASON_REQUIRED
     if (form.clearedType === 'LATER_DATE' && !form.clearedDate)
       return 'Pick the date this payment is expected to clear.'
     if (!form.sourceOfFundId) return 'Pick where this is paid from (Bank/Cash).'
@@ -1262,6 +1272,7 @@ function ExpenseFormFields({
       description: form.description || undefined,
       notes: form.notes.trim() || undefined,
     }
+    if (askReason) payload.editReason = editReason.trim()
     // One payment, posted to the Paid-from fund's own ledger: the whole total less
     // any withholding (what actually leaves the bank).
     payload.payments = [
@@ -1499,6 +1510,14 @@ function ExpenseFormFields({
       )}
 
       <form ref={formRef} id={FORM_ID} onSubmit={submit} className="mt-6 space-y-6">
+        {askReason && (
+          <EditReasonSection
+            value={editReason}
+            onChange={setEditReason}
+            testId="expense-edit-reason"
+            what="expense"
+          />
+        )}
         {/* ① Header Information — the client's field order: Date, Cleared, Paid from,
             Reference Number; then Payee and Description / Particulars. (The voucher number is
             issued on save.) */}
