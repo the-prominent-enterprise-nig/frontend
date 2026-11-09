@@ -2100,8 +2100,8 @@ export default function TransferDetailModal({
                                       <LineSerial line={line} />
                                       <p className="mt-0.5 font-sans text-[11px] font-medium text-amber-700">
                                         {line.receiptCorrectedFromSerialNumber
-                                          ? `Serial corrected — was ${line.receiptCorrectedFromSerialNumber}`
-                                          : 'Serial corrected at receipt'}
+                                          ? `Serial typo fixed — was recorded as ${line.receiptCorrectedFromSerialNumber}`
+                                          : 'Serial typo fixed at receipt'}
                                         {serialCorrectionReason(line.receiptCorrectionReason) &&
                                           ` (reason: ${serialCorrectionReason(line.receiptCorrectionReason)})`}
                                       </p>

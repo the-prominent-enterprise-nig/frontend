@@ -1,4 +1,5 @@
 import { caravanLabel } from '@/src/libs/format/locationLabel'
+import { splitUnitLabel, wrongUnitBySerial } from '@/src/libs/inventory/wrong-unit-notes'
 
 /**
  * The purchase order a receiving report came from.
@@ -328,6 +329,12 @@ type GroupableLine = {
     brand?: { name?: string | null } | null
     primaryCategory?: { name?: string | null } | null
   } | null
+  /** The transfer line this receipt line closed — carries a receipt-time
+   * serial correction, when there was one. */
+  stockTransferLine?: {
+    receiptCorrectedFromSerialId?: string | null
+    receiptCorrectedFromSerialNumber?: string | null
+  } | null
 }
 
 /** One printed row: every received line with the same Brand, Subgroup,
@@ -340,6 +347,8 @@ export interface ReceivingReportRow {
   quantity: number
   serials: string[]
   unitCost: number | null
+  /** Short receipt-time correction tag ("Wrong serial — dispatched X"). */
+  remark?: string
 }
 
 /**
@@ -349,31 +358,62 @@ export interface ReceivingReportRow {
  * cost differs stay apart, so Qty × Unit cost still equals Amount.
  * `grossUnitCosts` is index-aligned with `lines`.
  *
- * Serials print as they now stand — a receipt-time correction (wrong serial
- * or wrong unit) is the transfer's history, shown on the transfer, not here.
+ * Serials print as they now stand. A unit corrected at receipt (Wrong serial,
+ * or a Wrong unit that arrived in place of a dispatched one) gets its own row
+ * with a short tag naming the dispatched serial; the full story — reason
+ * included — stays on the transfer. `notes` is the receipt's own notes, where
+ * the receive form logs each Wrong unit.
  */
 export function receivingReportRows(
   lines: GroupableLine[],
-  grossUnitCosts: (number | null)[]
+  grossUnitCosts: (number | null)[],
+  notes?: string | null
 ): ReceivingReportRow[] {
+  const inPlaceOf = arrivedInPlaceOf(notes)
   const rows = new Map<string, ReceivingReportRow>()
   lines.forEach((line, i) => {
-    const row = rowFor(rows, line, grossUnitCosts[i] ?? null)
+    const remark = correctionRemark(line, inPlaceOf)
+    const row = rowFor(rows, line, grossUnitCosts[i] ?? null, remark ? i : null)
     row.quantity += Number(line.quantityReceived ?? 0)
     row.serials.push(...(line.serialNumbers ?? []))
+    if (remark) row.remark = remark
   })
   return [...rows.values()]
+}
+
+/** Serial that arrived → the dispatched serial it came in place of. */
+function arrivedInPlaceOf(notes: string | null | undefined): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const [expected, received] of wrongUnitBySerial([{ notes }])) {
+    map.set(splitUnitLabel(received).serial, expected)
+  }
+  return map
+}
+
+function correctionRemark(line: GroupableLine, inPlaceOf: Map<string, string>): string | undefined {
+  const correction = line.stockTransferLine
+  const was = correction?.receiptCorrectedFromSerialNumber
+  if (was) {
+    // A swap repoints the line at another unit; a typo-fix keeps the unit.
+    return correction?.receiptCorrectedFromSerialId
+      ? `Wrong serial — dispatched ${was}`
+      : `Serial typo fixed — was recorded as ${was}`
+  }
+  const expected = (line.serialNumbers ?? []).map((s) => inPlaceOf.get(s)).find(Boolean)
+  return expected ? `Wrong unit — expected ${expected}` : undefined
 }
 
 function rowFor(
   rows: Map<string, ReceivingReportRow>,
   line: GroupableLine,
-  unitCost: number | null
+  unitCost: number | null,
+  ownRow: number | null
 ): ReceivingReportRow {
   const brand = line.item?.brand?.name ?? ''
   const subgroup = line.item?.primaryCategory?.name ?? ''
   const model = line.item?.modelNumber || line.item?.name || ''
-  const key = JSON.stringify([brand, subgroup, model, unitCost])
+  // A tagged line keeps a row of its own, so its tag can't land on a group.
+  const key = JSON.stringify([brand, subgroup, model, unitCost, ownRow])
   const existing = rows.get(key)
   if (existing) return existing
   const row = { key, brand, subgroup, model, quantity: 0, serials: [], unitCost }

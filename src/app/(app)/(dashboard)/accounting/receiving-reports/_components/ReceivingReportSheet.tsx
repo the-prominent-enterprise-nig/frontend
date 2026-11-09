@@ -49,6 +49,8 @@ export interface ReceivingReportDocument {
      * can be absent — a delivery often arrives with a driver and no helper. */
     driverName?: string | null
     helperName?: string | null
+    /** Receipt notes — the receive form logs each "Wrong unit" here. */
+    notes?: string | null
     /** Set only on a receipt that came from a branch transfer rather than a
      * supplier. Its number takes the sheet's PO slot — see
      * receivingReportSourceRef(). */
@@ -79,6 +81,11 @@ export interface ReceivingReportDocument {
       unitCost?: number | string | null
       isFreebie?: boolean
       serialNumbers?: string[] | null
+      /** A receipt-time serial correction on the transfer line it closed. */
+      stockTransferLine?: {
+        receiptCorrectedFromSerialId?: string | null
+        receiptCorrectedFromSerialNumber?: string | null
+      } | null
       purchaseOrderLine?: {
         purchaseOrder?: { code?: string | null; orderDate?: string | null } | null
       } | null
@@ -156,7 +163,7 @@ export default function ReceivingReportSheet({
   })
 
   // Same Brand / Subgroup / Model (and unit cost) reads as one row.
-  const rows = receivingReportRows(lines, grossUnitCosts)
+  const rows = receivingReportRows(lines, grossUnitCosts, rr.notes)
   const showCost = showPrices && hasAnyCost
   const vatAmount = Number(rr.vatAmount ?? 0)
   const withheldAmount = Number(rr.withheldAmount ?? 0)
@@ -270,7 +277,12 @@ export default function ReceivingReportSheet({
           <tbody>
             {rows.map((row) => (
               <tr key={row.key}>
-                <td className={`${TD} font-mono`}>{row.serials.join(', ')}</td>
+                <td className={`${TD} font-mono`}>
+                  {row.serials.join(', ')}
+                  {row.remark && (
+                    <div className="mt-0.5 font-sans text-[10px] text-amber-800">{row.remark}</div>
+                  )}
+                </td>
                 <td className={TD}>{row.brand}</td>
                 <td className={TD}>{row.subgroup}</td>
                 <td className={TD}>{row.model}</td>
