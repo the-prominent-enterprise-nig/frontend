@@ -13,8 +13,19 @@ import { updateSupplier } from '../../../accounting/suppliers/_actions/update-su
 
 export const SERVICE_CENTERS_QUERY_KEY = ['service-centers'] as const
 
-/** Every query that lists suppliers — a new service center must show up in all. */
-const RELATED_KEYS = [SERVICE_CENTERS_QUERY_KEY, ['suppliers-directory'], ['suppliers-search']]
+/** Every query that lists suppliers or repair providers — a new or edited
+ * service center must show up in all of them straight away, not after their
+ * stale time (5 min for the repair-provider lookups). */
+const RELATED_KEYS = [
+  SERVICE_CENTERS_QUERY_KEY,
+  ['suppliers-directory'],
+  ['suppliers-search'],
+  // Repair-provider pickers (getRepairProviders / serviceCentersOnly).
+  ['service-centers-search'], // SupplierSearchCombobox: Create RR, DR to service center
+  ['repair-providers-fallback'], // "No service centers set" note under those pickers
+  ['inventory-uds-repair-providers'], // UDS create / assess / set repair provider
+  ['rr-service-center-suppliers'], // Receive Stock › From Service Center
+]
 
 /** The whole set fits on one page; it is filtered client-side like the directory. */
 const PAGE_SIZE = 500
