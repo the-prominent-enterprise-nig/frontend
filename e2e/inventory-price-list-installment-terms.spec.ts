@@ -58,7 +58,7 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
     const name = `${NAME_PREFIX}${Date.now()}`
 
     // ─── Admin: create + price the list under CREDIT CARD ──────────────────
-    await gotoReady(page, '/pos/catalog/price-lists')
+    await gotoReady(page, '/pos/price-lists')
     await clickStable(
       page.getByRole('button', { name: 'New Price List' }),
       page.getByRole('heading', { name: 'New Price List' })

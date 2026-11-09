@@ -259,7 +259,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
   // Only a warehouse branch's own staff act for its region's standalone
   // warehouse — a store branch is limited to itself (mirrors the backend's
   // resolveActorRegion).
-  const isBusinessOwner = hasRole(session, 'Business Owner')
+  // The Business Owner and the Branch Manager are exempt from the
+  // dispatcher-is-never-the-receiver rule (mirrors the backend's receive()).
+  const exemptFromDispatcherRule =
+    hasRole(session, 'Business Owner') || hasRole(session, 'Branch Manager')
   const ownBranch = branchOptions.find((b) => b.id === session.branchId)
   const currentUserRegion = ownBranch?.type === 'warehouse' ? (ownBranch.region ?? null) : null
   // A caravan the user's branch hosts counts as theirs (see TransferDetailModal).
@@ -275,9 +278,10 @@ export default function TransferList({ session }: { session: SessionUser }) {
   function rowAction(tr: TransferSummary): { label: string; primary: boolean } {
     const fromInScope = inScope(tr.fromWarehouse)
     const toInScope = inScope(tr.toWarehouse)
-    // The dispatcher is never the receiver (WH-01) — except the Business Owner.
+    // The dispatcher is never the receiver (WH-01) — except the Business Owner
+    // and the Branch Manager.
     const canReceiveThis =
-      canReceive && toInScope && (isBusinessOwner || tr.dispatchedById !== session.id)
+      canReceive && toInScope && (exemptFromDispatcherRule || tr.dispatchedById !== session.id)
 
     if (
       tr.status === 'pending_manager_approval' &&
@@ -834,7 +838,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         canManagerReject={canManagerReject}
         currentUserBranchId={session.branchId}
         currentUserId={session.id}
-        currentUserIsBusinessOwner={isBusinessOwner}
+        currentUserExemptFromDispatcherRule={exemptFromDispatcherRule}
         currentUserRegion={currentUserRegion}
         onAccept={acceptTransfer}
         onReject={rejectTransfer}

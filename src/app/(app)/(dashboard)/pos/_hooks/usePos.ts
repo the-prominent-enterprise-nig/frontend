@@ -539,10 +539,17 @@ export function useInstallmentPreview() {
   })
 }
 
-export function useCustomerInstallmentSchedules(customerId?: string) {
+export function useCustomerInstallmentSchedules(
+  customerId?: string,
+  options: { withAgingAccounts?: boolean } = {}
+) {
   return useQuery({
-    queryKey: ['pos-customer-installment-schedules', customerId],
-    queryFn: () => getCustomerInstallmentSchedules(customerId as string),
+    queryKey: [
+      'pos-customer-installment-schedules',
+      customerId,
+      { withAgingAccounts: !!options.withAgingAccounts },
+    ],
+    queryFn: () => getCustomerInstallmentSchedules(customerId as string, options),
     enabled: !!customerId,
     staleTime: 60 * 1000,
   })

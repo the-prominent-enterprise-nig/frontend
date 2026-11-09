@@ -72,31 +72,27 @@ async function createCustomerViaUi(
 }
 
 /**
- * CustomerPicker only opens its results dropdown via an onFocus handler, a
- * separate mechanism from the input's controlled value — fillStable's
- * value-match retry doesn't prove that handler was attached yet when focus
- * landed. Retrying an explicit click (to (re)trigger focus) together with
- * the fill and the results-visible check closes that gap the same way
- * submitStable does for full-form submissions.
+ * Installment accounts are no longer created from the CRM UI (there is no
+ * "New account" page) — they come from POS checkout and the aging-sheet load.
+ * Tests that need an account as a fixture create it through the API, the same
+ * way the app's own server code does.
  */
-async function pickCustomer(page: Page, searchTerm: string, fullName: string): Promise<void> {
-  // Idempotent: once a customer is picked, CustomerPicker swaps to a "chip"
-  // display with no search input — submitStable's outer retry may call this
-  // again after a customer is already selected, so skip re-picking then.
-  const alreadyPicked = await page
-    .getByRole('button', { name: 'Change customer' })
-    .isVisible()
-    .catch(() => false)
-  if (alreadyPicked) return
-
-  const picker = page.getByPlaceholder('Search customer by name, email, or phone…')
-  const resultButton = page.getByRole('button', { name: new RegExp(fullName) })
-  await expect(async () => {
-    await picker.click()
-    await picker.fill(searchTerm)
-    await expect(resultButton).toBeVisible({ timeout: 3_000 })
-  }).toPass({ timeout: 20_000 })
-  await resultButton.click()
+async function createAccountViaApi(
+  page: Page,
+  input: {
+    customerId: string
+    accountNumber: string
+    termMonths: number
+    listedCashPrice: number
+    downPayment: number
+    miFactor: number
+  }
+): Promise<string> {
+  const res = await page.request.post('/api/crm/installment-accounts', { data: input })
+  expect(res.ok(), `create installment account failed: ${await res.text()}`).toBeTruthy()
+  const id = (await res.json()).id as string
+  expect(id).toBeTruthy()
+  return id
 }
 
 /** Drives one of the app's searchable dropdowns (SearchableSelect): type to
@@ -383,87 +379,6 @@ test.describe('CRM — Installment Accounts', () => {
     await expect(page.getByRole('button', { name: 'Price checker' })).toHaveCount(0)
   })
 
-  test('suggests and auto-selects a collector by the customer’s barangay coverage', async ({
-    page,
-  }) => {
-    const suffix = Date.now()
-    const shortSuffix = String(suffix).slice(-8)
-    const barangayCode = '020901002' // Ihubok I, Basco, Batanes — untouched by any other test fixture
-
-    // Fixture customer created directly via API (barangayCode isn't reachable
-    // through createCustomerViaUi's minimal form fill) — the picker's own
-    // capture of brgy_code is already covered by the Scenario 24 Part 2 test.
-    const customerName = `${CUSTOMER_NAME_PREFIX}Area${suffix}`
-    const customerRes = await page.request.post('/api/crm/customers', {
-      data: {
-        name: customerName,
-        phone: `0917${suffix.toString().slice(-7)}`,
-        barangayCode,
-      },
-    })
-    expect(customerRes.ok()).toBeTruthy()
-    const customerId = (await customerRes.json()).id as string
-    createdCustomerIds.push(customerId)
-
-    // A collector covering that exact barangay — the suggestion should pick it.
-    const stubNumber = `E2EAREA${shortSuffix}`
-    const collectorName = `E2E Area-Match Collector ${suffix}`
-    await gotoReady(page, '/crm/collectors/new')
-    await submitStable(
-      async () => {
-        await fillAllStable([
-          { locator: page.getByLabel('Collector code *'), value: stubNumber },
-          { locator: page.getByLabel('Name *'), value: collectorName },
-        ])
-        await pickAreaLevel(page, 'Region', 'Region II (Cagayan Valley)')
-        await pickAreaLevel(page, 'Province', 'Batanes')
-        await pickAreaLevel(page, 'City', 'Basco (Capital)')
-        await pickAreaLevel(page, 'Barangay', 'Ihubok I (Kaychanarianan)')
-        await page.getByRole('button', { name: 'Add', exact: true }).click()
-        await expect(page.getByText('Areas covered (1)')).toBeVisible()
-      },
-      () => page.getByRole('button', { name: 'Create collector' }).click(),
-      () => expect(page).toHaveURL(/\/crm\/collectors\/[a-f0-9-]+$/, { timeout: 8_000 })
-    )
-    const collectorId = page.url().match(/\/crm\/collectors\/([a-f0-9-]+)$/)?.[1]
-    expect(collectorId).toBeTruthy()
-
-    const accountNumber = `E2E-IA-AREA-${suffix}`
-    await gotoReady(page, '/crm/installment-accounts/new')
-    await submitStable(
-      async () => {
-        await pickCustomer(page, customerName.slice(-10), customerName)
-        const collectorSelect = page.getByLabel('Collector')
-        await expect(collectorSelect).toHaveValue(collectorId!, { timeout: 10_000 })
-        await expect(
-          collectorSelect.locator('option', {
-            hasText: `${stubNumber} — ${collectorName} — suggested`,
-          })
-        ).toHaveCount(1)
-        await fillAllStable([
-          { locator: page.getByLabel('Account number *'), value: accountNumber },
-          { locator: page.getByLabel('Term (months) *'), value: '6' },
-          { locator: page.getByLabel('Listed cash price (₱) *'), value: '20000' },
-          { locator: page.getByLabel('Down payment (₱) *'), value: '2000' },
-          { locator: page.getByLabel('MI factor *'), value: '0.1' },
-        ])
-      },
-      () => page.getByRole('button', { name: 'Create account' }).click(),
-      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
-    )
-    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
-
-    const detail = await page.request.get(`/api/crm/installment-accounts/${accountId}`)
-    const detailBody = await detail.json()
-    expect(detailBody.collectorId).toBe(collectorId)
-
-    // Cleanup
-    const delAccount = await page.request.delete(`/api/crm/installment-accounts/${accountId}`)
-    expect(delAccount.ok()).toBeTruthy()
-    const delCollector = await page.request.delete(`/api/crm/collectors/${collectorId}`)
-    expect(delCollector.ok()).toBeTruthy()
-  })
-
   test('suggests a collector on the Edit form for an account that has none yet, without overriding an existing pick', async ({
     page,
   }) => {
@@ -584,22 +499,14 @@ test.describe('CRM — Installment Accounts', () => {
     createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-SUMMARY-${suffix}`
-    await gotoReady(page, '/crm/installment-accounts/new')
-    await submitStable(
-      async () => {
-        await pickCustomer(page, fullName.split(' ')[1], fullName)
-        await fillAllStable([
-          { locator: page.getByLabel('Account number *'), value: accountNumber },
-          { locator: page.getByLabel('Term (months) *'), value: '6' },
-          { locator: page.getByLabel('Listed cash price (₱) *'), value: '20000' },
-          { locator: page.getByLabel('Down payment (₱) *'), value: '2000' },
-          { locator: page.getByLabel('MI factor *'), value: '0.1' },
-        ])
-      },
-      () => page.getByRole('button', { name: 'Create account' }).click(),
-      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
-    )
-    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+    const accountId = await createAccountViaApi(page, {
+      customerId,
+      accountNumber,
+      termMonths: 6,
+      listedCashPrice: 20000,
+      downPayment: 2000,
+      miFactor: 0.1,
+    })
 
     // AF = 18000, MI = 1800, PNV = 10800, Total price = 10800 + 2000 = 12800
     await gotoReady(page, `/crm/installment-accounts/${accountId}/edit`)
@@ -624,28 +531,20 @@ test.describe('CRM — Installment Accounts', () => {
     page,
   }) => {
     const suffix = Date.now()
-    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    const { customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-${suffix}`
-    await gotoReady(page, '/crm/installment-accounts/new')
-    await submitStable(
-      async () => {
-        await pickCustomer(page, fullName.split(' ')[1], fullName)
-        await fillAllStable([
-          { locator: page.getByLabel('Account number *'), value: accountNumber },
-          { locator: page.getByLabel('Term (months) *'), value: '6' },
-          { locator: page.getByLabel('Listed cash price (₱) *'), value: '20000' },
-          { locator: page.getByLabel('Down payment (₱) *'), value: '2000' },
-          { locator: page.getByLabel('MI factor *'), value: '0.1' },
-        ])
-      },
-      () => page.getByRole('button', { name: 'Create account' }).click(),
-      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
-    )
+    const accountId = await createAccountViaApi(page, {
+      customerId,
+      accountNumber,
+      termMonths: 6,
+      listedCashPrice: 20000,
+      downPayment: 2000,
+      miFactor: 0.1,
+    })
+    await gotoReady(page, `/crm/installment-accounts/${accountId}`)
     await expect(page.getByRole('heading', { name: accountNumber })).toBeVisible()
-
-    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
     expect(accountId).toBeTruthy()
 
     // AF = 18000, MI = 1800, PNV = 10800 — persisted values match the preview
@@ -686,28 +585,20 @@ test.describe('CRM — Installment Accounts', () => {
 
   test('requests graduation to Category C and approves it', async ({ page }) => {
     const suffix = Date.now()
-    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    const { customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-GRAD-${suffix}`
-    await gotoReady(page, '/crm/installment-accounts/new')
-    await submitStable(
-      async () => {
-        await pickCustomer(page, fullName.split(' ')[1], fullName)
-        await fillAllStable([
-          { locator: page.getByLabel('Account number *'), value: accountNumber },
-          { locator: page.getByLabel('Term (months) *'), value: '8' },
-          { locator: page.getByLabel('Listed cash price (₱) *'), value: '40000' },
-          { locator: page.getByLabel('Down payment (₱) *'), value: '4000' },
-          { locator: page.getByLabel('MI factor *'), value: '0.08' },
-        ])
-      },
-      () => page.getByRole('button', { name: 'Create account' }).click(),
-      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
-    )
+    const accountId = await createAccountViaApi(page, {
+      customerId,
+      accountNumber,
+      termMonths: 8,
+      listedCashPrice: 40000,
+      downPayment: 4000,
+      miFactor: 0.08,
+    })
+    await gotoReady(page, `/crm/installment-accounts/${accountId}`)
     await expect(page.getByRole('heading', { name: accountNumber })).toBeVisible()
-
-    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
 
     // Request graduation to Category C, then approve it (Business Owner has approve permission)
     await page.getByRole('button', { name: 'Request graduation to Category C' }).click()
@@ -737,26 +628,19 @@ test.describe('CRM — Installment Accounts', () => {
     page,
   }) => {
     const suffix = Date.now()
-    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    const { customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-PO-${suffix}`
-    await gotoReady(page, '/crm/installment-accounts/new')
-    await submitStable(
-      async () => {
-        await pickCustomer(page, fullName.split(' ')[1], fullName)
-        await fillAllStable([
-          { locator: page.getByLabel('Account number *'), value: accountNumber },
-          { locator: page.getByLabel('Term (months) *'), value: '10' },
-          { locator: page.getByLabel('Listed cash price (₱) *'), value: '30000' },
-          { locator: page.getByLabel('Down payment (₱) *'), value: '5000' },
-          { locator: page.getByLabel('MI factor *'), value: '0.09' },
-        ])
-      },
-      () => page.getByRole('button', { name: 'Create account' }).click(),
-      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
-    )
-    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+    const accountId = await createAccountViaApi(page, {
+      customerId,
+      accountNumber,
+      termMonths: 10,
+      listedCashPrice: 30000,
+      downPayment: 5000,
+      miFactor: 0.09,
+    })
+    await gotoReady(page, `/crm/installment-accounts/${accountId}`)
 
     await clickStable(
       page.getByRole('link', { name: 'Settle early' }),
@@ -797,22 +681,14 @@ test.describe('CRM — Installment Accounts', () => {
     createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-ROW-${suffix}`
-    await gotoReady(page, '/crm/installment-accounts/new')
-    await submitStable(
-      async () => {
-        await pickCustomer(page, fullName.split(' ')[1], fullName)
-        await fillAllStable([
-          { locator: page.getByLabel('Account number *'), value: accountNumber },
-          { locator: page.getByLabel('Term (months) *'), value: '6' },
-          { locator: page.getByLabel('Listed cash price (₱) *'), value: '20000' },
-          { locator: page.getByLabel('Down payment (₱) *'), value: '2000' },
-          { locator: page.getByLabel('MI factor *'), value: '0.1' },
-        ])
-      },
-      () => page.getByRole('button', { name: 'Create account' }).click(),
-      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
-    )
-    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+    const accountId = await createAccountViaApi(page, {
+      customerId,
+      accountNumber,
+      termMonths: 6,
+      listedCashPrice: 20000,
+      downPayment: 2000,
+      miFactor: 0.1,
+    })
 
     await gotoReady(page, '/crm/installment-accounts')
     await expect(page.getByRole('heading', { name: 'Installment Accounts' })).toBeVisible()
@@ -948,26 +824,19 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
   }) => {
     test.skip(!REMINDERS_ENABLED, REMINDERS_HIDDEN)
     const suffix = Date.now()
-    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    const { customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-NDR-${suffix}`
-    await gotoReady(page, '/crm/installment-accounts/new')
-    await submitStable(
-      async () => {
-        await pickCustomer(page, fullName.split(' ')[1], fullName)
-        await fillAllStable([
-          { locator: page.getByLabel('Account number *'), value: accountNumber },
-          { locator: page.getByLabel('Term (months) *'), value: '10' },
-          { locator: page.getByLabel('Listed cash price (₱) *'), value: '30000' },
-          { locator: page.getByLabel('Down payment (₱) *'), value: '5000' },
-          { locator: page.getByLabel('MI factor *'), value: '0.0954' },
-        ])
-      },
-      () => page.getByRole('button', { name: 'Create account' }).click(),
-      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
-    )
-    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+    const accountId = await createAccountViaApi(page, {
+      customerId,
+      accountNumber,
+      termMonths: 10,
+      listedCashPrice: 30000,
+      downPayment: 5000,
+      miFactor: 0.0954,
+    })
+    await gotoReady(page, `/crm/installment-accounts/${accountId}`)
     expect(accountId).toBeTruthy()
 
     await expect(page.getByText('No reminders logged for this account yet.')).toBeVisible({
@@ -1043,26 +912,19 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
   }) => {
     test.skip(!REMINDERS_ENABLED, REMINDERS_HIDDEN)
     const suffix = Date.now()
-    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    const { customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-DUP-${suffix}`
-    await gotoReady(page, '/crm/installment-accounts/new')
-    await submitStable(
-      async () => {
-        await pickCustomer(page, fullName.split(' ')[1], fullName)
-        await fillAllStable([
-          { locator: page.getByLabel('Account number *'), value: accountNumber },
-          { locator: page.getByLabel('Term (months) *'), value: '10' },
-          { locator: page.getByLabel('Listed cash price (₱) *'), value: '30000' },
-          { locator: page.getByLabel('Down payment (₱) *'), value: '5000' },
-          { locator: page.getByLabel('MI factor *'), value: '0.0954' },
-        ])
-      },
-      () => page.getByRole('button', { name: 'Create account' }).click(),
-      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
-    )
-    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+    const accountId = await createAccountViaApi(page, {
+      customerId,
+      accountNumber,
+      termMonths: 10,
+      listedCashPrice: 30000,
+      downPayment: 5000,
+      miFactor: 0.0954,
+    })
+    await gotoReady(page, `/crm/installment-accounts/${accountId}`)
 
     // First reminder schedules fine
     await clickStable(
@@ -1136,26 +998,19 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
   test('recording a payment auto-closes the account’s open reminder', async ({ page }) => {
     test.skip(!REMINDERS_ENABLED, REMINDERS_HIDDEN)
     const suffix = Date.now()
-    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    const { customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-AUTOCLOSE-${suffix}`
-    await gotoReady(page, '/crm/installment-accounts/new')
-    await submitStable(
-      async () => {
-        await pickCustomer(page, fullName.split(' ')[1], fullName)
-        await fillAllStable([
-          { locator: page.getByLabel('Account number *'), value: accountNumber },
-          { locator: page.getByLabel('Term (months) *'), value: '10' },
-          { locator: page.getByLabel('Listed cash price (₱) *'), value: '30000' },
-          { locator: page.getByLabel('Down payment (₱) *'), value: '5000' },
-          { locator: page.getByLabel('MI factor *'), value: '0.0954' },
-        ])
-      },
-      () => page.getByRole('button', { name: 'Create account' }).click(),
-      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
-    )
-    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+    const accountId = await createAccountViaApi(page, {
+      customerId,
+      accountNumber,
+      termMonths: 10,
+      listedCashPrice: 30000,
+      downPayment: 5000,
+      miFactor: 0.0954,
+    })
+    await gotoReady(page, `/crm/installment-accounts/${accountId}`)
 
     // Schedule an open reminder
     await clickStable(
@@ -1222,26 +1077,19 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
   test('captures a structured Promise to Pay when completing a reminder', async ({ page }) => {
     test.skip(!REMINDERS_ENABLED, REMINDERS_HIDDEN)
     const suffix = Date.now()
-    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    const { customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-PTP-${suffix}`
-    await gotoReady(page, '/crm/installment-accounts/new')
-    await submitStable(
-      async () => {
-        await pickCustomer(page, fullName.split(' ')[1], fullName)
-        await fillAllStable([
-          { locator: page.getByLabel('Account number *'), value: accountNumber },
-          { locator: page.getByLabel('Term (months) *'), value: '10' },
-          { locator: page.getByLabel('Listed cash price (₱) *'), value: '30000' },
-          { locator: page.getByLabel('Down payment (₱) *'), value: '5000' },
-          { locator: page.getByLabel('MI factor *'), value: '0.0954' },
-        ])
-      },
-      () => page.getByRole('button', { name: 'Create account' }).click(),
-      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
-    )
-    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+    const accountId = await createAccountViaApi(page, {
+      customerId,
+      accountNumber,
+      termMonths: 10,
+      listedCashPrice: 30000,
+      downPayment: 5000,
+      miFactor: 0.0954,
+    })
+    await gotoReady(page, `/crm/installment-accounts/${accountId}`)
 
     await clickStable(
       page.getByRole('button', { name: 'Schedule reminder' }),
@@ -1301,26 +1149,19 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
     page,
   }) => {
     const suffix = Date.now()
-    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    const { customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-LEGAL-${suffix}`
-    await gotoReady(page, '/crm/installment-accounts/new')
-    await submitStable(
-      async () => {
-        await pickCustomer(page, fullName.split(' ')[1], fullName)
-        await fillAllStable([
-          { locator: page.getByLabel('Account number *'), value: accountNumber },
-          { locator: page.getByLabel('Term (months) *'), value: '10' },
-          { locator: page.getByLabel('Listed cash price (₱) *'), value: '30000' },
-          { locator: page.getByLabel('Down payment (₱) *'), value: '5000' },
-          { locator: page.getByLabel('MI factor *'), value: '0.0954' },
-        ])
-      },
-      () => page.getByRole('button', { name: 'Create account' }).click(),
-      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
-    )
-    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+    const accountId = await createAccountViaApi(page, {
+      customerId,
+      accountNumber,
+      termMonths: 10,
+      listedCashPrice: 30000,
+      downPayment: 5000,
+      miFactor: 0.0954,
+    })
+    await gotoReady(page, `/crm/installment-accounts/${accountId}`)
 
     // Not in DAM yet — section is absent
     await expect(page.getByRole('heading', { name: 'Legal escalation' })).toHaveCount(0)
@@ -1358,26 +1199,19 @@ test.describe('CRM — Installment Account collections reminders (Scenario 20 NA
   }) => {
     test.skip(!REMINDERS_ENABLED, REMINDERS_HIDDEN)
     const suffix = Date.now()
-    const { fullName, customerId } = await createCustomerViaUi(page, suffix)
+    const { customerId } = await createCustomerViaUi(page, suffix)
     createdCustomerIds.push(customerId)
 
     const accountNumber = `E2E-IA-CTX-${suffix}`
-    await gotoReady(page, '/crm/installment-accounts/new')
-    await submitStable(
-      async () => {
-        await pickCustomer(page, fullName.split(' ')[1], fullName)
-        await fillAllStable([
-          { locator: page.getByLabel('Account number *'), value: accountNumber },
-          { locator: page.getByLabel('Term (months) *'), value: '10' },
-          { locator: page.getByLabel('Listed cash price (₱) *'), value: '30000' },
-          { locator: page.getByLabel('Down payment (₱) *'), value: '5000' },
-          { locator: page.getByLabel('MI factor *'), value: '0.0954' },
-        ])
-      },
-      () => page.getByRole('button', { name: 'Create account' }).click(),
-      () => expect(page).toHaveURL(/\/crm\/installment-accounts\/[a-f0-9-]+$/, { timeout: 8_000 })
-    )
-    const accountId = page.url().match(/\/crm\/installment-accounts\/([a-f0-9-]+)$/)?.[1]
+    const accountId = await createAccountViaApi(page, {
+      customerId,
+      accountNumber,
+      termMonths: 10,
+      listedCashPrice: 30000,
+      downPayment: 5000,
+      miFactor: 0.0954,
+    })
+    await gotoReady(page, `/crm/installment-accounts/${accountId}`)
 
     await clickStable(
       page.getByRole('button', { name: 'Schedule reminder' }),

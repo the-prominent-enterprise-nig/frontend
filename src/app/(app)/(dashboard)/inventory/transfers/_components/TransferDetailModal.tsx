@@ -828,9 +828,9 @@ type Props = {
   // The dispatcher is never the receiver (WH-01) — compared against the
   // transfer's dispatchedById to withhold Receive from whoever shipped it.
   currentUserId?: string
-  // The Business Owner is exempt from that rule: they may receive a transfer
-  // they dispatched themselves.
-  currentUserIsBusinessOwner?: boolean
+  // The Business Owner and the Branch Manager are exempt from that rule: they
+  // may receive a transfer they dispatched themselves.
+  currentUserExemptFromDispatcherRule?: boolean
   // The region of the caller's own warehouse branch — drives whether they can
   // act on a transfer touching a real standalone warehouse (branchId: null,
   // Scenario 27), which exact branch-ownership can never match. null/
@@ -895,7 +895,7 @@ export default function TransferDetailModal({
   canManagerReject,
   currentUserBranchId,
   currentUserId,
-  currentUserIsBusinessOwner = false,
+  currentUserExemptFromDispatcherRule = false,
   currentUserRegion,
   onAccept,
   onReject,
@@ -1081,9 +1081,10 @@ export default function TransferDetailModal({
   // Mirrors the backend's receive() refusal: whoever dispatched a transfer
   // can't also confirm it arrived, even head office, which inScope lets
   // through. A transfer dispatched before dispatchedById existed has none.
-  // The Business Owner is exempt, so for them it is never "dispatched by me".
+  // The Business Owner and the Branch Manager are exempt, so for them it is
+  // never "dispatched by me".
   const dispatchedByMe =
-    !currentUserIsBusinessOwner &&
+    !currentUserExemptFromDispatcherRule &&
     !!transfer?.dispatchedById &&
     transfer.dispatchedById === currentUserId
   const canReceiveInScope = canReceive && inScope(transfer?.toWarehouse)
