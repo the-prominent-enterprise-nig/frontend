@@ -1,5 +1,6 @@
 import { type Permission, type Role } from '@/src/schema/settings/list'
 import { MODULES } from '@/src/libs/guards/modules'
+import { isExplicitOnlyRow } from '@/src/libs/guards/explicit-only-permissions'
 
 export type AccessLevel = 'none' | 'view' | 'manage' | 'full' | 'mixed'
 
@@ -204,11 +205,16 @@ export function getAccessLevelForPermissions(
   // different level from the rest of their module — so clicking "Manage / Edit"
   // would immediately render as "Mixed Access". True under the resource
   // heuristic below, but useless as feedback on a button just pressed.
-  const selectedIds = new Set(selectedPermissions.map((permission) => permission.id))
+  // What only an owner ticks on purpose (editing a recorded entry) is never part
+  // of a level, so it neither makes a role differ from its preset nor stops it
+  // reading "Full": a role with everything but that is Full Access.
+  const selectedIds = new Set(
+    selectedPermissions.filter((permission) => !isExplicitOnlyRow(permission)).map((p) => p.id)
+  )
   for (const level of SETTABLE_ACCESS_LEVELS) {
-    const presetIds = getPermissionsForLevel(availableModulePermissions, level).map(
-      (permission) => permission.id
-    )
+    const presetIds = getPermissionsForLevel(availableModulePermissions, level)
+      .filter((permission) => !isExplicitOnlyRow(permission))
+      .map((permission) => permission.id)
     if (presetIds.length !== selectedIds.size) continue
     if (presetIds.every((id) => selectedIds.has(id))) return level
   }
@@ -245,9 +251,12 @@ export function getAccessLevelForPermissions(
   // unmodified "Full via wildcard" case, not the dissolved-and-partial one
   // this check exists to catch, and it would wrongly downgrade it too.
   if (uniformLevel === 'full' && !selectedByResource.has('*')) {
-    const everyRealResourceGranted = Array.from(availableByResource.keys())
-      .filter((resource) => resource !== '*')
-      .every((resource) => selectedByResource.has(resource))
+    const everyRealResourceGranted = Array.from(availableByResource.entries())
+      .filter(
+        ([resource, permissions]) =>
+          resource !== '*' && permissions.some((permission) => !isExplicitOnlyRow(permission))
+      )
+      .every(([resource]) => selectedByResource.has(resource))
     if (!everyRealResourceGranted) return 'mixed'
   }
 
@@ -270,8 +279,11 @@ export function countEffectivePermissions(
     selectedModulePermissions.some(
       (selected) =>
         selected.module === permission.module &&
-        (selected.resource === '*' || selected.resource === permission.resource) &&
-        (selected.action === '*' || selected.action === permission.action)
+        // A permission a wildcard never hands out is held only through its own row.
+        (isExplicitOnlyRow(permission)
+          ? selected.id === permission.id
+          : (selected.resource === '*' || selected.resource === permission.resource) &&
+            (selected.action === '*' || selected.action === permission.action))
     )
   ).length
 }
@@ -314,7 +326,11 @@ export function getSelectedPermissionIdsForLevel(
   level: Exclude<AccessLevel, 'mixed'>
 ): string[] {
   const modulePermissions = getModulePermissions(availablePermissions, moduleConfig)
-  return getPermissionsForLevel(modulePermissions, level).map((permission) => permission.id)
+  // Full Access for a whole module still leaves out what only an owner may tick
+  // for a role on purpose (editing a recorded entry): it is never a side effect.
+  return getPermissionsForLevel(modulePermissions, level)
+    .filter((permission) => !isExplicitOnlyRow(permission))
+    .map((permission) => permission.id)
 }
 
 export function formatPermission(permission: Permission): string {
@@ -446,7 +462,11 @@ function collapseToWildcardIfComplete(
   const wildcard = modulePermissions.find((permission) => permission.resource === '*')
   if (!wildcard || selected.has(wildcard.id)) return selected
 
-  const realPermissions = modulePermissions.filter((permission) => permission.resource !== '*')
+  // The wildcard never covers an explicit-only permission, so those neither
+  // count towards "everything is granted" nor are dropped when it collapses.
+  const realPermissions = modulePermissions.filter(
+    (permission) => permission.resource !== '*' && !isExplicitOnlyRow(permission)
+  )
   const everyResourceGranted = realPermissions.every((permission) => selected.has(permission.id))
   if (!everyResourceGranted) return selected
 
