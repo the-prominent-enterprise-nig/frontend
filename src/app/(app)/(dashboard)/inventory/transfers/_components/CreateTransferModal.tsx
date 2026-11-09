@@ -1056,6 +1056,8 @@ export default function CreateTransferModal({
                     placeholder="Add item — search name or SKU…"
                     stockWarehouseId={fromId || undefined}
                     stockFromOtherBranch
+                    // A caravan sends only what it holds — no catalog tail.
+                    stockOnly={isCaravanBranch(fromWarehouse?.branch)}
                   />
                 </div>
               </div>
