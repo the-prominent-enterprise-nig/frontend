@@ -76,8 +76,12 @@ async function registerSerials(
     data: { itemId, warehouseId, serialNumbers: serials, status: 'in_stock' },
   })
   expect(res.ok(), await res.text()).toBeTruthy()
+  // Search the prefix every registered serial shares (e.g. RX03-M1-… and
+  // RX03-M2-… share "RX03-M"), so each one's id comes back, not just the first.
+  let prefix = serials[0]
+  for (const s of serials) while (!s.startsWith(prefix)) prefix = prefix.slice(0, -1)
   const list = await request.get('/api/inventory/serial-numbers', {
-    params: { itemId, search: serials[0].slice(0, -2), limit: '200', scope: 'override' },
+    params: { itemId, search: prefix, limit: '200', scope: 'override' },
   })
   const rows = ((await list.json()).data ?? []) as { id: string; serialNumber: string }[]
   return new Map(rows.map((r) => [r.serialNumber, r.id]))
@@ -125,7 +129,11 @@ async function openAsReceiver(browser: Browser, transferNumber: string, reason: 
   const receiver = await context.newPage()
   await loginAs(receiver, RECEIVER_EMAIL, DEV_PASSWORD)
   await gotoReady(receiver, `/inventory/transfers?transfer=${transferNumber}`)
-  const modal = receiver.locator('.fixed.inset-0.z-50')
+  // The detail opens as a full-bleed panel (absolute since the Stock Transactions
+  // unify, fixed before); anchor on its own "Request Details" heading.
+  const modal = receiver
+    .locator('.inset-0.z-50')
+    .filter({ has: receiver.getByRole('heading', { name: 'Request Details', exact: true }) })
   await expect(modal.getByText(reason, { exact: true })).toBeVisible({ timeout: 20_000 })
   await modal.getByRole('button', { name: 'Mark Received' }).click()
   await expect(modal.getByTestId('receive-line-serial')).toBeVisible()
@@ -314,7 +322,10 @@ test.describe('Transfer Receive — a different serial or model, from existing N
     // A picked unit is not offered again.
     await picker.getByRole('button', { name: /Add another unit/ }).click()
     await receiver.keyboard.type(`RX03-M1-${s}`)
-    await expect(receiver.getByRole('button', { name: new RegExp(`RX03-M1-${s}`) })).toHaveCount(0)
+    // Only offers count: the picked chip's own "Remove serial …" button is not an offer.
+    await expect(
+      receiver.getByRole('button', { name: new RegExp(`^(?!Remove serial).*RX03-M1-${s}`) }),
+    ).toHaveCount(0)
     await receiver.keyboard.press('Escape')
     // Remove one; it can be picked again.
     await picker.getByRole('button', { name: `Remove serial RX03-M2-${s}` }).click()
@@ -327,7 +338,8 @@ test.describe('Transfer Receive — a different serial or model, from existing N
     // The picked unit moved to the destination; the removed one stayed put.
     const where = async (serial: string) => {
       const res = await page.request.get('/api/inventory/serial-numbers', {
-        params: { itemId: fx.otherModel.id, search: serial, scope: 'override' },
+        // The receiver's own every-branch lookup (in stock, held by no open transfer).
+        params: { itemId: fx.otherModel.id, search: serial, scope: 'receipt' },
       })
       const rows = ((await res.json()).data ?? []) as {
         id: string
