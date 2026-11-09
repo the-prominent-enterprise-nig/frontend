@@ -5,7 +5,8 @@ import { gotoReady, fillStable, loginAs } from './utils'
 // page has "Edit entry" beside Refund, and "it is not editable". The Business
 // Owner clicks Edit entry and the sale's own fields turn into inputs on the
 // page — the SI / DR No., the agent, each payment's reference no. — with
-// Save below. Nobody else sees the button.
+// Save below. The Business Owner and the Sales Admin Clerk only (the server
+// test pos-edit-recorded-sale covers the clerk); branch staff don't see it.
 //
 // Setup goes through the API: a cash sale at Bago with an agent and a cash
 // payment carrying a CR #.

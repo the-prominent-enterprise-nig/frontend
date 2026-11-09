@@ -16,7 +16,7 @@ import { showToast } from '@/src/components/ui/toast'
  * mockup puts it beside Refund; their comment: "it is not editable"). Clicking
  * it turns the sale's own fields into inputs where they sit on the page — the
  * SI / DR No., the agent, each payment's reference no. — with Save below.
- * The Business Owner only; each change is kept in the audit log with what it
+ * The Business Owner and the Sales Admin Clerk; each change is kept in the audit log with what it
  * read before and after. What is posted to the books, stock or an installment account (prices,
  * items, terms, the customer, the date) is not editable: Refund or a void
  * request puts those right. */

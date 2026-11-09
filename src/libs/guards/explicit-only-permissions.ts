@@ -16,7 +16,8 @@ export const RECORDED_ENTRIES_EDIT = 'accounting:recorded-entries:edit'
 export const NEW_RECEIPTS_EDIT = 'pos:new-receipts:edit'
 
 /** "Edit entry" on a recorded POS sale: its SI / DR No., payment reference
- * numbers and selling agent. Each change is kept in the audit log. */
+ * numbers and selling agent. Each change is kept in the audit log. Held by
+ * the Business Owner and, named in its grants, the Sales Admin Clerk. */
 export const RECORDED_SALES_EDIT = 'pos:recorded-sales:edit'
 
 const EXPLICIT_ONLY: ReadonlySet<string> = new Set([
