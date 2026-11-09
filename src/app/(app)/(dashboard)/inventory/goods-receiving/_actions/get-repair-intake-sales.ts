@@ -3,6 +3,13 @@
 import { api, ApiResponse } from '@/src/libs/api/client'
 import type { InstallmentAccountUnitItem } from './get-installment-account'
 
+/** A unit on that sale. Ticket #27: a Return credits its own sale line (its
+ * `id`), at its price, restoring its cost layer. */
+export type RepairIntakeUnit = InstallmentAccountUnitItem & {
+  unitPrice?: number
+  sourceLedgerId?: string | null
+}
+
 /** A sale a repair/return unit could have been sold on — cash or financed. */
 export interface RepairIntakeSale {
   id: string
@@ -14,9 +21,12 @@ export interface RepairIntakeSale {
   customer: { id: string; name: string; customerCode: string } | null
   /** Ticket #27 — the branch that sold it, shown beside the invoice #. */
   soldAtBranch: { id: string; name: string } | null
+  /** Ticket #27 — the AR invoice a Return's credit memo posts against;
+   * null for a cash sale. */
+  arInvoiceId?: string | null
   /** Same shape as an installment account's units, so the panel lists and
    * checks them the same way. */
-  unitItems: InstallmentAccountUnitItem[]
+  unitItems: RepairIntakeUnit[]
 }
 
 /** The Invoice # picker on a Repair/Return RR. `search` matches the SI No.,

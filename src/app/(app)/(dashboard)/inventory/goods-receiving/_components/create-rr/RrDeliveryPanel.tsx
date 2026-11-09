@@ -141,7 +141,10 @@ export function RrDeliveryPanel({
 
   // Repossession and Repair/Return share one layout: no Source or Reference #
   // — the unit comes back from a customer's invoice.
-  const isUnitReturn = reason === 'repossession' || reason === 'repair_return'
+  // Ticket #27 (Karms's review) — Return is a unit return too, with Repair's
+  // own fields: it posts the POS customer return from here.
+  const customerReturn = reason === 'customer_return'
+  const isUnitReturn = reason === 'repossession' || reason === 'repair_return' || customerReturn
   // Scenario 73 — units back from a service center: Service Center replaces
   // Repair Type, and the service center's own DR is worth a reference.
   const fromServiceCenter = reason === 'repair_return' && origin === 'service_center'
@@ -151,7 +154,8 @@ export function RrDeliveryPanel({
   // Where a unit from a customer lands. A repossession still hides the field
   // for a branch receiver (it's filled with their own branch); head office
   // sees it for every unit return and has to choose — there's no default.
-  const showLocation = !isUnitReturn || fromServiceCenter || repairIntake || !ownBranchWarehouseId
+  const showLocation =
+    !isUnitReturn || fromServiceCenter || repairIntake || customerReturn || !ownBranchWarehouseId
   // Read off the value, not the resolver: posting stops at the blockers list
   // before the resolver runs, and the field should still say why.
   const serviceCenterId = useWatch({ control, name: 'serviceCenterId' })
@@ -190,22 +194,6 @@ export function RrDeliveryPanel({
       </Field>
     </div>
   )
-
-  // Ticket #27 — Return has nothing to post: just the reason, and the lookup
-  // panel below it.
-  if (reason === 'customer_return') {
-    return (
-      <div className={`${PANEL} flex flex-col overflow-hidden`}>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-4.5 py-2.5">
-          <span className="text-[13.5px] font-semibold">Delivery details</span>
-          <span className="text-[11.5px] text-ink-muted">
-            Customer return, already received at the POS
-          </span>
-        </div>
-        <div className="px-4.5 pb-4 pt-3.5">{!linkedPo && reasonField}</div>
-      </div>
-    )
-  }
 
   return (
     <div className={`${PANEL} flex flex-col overflow-hidden`}>
@@ -473,20 +461,23 @@ export function RrDeliveryPanel({
             matching ManualRrForm.tsx's own Date Received field exactly; the
             time-of-day this form previously also collected was never
             something Manual RR asked for. */}
-        <Field label="Date Received" tooltip="Leave blank to stamp it as posted.">
-          <Controller
-            name="receivedAt"
-            control={control}
-            render={({ field }) => (
-              <input
-                {...field}
-                value={field.value ?? ''}
-                type="date"
-                className={`${INPUT} text-[#3d3d4a]`}
-              />
-            )}
-          />
-        </Field>
+        {/* A Return is dated when it's recorded, like the POS return. */}
+        {!customerReturn && (
+          <Field label="Date Received" tooltip="Leave blank to stamp it as posted.">
+            <Controller
+              name="receivedAt"
+              control={control}
+              render={({ field }) => (
+                <input
+                  {...field}
+                  value={field.value ?? ''}
+                  type="date"
+                  className={`${INPUT} text-[#3d3d4a]`}
+                />
+              )}
+            />
+          </Field>
+        )}
 
         {(!isUnitReturn || fromServiceCenter) && (
           <Field

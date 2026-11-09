@@ -18,6 +18,9 @@ type Params = {
    * together by date — opt-in so Inventory's own receiving list (which also
    * calls this action) is unaffected. */
   includeManual?: boolean
+  /** Ticket #27 — merges in posted customer returns (their RRC # receiving
+   * report). Only the Inventory Receiving tab asks for them. */
+  includeCustomerReturns?: boolean
 }
 
 export async function getReceivingReports(params: Params = {}) {
@@ -33,6 +36,7 @@ export async function getReceivingReports(params: Params = {}) {
     endDate: params.endDate,
     hasDiscrepancy: params.hasDiscrepancy,
     includeManual: params.includeManual,
+    includeCustomerReturns: params.includeCustomerReturns,
   }
 
   return api.get<ReceivingReportListResponse>('/inventory/stock/receiving-reports', query)

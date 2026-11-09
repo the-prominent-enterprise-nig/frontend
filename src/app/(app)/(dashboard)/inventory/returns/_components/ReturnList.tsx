@@ -1,7 +1,8 @@
 'use client'
 
 import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Plus, RotateCcw, ChevronDown, FileWarning, Info, SearchX } from 'lucide-react'
 import { fmtMoney } from '@/src/libs/data/AccountingV2Data'
@@ -296,6 +297,12 @@ export default function ReturnList({ session }: { session: SessionUser }) {
     createReturn,
     isCreating,
   } = useReturnsManager()
+  // Ticket #27 — a Return row in Receiving opens this tab searched to it.
+  const linkedReturn = useSearchParams().get('return')
+  useEffect(() => {
+    if (linkedReturn) setSearch(linkedReturn)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedReturn])
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)

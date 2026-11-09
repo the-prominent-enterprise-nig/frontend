@@ -469,7 +469,7 @@ export const ReceivingReportSchema = z.object({
   // Present on every row from getReceivingReports() (see stock.service.ts) —
   // optional here only so this schema still fits the single-receipt detail
   // response, which never sets it since a merged list is meaningless there.
-  sourceType: z.enum(['goods_receipt', 'manual_rr']).optional(),
+  sourceType: z.enum(['goods_receipt', 'manual_rr', 'customer_return']).optional(),
   applicationType: z.string().optional(),
   modeOfTransfer: z.string().optional().nullable(),
   // Why the stock came in. A repair_return / repossession receipt takes units

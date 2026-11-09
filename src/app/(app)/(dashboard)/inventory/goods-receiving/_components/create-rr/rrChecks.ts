@@ -41,7 +41,7 @@ export function toIssueLines(
     quantityReceived: line.quantityReceived || 0,
     isSerialTracked: context(index).isSerialTracked,
     serialNumbers:
-      reason === 'repossession' || reason === 'repair_return'
+      reason === 'repossession' || reason === 'repair_return' || reason === 'customer_return'
         ? line.existingSerialNumberIds
         : line.serialNumbers,
     qualityHold: line.qualityHold ?? false,

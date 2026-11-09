@@ -10,8 +10,10 @@ import { getReceivingReportsSummary } from '../_actions/get-receiving-reports-su
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 
-export function useReceivingReports(options: { includeManual?: boolean } = {}) {
-  const { includeManual = false } = options
+export function useReceivingReports(
+  options: { includeManual?: boolean; includeCustomerReturns?: boolean } = {}
+) {
+  const { includeManual = false, includeCustomerReturns = false } = options
   const [page, setPage] = useState(1)
   const [limit, setLimitState] = useState<number>(DEFAULT_PAGE_SIZE)
   // A new page size starts back on page 1, or the current page may not exist.
@@ -41,6 +43,7 @@ export function useReceivingReports(options: { includeManual?: boolean } = {}) {
       startDate,
       endDate,
       includeManual,
+      includeCustomerReturns,
     }),
     [
       page,
@@ -53,6 +56,7 @@ export function useReceivingReports(options: { includeManual?: boolean } = {}) {
       startDate,
       endDate,
       includeManual,
+      includeCustomerReturns,
     ]
   )
 

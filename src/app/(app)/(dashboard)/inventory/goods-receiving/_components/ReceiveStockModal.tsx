@@ -39,7 +39,11 @@ import {
   type IssueFix,
 } from '../../purchase-orders/_components/receive-po/receiveIssues'
 import { PoLinkPicker, outstandingOf } from './create-rr/PoLinkPicker'
-import { CustomerReturnLookupPanel } from './create-rr/CustomerReturnLookupPanel'
+import { customerReturnPayload } from './create-rr/customerReturnPayload'
+import { recordCustomerReturn, type RrReturnDisposition } from '../_actions/record-customer-return'
+import { useMe } from '@/src/hooks/useMe'
+import { hasPermission } from '@/src/hooks/usePermission'
+import { useQueryClient } from '@tanstack/react-query'
 import { ReturnedUnitsPanel, type ReturnBlock } from './create-rr/ReturnedUnitsPanel'
 import { ServiceCenterUnitsPanel } from './create-rr/ServiceCenterUnitsPanel'
 import {
@@ -261,6 +265,12 @@ export default function ReceiveStockModal({
   // Withholding is previewed at the rates the tax code master holds for the
   // goods / services codes — the ones the server posts at.
   const ewt = useEwtCodes()
+  const { data: me } = useMe()
+  const queryClient = useQueryClient()
+  // Ticket #27 — Return: what happens to each checked unit, and the sales
+  // picked (by id) so the post can credit their own lines.
+  const [dispositions, setDispositions] = useState<Record<string, RrReturnDisposition>>({})
+  const salesById = useRef(new Map<string, RepairIntakeSale>())
 
   useEffect(() => {
     if (isOpen) return
@@ -280,6 +290,8 @@ export default function ReceiveStockModal({
     setSourceMode('registered')
     setDefaultTaxCode('VAT')
     setDefaultWithholdingClass('goods')
+    setDispositions({})
+    salesById.current.clear()
   }, [isOpen, reset])
 
   const watched = watch()
@@ -293,9 +305,10 @@ export default function ReceiveStockModal({
   // Repossession and Repair/Return share one layout: units picked off a
   // customer's invoice, no Source / Location / Reference #.
   const isRepo = watched.reason === 'repossession'
-  // Ticket #27 — Return only looks up what the POS return already received.
-  const lookupOnly = watched.reason === 'customer_return'
-  const isUnitReturn = isRepo || watched.reason === 'repair_return'
+  // Ticket #27 (Karms's review) — Return uses Repair's fields and posts the
+  // POS customer return itself (stock back, customer credited, RRC #).
+  const customerReturn = watched.reason === 'customer_return'
+  const isUnitReturn = isRepo || watched.reason === 'repair_return' || customerReturn
   // Scenario 73 — a Repair/Return coming back from a service center rather
   // than handed in by a customer: no invoice, no Repair Type, no UDS/RFS.
   const fromServiceCenter =
@@ -432,6 +445,23 @@ export default function ReceiveStockModal({
   // unitCost, which can genuinely be a recorded zero for a historical sale).
   // Caught here rather than left for the server to reject after the fact:
   // ReturnedUnitsPanel already offers a Cost field the moment this applies.
+  if (customerReturn) {
+    if (!hasPermission(me ?? null, 'inventory:stock:return')) {
+      blockers.push({
+        key: 'return-permission',
+        kind: 'error',
+        text: 'Recording a return needs the stock return permission.',
+      })
+    }
+    const location = locationWarehouses.find((w) => w.id === watched.warehouseId)
+    if (watched.warehouseId && location && !location.branchId) {
+      blockers.push({
+        key: 'return-branch',
+        kind: 'error',
+        text: 'A return is received at a branch — pick a branch location.',
+      })
+    }
+  }
   if (watched.reason === 'repossession') {
     lines.forEach((line, index) => {
       if (!line.itemId || Number(line.unitCost) > 0) return
@@ -534,6 +564,13 @@ export default function ReceiveStockModal({
   const ownBranchWarehouseId = actorBranchId
     ? warehouses.find((w) => w.branchId === actorBranchId)?.id
     : undefined
+  // Ticket #27 — a Return lands at the receiver's own branch unless they pick
+  // another branch location.
+  useEffect(() => {
+    if (customerReturn && !watched.warehouseId && ownBranchWarehouseId)
+      setValue('warehouseId', ownBranchWarehouseId, { shouldValidate: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerReturn, ownBranchWarehouseId])
   useEffect(() => {
     if (!isRepo || !ownBranchWarehouseId) return
     if (watched.warehouseId !== ownBranchWarehouseId)
@@ -586,8 +623,9 @@ export default function ReceiveStockModal({
   useEffect(() => {
     const prev = prevReason.current
     prevReason.current = watched.reason
-    const unitReturnReasons = ['repossession', 'repair_return']
+    const unitReturnReasons = ['repossession', 'repair_return', 'customer_return']
     if (prev === watched.reason) return
+    setDispositions({})
     if (
       !unitReturnReasons.includes(prev ?? '') ||
       !unitReturnReasons.includes(watched.reason ?? '')
@@ -784,6 +822,7 @@ export default function ReceiveStockModal({
    * so Returned by, Customer ID and the unit list fill in at once. A sale
    * with one unit out is pre-checked, same as an installment invoice. */
   function pickSale(key: string, sale: RepairIntakeSale): void {
+    salesById.current.set(sale.id, sale)
     if (returnBlocks.some((b) => b.key !== key && b.accountId === sale.id)) {
       showToast({ title: 'That invoice is already on this receipt', status: 'error' })
       return
@@ -1193,7 +1232,39 @@ export default function ReceiveStockModal({
     return out
   }
 
+  /** Ticket #27 — Return: posts the POS customer return for the checked
+   * units (one record — stock back, customer credited, RRC # issued). */
+  async function postCustomerReturn(data: ReceiveStockFormValues): Promise<void> {
+    const serialNumberIds = data.lines
+      .map((l) => l.existingSerialNumberIds?.[0])
+      .filter((id): id is string => !!id)
+    const sale = salesById.current.get(data.lines[0]?.salesTransactionId ?? '')
+    if (!sale || !data.warehouseId) return
+    const res = await recordCustomerReturn(
+      customerReturnPayload({
+        sale,
+        serialNumberIds,
+        dispositions,
+        warehouseId: data.warehouseId,
+        notes: data.notes,
+      })
+    )
+    if (!res.success || !res.data) {
+      showToast({ title: 'Could not record the return', description: res.message, status: 'error' })
+      return
+    }
+    showToast({
+      title: `Return recorded — ${res.data.receivingReportNumber}`,
+      description: res.data.accountingNote ?? `Return # ${res.data.returnNumber}`,
+      status: 'success',
+    })
+    void queryClient.invalidateQueries({ queryKey: ['inventory-returns'] })
+    void queryClient.invalidateQueries({ queryKey: ['inventory-receiving-reports'] })
+    onClose()
+  }
+
   async function post(data: ReceiveStockFormValues): Promise<void> {
+    if (data.reason === 'customer_return') return postCustomerReturn(data)
     const reason = data.reason || undefined
     const unitReturn = reason === 'repossession' || reason === 'repair_return'
     const scReturn = reason === 'repair_return' && data.origin === 'service_center'
@@ -1288,12 +1359,16 @@ export default function ReceiveStockModal({
             Inventory › Receiving › New
           </div>
           <h2 className="text-[21px] font-semibold tracking-[-.02em]">{title}</h2>
-          <p className="text-[12.5px] text-[#4b4b5a]">{subtitle}</p>
+          <p className="text-[12.5px] text-[#4b4b5a]">
+            {customerReturn ? 'Record a customer bringing back what they bought.' : subtitle}
+          </p>
         </div>
 
         <div className="flex items-start gap-4">
           <div className="flex flex-col items-end gap-0.5">
-            <span className="text-[11px] text-[#4b4b5a]">Receiving</span>
+            <span className="text-[11px] text-[#4b4b5a]">
+              {customerReturn ? 'Returning' : 'Receiving'}
+            </span>
             <span
               className={`${MONO} text-[18px] font-semibold tracking-[-.02em] ${
                 totals.units > 0 ? 'text-[#17171c]' : 'text-ink-subtle'
@@ -1341,9 +1416,7 @@ export default function ReceiveStockModal({
           serviceCentersLoading={serviceCentersQuery.isLoading || suppliersQuery.isLoading}
         />
 
-        {lookupOnly ? (
-          <CustomerReturnLookupPanel />
-        ) : fromServiceCenter ? (
+        {fromServiceCenter ? (
           <ServiceCenterUnitsPanel
             serviceCenterId={watched.serviceCenterId ?? ''}
             serviceCenterName={serviceCenterName(watched.serviceCenterId)}
@@ -1359,7 +1432,11 @@ export default function ReceiveStockModal({
         ) : isUnitReturn ? (
           <>
             <ReturnedUnitsPanel
-              mode={isRepo ? 'repossession' : 'repair_return'}
+              mode={isRepo ? 'repossession' : customerReturn ? 'customer_return' : 'repair_return'}
+              dispositions={dispositions}
+              onDisposition={(serialNumberId, value) =>
+                setDispositions((prev) => ({ ...prev, [serialNumberId]: value }))
+              }
               blocks={returnBlocks}
               lines={lines}
               canViewCost={canViewCost}
@@ -1554,29 +1631,27 @@ export default function ReceiveStockModal({
             )}
           </div>
         )}
-        {!lookupOnly && (
-          <div className={`${PANEL} flex flex-col gap-2 px-4.5 py-3.5`}>
-            <label className="text-[12px] font-medium text-[#3d3d4a]">
-              Notes <span className="font-normal text-ink-muted">optional</span>
-            </label>
-            <Controller
-              name="notes"
-              control={control}
-              render={({ field }) => (
-                <textarea
-                  {...field}
-                  value={field.value ?? ''}
-                  rows={2}
-                  placeholder="Damage on arrival, short-shipped cartons, anything the next person should know…"
-                  className="w-full resize-y rounded-lg border border-[#d3d3db] bg-white px-3 py-2.5 text-[13px] leading-[1.5] text-[#17171c] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
-                />
-              )}
-            />
-            {errors.notes && (
-              <span className="text-[11.5px] text-[#b42318]">{errors.notes.message}</span>
+        <div className={`${PANEL} flex flex-col gap-2 px-4.5 py-3.5`}>
+          <label className="text-[12px] font-medium text-[#3d3d4a]">
+            Notes <span className="font-normal text-ink-muted">optional</span>
+          </label>
+          <Controller
+            name="notes"
+            control={control}
+            render={({ field }) => (
+              <textarea
+                {...field}
+                value={field.value ?? ''}
+                rows={2}
+                placeholder="Damage on arrival, short-shipped cartons, anything the next person should know…"
+                className="w-full resize-y rounded-lg border border-[#d3d3db] bg-white px-3 py-2.5 text-[13px] leading-[1.5] text-[#17171c] outline-none focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc]"
+              />
             )}
-          </div>
-        )}
+          />
+          {errors.notes && (
+            <span className="text-[11.5px] text-[#b42318]">{errors.notes.message}</span>
+          )}
+        </div>
       </div>
 
       {warehouseMismatchWarning && (
@@ -1585,29 +1660,24 @@ export default function ReceiveStockModal({
           continue.
         </div>
       )}
-      {lookupOnly ? (
-        <div className="sticky bottom-0 flex justify-end border-t border-[#e4e4e9] bg-white px-4 py-3 lg:px-5">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-[#d3d3db] px-4 py-2 text-[13px] font-medium text-ink-muted hover:bg-[#f6f6f8]"
-          >
-            Close
-          </button>
-        </div>
-      ) : (
-        <ReceiveActionBar
-          blockerCount={blockers.length}
-          showBlockers={showErrors}
-          totals={barTotals}
-          deliveryReceiptNumber={watched.deliveryReceiptNumber ?? ''}
-          isSubmitting={isSubmitting}
-          onCancel={onClose}
-          onPrimary={postNow}
-          primaryLabel={warehouseMismatchWarning ? 'Receive anyway' : submitLabel}
-          submittingLabel={submittingLabel}
-        />
-      )}
+      <ReceiveActionBar
+        blockerCount={blockers.length}
+        showBlockers={showErrors}
+        totals={barTotals}
+        deliveryReceiptNumber={watched.deliveryReceiptNumber ?? ''}
+        isSubmitting={isSubmitting}
+        onCancel={onClose}
+        onPrimary={postNow}
+        primaryLabel={
+          customerReturn
+            ? 'Record return'
+            : warehouseMismatchWarning
+              ? 'Receive anyway'
+              : submitLabel
+        }
+        submittingLabel={customerReturn ? 'Recording…' : submittingLabel}
+        verb={customerReturn ? 'Returning' : undefined}
+      />
 
       {poPickerOpen && (
         <PoLinkPicker

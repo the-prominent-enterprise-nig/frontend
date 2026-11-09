@@ -243,6 +243,8 @@ export function receivingReportReasonLabel(
     return `Repair${where}`
   }
   if (report?.reason === 'repossession') return 'Repossession'
+  // Ticket #27 — a posted customer return listed in Receiving.
+  if (report?.reason === 'customer_return') return 'Return'
   return null
 }
 
