@@ -564,6 +564,11 @@ export interface CreateTransactionLineInput {
    * priced from before the override. The server reads the list price off it;
    * a list price is never sent. Omit when there was no price-list match. */
   overriddenFromPriceListItemId?: string
+  /** Nov UAT #28 — marks the line a freebie or a tie-up: given with a sold item
+   * at ₱0.00. Not a price override, never financed. */
+  promoTag?: 'freebie' | 'tie_up'
+  /** Only with promoTag: the itemId of the sold line it goes with. */
+  tiedToItemId?: string
   /** Per-line payment mode — lets one cart mix cash/installment lines.
    * Falls back to the transaction-level invoiceType when omitted. */
   invoiceType?: PosInvoiceType
@@ -1708,6 +1713,9 @@ export interface PriceOverrideLogEntry {
   /** The whole sale's total, not just this line's. */
   saleTotal: number
   item: { id: string; name: string; sku: string | null }
+  /** The item's Brand and Type, as an override names the unit it was applied to (Nov UAT #28). */
+  brand: string | null
+  itemType: string | null
   /** Serial number(s) of the unit sold — two for a split-type item; empty when not serial-tracked. */
   serials: string[]
   /** The installment account this line's plan became; null for a cash or TPF line. */

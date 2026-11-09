@@ -81,6 +81,11 @@ type Props = {
     // Set by General Stockbook's "Stock Transfer": each ticked unit becomes
     // one line pinned to that exact serial (quantity 1).
     pinnedLines?: { itemId: string; itemLabel?: string; serialNumberId: string }[]
+    // Set by the UDS list's "Send to Main": the repair unit goes to Main for
+    // assessment, so the destination is fixed there whatever the user's own
+    // branch lock would be.
+    toMain?: boolean
+    reason?: string
   } | null
   // Scenario 60 — a caravan can be created inline as the destination. It is
   // created first; its warehouse then becomes the transfer's toWarehouseId.
@@ -405,6 +410,11 @@ export default function CreateTransferModal({
   // still needs to choose among their own rather than have an arbitrary one
   // silently picked.
   const ownWarehouseId = ownBranchWarehouses.length === 1 ? ownBranchWarehouses[0].id : undefined
+  // A repair ticket's trip to Main fixes the destination there instead.
+  const mainWarehouse =
+    !editing && initialDraft?.toMain
+      ? warehouses.find((wh) => wh.branch?.isMainBranch && !isCaravanBranch(wh.branch))
+      : undefined
 
   // Remounts the header's "add item" search box after each pick — it never
   // holds a confirmed value itself (each pick appends a new line instead),
@@ -444,7 +454,10 @@ export default function CreateTransferModal({
   // theirs to choose. A Warehouse Custodian's destination is never locked. A
   // saved request keeps its route, so editing never flips it.
   const sendsDirect = !isEditing && canSkipApproval && !!watch('skipDestinationApproval')
-  const lockedToWarehouseId = !canPickAnyDestination && !sendsDirect ? ownWarehouseId : undefined
+  const lockedWarehouse =
+    mainWarehouse ??
+    (!canPickAnyDestination && !sendsDirect && ownWarehouseId ? ownBranchWarehouses[0] : undefined)
+  const lockedToWarehouseId = lockedWarehouse?.id
   const lockedFromWarehouseId = sendsDirect ? ownWarehouseId : undefined
 
   // Live check (not gated behind a submit attempt) so the error and disabled
@@ -487,7 +500,7 @@ export default function CreateTransferModal({
               toWarehouseId: initialDraft?.toWarehouseId ?? lockedToWarehouseId ?? '',
               transferDate: today,
               expectedArrival: '',
-              reason: '',
+              reason: initialDraft?.reason ?? '',
               destinationType: initialDraft?.toWarehouseId ? 'caravan' : 'branch',
               lines: initialDraft?.pinnedLines?.length
                 ? initialDraft.pinnedLines.map((pin) => ({
@@ -738,7 +751,7 @@ export default function CreateTransferModal({
                   <span className="text-[13.5px] font-semibold text-[#17171c]">
                     Request details
                   </span>
-                  {canCreateCaravan && !isEditing && (
+                  {canCreateCaravan && !isEditing && !mainWarehouse && (
                     <label className="flex cursor-pointer items-center gap-2 text-[12px] text-[#3d3d4a]">
                       <input
                         type="checkbox"
@@ -859,7 +872,8 @@ export default function CreateTransferModal({
                                 name="toWarehouseId"
                                 control={control}
                                 render={({ field }) =>
-                                  lockedToWarehouseId && runningCaravans.length === 0 ? (
+                                  lockedWarehouse &&
+                                  (mainWarehouse || runningCaravans.length === 0) ? (
                                     <SearchableSelect
                                       value={field.value ?? ''}
                                       onChange={field.onChange}
@@ -867,8 +881,8 @@ export default function CreateTransferModal({
                                       chrome={CONTROL_CHROME}
                                       options={[
                                         {
-                                          value: lockedToWarehouseId,
-                                          label: branchLabel(ownBranchWarehouses[0]),
+                                          value: lockedWarehouse.id,
+                                          label: branchLabel(lockedWarehouse),
                                         },
                                       ]}
                                     />
@@ -893,9 +907,11 @@ export default function CreateTransferModal({
                             <p className="mt-1 text-[11px] text-[#4b4b5a]">
                               {isCaravanDestination
                                 ? ''
-                                : lockedToWarehouseId
-                                  ? 'Requests are always routed to your own branch.'
-                                  : 'Stock arrives here.'}
+                                : mainWarehouse
+                                  ? 'Repair units go to Main for assessment.'
+                                  : lockedToWarehouseId
+                                    ? 'Requests are always routed to your own branch.'
+                                    : 'Stock arrives here.'}
                             </p>
                             {errors.toWarehouseId && (
                               <p className="mt-1 text-[11.5px] text-[#b42318]">

@@ -47,6 +47,9 @@ export type CreateLocationFormValues = z.infer<typeof CreateLocationFormSchema>
 export const WarehouseBranchSchema = z.object({
   id: z.string(),
   name: z.string(),
+  isMainBranch: z.boolean().optional(),
+  // Head offices (Mabini, San Sebastian) are the only branches with departments.
+  isHeadOffice: z.boolean().optional(),
   isTemporary: z.boolean().optional(),
   eventName: z.string().nullable().optional(),
   startDate: z.string().nullable().optional(),

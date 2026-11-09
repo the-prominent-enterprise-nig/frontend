@@ -37,6 +37,10 @@ test.describe('CRM — AR Aging per branch (Scenario 47)', () => {
     // An unknown due date must be visible as its own column, never folded
     // into Current.
     await expect(page.getByRole('columnheader', { name: 'Unknown' })).toBeVisible()
+
+    // NIG #40 — Current is only the month's due, so what falls due after this
+    // month has its own column and the buckets still add up to the total.
+    await expect(page.getByRole('columnheader', { name: 'Due Later' })).toBeVisible()
   })
 
   test('detail rows show the bucket that drives the matrix above', async ({ page }) => {

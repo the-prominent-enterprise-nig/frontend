@@ -41,6 +41,10 @@ import {
 import { PoLinkPicker, outstandingOf } from './create-rr/PoLinkPicker'
 import { ReturnedUnitsPanel, type ReturnBlock } from './create-rr/ReturnedUnitsPanel'
 import { ServiceCenterUnitsPanel } from './create-rr/ServiceCenterUnitsPanel'
+import {
+  useServiceCenterPreset,
+  type ServiceCenterPreset,
+} from './create-rr/useServiceCenterPreset'
 import { RrAttachmentsPanel } from './create-rr/RrAttachmentsPanel'
 import { RrDeliveryPanel, type WarehouseOption } from './create-rr/RrDeliveryPanel'
 import { RrLineRow } from './create-rr/RrLineRow'
@@ -78,6 +82,9 @@ type Props = {
   subtitle?: string
   submitLabel?: string
   submittingLabel?: string
+  /** Opens as a Repair/Return from this service center with these units
+   * ticked — the UDS list's "Receive Back". */
+  serviceCenterPreset?: ServiceCenterPreset | null
 }
 
 /** What the form payload has no room for but the screen has to know: the item
@@ -187,6 +194,7 @@ export default function ReceiveStockModal({
   subtitle = 'Record incoming stock into inventory.',
   submitLabel = 'Receive Stock',
   submittingLabel = 'Receiving…',
+  serviceCenterPreset = null,
 }: Props) {
   const {
     control,
@@ -624,6 +632,16 @@ export default function ReceiveStockModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scKey])
 
+  // After the effect above, so a preset's ticks are not cleared by it.
+  useServiceCenterPreset({
+    isOpen,
+    preset: serviceCenterPreset,
+    fromServiceCenter,
+    serviceCenterId: watched.serviceCenterId,
+    setValue,
+    onUnits: (units) => units.forEach((u, i) => pickServiceCenterUnit(u, units.slice(0, i))),
+  })
+
   if (!isOpen) return null
 
   const showErrors = submitted
@@ -886,26 +904,38 @@ export default function ReceiveStockModal({
    * Its actual cost starts at the ticket's estimate (only on the ticket's
    * first unit, since the leg sums its units' costs). */
   function toggleServiceCenterUnit(unit: ServiceCenterUnit, checked: boolean): void {
-    const next = checked
-      ? [...scPicked.filter((p) => p.serialNumberId !== unit.serialNumberId), unit]
-      : scPicked.filter((p) => p.serialNumberId !== unit.serialNumberId)
-    setScPicked(next)
     if (checked) {
-      rememberItem(unit.item.id, {
-        name: unit.item.name,
-        sku: unit.item.sku,
-        isSerialTracked: true,
-        modelNumber: unit.item.modelNumber,
-        brand: unit.item.brand ? { name: unit.item.brand } : null,
-      })
-      const ticketPriced = scPicked.some((p) => p.uds && p.uds.id === unit.uds?.id)
-      const estimate = unit.uds?.repairEstimatedCost
-      if (!ticketPriced && estimate != null) {
-        setScCosts((prev) => ({ ...prev, [unit.serialNumberId]: estimate }))
-      }
-    } else {
-      setScCosts((prev) => ({ ...prev, [unit.serialNumberId]: undefined }))
+      pickServiceCenterUnit(unit, scPicked)
+      return
     }
+    const next = scPicked.filter((p) => p.serialNumberId !== unit.serialNumberId)
+    setScPicked(next)
+    setScCosts((prev) => ({ ...prev, [unit.serialNumberId]: undefined }))
+    replaceWithServiceCenterLines(next)
+  }
+
+  /** Adds one unit to `current` (the ticks so far — passed in so a preset can
+   * tick several in one go without reading stale state). */
+  function pickServiceCenterUnit(unit: ServiceCenterUnit, current: ServiceCenterUnit[]): void {
+    const next = [...current.filter((p) => p.serialNumberId !== unit.serialNumberId), unit]
+    setScPicked(next)
+    rememberItem(unit.item.id, {
+      name: unit.item.name,
+      sku: unit.item.sku,
+      isSerialTracked: true,
+      modelNumber: unit.item.modelNumber,
+      brand: unit.item.brand ? { name: unit.item.brand } : null,
+    })
+    const ticketPriced = current.some((p) => p.uds && p.uds.id === unit.uds?.id)
+    const estimate = unit.uds?.repairEstimatedCost
+    if (!ticketPriced && estimate != null) {
+      setScCosts((prev) => ({ ...prev, [unit.serialNumberId]: estimate }))
+    }
+    replaceWithServiceCenterLines(next)
+  }
+
+  /** The ticked service-center units are the receipt's lines. */
+  function replaceWithServiceCenterLines(next: ServiceCenterUnit[]): void {
     replace(
       next.map((p) => ({
         quantityReceived: 1,

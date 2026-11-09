@@ -224,6 +224,7 @@ export default function AgingReportView() {
                       {AGING_BUCKET_LABELS[b]}
                     </th>
                   ))}
+                  <th className="px-4 py-2 text-right font-semibold">Due Later</th>
                   <th className="px-4 py-2 text-right font-semibold">Unknown</th>
                   <th className="px-4 py-2 text-right font-semibold">Total</th>
                 </tr>
@@ -238,6 +239,9 @@ export default function AgingReportView() {
                         {fmt(branch.subtotal.buckets[b])}
                       </td>
                     ))}
+                    <td className="px-4 py-2 text-right tabular-nums">
+                      {fmt(branch.subtotal.buckets.later)}
+                    </td>
                     <td className="px-4 py-2 text-right tabular-nums text-gray-500">
                       {fmt(branch.subtotal.buckets.unknown)}
                     </td>
@@ -254,6 +258,9 @@ export default function AgingReportView() {
                       {fmt(report.grandTotal.buckets[b])}
                     </td>
                   ))}
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    {fmt(report.grandTotal.buckets.later)}
+                  </td>
                   <td className="px-4 py-2 text-right tabular-nums">
                     {fmt(report.grandTotal.buckets.unknown)}
                   </td>

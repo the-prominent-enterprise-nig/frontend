@@ -18,6 +18,7 @@ import { showToast } from '@/src/components/ui/toast'
 import {
   DrFormSchema,
   DrSubmitSchema,
+  isTicketedRepair,
   type DrFormValues,
 } from '@/src/schema/inventory/delivery-receipts'
 import { saveDeliveryReceipt } from '../_actions/save-delivery-receipt'
@@ -27,17 +28,9 @@ import { getDeliveryReceiptPrint } from '../_actions/get-delivery-receipt-docume
 import { printDeliveryReceipt } from '@/src/libs/print/printDeliveryReceipt'
 import { DR_PURPOSE_CONFIG } from '@/src/libs/inventory/delivery-receipt-purposes'
 import { emptyDrForm } from '../_lib/dr-form-values'
-import { fmtPeso } from '../_lib/dr-format'
 import { DrIssueSection, DrPurposeSection, DrReferenceSection } from './DrFormSections'
 import { DrItemsSection } from './DrItemsSection'
-import {
-  BTN_GHOST,
-  BTN_PRIMARY,
-  BTN_SECONDARY,
-  DrShell,
-  HeaderFigure,
-  NumberChip,
-} from './drFormUi'
+import { BTN_GHOST, BTN_PRIMARY, BTN_SECONDARY, DrShell, NumberChip } from './drFormUi'
 
 const ENTITY_TYPE = 'DeliveryReceipt'
 const BACK_HREF = '/inventory/stock-transaction?tab=delivery-receipts'
@@ -82,6 +75,8 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
     if (!id) return
     showToast({ title: 'Draft saved', status: 'success' })
     await queryClient.invalidateQueries({ queryKey: ['delivery-receipts'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
     if (!draft) router.push(`/inventory/delivery-receipts/${id}`)
     else router.refresh()
   }
@@ -101,6 +96,8 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
     if (doc?.success && doc.data) printDeliveryReceipt(doc.data.dr, doc.data.memo)
     else showToast({ title: 'Saved, but the preview could not load', status: 'error' })
     await queryClient.invalidateQueries({ queryKey: ['delivery-receipts'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
     router.refresh()
   }
 
@@ -131,6 +128,8 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
     }
     showToast({ title: res.message ?? 'Submitted', status: 'success' })
     await queryClient.invalidateQueries({ queryKey: ['delivery-receipts'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
     router.push(`/inventory/delivery-receipts/${id}`)
     router.refresh()
   }
@@ -141,11 +140,12 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
     else router.push(BACK_HREF)
   }
 
-  /** Lines name units on one warehouse's shelf; a new warehouse clears them. */
+  /** Lines name units on one warehouse's shelf; a new warehouse clears them.
+   * A ticketed repair DR's lines are its UDS's units, so they stay. */
   function onWarehouseChange(warehouseId: string): void {
     const hadLines = form.getValues('lines').length > 0
     form.setValue('warehouseId', warehouseId, { shouldDirty: true, shouldValidate: true })
-    if (hadLines) {
+    if (hadLines && !isTicketedRepair(form.getValues())) {
       form.setValue('lines', [], { shouldDirty: true })
       showToast({ title: 'Items cleared — they were picked from the other branch', status: 'info' })
     }
@@ -157,7 +157,6 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
         title={draft ? 'Edit delivery receipt' : 'New delivery receipt'}
         chip={draft && <NumberChip>{draft.drNumber}</NumberChip>}
         subtitle="For stock that leaves the warehouse without a sale. Saving as a draft does not touch stock."
-        headerAside={<EstimatedCost />}
         status={
           draft
             ? `Draft ${draft.drNumber} — nothing moves until it is submitted.`
@@ -191,13 +190,6 @@ export default function DrForm({ draft, preset }: Props): React.JSX.Element {
       </DrShell>
     </FormProvider>
   )
-}
-
-/** The lines' cost at today's estimate — the real cost is stamped on posting. */
-function EstimatedCost(): React.JSX.Element {
-  const lines = useWatch<DrFormValues, 'lines'>({ name: 'lines' })
-  const total = lines.reduce((sum, l) => sum + (l.unitCost ?? 0) * l.quantity, 0)
-  return <HeaderFigure label="Estimated cost" value={fmtPeso(total)} />
 }
 
 function FormActions({
