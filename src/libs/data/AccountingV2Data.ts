@@ -3199,13 +3199,8 @@ export const UnidentifiedBankCredits = {
       '/bank-accounts/unidentified-bank-credits',
       status ? { status } : undefined
     ),
-  record: (body: {
-    bankAccountId: string
-    amount: number
-    creditDate: string
-    bankRef?: string
-    voucherControlNo: string
-  }) => api.post<UnidentifiedBankCredit>('/bank-accounts/unidentified-bank-credits', body),
+  record: (body: { bankAccountId: string; amount: number; creditDate: string; bankRef?: string }) =>
+    api.post<UnidentifiedBankCredit>('/bank-accounts/unidentified-bank-credits', body),
   reclassify: (id: string, body: { targetType: ClearingSettlementType; tpfProviderId?: string }) =>
     api.post<UnidentifiedBankCredit>(
       `/bank-accounts/unidentified-bank-credits/${id}/reclassify`,
