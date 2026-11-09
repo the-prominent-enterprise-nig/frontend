@@ -22,6 +22,10 @@ const SI_PREFIX = `E2ECA${stamp}`
 // so the fixture people differ — and stay unique per run — in letters.
 const LETTERS = String(stamp).replace(/\d/g, (d) => 'ABCDEFGHIJ'[Number(d)])
 const CUSTOMER = `E2E COLLECT ${LETTERS} ALPHA`
+// A second customer whose account has NO branch: the sheet's branch code is one
+// the loader cannot place (about one aging account in five), so it is left
+// unbranched — "enterprise-wide", not someone else's branch.
+const CUSTOMER_NO_BRANCH = `E2E COLLECT ${LETTERS} BRAVO`
 const PASSWORD = process.env.E2E_OWNER_PASSWORD ?? 'dev-prominent-enterprise-2026'
 // A Business Owner is unscoped; this Branch Manager belongs to Bago, and the
 // fixture's account is tagged Ajuy ('AJB') — another branch's.
@@ -87,9 +91,33 @@ const SALE_2 = sheetRow({
   LCP: '10000',
 })
 
+const SALE_NO_BRANCH = sheetRow({
+  CAT: 'A',
+  br: 'ZZZ',
+  'SI No.': `${SI_PREFIX}-3`,
+  'SI Date': '08-15-2024',
+  'Customer Name': CUSTOMER_NO_BRANCH,
+  Term: '12',
+  MI: '1000',
+  'FMI Date': '09-15-2024',
+  DP: '1000',
+  PNV: '12000',
+  OB: '3000',
+  NYD: '1000',
+  totdue: '2000',
+  UNCOLL: '2000',
+  'MI DUE': '1000',
+  'NO ARS': '1',
+  'MOS RUN': '5',
+  "TOTAL PAY'T": '9000',
+  LCP: '10000',
+})
+
 async function loadSheet(page: Page) {
   await gotoReady(page, '/crm/installment-accounts/load-aging')
-  const buffer = Buffer.from([AGING_TEMPLATE_HEADERS.join(','), SALE, SALE_2].join('\n'))
+  const buffer = Buffer.from(
+    [AGING_TEMPLATE_HEADERS.join(','), SALE, SALE_2, SALE_NO_BRANCH].join('\n')
+  )
   // A pick made before the page has hydrated is dropped, so it is repeated
   // until the page answers.
   await expect(async () => {
@@ -100,14 +128,15 @@ async function loadSheet(page: Page) {
     })
     await expect(page.getByText('sales read')).toBeVisible({ timeout: 6_000 })
   }).toPass({ timeout: 30_000 })
-  await page.getByRole('button', { name: 'Load 2 accounts' }).click()
+  await page.getByRole('button', { name: 'Load 3 accounts' }).click()
   await expect(page.getByTestId('aging-load-done')).toBeVisible({ timeout: 60_000 })
 }
 
 async function fixtureCustomerId(page: Page): Promise<string> {
   const found = await page.request.get(`/api/crm/installment-accounts?search=${SI_PREFIX}`)
-  const accounts: { customerId: string }[] = (await found.json()).data ?? []
-  // Two accounts, one customer.
+  const all: { customerId: string; accountNumber: string }[] = (await found.json()).data ?? []
+  // The first customer's two accounts (-1 and -2); -3 belongs to the unbranched one.
+  const accounts = all.filter((a) => /-[12]$/.test(a.accountNumber))
   expect(accounts).toHaveLength(2)
   expect(new Set(accounts.map((a) => a.customerId)).size).toBe(1)
   return accounts[0].customerId
@@ -269,5 +298,78 @@ test("another branch's manager reads the whole customer ledger, but is not offer
       timeout: 5_000,
     })
   }).toPass({ timeout: 40_000 })
+  await context.close()
+})
+
+test("branch managers list their own branch's accounts and the unbranched ones — never another branch's", async ({
+  browser,
+}, testInfo) => {
+  // The Installment Accounts list used to match the manager's own branch only,
+  // so an account with no branch was in Collections and the ledger but missing
+  // from this list (and the Aging report) for every branch user.
+  const context = await browser.newContext({
+    baseURL: testInfo.project.use.baseURL,
+    storageState: { cookies: [], origins: [] },
+  })
+  const page = await context.newPage()
+  await loginAs(page, BAGO_MANAGER, PASSWORD)
+
+  const found = async (si: number) => {
+    const res = await page.request.get(`/api/crm/installment-accounts?search=${SI_PREFIX}-${si}`)
+    expect(res.ok()).toBeTruthy()
+    return ((await res.json()).data ?? []) as { accountNumber: string }[]
+  }
+  // No branch: listed. Tagged Ajuy (another branch's): not.
+  expect(await found(3)).toHaveLength(1)
+  expect(await found(1)).toHaveLength(0)
+  expect(await found(2)).toHaveLength(0)
+
+  // The Business Owner still lists all three.
+  const owner = await browser.newContext({
+    baseURL: testInfo.project.use.baseURL,
+    storageState: 'e2e/.auth/business-owner.json',
+  })
+  const res = await owner.request.get(`/api/crm/installment-accounts?search=${SI_PREFIX}`)
+  expect(((await res.json()).data ?? []) as unknown[]).toHaveLength(3)
+  await owner.close()
+  await context.close()
+})
+
+test("the customer page lists the customer's aging accounts, for every branch", async ({
+  browser,
+}, testInfo) => {
+  // A customer from the aging has no POS plan, so the page used to say "No
+  // installment plans" and show nothing else about what they owe.
+  const owner = await browser.newContext({
+    baseURL: testInfo.project.use.baseURL,
+    storageState: 'e2e/.auth/business-owner.json',
+  })
+  const customerId = await fixtureCustomerId(await owner.newPage())
+  const ownerPage = await owner.newPage()
+  await gotoReady(ownerPage, `/crm/customers/${customerId}`)
+  const section = ownerPage.getByTestId('aging-accounts')
+  await expect(section).toBeVisible({ timeout: 30_000 })
+  const rows = section.getByTestId('aging-account-row')
+  await expect(rows).toHaveCount(2)
+  // SI-1 had ₱1,000 collected in the first test, SI-2 is untouched.
+  await expect(rows.filter({ hasText: `${SI_PREFIX}-1` })).toContainText('₱7,000.00')
+  await expect(rows.filter({ hasText: `${SI_PREFIX}-2` })).toContainText('₱5,000.00')
+  await expect(rows.first()).toContainText('Ajuy')
+  // The POS-plan list is still just POS plans.
+  await expect(ownerPage.getByText('No installment plans for this customer.')).toBeVisible()
+  await owner.close()
+
+  // A manager of another branch sees the same two accounts: the page is the
+  // customer's, like the ledger.
+  const context = await browser.newContext({
+    baseURL: testInfo.project.use.baseURL,
+    storageState: { cookies: [], origins: [] },
+  })
+  const page = await context.newPage()
+  await loginAs(page, BAGO_MANAGER, PASSWORD)
+  await gotoReady(page, `/crm/customers/${customerId}`)
+  await expect(page.getByTestId('aging-accounts').getByTestId('aging-account-row')).toHaveCount(2, {
+    timeout: 30_000,
+  })
   await context.close()
 })

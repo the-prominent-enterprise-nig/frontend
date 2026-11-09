@@ -24,6 +24,7 @@ import TablePagination from '@/src/components/common/TablePagination'
 import { TransactionDetail } from '@/src/app/(app)/(dashboard)/pos/_components/TransactionDetail'
 import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
+import AgingAccountsList from '@/src/components/crm/AgingAccountsList'
 import { REMINDERS_ENABLED } from '@/src/libs/features'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { type SessionUser } from '@/src/libs/guards/permission'
@@ -176,6 +177,9 @@ export default function Customer360({
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const [installmentSchedules, setInstallmentSchedules] = useState<InstallmentSchedule[]>([])
+  // Accounts loaded from the aging sheet — no POS plan behind them, so they are
+  // kept out of the plan lists below and shown in their own section.
+  const [agingAccounts, setAgingAccounts] = useState<InstallmentSchedule[]>([])
   const [installmentLoading, setInstallmentLoading] = useState(true)
   const [installmentError, setInstallmentError] = useState<string | null>(null)
   // Scenario 23 Gap 2 (developer-requested redesign, 2026-08-09) — each
@@ -240,9 +244,11 @@ export default function Customer360({
   }, [id])
 
   useEffect(() => {
-    customersApi.getInstallmentSchedules(id).then((res) => {
-      if (res.success && res.data) setInstallmentSchedules(res.data)
-      else setInstallmentError(res.error ?? 'Failed to load installment plans')
+    customersApi.getInstallmentSchedules(id, { withAgingAccounts: true }).then((res) => {
+      if (res.success && res.data) {
+        setInstallmentSchedules(res.data.filter((s) => !s.isAgingAccount))
+        setAgingAccounts(res.data.filter((s) => s.isAgingAccount))
+      } else setInstallmentError(res.error ?? 'Failed to load installment plans')
       setInstallmentLoading(false)
     })
   }, [id])
@@ -583,6 +589,12 @@ export default function Customer360({
           )}
         </section>
       </div>
+
+      {agingAccounts.length > 0 && (
+        <div className="mt-4">
+          <AgingAccountsList plans={agingAccounts} />
+        </div>
+      )}
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <section className="rounded-xl border border-gray-200 bg-white p-5">
