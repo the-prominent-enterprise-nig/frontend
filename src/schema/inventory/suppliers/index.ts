@@ -64,6 +64,7 @@ export const CreateSupplierFormSchema = z.object({
   status: z.enum(SUPPLIER_STATUSES).optional(),
   notes: z.string().max(1000).optional(),
   type: z.enum(SUPPLIER_TYPES).optional(),
+  isServiceCenter: z.boolean().optional(),
   businessType: z.string().max(100).optional(),
   alphanumericTaxCode: z.string().max(50).optional(),
   taxRate: z.string().max(20).optional(),
@@ -111,6 +112,8 @@ export const SupplierListItemSchema = z.object({
   onboardingStatus: z.enum(SUPPLIER_ONBOARDING_STATUSES),
   status: z.enum(SUPPLIER_STATUSES),
   type: z.enum(SUPPLIER_TYPES),
+  // Repairs units for us — offered in the repair-provider pickers.
+  isServiceCenter: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
