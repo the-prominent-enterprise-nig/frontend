@@ -20,6 +20,7 @@ import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import { printCustomerLedgerDocument } from '@/src/libs/print/printInventoryDocument'
 import type { InstallmentLedger } from '@/src/schema/crm/types'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
+import ExistingAccountLedger from '@/src/components/crm/ExistingAccountLedger'
 import {
   LEDGER_ACTION,
   LedgerCard,
@@ -132,6 +133,19 @@ export function InstallmentLedgerBody({
     ledger.account.isXDeal && ledger.account.status === 'closed'
       ? (ledger.rows.find((r) => r.description === 'X-Deal credit memo')?.ref ?? null)
       : null
+
+  // Docket NIG #38 — an account carried over from the aging sheet reads as the
+  // client's "Existing customer" ledger, not the paper-form layout below.
+  if (ledger.existing) {
+    return (
+      <ExistingAccountLedger
+        ledger={ledger}
+        existing={ledger.existing}
+        accountId={accountId}
+        showAccountLink={showAccountLink}
+      />
+    )
+  }
 
   return (
     <>

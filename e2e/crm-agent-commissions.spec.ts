@@ -118,6 +118,104 @@ test.describe('CRM Sales Agents — the agent page (Scenario 78)', () => {
     await expect(page.locator('tbody tr', { hasText: `${NAME} Y` })).toHaveCount(0)
   })
 
+  // The page's Date is the day the commission (or, failing that, the SMI) was
+  // released — not the day of the sale — and a From/To range filters on it.
+  // Rows need a credited POS sale, which a spec can't make cheaply, so the
+  // invoices response is stubbed; the sale dates are deliberately far from the
+  // release dates so a column still showing the sale date would fail.
+  test('Date is the released date, and a date range filters on it', async ({ page }) => {
+    const release = (n: string, date: string, amount: number, isDraft = false) => ({
+      expenseId: `exp-${n}`,
+      voucherNumber: `V-${n}`,
+      date,
+      amount,
+      isDraft,
+    })
+    const sale = (n: string, over: Record<string, unknown>) => ({
+      id: `sale-${n}`,
+      date: '2026-09-01T02:00:00.000Z',
+      salesInvoiceNumber: `SI-${n}`,
+      transactionNumber: `POS-${n}`,
+      agentId,
+      agentName: NAME,
+      customerName: `Customer ${n}`,
+      type: 'cash',
+      subtotal: 1000,
+      totalAmount: 1000,
+      commission: null,
+      released: null,
+      smi: null,
+      smiReleased: null,
+      ...over,
+    })
+    const invoices = [
+      // Commission out Nov 5 — the sale itself was Sep 1.
+      sale('A', {
+        commission: 500,
+        released: release('A', '2026-11-05T00:00:00.000Z', 500),
+      }),
+      sale('B', {
+        commission: 300,
+        released: release('B', '2026-11-08T00:00:00.000Z', 300),
+      }),
+      // Nothing released.
+      sale('C', {}),
+      // Only the SMI is out — its date stands in.
+      sale('D', {
+        smi: 100,
+        smiReleased: release('D', '2026-11-07T00:00:00.000Z', 100),
+      }),
+      // A draft isn't paid yet: no amount, no date.
+      sale('E', { released: release('E', '2026-11-09T00:00:00.000Z', 0, true) }),
+    ]
+    await page.route('**/crm/agents/*/invoices', (route) => route.fulfill({ json: invoices }))
+
+    await gotoReady(page, `/crm/agents/${agentId}`)
+    const rows = page.locator('tbody tr')
+    await expect(page.getByRole('columnheader', { name: 'Released Date' })).toBeVisible()
+    await expect(rows).toHaveCount(5)
+
+    // Newest release first, the unreleased and the draft after, with a dash.
+    const order = async () => (await rows.locator('td:nth-child(2)').allInnerTexts()).join(',')
+    await expect(rows.nth(0)).toContainText('Nov 8, 2026')
+    await expect.poll(order).toBe('SI-B,SI-D,SI-A,SI-C,SI-E')
+    await expect(rows.nth(1).locator('td').first()).toHaveText('Nov 7, 2026')
+    await expect(rows.nth(2).locator('td').first()).toHaveText('Nov 5, 2026')
+    await expect(rows.nth(3).locator('td').first()).toHaveText('-')
+    await expect(rows.nth(4).locator('td').first()).toHaveText('-')
+    await expect(page.getByText('Sep 1, 2026')).toHaveCount(0)
+    await expect(page.getByText('Clear')).toHaveCount(0)
+
+    // From – To are inclusive and cut the tiles down with the list.
+    const tile = (label: string) =>
+      page.getByText(label, { exact: true }).first().locator('xpath=following-sibling::p')
+    await expect(tile('Invoices')).toHaveText('5')
+    await expect(tile('Commission')).toHaveText('₱800.00')
+    await expect(tile('SMI')).toHaveText('₱100.00')
+
+    await page.getByLabel('Released from').fill('2026-11-07')
+    await page.getByLabel('Released to').fill('2026-11-08')
+    await expect.poll(order).toBe('SI-B,SI-D')
+    await expect(tile('Invoices')).toHaveText('2')
+    await expect(tile('Commission')).toHaveText('₱300.00')
+    await expect(tile('SMI')).toHaveText('₱100.00')
+
+    // One side alone is a bound too.
+    await page.getByLabel('Released from').fill('')
+    await page.getByLabel('Released to').fill('2026-11-05')
+    await expect.poll(order).toBe('SI-A')
+
+    await page.getByLabel('Released from').fill('2026-12-01')
+    await page.getByLabel('Released to').fill('')
+    await expect(page.getByText('Nothing was released in this date range.')).toBeVisible()
+    await expect(tile('Invoices')).toHaveText('0')
+
+    await page.getByRole('button', { name: 'Clear' }).click()
+    await expect(page.getByLabel('Released from')).toHaveValue('')
+    await expect(page.getByLabel('Released to')).toHaveValue('')
+    await expect(rows).toHaveCount(5)
+  })
+
   test('the list pages 20 at a time', async ({ page }) => {
     await openList(page)
     const footer = page.getByText(/^Showing \d+–\d+ of \d+ agents?$/)

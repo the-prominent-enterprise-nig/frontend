@@ -12,6 +12,8 @@
 import { test, expect } from '@playwright/test'
 import { fillStable, gotoReady } from './utils'
 
+const ROLE_PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
+
 const transferIds: string[] = []
 
 test.afterEach(async ({ request }) => {
@@ -36,6 +38,10 @@ async function recordTransfer(
       destinationBankAccountId: destination.id,
       amount: 750,
       date,
+      // Cleared the day it was made. Left out, the edit form opens on "On a later
+      // date" and insists on one before it will save, which is not what these
+      // specs are about.
+      clearingDate: date,
       reference: `E2E-OWNER-${Date.now()}`,
     },
   })
@@ -112,5 +118,102 @@ test.describe('New Receipts — the owner corrects a receipt', () => {
     ])
     expect(saved.status()).toBe(200)
     await expect(page.getByTestId('receipt-edit-reason')).toHaveCount(0, { timeout: 10_000 })
+  })
+})
+
+test.describe('New Receipts — money the server fixes is not offered for editing', () => {
+  test('a settlement receipt shows its account read-only and asks for no correction reason', async ({
+    page,
+  }) => {
+    // The server refuses a new account or amount on a settlement receipt
+    // (settlement_receipt_amounts_locked), so the form must not offer one: a
+    // changed Account used to open a Correction Reason box for a save that could
+    // never go through.
+    const created = await page.request.post('/api/accounting/acknowledgement-receipts', {
+      data: {
+        payerName: `E2E locked ${Date.now()}`,
+        amount: 640,
+        grossAmount: 640,
+        paymentDate: '2026-10-30',
+        receiptType: 'ACKNOWLEDGEMENT',
+      },
+    })
+    expect(created.status()).toBe(201)
+    const receipt = await created.json()
+
+    await gotoReady(page, `/pos/collections/acknowledgement/view?id=${receipt.id}&action=edit`)
+    await expect(page.getByTestId('receipt-edit-reason')).toBeVisible({ timeout: 15_000 })
+
+    await expect(page.getByTestId('receipt-account-locked')).toBeVisible()
+    await expect(page.getByText('Correction Reason', { exact: true })).toHaveCount(0)
+    await expect(page.getByLabel('Net amount')).toHaveJSProperty('readOnly', true)
+
+    // Everything else still edits and saves.
+    await fillStable(page.getByTestId('receipt-edit-reason'), 'Keyed the wrong day')
+    const [saved] = await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.url().includes(`/api/accounting/acknowledgement-receipts/${receipt.id}`) &&
+          r.request().method() === 'PATCH'
+      ),
+      page.getByRole('button', { name: 'Save', exact: true }).click(),
+    ])
+    expect(saved.status()).toBe(200)
+  })
+})
+
+test.describe('Audit Logs — an owner edit shows why it was made', () => {
+  test('the reason sits on the row, and above the before/after when it is opened', async ({
+    page,
+  }) => {
+    const { id } = await recordTransfer(page, '2026-10-30')
+    const reason = `E2E reason ${Date.now()}`
+    const patched = await page.request.patch(`/api/bank-accounts/transfers/${id}`, {
+      data: { date: '2026-11-02', clearingDate: '2026-11-02', editReason: reason },
+    })
+    expect(patched.status()).toBe(200)
+
+    await gotoReady(page, '/settings/audit-logs')
+    const onRow = page.getByTestId('audit-log-reason').filter({ hasText: reason })
+    await expect(onRow).toBeVisible({ timeout: 15_000 })
+
+    await onRow.locator('xpath=ancestor::tr').click()
+    await expect(
+      page.getByTestId('audit-log-reason-detail').filter({ hasText: reason })
+    ).toBeVisible()
+  })
+})
+
+test.describe('Signing in as someone else without a page reload', () => {
+  test("the new user does not get the previous user's reason box", async ({ page }) => {
+    // The browser keeps one React Query cache for the tab. Logging out and in
+    // again is a client navigation, so until the cache is cleared at sign-in the
+    // Accountant drew the owner's version of the screen for the first minute —
+    // the reason box and every other control the owner's permissions open.
+    const { id } = await recordTransfer(page, '2026-10-30')
+    const transferUrl = `/accounting/fund-transfers/${id}`
+
+    await gotoReady(page, transferUrl)
+    await page.getByRole('button', { name: 'Edit' }).click()
+    await expect(page.getByTestId('transfer-edit-reason')).toBeVisible({ timeout: 15_000 })
+
+    // Out through the profile menu, then in as the Accountant on the same page
+    // load (no goto in between, which would reset the cache and hide the bug).
+    await page.locator('header button.prominent-gradient').click()
+    await page.getByRole('button', { name: 'Logout' }).click()
+    await expect(page).toHaveURL(/\/login/)
+    await expect(async () => {
+      await fillStable(page.locator('#email'), 'technova.accounting@test.com')
+      await fillStable(page.locator('#password'), ROLE_PASSWORD)
+      await page.click('button[type="submit"]')
+      await expect(page).not.toHaveURL(/\/login(\?|$)/, { timeout: 3_000 })
+    }).toPass({ timeout: 20_000 })
+
+    await page.evaluate((url) => (window as any).next.router.push(url), transferUrl)
+    await expect(page).toHaveURL(new RegExp(`${transferUrl}$`))
+    await page.getByRole('button', { name: 'Edit' }).click()
+    // The Accountant edits as before: clearing date and reference, no reason box.
+    await expect(page.getByTestId('transfer-edit-date')).toHaveCount(0)
+    await expect(page.getByTestId('transfer-edit-reason')).toHaveCount(0)
   })
 })

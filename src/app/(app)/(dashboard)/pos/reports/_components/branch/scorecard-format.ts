@@ -26,10 +26,35 @@ const MONTHS = [
   'December',
 ]
 
-/** '2026-10-01', '2026-10-31' → 'OCTOBER 1–31, 2026'. */
-export function periodLabel(from: string, asOf: string): string {
-  const month = MONTHS[Number(from.slice(5, 7)) - 1].toUpperCase()
-  return `${month} ${Number(from.slice(8))}–${Number(asOf.slice(8))}, ${from.slice(0, 4)}`
+const month = (day: string): string => MONTHS[Number(day.slice(5, 7)) - 1]
+
+/** '2026-10-05' → 'Oct 5'. */
+export function shortDay(day: string): string {
+  return `${month(day).slice(0, 3)} ${Number(day.slice(8))}`
+}
+
+/**
+ * The From–To period as a heading:
+ *   2026-10-01 → 2026-10-31  'OCTOBER 1–31, 2026'
+ *   2026-09-15 → 2026-11-09  'SEPTEMBER 15 – NOVEMBER 9, 2026'
+ *   2025-12-01 → 2026-01-31  'DECEMBER 1, 2025 – JANUARY 31, 2026'
+ */
+export function periodLabel(from: string, to: string): string {
+  const day = (d: string): number => Number(d.slice(8))
+  const year = to.slice(0, 4)
+  if (from.slice(0, 7) === to.slice(0, 7)) {
+    return `${month(from)} ${day(from)}–${day(to)}, ${year}`.toUpperCase()
+  }
+  const start =
+    from.slice(0, 4) === year
+      ? `${month(from)} ${day(from)}`
+      : `${month(from)} ${day(from)}, ${from.slice(0, 4)}`
+  return `${start} – ${month(to)} ${day(to)}, ${year}`.toUpperCase()
+}
+
+/** "Figures through Nov 9." when the period runs past today, else ''. */
+export function throughNote(period: { to: string; asOf: string }): string {
+  return period.asOf < period.to ? ` Figures through ${shortDay(period.asOf)}.` : ''
 }
 
 /**

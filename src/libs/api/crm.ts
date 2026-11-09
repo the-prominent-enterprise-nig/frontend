@@ -193,8 +193,12 @@ export const customersApi = {
     api.get<DuplicateCheckResult>('/crm/customers/check-duplicate', params),
   update: (id: string, body: UpdateCustomerInput) =>
     api.patch<Customer>(`/crm/customers/${id}`, body),
-  getInstallmentSchedules: (id: string) =>
-    api.get<InstallmentSchedule[]>(`/pos/customers/${id}/installment-schedules`),
+  getInstallmentSchedules: (id: string, options: { withAgingAccounts?: boolean } = {}) =>
+    // The customer pages ask for every branch's loaded (aging-sheet) accounts
+    // too ('all'), flagged isAgingAccount, and list them apart from the POS plans.
+    api.get<InstallmentSchedule[]>(
+      `/pos/customers/${id}/installment-schedules${options.withAgingAccounts ? '?withAgingAccounts=all' : ''}`
+    ),
   remove: (id: string) => api.delete(`/crm/customers/${id}`),
   listDuplicates: () => api.get<DuplicatePair[]>('/crm/customers/duplicates'),
   dismissDuplicate: (customerAId: string, customerBId: string) =>

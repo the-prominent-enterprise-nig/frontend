@@ -34,6 +34,7 @@ type ItemScopedFormValues = FieldValues & {
     estimatedPrice?: number
     itemLabel?: string
     serialNumberId?: string
+    priceOverridden?: boolean
     isSerialTracked?: boolean
     serialNumberLabel?: string
   }[]
@@ -129,6 +130,8 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
   const serialNumberIdPath = `items.${index}.serialNumberId` as Path<T>
   const serialNumberLabelPath = `items.${index}.serialNumberLabel` as Path<T>
   const isSerialTrackedPath = `items.${index}.isSerialTracked` as Path<T>
+  const priceOverriddenPath = `items.${index}.priceOverridden` as Path<T>
+  const priceOverridden = useWatch({ control, name: priceOverriddenPath }) as boolean | undefined
   const itemId = useWatch({ control, name: itemIdPath }) as string | undefined
   const isSerialTracked = useWatch({ control, name: isSerialTrackedPath }) as boolean | undefined
   const serialNumberId = useWatch({ control, name: serialNumberIdPath }) as string | undefined
@@ -206,6 +209,9 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
                     setValue(serialNumberLabelPath, undefined as never)
                     // Until the new item's search result says otherwise.
                     setValue(isSerialTrackedPath, false as never)
+                    // The override was made on the item the cart carried. A
+                    // different item was not priced by it.
+                    setValue(priceOverriddenPath, undefined as never)
                   }
                   field.onChange(id)
                 }}
@@ -237,6 +243,17 @@ function CreditApplicationItemRow<T extends ItemScopedFormValues>({
                 "₱10744.67" with no thousands separator. */}
             {itemMeta.sellingPrice != null ? formatPeso(Number(itemMeta.sellingPrice)) : '—'}
           </span>
+        </div>
+      )}
+
+      {/* Nov UAT — read-only: the override is made at the till and comes with
+          the cart, it is not something to tick here. It is what allows ₱0 down. */}
+      {itemId && priceOverridden && (
+        <div
+          data-testid="credit-application-item-overridden"
+          className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800"
+        >
+          Price overridden at the till — this application may take a ₱0 down payment.
         </div>
       )}
 
