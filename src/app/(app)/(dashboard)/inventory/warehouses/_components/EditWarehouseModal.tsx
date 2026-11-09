@@ -10,6 +10,12 @@ import {
   WarehouseSummary,
 } from '@/src/schema/inventory/warehouses'
 import type { ApiResponse } from '@/src/libs/api/client'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
+
+const STATUS_OPTIONS = [
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+]
 
 type Props = {
   isOpen: boolean
@@ -105,13 +111,12 @@ export default function EditWarehouseModal({
                 name="status"
                 control={control}
                 render={({ field }) => (
-                  <select
-                    {...field}
-                    className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
+                  <SearchableSelect
+                    value={field.value ?? 'active'}
+                    onChange={(v) => field.onChange(v || 'active')}
+                    options={STATUS_OPTIONS}
+                    portal
+                  />
                 )}
               />
             </div>
@@ -164,7 +169,7 @@ export default function EditWarehouseModal({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+              className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-sm font-medium text-white hover:bg-[#4a189b] disabled:opacity-60"
             >
               {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
               {isSubmitting ? 'Saving…' : 'Save Changes'}

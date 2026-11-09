@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { SUPPLIER_STATUSES } from '../suppliers'
 
 /**
  * A service center is a Supplier flagged `isServiceCenter` — it repairs units
@@ -8,10 +7,12 @@ import { SUPPLIER_STATUSES } from '../suppliers'
  * accounting fields (VAT, EWT, terms, bank accounts) stay with
  * Accounting → Suppliers.
  */
+export const SERVICE_CENTER_STATUSES = ['active', 'inactive'] as const
+
 export const ServiceCenterFormSchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(255),
   address: z.string().max(500).optional(),
-  status: z.enum(SUPPLIER_STATUSES),
+  status: z.enum(SERVICE_CENTER_STATUSES),
 })
 
 export type ServiceCenterFormValues = z.infer<typeof ServiceCenterFormSchema>

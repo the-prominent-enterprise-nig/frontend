@@ -9,6 +9,7 @@ import { SUPPLIER_ACCESS } from '@/src/libs/guards/shared-ownership'
 import { WarehouseList } from '../../warehouses/_components'
 import { CostingConfigForm } from '../../settings/_components'
 import { ServiceCenterList } from '../../service-centers/_components/ServiceCenterList'
+import { PAGE_INNER, PAGE_SHELL } from './masterDataChrome'
 
 type MasterDataTab = NavTab & { icon: LucideIcon; permissions: string[] }
 
@@ -45,9 +46,11 @@ function TabBody({ id, session }: { id: string; session: SessionUser }) {
       return <ServiceCenterList session={session} />
     case 'settings':
       return (
-        <div className="mx-auto w-full max-w-[1560px] p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
-          <h1 className="mb-[14px] text-[21px] font-semibold tracking-[-0.015em]">Settings</h1>
-          <CostingConfigForm session={session} />
+        <div className={PAGE_SHELL}>
+          <div className={PAGE_INNER}>
+            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Settings</h1>
+            <CostingConfigForm session={session} />
+          </div>
         </div>
       )
     default:

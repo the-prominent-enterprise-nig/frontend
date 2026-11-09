@@ -26,14 +26,16 @@ const EMPTY: ServiceCenterFormValues = { name: '', address: '', status: 'active'
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
   { value: 'inactive', label: 'Inactive' },
-  { value: 'blacklisted', label: 'Blacklisted' },
 ]
 
 const INPUT =
   'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none placeholder:text-ink-faint focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
 function toFormValues(sc: SupplierListItem): ServiceCenterFormValues {
-  return { name: sc.name, address: sc.address ?? '', status: sc.status }
+  // Only active / inactive are offered; a supplier blacklisted from
+  // Accounting opens as inactive here.
+  const status = sc.status === 'active' ? 'active' : 'inactive'
+  return { name: sc.name, address: sc.address ?? '', status }
 }
 
 function Field({
@@ -81,7 +83,7 @@ function Footer({
         type="submit"
         form="service-center-form"
         disabled={isSubmitting}
-        className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+        className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-sm font-medium text-white hover:bg-[#4a189b] disabled:opacity-60"
       >
         {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
         {isSubmitting ? 'Saving…' : isEdit ? 'Save Changes' : 'Add Service Center'}
@@ -166,21 +168,20 @@ export function ServiceCenterFormModal({
           />
         </Field>
 
-        {isEdit && (
-          <Field label="Status">
-            <Controller
-              name="status"
-              control={control}
-              render={({ field }) => (
-                <SearchableSelect
-                  value={field.value}
-                  onChange={(v) => field.onChange(v || 'active')}
-                  options={STATUS_OPTIONS}
-                />
-              )}
-            />
-          </Field>
-        )}
+        <Field label="Status">
+          <Controller
+            name="status"
+            control={control}
+            render={({ field }) => (
+              <SearchableSelect
+                value={field.value}
+                onChange={(v) => field.onChange(v || 'active')}
+                options={STATUS_OPTIONS}
+                portal
+              />
+            )}
+          />
+        </Field>
       </form>
     </Modal>
   )
