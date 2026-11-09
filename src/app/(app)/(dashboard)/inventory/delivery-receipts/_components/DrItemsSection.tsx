@@ -34,7 +34,7 @@ export const EMPTY_LINE: DrLineFormValues = {
 const CUSTOMER_UNIT_STATUSES = ['sold', 'in_repair', 'defective', 'returned', 'in_stock']
 
 const GRID =
-  'grid grid-cols-1 gap-2 md:grid-cols-[minmax(180px,1.4fr)_minmax(90px,.8fr)_minmax(150px,1fr)_88px_110px_32px] md:items-start'
+  'grid grid-cols-1 gap-2 md:grid-cols-[minmax(180px,1.4fr)_minmax(90px,.8fr)_minmax(150px,1fr)_88px_32px] md:items-start'
 
 export function DrItemsSection(): React.JSX.Element {
   const { control, formState } = useFormContext<DrFormValues>()
@@ -58,7 +58,6 @@ export function DrItemsSection(): React.JSX.Element {
           <span>Brand</span>
           <span>Serial no.</span>
           <span>Qty</span>
-          <span className="text-right">Unit cost</span>
           <span />
         </div>
       )}
@@ -228,7 +227,6 @@ function DrLineRow({
         />
         {errors?.quantity?.message && <FieldError text={errors.quantity.message} />}
       </div>
-      <UnitCostCell index={index} />
       <Tooltip label="Remove item">
         <button
           type="button"
@@ -239,36 +237,6 @@ function DrLineRow({
           <X className="h-3.5 w-3.5" />
         </button>
       </Tooltip>
-    </div>
-  )
-}
-
-/** Starts at the system estimate; whatever is typed here is the cost the
- * line leaves at, in the stock ledger, the debit memo and the journal entry. */
-function UnitCostCell({ index }: { index: number }): React.JSX.Element {
-  const { control, setValue, formState } = useFormContext<DrFormValues>()
-  const error = formState.errors.lines?.[index]?.unitCost?.message
-  return (
-    <div className="flex flex-col gap-1">
-      <Controller
-        control={control}
-        name={`lines.${index}.unitCost`}
-        render={({ field }) => (
-          <input
-            type="number"
-            min={0}
-            step="0.01"
-            value={field.value ?? ''}
-            onChange={(e) => {
-              field.onChange(e.target.value === '' ? null : Number(e.target.value))
-              setValue(`lines.${index}.costTyped`, e.target.value !== '', { shouldDirty: true })
-            }}
-            className={`${INPUT} text-right tabular-nums`}
-            aria-label="Unit cost"
-          />
-        )}
-      />
-      {error && <FieldError text={error} />}
     </div>
   )
 }
@@ -285,20 +253,41 @@ function SerialCell({
   warehouseId: string
 }): React.JSX.Element {
   const { control, setValue, formState } = useFormContext<DrFormValues>()
-  const [lines, purpose] = useWatch({ control, name: ['lines', 'purpose'] })
+  const [lines, purpose, customerId] = useWatch({
+    control,
+    name: ['lines', 'purpose', 'customerId'],
+  })
   const line = lines[index]
   const customerUnit = isCustomerUnitPurpose(purpose)
+  // A redeemed unit goes back only to the customer it was repossessed from.
+  const redeemed = purpose === 'redeemed_unit'
   const serials = useQuery({
-    queryKey: ['dr-serials', customerUnit ? 'customer' : warehouseId, line.itemId],
+    queryKey: [
+      'dr-serials',
+      customerUnit ? 'customer' : warehouseId,
+      line.itemId,
+      redeemed ? customerId : '',
+    ],
     queryFn: () =>
       customerUnit
         ? getSerialNumbers({ itemId: line.itemId, limit: 500 })
-        : getSerialNumbers({ warehouseId, itemId: line.itemId, status: 'in_stock', limit: 500 }),
-    enabled: line.isSerialTracked && !!warehouseId && !!line.itemId,
+        : getSerialNumbers({
+            warehouseId,
+            itemId: line.itemId,
+            status: 'in_stock',
+            limit: 500,
+            repossessedFromCustomerId: redeemed ? customerId : undefined,
+          }),
+    enabled: line.isSerialTracked && !!warehouseId && !!line.itemId && (!redeemed || !!customerId),
     staleTime: 30_000,
   })
   if (!line.isSerialTracked) {
     return <div className={`${INPUT} flex items-center text-ink-subtle`}>Not serialized</div>
+  }
+  if (redeemed && !customerId) {
+    return (
+      <div className={`${INPUT} flex items-center text-ink-subtle`}>Pick the customer first</div>
+    )
   }
   const pickedElsewhere = new Set(
     lines.flatMap((l, i) => (i === index ? [] : l.serials.map((s) => s.id)))
@@ -334,7 +323,7 @@ function SerialCell({
         options={options}
         loading={serials.isLoading}
         loadingLabel="Loading units…"
-        placeholder="Pick serials…"
+        placeholder={redeemed ? 'Units repossessed from this customer…' : 'Pick serials…'}
         summaryNoun={`of ${line.quantity} serials`}
         ariaLabel="Serial numbers"
         portal

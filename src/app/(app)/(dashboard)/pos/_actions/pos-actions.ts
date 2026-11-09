@@ -664,6 +664,9 @@ export async function itemLookup(
         requiresSecondarySerial: Boolean(item.requiresSecondarySerial),
         brand: (item.brand as { id: string; name: string } | null | undefined) ?? null,
         category: (item.category as { id: string; name: string } | null | undefined) ?? null,
+        // Docket #28 — a price override names the unit's Type; this mapping
+        // is a whitelist, so the field has to be listed here to reach checkout.
+        itemType: (item.itemType as { id: string; name: string } | null | undefined) ?? null,
         modelNumber: (item.modelNumber as string | null | undefined) ?? null,
       }
     })

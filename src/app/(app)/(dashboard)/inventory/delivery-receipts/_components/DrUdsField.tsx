@@ -2,8 +2,8 @@
 
 /* Scenario 72 Part 7 — the repair ticket a repair-purpose DR moves. The DR
  * replaces the UDS's own "Send to Service Centre" / "Release to Customer"
- * steps, so the unit, the warehouse and the recipient all come from the
- * sheet; the backend derives them again on save, this only shows them.
+ * steps, so the unit and the recipient come from the sheet (the backend
+ * derives them again on save). The issuing branch is only prefilled.
  * Optional: without a ticket the DR names its own units and recipient (one
  * to the service center then opens its ticket on approval). */
 
@@ -57,7 +57,10 @@ export function DrUdsField({ error }: { error?: string }): React.JSX.Element {
     setValue('udsId', uds.id, opts)
     setValue('udsLabel', uds.code, opts)
     setValue('udsFixesParty', !!party, opts)
-    if (uds.warehouseId) setValue('warehouseId', uds.warehouseId, opts)
+    // Where the unit is now (Main once a transfer took it there), falling
+    // back to the ticket's intake branch. Still editable on the form.
+    const location = uds.lines[0]?.serialNumber.currentWarehouseId ?? uds.warehouseId
+    if (location) setValue('warehouseId', location, opts)
     setValue('lines', udsLines(uds), opts)
     // A ticket not yet bound to a provider leaves the DR's own pick alone.
     if (!party) return

@@ -86,7 +86,7 @@ export default function ReceiveFromProviderModal({
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-6 py-4">
           <div>
             <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#17171c]">
-              Receive from Service Centre
+              Receive from Service Center
             </h2>
             <p className="mt-0.5 font-mono text-xs text-zinc-400">{uds.code}</p>
           </div>
