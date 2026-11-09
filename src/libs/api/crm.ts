@@ -344,7 +344,15 @@ export const installmentAccountsApi = {
       tags: ['crm:installment-accounts'],
     }),
   get: (id: string) => api.get<InstallmentAccountDetail>(`/crm/installment-accounts/${id}`),
-  getLedger: (id: string) => api.get<InstallmentLedger>(`/crm/installment-accounts/${id}/ledger`),
+  /** `withCustomerReceipts` lays the customer's acknowledgement receipts on the
+   * plan's ledger as credit rows (and moves its header figures to match). A
+   * receipt is a credit on the customer, not on one plan, so ask for it only
+   * where this plan is all the customer has — see CustomerLedgerView's print. */
+  getLedger: (id: string, options: { withCustomerReceipts?: boolean } = {}) =>
+    api.get<InstallmentLedger>(
+      `/crm/installment-accounts/${id}/ledger`,
+      options.withCustomerReceipts ? { withCustomerReceipts: true } : undefined
+    ),
   create: (body: CreateInstallmentAccountInput) =>
     api.post<InstallmentAccountDetail>('/crm/installment-accounts', body),
   update: (id: string, body: UpdateInstallmentAccountInput) =>
