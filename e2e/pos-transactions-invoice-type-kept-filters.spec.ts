@@ -351,7 +351,7 @@ test('the Invoice Type filter narrows the list to cash or installment sales, and
   // Kept after opening the sale and coming back.
   await rowOf(page, si('3')).click()
   await expect(page.getByText('Account details', { exact: true })).toBeVisible({ timeout: 15_000 })
-  await page.getByRole('link', { name: 'Transactions', exact: true }).click()
+  await page.getByTestId('transaction-modal').getByRole('button', { name: 'Close' }).click()
   await expect(invoiceTypeSelect).toHaveValue('All installment', { timeout: 15_000 })
   await expect.poll(() => listedDocNos(page)).toEqual([si('3')])
 
@@ -378,10 +378,10 @@ test('filters, branch and sort are still set after opening a transaction and com
   await page.getByTitle('Sort by SI / DR No.').click() // ascending
   await expect.poll(() => listedDocNos(page)).toEqual([si('2'), si('3')])
 
-  // Open one, then "← Transactions".
+  // Open one, then close it.
   await rowOf(page, si('3')).click()
   await expect(page.getByText('Account details', { exact: true })).toBeVisible({ timeout: 15_000 })
-  await page.getByRole('link', { name: 'Transactions', exact: true }).click()
+  await page.getByTestId('transaction-modal').getByRole('button', { name: 'Close' }).click()
 
   // Everything is as it was left.
   await expect(page.getByPlaceholder('Search…')).toHaveValue(`T24B-${stamp}`, { timeout: 15_000 })
@@ -390,7 +390,9 @@ test('filters, branch and sort are still set after opening a transaction and com
   await expect.poll(() => listedDocNos(page)).toEqual([si('2'), si('3')])
 })
 
-test('the browser’s Back button and a refresh keep the filters too', async ({ page }) => {
+test('closing the transaction with Escape, and a refresh, keep the filters too', async ({
+  page,
+}) => {
   const stamp = Date.now()
   const { si, antique } = await threeSales(page, stamp)
 
@@ -400,9 +402,15 @@ test('the browser’s Back button and a refresh keep the filters too', async ({ 
   await pickBranch(page, antique.name)
   await expect.poll(() => listedDocNos(page)).toEqual([si('10')])
 
+  // The SI link opens it as a modal over the list, as a row click does.
   await page.getByRole('link', { name: si('10') }).click()
-  await expect(page).toHaveURL(/\/pos\/transactions\/[0-9a-f-]+/, { timeout: 15_000 })
-  await page.goBack()
+  await expect(
+    page.getByTestId('transaction-modal').getByRole('heading', { name: si('10') })
+  ).toBeVisible({
+    timeout: 15_000,
+  })
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('transaction-modal')).toHaveCount(0)
   await expect(branchBox(page)).toHaveValue(antique.name, {
     timeout: 15_000,
   })
@@ -436,7 +444,7 @@ test('Clear empties the filters, and coming back after that finds the plain list
   // Coming back from a transaction now finds the cleared list.
   await gotoReady(page, `/pos/transactions/${cashBago}`)
   await expect(page.getByText('Sale', { exact: true }).first()).toBeVisible({ timeout: 15_000 })
-  await page.getByRole('link', { name: 'Transactions', exact: true }).click()
+  await page.getByTestId('transaction-modal').getByRole('button', { name: 'Close' }).click()
   await expect(branchBox(page)).toHaveValue(/^(All branches)?$/, {
     timeout: 15_000,
   })
@@ -468,12 +476,23 @@ test('a link that brings its own search (an AR invoice’s "Sale:" link) starts 
   await expect.poll(() => listedDocNos(page)).toEqual([si('2')])
 })
 
-test('an old ?id= link still lands on the transaction, not on the list', async ({ page }) => {
+test('an ?id= link, and the old /pos/transactions/<id> page, open the transaction as a modal over the list', async ({
+  page,
+}) => {
   const stamp = Date.now()
-  const { cashBago } = await threeSales(page, stamp)
+  const { si, cashBago } = await threeSales(page, stamp)
 
-  await gotoReady(page, `/pos/transactions?id=${cashBago}`)
-  await expect(page).toHaveURL(new RegExp(`/pos/transactions/${cashBago}`), { timeout: 15_000 })
+  for (const link of [`/pos/transactions?id=${cashBago}`, `/pos/transactions/${cashBago}`]) {
+    await gotoReady(page, link)
+    const dialog = page.getByTestId('transaction-modal')
+    await expect(dialog.getByRole('heading', { name: si('2') })).toBeVisible({ timeout: 15_000 })
+    // The list is behind it.
+    await expect(page.getByPlaceholder('Search…')).toBeVisible()
+    await dialog.getByRole('button', { name: 'Close' }).click()
+    await expect(dialog).toHaveCount(0)
+    // The link's ?id= is dropped, so a refresh doesn't open it again.
+    await expect(page).toHaveURL(/\/pos\/transactions$/, { timeout: 15_000 })
+  }
 })
 
 // ── More edge cases ──────────────────────────────────────────────────────

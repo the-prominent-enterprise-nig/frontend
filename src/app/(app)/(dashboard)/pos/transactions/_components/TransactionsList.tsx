@@ -14,6 +14,7 @@ import { saleDocNo } from '@/src/libs/format/saleDocNo'
 import Link from 'next/link'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import TransactionModal from './TransactionModal'
 import { INVOICE_TYPE_FILTER_OPTIONS, invoiceTypeTag } from '../_utils/invoice-type'
 import {
   EMPTY_APPLY_FILTERS,
@@ -89,20 +90,19 @@ interface Props {
  * starts once hydrated; until then it shows the same loading state it shows
  * while fetching. */
 export default function TransactionsList({ session }: Props): React.JSX.Element {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const hydrated = useHydrated()
+  if (!hydrated) return <ListLoading />
   // A link to /pos/transactions?id=<transactionId> (the POS Overview's Recent
-  // Transactions, a source-document link) lands on that transaction's own
-  // page now that it is no longer a modal over this list. Sent from here, on
-  // the first commit: started from the list below, after hydration, the
-  // navigation never went through.
-  const redirectId = searchParams.get('id')
-  useEffect(() => {
-    if (redirectId) router.replace(`/pos/transactions/${redirectId}`)
-  }, [router, redirectId])
-  if (!hydrated || redirectId) return <ListLoading />
-  return <TransactionsListView session={session} initial={initialListFilters(searchParams)} />
+  // Transactions, a source-document link, the old /pos/transactions/<id>
+  // page) opens that transaction as a modal over the list.
+  return (
+    <TransactionsListView
+      session={session}
+      initial={initialListFilters(searchParams)}
+      linkedId={searchParams.get('id')}
+    />
+  )
 }
 
 function ListLoading(): React.JSX.Element {
@@ -123,7 +123,8 @@ function ListLoading(): React.JSX.Element {
 function TransactionsListView({
   session,
   initial,
-}: Props & { initial: ListFilters }): React.JSX.Element {
+  linkedId,
+}: Props & { initial: ListFilters; linkedId: string | null }): React.JSX.Element {
   // Scenario 59 — an installment sale held for manager release approval has
   // no PosTransaction yet: createdTransactionId is set only once the request
   // is approved. So it is correctly absent from the list below, and to the
@@ -154,6 +155,14 @@ function TransactionsListView({
   }, [])
 
   const router = useRouter()
+  // Ticket #24 — the transaction opened as a modal over the list (NIG's
+  // mockup); the list and its filters stay as they are behind it.
+  const [openId, setOpenId] = useState<string | null>(linkedId)
+  const closeTransaction = (): void => {
+    setOpenId(null)
+    // Opened by a link: drop its ?id= so a refresh doesn't open it again.
+    if (linkedId) router.replace('/pos/transactions')
+  }
   const { branchId } = usePosBranchContext()
   // Ticket #24 — a Sales Admin Clerk reconciles several branches, but the
   // top-bar branch switcher only shows for privileged roles, so a clerk had no
@@ -476,17 +485,23 @@ function TransactionsListView({
                   <tr
                     key={tx.id}
                     className="cursor-pointer hover:bg-gray-50"
-                    onClick={() => router.push(`/pos/transactions/${tx.id}`)}
+                    onClick={() => setOpenId(tx.id)}
                   >
                     {/* The Sales Invoice No. is what staff have in hand;
                         older sales and refunds carry none, so those fall
                         back to the internal transaction number. */}
                     <td className="px-5 py-3 font-mono text-sm font-medium text-gray-800">
-                      {/* A real link, so the clerk can open it in a new tab; the
-                          row itself is clickable too. */}
+                      {/* A real link, so the clerk can still open it in a new tab
+                          (Ctrl / Cmd / middle click); a plain click opens the
+                          modal here, as the rest of the row does. */}
                       <Link
-                        href={`/pos/transactions/${tx.id}`}
-                        onClick={(e) => e.stopPropagation()}
+                        href={`/pos/transactions?id=${tx.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
+                          e.preventDefault()
+                          setOpenId(tx.id)
+                        }}
                         className="hover:text-purple-700 hover:underline"
                       >
                         {saleDocNo(tx)}
@@ -528,6 +543,9 @@ function TransactionsListView({
           )}
         </div>
       </div>
+      {openId && (
+        <TransactionModal key={openId} id={openId} session={session} onClose={closeTransaction} />
+      )}
     </div>
   )
 }

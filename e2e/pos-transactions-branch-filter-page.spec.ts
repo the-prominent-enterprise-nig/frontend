@@ -3,8 +3,8 @@ import { gotoReady, fillStable } from './utils'
 
 // Ticket #24 — "As a Sales Admin Clerk, I want easy reconciling of branches
 // transaction": the Transactions list gets a Branch filter + Branch column and
-// a sortable SI / DR No. column, and a transaction opens on its own page
-// instead of a modal over the list.
+// a sortable SI / DR No. column, and a transaction opens as a modal over
+// the list, laid out as NIG's mockup (review on frontend #312).
 //
 // Setup goes through the API (a plain cash sale, like the
 // DR/SI specs), the same
@@ -153,7 +153,7 @@ test('a clerk narrows the list to one branch, sees each row’s branch, and can 
   await expect.poll(docNos).toEqual([`T24-${stamp}-10`, `T24-${stamp}-2`])
 })
 
-test('a transaction opens on its own page with the sale card, and the old ?id= link lands there', async ({
+test('a transaction opens as a modal over the list with the sale card, and the old links open it too', async ({
   page,
 }) => {
   const stamp = Date.now()
@@ -163,23 +163,28 @@ test('a transaction opens on its own page with the sale card, and the old ?id= l
   await fillStable(page.getByPlaceholder('Search…'), `T24-${stamp}-10`)
   await page.getByRole('link', { name: `T24-${stamp}-10` }).click()
 
-  await expect(page).toHaveURL(new RegExp(`/pos/transactions/${saleAtAntique.id}$`), {
+  const dialog = page.getByTestId('transaction-modal')
+  await expect(dialog.getByRole('heading', { name: `T24-${stamp}-10` })).toBeVisible({
     timeout: 15_000,
   })
-  await expect(page.getByRole('heading', { name: `T24-${stamp}-10` })).toBeVisible()
-  await expect(page.getByText('Sale', { exact: true })).toBeVisible()
-  await expect(page.getByText('Antique', { exact: true })).toBeVisible()
-  // Not a modal: the list is not behind it, and the way back is a link.
-  await expect(page.getByPlaceholder('Search…')).toHaveCount(0)
-  await page.getByRole('link', { name: 'Transactions' }).click()
-  await expect(page).toHaveURL(/\/pos\/transactions$/)
+  await expect(dialog.getByText('Sale', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('Antique', { exact: true })).toBeVisible()
+  // A modal (NIG's mockup): the list stays behind it, and × closes it.
+  await expect(page.getByPlaceholder('Search…')).toHaveValue(`T24-${stamp}-10`)
+  await dialog.getByRole('button', { name: 'Close' }).click()
+  await expect(dialog).toHaveCount(0)
 
-  // Existing deep links (?id=…) from the POS dashboard and source-document
-  // links keep working — they redirect to the page.
-  await gotoReady(page, `/pos/transactions?id=${saleAtAntique.id}`)
-  await expect(page).toHaveURL(new RegExp(`/pos/transactions/${saleAtAntique.id}$`), {
-    timeout: 15_000,
-  })
+  // Existing deep links (?id=… from the POS dashboard and source-document
+  // links, and the old /pos/transactions/<id> page) open it the same way.
+  for (const link of [
+    `/pos/transactions?id=${saleAtAntique.id}`,
+    `/pos/transactions/${saleAtAntique.id}`,
+  ]) {
+    await gotoReady(page, link)
+    await expect(dialog.getByRole('heading', { name: `T24-${stamp}-10` })).toBeVisible({
+      timeout: 15_000,
+    })
+  }
 })
 
 test('an installment sale’s page shows its account details, the credit and each item’s share', async ({
