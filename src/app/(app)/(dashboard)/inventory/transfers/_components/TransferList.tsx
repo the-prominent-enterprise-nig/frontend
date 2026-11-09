@@ -27,17 +27,19 @@ const PRIMARY_PILL_STATUSES: TransferStatus[] = [
   'in_transit',
   'received',
   'rejected',
+  // Always shown (NIG, 2026-11-09): branches withdraw caravan requests now,
+  // and a pill that only appears once something is in it reads as missing.
+  'cancelled',
 ]
 
 // Shown only when something is actually in them. They are real states the
 // backend can put a transfer in, so hiding them outright would make those
-// rows impossible to filter to — but showing four permanently-zero pills
-// would bury the five that matter.
+// rows impossible to filter to — but showing three permanently-zero pills
+// would bury the ones that matter.
 const SECONDARY_PILL_STATUSES: TransferStatus[] = [
   'pending_manager_approval',
   'pending_hq_approval',
   'partially_received',
-  'cancelled',
 ]
 
 function lineTotals(lines: TransferSummary['lines']): { total: number; received: number } {
@@ -260,17 +262,19 @@ export default function TransferList({ session }: { session: SessionUser }) {
   const isBusinessOwner = hasRole(session, 'Business Owner')
   const ownBranch = branchOptions.find((b) => b.id === session.branchId)
   const currentUserRegion = ownBranch?.type === 'warehouse' ? (ownBranch.region ?? null) : null
-  const inScope = (warehouseBranchId: string | null | undefined, warehouseRegion?: string | null) =>
+  // A caravan the user's branch hosts counts as theirs (see TransferDetailModal).
+  const inScope = (wh: TransferSummary['toWarehouse'] | null | undefined): boolean =>
     !session.branchId ||
-    warehouseBranchId === session.branchId ||
-    (warehouseBranchId === null && warehouseRegion === currentUserRegion)
+    wh?.branchId === session.branchId ||
+    (wh?.branchId === null && wh?.region === currentUserRegion) ||
+    (!!wh?.branch?.hostBranch && wh.branch.hostBranch.id === session.branchId)
 
   // One action per row instead of a cluster of per-status buttons. The row
   // always offers something — it falls back to "View" — so the column never
   // renders an empty cell.
   function rowAction(tr: TransferSummary): { label: string; primary: boolean } {
-    const fromInScope = inScope(tr.fromWarehouse?.branchId, tr.fromWarehouse?.region)
-    const toInScope = inScope(tr.toWarehouse?.branchId, tr.toWarehouse?.region)
+    const fromInScope = inScope(tr.fromWarehouse)
+    const toInScope = inScope(tr.toWarehouse)
     // The dispatcher is never the receiver (WH-01) — except the Business Owner.
     const canReceiveThis =
       canReceive && toInScope && (isBusinessOwner || tr.dispatchedById !== session.id)
@@ -332,7 +336,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
   )
 
   useEffect(() => {
-    const stockDraft = consumeStockTransferDraft()
+    const stockDraft = consumeStockTransferDraft(session.id)
     if (stockDraft) {
       setCreateDraft({
         fromWarehouseId: stockDraft.fromWarehouseId,

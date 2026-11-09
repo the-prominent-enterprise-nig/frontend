@@ -1026,22 +1026,19 @@ export default function TransferDetailModal({
   // A real standalone warehouse (branchId: null — Scenario 27, ported from
   // Warehouse Request) falls back to region match instead of exact branch
   // ownership, since ownership can never be satisfied for one.
-  const inScope = (warehouseBranchId: string | null | undefined, warehouseRegion?: string | null) =>
+  // A caravan the user's branch hosts counts as theirs too: it has no staff,
+  // so the host's people receive into it, send out of it and cancel its
+  // requests — the backend's resolveActorBranchIds rule.
+  const inScope = (wh: TransferSummary['toWarehouse'] | null | undefined): boolean =>
     !currentUserBranchId ||
-    warehouseBranchId === currentUserBranchId ||
-    (warehouseBranchId === null && warehouseRegion === currentUserRegion)
-  const canAcceptThis =
-    canAccept && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
-  const canRejectThis =
-    canReject && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
-  const canProposeSubstitutionThis =
-    canProposeSubstitution &&
-    inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
-  const canConfirmSubstitutionThis =
-    canConfirmSubstitution &&
-    inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
-  const canDispatchThis =
-    canDispatch && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
+    wh?.branchId === currentUserBranchId ||
+    (wh?.branchId === null && wh?.region === currentUserRegion) ||
+    (!!wh?.branch?.hostBranch && wh.branch.hostBranch.id === currentUserBranchId)
+  const canAcceptThis = canAccept && inScope(transfer?.fromWarehouse)
+  const canRejectThis = canReject && inScope(transfer?.fromWarehouse)
+  const canProposeSubstitutionThis = canProposeSubstitution && inScope(transfer?.fromWarehouse)
+  const canConfirmSubstitutionThis = canConfirmSubstitution && inScope(transfer?.toWarehouse)
+  const canDispatchThis = canDispatch && inScope(transfer?.fromWarehouse)
   // Mirrors the backend's receive() refusal: whoever dispatched a transfer
   // can't also confirm it arrived, even head office, which inScope lets
   // through. A transfer dispatched before dispatchedById existed has none.
@@ -1050,8 +1047,7 @@ export default function TransferDetailModal({
     !currentUserIsBusinessOwner &&
     !!transfer?.dispatchedById &&
     transfer.dispatchedById === currentUserId
-  const canReceiveInScope =
-    canReceive && inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+  const canReceiveInScope = canReceive && inScope(transfer?.toWarehouse)
   const canReceiveThis = canReceiveInScope && !dispatchedByMe
   const receiveBlockedForDispatcher =
     canReceiveInScope &&
@@ -1059,17 +1055,17 @@ export default function TransferDetailModal({
     (status === 'in_transit' || status === 'partially_received')
   // Manager approval is scoped to the TO warehouse's branch too — it's the
   // requester's own branch manager signing off, same direction as receive.
-  const canManagerApproveThis =
-    canManagerApprove && inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
-  const canManagerRejectThis =
-    canManagerReject && inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+  const canManagerApproveThis = canManagerApprove && inScope(transfer?.toWarehouse)
+  const canManagerRejectThis = canManagerReject && inScope(transfer?.toWarehouse)
   // Cancelling withdraws YOUR OWN request — scoped to the requester's own
   // branch (TO warehouse), same direction as manager-approval above. The
   // source branch has its own dedicated decline path (Reject/Reject HQ),
   // which captures a reason, so it doesn't get a "Cancel" button here too.
+  // Whoever raised it may withdraw it too, wherever they sit — mirrors the
+  // backend (a Warehouse Custodian's caravan consign lands on the host).
+  const raisedByMe = !!transfer?.requestedById && transfer.requestedById === currentUserId
   const canCancelThis =
-    CANCELLABLE_STATUSES.has(status) &&
-    inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+    CANCELLABLE_STATUSES.has(status) && (inScope(transfer?.toWarehouse) || raisedByMe)
   // Two kinds of transfer are refused by the backend's update() and so are
   // never offered here: one the UDS module auto-paired (the UDS owns which
   // unit ships, not this form), and one whose lines are pinned to a specific
@@ -1087,7 +1083,7 @@ export default function TransferDetailModal({
     EDITABLE_STATUSES.has(status) &&
     !isUdsPaired &&
     !hasPinnedSerial &&
-    inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+    inScope(transfer?.toWarehouse)
 
   // Only worth a column when at least one line actually carries a serial —
   // otherwise every row just shows a distracting "—".
@@ -1478,9 +1474,8 @@ export default function TransferDetailModal({
                     <LocationName
                       wh={transfer.fromWarehouse}
                       className="mt-1 text-[16px] font-semibold"
-                      subtitleClassName="text-[12px] text-[#4b4b5a]"
                     />
-                    <p className="mt-0.5 truncate text-[11.5px] text-ink-muted">
+                    <p className="mt-0.5 text-[11.5px] text-ink-muted">
                       Sends the stock · deducted on dispatch
                     </p>
                   </div>
@@ -1494,9 +1489,8 @@ export default function TransferDetailModal({
                     <LocationName
                       wh={transfer.toWarehouse}
                       className="mt-1 text-[16px] font-semibold"
-                      subtitleClassName="text-[12px] text-[#4b4b5a]"
                     />
-                    <p className="mt-0.5 truncate text-[11.5px] text-ink-muted">
+                    <p className="mt-0.5 text-[11.5px] text-ink-muted">
                       Asked for the stock · added on receipt
                     </p>
                   </div>

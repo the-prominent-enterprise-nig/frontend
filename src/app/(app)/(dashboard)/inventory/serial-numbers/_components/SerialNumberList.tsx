@@ -343,7 +343,7 @@ export default function SerialNumberList({
     const pinnedLines = selection.selected.flatMap((s) =>
       s.item ? [{ serialNumberId: s.id, itemId: s.item.id, itemLabel: s.item.name }] : []
     )
-    saveStockTransferDraft({ fromWarehouseId: source.id, pinnedLines })
+    saveStockTransferDraft({ fromWarehouseId: source.id, pinnedLines }, session.id)
     router.push('/inventory/stock-transaction?tab=transfers')
   }
   const { consignToCaravan, isConsigning } = useConsignToCaravan(selection.clear)
