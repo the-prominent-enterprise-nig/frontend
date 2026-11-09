@@ -1,5 +1,14 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 import { gotoReady, fillStable } from './utils'
+
+/** Status is the same searchable picker as Invoice Type and Branch. */
+async function pickStatus(page: Page, label: string): Promise<void> {
+  await page.getByLabel('Status', { exact: true }).click()
+  await page
+    .getByTestId('searchable-select-option')
+    .filter({ hasText: new RegExp(`^${label}$`) })
+    .click()
+}
 
 // Ticket #24 follow-up (client comments, Nov 9) on POS → Sales Counter →
 // Transactions:
@@ -239,6 +248,53 @@ async function pickBranch(page: Page, name: string): Promise<void> {
   await page.getByTestId('searchable-select-option').filter({ hasText: name }).first().click()
 }
 
+test('the filters, Apply and Clear sit on one row, and Type / Invoice Type / Branch / Status are the same picker', async ({
+  page,
+}) => {
+  // A common laptop screen with the sidebar open, as in the mockup.
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await gotoReady(page, '/pos/transactions')
+  const search = page.getByPlaceholder('Search…')
+  await expect(search).toBeVisible({ timeout: 15_000 })
+
+  const pickers = ['Type', 'Invoice Type', 'Branch', 'Status'].map((name) =>
+    page.getByLabel(name, { exact: true })
+  )
+  for (const picker of pickers) {
+    await expect(picker).toBeVisible()
+    // The searchable picker is a text box; a plain dropdown would be a <select>.
+    expect(await picker.evaluate((el) => el.tagName)).toBe('INPUT')
+  }
+
+  const top = async (l: Locator): Promise<number> => (await l.boundingBox())!.y
+  const allOnOneRow = async (): Promise<void> => {
+    const row = await top(search)
+    for (const l of [
+      ...pickers,
+      page.locator('input[type="date"]').first(),
+      page.locator('input[type="date"]').last(),
+      page.getByRole('button', { name: 'Apply' }),
+      page.getByRole('button', { name: 'Clear' }),
+    ]) {
+      // Same row: the controls line up (bottom-aligned, so within a few px).
+      expect(Math.abs((await top(l)) - row)).toBeLessThan(8)
+    }
+  }
+  await allOnOneRow()
+  // The longest choices picked: the boxes keep their width, so still one row.
+  await page.getByLabel('Invoice Type', { exact: true }).click()
+  await page
+    .getByTestId('searchable-select-option')
+    .filter({ hasText: /^Installment \(In-house\)$/ })
+    .click()
+  await pickStatus(page, 'Completed')
+  await allOnOneRow()
+  await page
+    .getByRole('button', { name: 'Clear' })
+    .locator('..')
+    .screenshot({ path: 'test-results/pos-transactions-filter-row.png' })
+})
+
 test('the list shows each sale’s invoice type: Cash, or Installment (In-house)', async ({
   page,
 }) => {
@@ -301,7 +357,7 @@ test('the Invoice Type filter narrows the list to cash or installment sales, and
 
   // Clear brings every type back.
   await page.getByRole('button', { name: 'Clear' }).click()
-  await expect(invoiceTypeSelect).toHaveValue(/^(All invoice types)?$/)
+  await expect(invoiceTypeSelect).toHaveValue(/^(All)?$/)
 })
 
 test('filters, branch and sort are still set after opening a transaction and coming back', async ({
@@ -317,7 +373,7 @@ test('filters, branch and sort are still set after opening a transaction and com
   // Narrow it the way a clerk would: one branch, completed only, sorted by SI.
   await pickBranch(page, bago.name)
   await expect(rowOf(page, si('10'))).toHaveCount(0)
-  await page.locator('select').filter({ hasText: 'All statuses' }).selectOption('completed')
+  await pickStatus(page, 'Completed')
   await page.getByRole('button', { name: 'Apply' }).click()
   await page.getByTitle('Sort by SI / DR No.').click() // ascending
   await expect.poll(() => listedDocNos(page)).toEqual([si('2'), si('3')])
@@ -330,7 +386,7 @@ test('filters, branch and sort are still set after opening a transaction and com
   // Everything is as it was left.
   await expect(page.getByPlaceholder('Search…')).toHaveValue(`T24B-${stamp}`, { timeout: 15_000 })
   await expect(branchBox(page)).toHaveValue(bago.name)
-  await expect(page.locator('select').filter({ hasText: 'All statuses' })).toHaveValue('completed')
+  await expect(page.getByLabel('Status', { exact: true })).toHaveValue('Completed')
   await expect.poll(() => listedDocNos(page)).toEqual([si('2'), si('3')])
 })
 
@@ -435,13 +491,13 @@ test('Invoice Type, Branch and Status together narrow the list to what all three
   await pickBranch(page, bago.name)
   await page.getByLabel('Invoice Type', { exact: true }).click()
   await page.getByTestId('searchable-select-option').filter({ hasText: 'Cash' }).first().click()
-  await page.locator('select').filter({ hasText: 'All statuses' }).selectOption('completed')
+  await pickStatus(page, 'Completed')
   await page.getByRole('button', { name: 'Apply' }).click()
   // Bago's cash sale only: not Antique's cash sale, not Bago's installment one.
   await expect.poll(() => listedDocNos(page)).toEqual([si('2')])
 
   // Voided: none of ours.
-  await page.locator('select').filter({ hasText: 'All statuses' }).selectOption('voided')
+  await pickStatus(page, 'Voided')
   await page.getByRole('button', { name: 'Apply' }).click()
   await expect(page.getByText('No transactions found.')).toBeVisible({ timeout: 15_000 })
 })
@@ -491,7 +547,5 @@ test('a damaged saved filter does not break the page: the list opens unfiltered 
   )
   await page.reload()
   await expect(page.getByPlaceholder('Search…')).toHaveValue('', { timeout: 15_000 })
-  await expect(page.getByLabel('Invoice Type', { exact: true })).toHaveValue(
-    /^(All invoice types)?$/
-  )
+  await expect(page.getByLabel('Invoice Type', { exact: true })).toHaveValue(/^(All)?$/)
 })

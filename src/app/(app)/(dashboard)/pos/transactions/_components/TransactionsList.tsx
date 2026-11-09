@@ -3,15 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTransactions, useBranches } from '../../_hooks/usePos'
-import {
-  RefreshCw,
-  ShoppingCart,
-  Search,
-  ChevronDown,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
-} from 'lucide-react'
+import { RefreshCw, ShoppingCart, Search, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { getOwnReleaseFormRequests } from '../../_actions/pos-actions'
 import type { PosTransaction } from '@/src/schema/pos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
@@ -43,6 +35,19 @@ const statusColor: Record<string, string> = {
   completed: 'bg-green-100 text-green-700',
   voided: 'bg-red-100 text-red-700',
 }
+
+const TYPE_FILTER_OPTIONS = [
+  { value: '', label: 'All' },
+  { value: 'sale', label: 'Sale' },
+  { value: 'refund', label: 'Refund' },
+  { value: 'exchange', label: 'Exchange' },
+]
+
+const STATUS_FILTER_OPTIONS = [
+  { value: '', label: 'All' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'voided', label: 'Voided' },
+]
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
@@ -239,8 +244,8 @@ function TransactionsListView({
         )}
 
         {/* Filters */}
-        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="flex-1 min-w-48">
+        <div className="flex flex-wrap items-end gap-2 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="min-w-36 flex-1">
             {/* Scenario 23 Gap 3 — unified search: matches the Sales
                 Invoice No., the transaction number, OR any AR invoice
                 number the sale produced, so staff starting from a sales
@@ -263,38 +268,31 @@ function TransactionsListView({
               />
             </div>
           </div>
-          <div>
+          {/* Type, Invoice Type, Branch and Status are the same searchable picker,
+              sized so the filters, Apply and Clear sit on one row as in the
+              mockup. Like the dates, all but Branch wait for Apply. */}
+          <div className="w-28">
             <label className="mb-1 block text-xs font-semibold text-gray-600">Type</label>
-            <div className="relative">
-              <select
-                className="select"
-                value={filters.transactionType}
-                onChange={(e) => setFilters((p) => ({ ...p, transactionType: e.target.value }))}
-              >
-                <option value="">All types</option>
-                <option value="sale">Sale</option>
-                <option value="refund">Refund</option>
-                <option value="exchange">Exchange</option>
-              </select>
-              <ChevronDown
-                size={14}
-                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"
-              />
-            </div>
+            <SearchableSelect
+              value={filters.transactionType}
+              onChange={(v) => setFilters((p) => ({ ...p, transactionType: v }))}
+              options={TYPE_FILTER_OPTIONS}
+              placeholder="All"
+              ariaLabel="Type"
+            />
           </div>
-          <div className="w-52">
+          <div className="w-[13.5rem]">
             <label className="mb-1 block text-xs font-semibold text-gray-600">Invoice Type</label>
-            {/* Same picker as Branch; like Type / Status / dates it waits for Apply. */}
             <SearchableSelect
               value={filters.invoiceType}
               onChange={(v) => setFilters((p) => ({ ...p, invoiceType: v }))}
-              options={[{ value: '', label: 'All invoice types' }, ...INVOICE_TYPE_FILTER_OPTIONS]}
-              placeholder="All invoice types"
+              options={[{ value: '', label: 'All' }, ...INVOICE_TYPE_FILTER_OPTIONS]}
+              placeholder="All"
               ariaLabel="Invoice Type"
             />
           </div>
           {branchPickerVisible && (
-            <div className="w-48">
+            <div className="w-36">
               <label className="mb-1 block text-xs font-semibold text-gray-600">Branch</label>
               <SearchableSelect
                 value={branchFilter}
@@ -306,37 +304,29 @@ function TransactionsListView({
               />
             </div>
           )}
-          <div>
+          <div className="w-36">
             <label className="mb-1 block text-xs font-semibold text-gray-600">Status</label>
-            <div className="relative">
-              <select
-                className="select"
-                value={filters.status}
-                onChange={(e) => setFilters((p) => ({ ...p, status: e.target.value }))}
-              >
-                <option value="">All statuses</option>
-                <option value="completed">Completed</option>
-                <option value="voided">Voided</option>
-              </select>
-              <ChevronDown
-                size={14}
-                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"
-              />
-            </div>
+            <SearchableSelect
+              value={filters.status}
+              onChange={(v) => setFilters((p) => ({ ...p, status: v }))}
+              options={STATUS_FILTER_OPTIONS}
+              placeholder="All"
+              ariaLabel="Status"
+            />
           </div>
-          <div>
+          <div className="w-36">
             <label className="mb-1 block text-xs font-semibold text-gray-600">From</label>
             <input
-              className="input"
+              className="input px-2"
               type="date"
               value={filters.dateFrom}
               onChange={(e) => setFilters((p) => ({ ...p, dateFrom: e.target.value }))}
             />
           </div>
-          <div>
+          <div className="w-36">
             <label className="mb-1 block text-xs font-semibold text-gray-600">To</label>
             <input
-              className="input"
+              className="input px-2"
               type="date"
               value={filters.dateTo}
               onChange={(e) => setFilters((p) => ({ ...p, dateTo: e.target.value }))}
@@ -357,7 +347,7 @@ function TransactionsListView({
               setBranchFilter('')
               setSortDir('none')
             }}
-            className="rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-gray-100"
+            className="rounded-lg px-2 py-2 text-sm text-gray-500 hover:bg-gray-100"
           >
             Clear
           </button>
