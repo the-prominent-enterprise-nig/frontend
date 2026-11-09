@@ -37,6 +37,9 @@ export function useStockBalance(
       // The client's list is read as "how many of this model do we have",
       // so the screen always asks for the rolled-up shape.
       groupBy: 'item' as const,
+      // Stock Balance is everyone's company-wide view (NIG, 2026-11-09);
+      // the General Stockbook is the per-branch one.
+      allBranches: true,
       stockStatus,
       branchIds,
       warehouseIds,

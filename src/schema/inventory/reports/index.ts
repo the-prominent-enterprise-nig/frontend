@@ -145,11 +145,13 @@ export const AgingReportItemSchema = z.object({
   inboundMonths: z.number().nullable(),
   /** Whole months at its current location. */
   storeMonths: z.number(),
-  unitCost: z.number(),
+  /** Absent for a branch user: amounts stay with Head Office. */
+  unitCost: z.number().optional(),
   bucket: SerialAgingBucketSchema.nullable(),
 })
 
-const AgingFiguresSchema = z.object({ count: z.number(), totalValue: z.number() })
+// totalValue is absent for a branch user: amounts stay with Head Office.
+const AgingFiguresSchema = z.object({ count: z.number(), totalValue: z.number().optional() })
 
 export const AgingReportResponseSchema = z.object({
   data: z.array(AgingReportItemSchema),
