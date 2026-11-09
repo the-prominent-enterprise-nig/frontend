@@ -104,13 +104,12 @@ function hasNoSupplierInvoice(report: ReceivingReport): boolean {
   )
 }
 
-/** Where a row opens. Ticket #27 — a customer return has no receipt page of
- * its own: it opens the Returns tab, searched to its RRC #. */
+/** Where a row opens. Ticket #27 — a customer return has no goods receipt,
+ * so it opens its RRC receipt at {detailBasePath}/returns/{id}. */
 function reportHref(report: ReceivingReport, detailBasePath: string): string {
-  if (report.sourceType === 'customer_return') {
-    return `/inventory/stock-transaction?tab=returns&return=${encodeURIComponent(report.code)}`
-  }
-  return `${detailBasePath}/${report.id}`
+  return report.sourceType === 'customer_return'
+    ? `${detailBasePath}/returns/${report.id}`
+    : `${detailBasePath}/${report.id}`
 }
 
 function invoiceNumberOf(report: ReceivingReport): string | null {
@@ -435,6 +434,9 @@ export default function ReceivingReportsTab({
         queryClient.invalidateQueries({ queryKey: ['inventory-stock-balances'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
+        // Open the receipt just posted, the same page a row click opens, so it
+        // can be checked and printed straight away.
+        if (result.data?.id) router.push(`${detailBasePath}/${result.data.id}`)
       } else if (result.errorCode !== 'receiving_warehouse_mismatch') {
         // That one code is a confirmable warning, not a failure — the modal
         // shows its own banner and "Receive anyway" instead of this toast.

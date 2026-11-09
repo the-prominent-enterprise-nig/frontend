@@ -325,10 +325,9 @@ export default function ReceivingReportSheet({
         </table>
       </div>
 
-      <div className="mt-10 max-w-xs">
+      <div className="mt-10 w-60">
         <p className="mb-8 font-bold text-prominent-purple-900">Received by:</p>
         <div className="border-b border-gray-700" />
-        {rr.receivedByName && <p className="mt-1 text-[12px] text-gray-700">{rr.receivedByName}</p>}
       </div>
     </div>
   )
