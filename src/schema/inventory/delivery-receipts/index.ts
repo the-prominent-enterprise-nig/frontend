@@ -109,6 +109,9 @@ export const DrFormSchema = z.object({
   giveawayRecipient: z.union([DrGiveawayRecipientSchema, z.literal('')]),
   issueDate: z.string().min(1, 'Issue date is required'),
   warehouseId: z.string().min(1, 'Pick the issuing branch / warehouse'),
+  /** Set from the picked warehouse: only a head office has departments, so
+   * only there does Office use need one. Not sent. */
+  issuingHeadOffice: z.boolean(),
   departmentId: z.string(),
   /** Repair purposes only, optional — the UDS whose units this DR moves. */
   udsId: z.string(),
@@ -148,7 +151,7 @@ export const DrSubmitSchema = DrFormSchema.superRefine((v, ctx) => {
       })
     }
   })
-  if (v.purpose === 'office_use' && !v.departmentId) {
+  if (v.purpose === 'office_use' && v.issuingHeadOffice && !v.departmentId) {
     issue('departmentId', 'Which department will use it?')
   }
   if (v.purpose === 'raffle_prize' && !occasionOf(v)) issue('occasion', 'Pick the occasion')
@@ -159,6 +162,9 @@ export const DrSubmitSchema = DrFormSchema.superRefine((v, ctx) => {
     issue('customerId', 'Pick the customer from CRM')
   }
   if (v.purpose === 'return_to_supplier' && !v.supplierId) issue('supplierId', 'Pick the supplier')
+  if (v.purpose === 'redeemed_unit' && !v.customerId) {
+    issue('customerId', 'Pick the customer redeeming the unit')
+  }
   if (v.purpose === 'to_service_center' && !v.supplierId) {
     issue('supplierId', 'Pick the service center')
   }
@@ -326,7 +332,10 @@ export const DrUdsLookupSchema = z.object({
         isSerialTracked: z.boolean(),
         brand: z.object({ name: z.string() }).nullable(),
       }),
-      serialNumber: z.object({ serialNumber: z.string() }),
+      serialNumber: z.object({
+        serialNumber: z.string(),
+        currentWarehouseId: z.string().nullable().optional(),
+      }),
     })
   ),
 })
