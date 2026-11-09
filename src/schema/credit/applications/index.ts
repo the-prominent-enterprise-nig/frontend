@@ -267,6 +267,11 @@ const CreateCreditApplicationBaseSchema = z.object({
          *  form itself, from this branch's in-stock units of a serial item.
          *  Optional either way: the till asks for one when it is missing. */
         serialNumberId: z.string().optional(),
+        /** Nov UAT — this item's price was overridden at the till when the
+         *  application was raised from a cart. Never typed on this form: it
+         *  arrives with the cart and rides along on the row. One overridden
+         *  item is the only thing that lets the down payment be 0. */
+        priceOverridden: z.boolean().optional(),
         // Also client-only. The combobox shows a label, not an id, and it
         // has no way to look one up from an id alone — so without this a
         // restored draft kept its itemId but rendered an empty picker, and
@@ -393,10 +398,17 @@ export function refineDownPayment(
     downPayment?: string
     resolvedItemTotal?: number
     downPaymentFixed?: number
+    items?: { priceOverridden?: boolean }[]
   },
   ctx: z.RefinementCtx
 ) {
   if (!data.financingTermId) return
+
+  // Nov UAT — an item whose price was overridden at the till (one is enough,
+  // of any number) is the only thing that lets the down payment be 0. The
+  // price was negotiated, so the rate card's own figure no longer binds either:
+  // the amount is the cashier's to set, up to the item total.
+  const overridden = data.items?.some((i) => i?.priceOverridden === true) === true
 
   const raw = data.downPayment?.trim()
   if (!raw) {
@@ -415,7 +427,8 @@ export function refineDownPayment(
   }
 
   // The rate card's own figure for this term — not a minimum, the amount.
-  if (data.downPaymentFixed != null) {
+  // (Not held to it once an item's price was overridden — see above.)
+  if (data.downPaymentFixed != null && !overridden) {
     if (Math.abs(downPayment - data.downPaymentFixed) > 0.005) {
       ctx.addIssue({
         code: 'custom',
@@ -427,12 +440,14 @@ export function refineDownPayment(
   }
 
   // A down payment is always collected; how small it is, is the approver's
-  // call. Never 0.
-  if (downPayment <= 0) {
+  // call. Never 0 — unless an item's price was overridden (above).
+  if (downPayment < 0 || (downPayment === 0 && !overridden)) {
     ctx.addIssue({
       code: 'custom',
       path: ['downPayment'],
-      message: 'Down payment must be more than 0',
+      message: overridden
+        ? 'Down payment cannot be negative'
+        : 'Down payment must be more than 0 — it can only be 0 when an item has a price override',
     })
     return
   }
@@ -672,6 +687,9 @@ export interface CreditApplicationItemLine {
    *  hold: the till re-checks `status === 'in_stock'` before reusing it, and
    *  asks for a serial again when it is not. */
   serialNumberId?: string | null
+  /** Nov UAT — the cart priced this item by override. One such item is what
+   *  lets the application carry a ₱0 down payment. */
+  priceOverridden?: boolean
   serialNumber?: {
     id: string
     serialNumber: string
