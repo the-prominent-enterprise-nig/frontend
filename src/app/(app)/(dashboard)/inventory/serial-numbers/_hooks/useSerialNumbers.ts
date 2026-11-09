@@ -13,7 +13,7 @@ import { showToast } from '@/src/components/ui/toast'
 import { getSerialNumbers } from '../_actions/get-serial-numbers'
 
 /** brand_new = no receipt or an ordinary one; repo = repossession; repair_return = repair return. */
-export type StockClassification = 'brand_new' | 'repo' | 'repair_return'
+export type StockClassification = 'brand_new' | 'repo' | 'repair_return' | 'returned'
 import { getCaravanItemGroups } from '../_actions/get-caravan-item-groups'
 import { registerSerialNumbers } from '../_actions/register-serial-numbers'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'

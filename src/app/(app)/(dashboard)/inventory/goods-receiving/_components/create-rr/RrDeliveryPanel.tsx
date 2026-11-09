@@ -202,7 +202,7 @@ export function RrDeliveryPanel({
             Customer return, already received at the POS
           </span>
         </div>
-        <div className="px-4.5 pb-4 pt-3.5">{reasonField}</div>
+        <div className="px-4.5 pb-4 pt-3.5">{!linkedPo && reasonField}</div>
       </div>
     )
   }
@@ -295,7 +295,7 @@ export function RrDeliveryPanel({
           </div>
         )}
 
-        {/* Repair/Return only: where the unit is being serviced. Decides which
+        {/* Repair only: where the unit is being serviced. Decides which
             documents the receipt has to carry (see rrAttachments.ts). */}
         {!linkedPo && reason === 'repair_return' && !fromServiceCenter && (
           <div className="sm:col-span-2 xl:col-span-3">

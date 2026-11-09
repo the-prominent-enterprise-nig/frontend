@@ -35,9 +35,12 @@ export async function getCustomerReturns(params: {
   search?: string
 }): Promise<ApiResponse<CustomerReturnRecord[]>> {
   try {
-    const result = await api.get<CustomerReturnRecord[]>('/inventory/stock/customer-returns', {
-      ...params,
-    })
+    const result = await api.get<CustomerReturnRecord[]>(
+      '/inventory/stock/customer-returns/lookup',
+      {
+        ...params,
+      }
+    )
     if (!result.success || !result.data) {
       return {
         success: false,

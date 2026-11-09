@@ -1590,7 +1590,7 @@ export default function ReceiveStockModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-[#d3d3db] px-4 py-2 text-[13px] font-medium text-[#3d3d4a] hover:bg-[#f6f6f8]"
+            className="rounded-lg border border-[#d3d3db] px-4 py-2 text-[13px] font-medium text-ink-muted hover:bg-[#f6f6f8]"
           >
             Close
           </button>

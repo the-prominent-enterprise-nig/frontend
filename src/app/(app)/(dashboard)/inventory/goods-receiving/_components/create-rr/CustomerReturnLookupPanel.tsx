@@ -48,13 +48,17 @@ export function CustomerReturnLookupPanel(): React.JSX.Element {
         <label className={CAPTION}>Find the return</label>
         <SearchCombobox
           value={pickedId}
-          onChange={setPickedId}
+          onChange={(id) => {
+            setPickedId(id)
+            // Cleared: the old return's details go with it.
+            if (!id) setPicked(null)
+          }}
           onSelect={(option: SearchComboboxOption) =>
             setPicked(option.meta as CustomerReturnRecord)
           }
           queryKey="customer-returns-lookup"
           placeholder="Invoice #, customer, serial or RRC #…"
-          typeToSearchMessage="No customer returns yet"
+          typeToSearchMessage="Search returns…"
           emptyMessage="No customer return matches that"
           search={async (query) => {
             const res = await getCustomerReturns({ search: query || undefined })
@@ -103,7 +107,7 @@ function ReturnDetail({ record }: { record: CustomerReturnRecord }): React.JSX.E
         {facts.map(([label, value]) => (
           <div key={label}>
             <dt className={CAPTION}>{label}</dt>
-            <dd className="text-[13px] text-[#17171c]">{value}</dd>
+            <dd className="text-[13px]">{value}</dd>
           </div>
         ))}
       </dl>

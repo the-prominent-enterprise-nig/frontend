@@ -218,7 +218,7 @@ function Block({
         <div className="min-w-0 flex-1">
           <span className={CAPTION}>Invoice #</span>
           {/* Repossession takes back a financed unit, so it searches
-              installment accounts; a repair/return can be any sale, cash or
+              installment accounts; a repair can be any sale, cash or
               financed, found by its Sales Invoice No. */}
           {isRepo ? (
             <InstallmentAccountSearchCombobox
