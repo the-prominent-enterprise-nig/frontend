@@ -324,7 +324,7 @@ test.describe('Transfer Receive — a different serial or model, from existing N
     await receiver.keyboard.type(`RX03-M1-${s}`)
     // Only offers count: the picked chip's own "Remove serial …" button is not an offer.
     await expect(
-      receiver.getByRole('button', { name: new RegExp(`^(?!Remove serial).*RX03-M1-${s}`) }),
+      receiver.getByRole('button', { name: new RegExp(`^(?!Remove serial).*RX03-M1-${s}`) })
     ).toHaveCount(0)
     await receiver.keyboard.press('Escape')
     // Remove one; it can be picked again.
