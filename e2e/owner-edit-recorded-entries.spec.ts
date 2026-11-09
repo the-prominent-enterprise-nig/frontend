@@ -36,6 +36,10 @@ async function recordTransfer(
       destinationBankAccountId: destination.id,
       amount: 750,
       date,
+      // Cleared the day it was made. Left out, the edit form opens on "On a later
+      // date" and insists on one before it will save, which is not what these
+      // specs are about.
+      clearingDate: date,
       reference: `E2E-OWNER-${Date.now()}`,
     },
   })
@@ -112,5 +116,46 @@ test.describe('New Receipts — the owner corrects a receipt', () => {
     ])
     expect(saved.status()).toBe(200)
     await expect(page.getByTestId('receipt-edit-reason')).toHaveCount(0, { timeout: 10_000 })
+  })
+})
+
+test.describe('New Receipts — money the server fixes is not offered for editing', () => {
+  test('a settlement receipt shows its account read-only and asks for no correction reason', async ({
+    page,
+  }) => {
+    // The server refuses a new account or amount on a settlement receipt
+    // (settlement_receipt_amounts_locked), so the form must not offer one: a
+    // changed Account used to open a Correction Reason box for a save that could
+    // never go through.
+    const created = await page.request.post('/api/accounting/acknowledgement-receipts', {
+      data: {
+        payerName: `E2E locked ${Date.now()}`,
+        amount: 640,
+        grossAmount: 640,
+        paymentDate: '2026-10-30',
+        receiptType: 'ACKNOWLEDGEMENT',
+      },
+    })
+    expect(created.status()).toBe(201)
+    const receipt = await created.json()
+
+    await gotoReady(page, `/pos/collections/acknowledgement/view?id=${receipt.id}&action=edit`)
+    await expect(page.getByTestId('receipt-edit-reason')).toBeVisible({ timeout: 15_000 })
+
+    await expect(page.getByTestId('receipt-account-locked')).toBeVisible()
+    await expect(page.getByText('Correction Reason', { exact: true })).toHaveCount(0)
+    await expect(page.getByLabel('Net amount')).toHaveJSProperty('readOnly', true)
+
+    // Everything else still edits and saves.
+    await fillStable(page.getByTestId('receipt-edit-reason'), 'Keyed the wrong day')
+    const [saved] = await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.url().includes(`/api/accounting/acknowledgement-receipts/${receipt.id}`) &&
+          r.request().method() === 'PATCH'
+      ),
+      page.getByRole('button', { name: 'Save', exact: true }).click(),
+    ])
+    expect(saved.status()).toBe(200)
   })
 })
