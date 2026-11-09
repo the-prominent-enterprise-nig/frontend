@@ -12,6 +12,8 @@
 import { test, expect } from '@playwright/test'
 import { fillStable, gotoReady } from './utils'
 
+const ROLE_PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
+
 const transferIds: string[] = []
 
 test.afterEach(async ({ request }) => {
@@ -179,5 +181,39 @@ test.describe('Audit Logs — an owner edit shows why it was made', () => {
     await expect(
       page.getByTestId('audit-log-reason-detail').filter({ hasText: reason })
     ).toBeVisible()
+  })
+})
+
+test.describe('Signing in as someone else without a page reload', () => {
+  test("the new user does not get the previous user's reason box", async ({ page }) => {
+    // The browser keeps one React Query cache for the tab. Logging out and in
+    // again is a client navigation, so until the cache is cleared at sign-in the
+    // Accountant drew the owner's version of the screen for the first minute —
+    // the reason box and every other control the owner's permissions open.
+    const { id } = await recordTransfer(page, '2026-10-30')
+    const transferUrl = `/accounting/fund-transfers/${id}`
+
+    await gotoReady(page, transferUrl)
+    await page.getByRole('button', { name: 'Edit' }).click()
+    await expect(page.getByTestId('transfer-edit-reason')).toBeVisible({ timeout: 15_000 })
+
+    // Out through the profile menu, then in as the Accountant on the same page
+    // load (no goto in between, which would reset the cache and hide the bug).
+    await page.locator('header button.prominent-gradient').click()
+    await page.getByRole('button', { name: 'Logout' }).click()
+    await expect(page).toHaveURL(/\/login/)
+    await expect(async () => {
+      await fillStable(page.locator('#email'), 'technova.accounting@test.com')
+      await fillStable(page.locator('#password'), ROLE_PASSWORD)
+      await page.click('button[type="submit"]')
+      await expect(page).not.toHaveURL(/\/login(\?|$)/, { timeout: 3_000 })
+    }).toPass({ timeout: 20_000 })
+
+    await page.evaluate((url) => (window as any).next.router.push(url), transferUrl)
+    await expect(page).toHaveURL(new RegExp(`${transferUrl}$`))
+    await page.getByRole('button', { name: 'Edit' }).click()
+    // The Accountant edits as before: clearing date and reference, no reason box.
+    await expect(page.getByTestId('transfer-edit-date')).toHaveCount(0)
+    await expect(page.getByTestId('transfer-edit-reason')).toHaveCount(0)
   })
 })
