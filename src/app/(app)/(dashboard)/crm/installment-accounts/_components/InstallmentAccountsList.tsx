@@ -4,16 +4,7 @@ import { MANILA_TZ, manilaDateOf, manilaToday } from '@/src/libs/format/manila-d
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import {
-  Plus,
-  Search,
-  Wallet,
-  FileClock,
-  Upload,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
-} from 'lucide-react'
+import { Search, Wallet, FileClock, Upload, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../_actions/get-branches'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
@@ -102,13 +93,7 @@ const SORT_OPTIONS = [
   { value: 'desc', label: 'Upcoming Due' },
 ]
 
-export default function InstallmentAccountsList({
-  canCreate,
-  canLoadAging,
-}: {
-  canCreate: boolean
-  canLoadAging: boolean
-}) {
+export default function InstallmentAccountsList({ canLoadAging }: { canLoadAging: boolean }) {
   const router = useRouter()
   const [accounts, setAccounts] = useState<InstallmentAccount[]>([])
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
@@ -215,15 +200,6 @@ export default function InstallmentAccountsList({
             >
               <Upload className="h-4 w-4" />
               Load aging sheet
-            </Link>
-          )}
-          {canCreate && (
-            <Link
-              href="/crm/installment-accounts/new"
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-prominent-orange-700 sm:flex-none"
-            >
-              <Plus className="h-4 w-4" />
-              New account
             </Link>
           )}
         </div>
