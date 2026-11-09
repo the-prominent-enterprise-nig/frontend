@@ -126,6 +126,7 @@ function CollectorTable({
             <tr className="border-b border-gray-200 text-left text-[11px] uppercase text-gray-500">
               <th className={TH}>SI / DR No.</th>
               <th className={TH}>Customer</th>
+              <th className={TH}>Area</th>
               <th className={TH}>Source</th>
               <th className={TH}>Aging</th>
               {hasInstallmentRows && (
@@ -155,7 +156,7 @@ function CollectorTable({
               {collector.categories.length > 1 && (
                 <tr className="bg-prominent-purple-50">
                   <td
-                    colSpan={hasInstallmentRows ? 16 : 11}
+                    colSpan={hasInstallmentRows ? 17 : 12}
                     className="px-1.5 py-1 text-[11px] font-semibold uppercase text-prominent-purple-900"
                   >
                     Category {catGroup.category ?? 'Uncategorized'} · {catGroup.subtotal.count}{' '}
@@ -168,6 +169,9 @@ function CollectorTable({
                 <tr key={row.accountId} className="border-b border-gray-100">
                   <td className="px-1.5 py-1.5 font-mono">{row.accountNumber}</td>
                   <td className="px-1.5 py-1.5">{row.customerName}</td>
+                  {/* The account's own area (the customer's town), not the
+                      collector's coverage area in the group heading above. */}
+                  <td className="px-1.5 py-1.5 whitespace-nowrap">{row.accountArea || '—'}</td>
                   <td className="px-1.5 py-1.5 text-gray-500">
                     {row.source === 'installment' ? 'Installment' : 'Invoice'}
                   </td>
