@@ -27,7 +27,16 @@ import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import { REMINDERS_ENABLED } from '@/src/libs/features'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { type SessionUser } from '@/src/libs/guards/permission'
+import { CUSTOMER_TYPE_LABELS } from '@/src/schema/crm/types'
 import type { Customer, Lead, Reminder } from '@/src/schema/crm/types'
+
+/** What kind of customer this is, for the profile header: the type, and for
+ *  a business its category — e.g. "Individual", "Business · Government". */
+function customerTypeLine(c: Customer): string {
+  const label = CUSTOMER_TYPE_LABELS[c.customerType] ?? c.customerType
+  if (c.customerType !== 'business' || !c.businessCategory) return label
+  return `${label} · ${c.businessCategory === 'government' ? 'Government' : 'Private'}`
+}
 import type { InstallmentSchedule, PosTransaction, PosInvoiceType } from '@/src/schema/pos'
 import {
   DUE_STATUS_LABELS,
@@ -282,10 +291,7 @@ export default function Customer360({
           <div className="font-mono text-[12px] text-gray-500">{data.customerCode}</div>
           <h1 className="text-2xl font-semibold text-gray-900">{data.name}</h1>
           <div className="mt-1 text-sm text-gray-500">
-            {data.companyName ? `${data.companyName} · ` : ''}
-            {data.customerType === 'business' && data.businessCategory
-              ? `${data.businessCategory === 'government' ? 'Government' : 'Private'} · `
-              : ''}
+            Type: {customerTypeLine(data)} · {data.companyName ? `${data.companyName} · ` : ''}
             {data.customerType === 'employee' && data.employeeNumber
               ? `Employee ID: ${data.employeeNumber} · `
               : ''}
