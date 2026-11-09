@@ -104,7 +104,7 @@ function PriceListActions({
     >
       <Tooltip label="Manage Items" side="top" align="end">
         <Link
-          href={`/pos/catalog/price-lists/${pl.id}`}
+          href={`/pos/price-lists/${pl.id}`}
           aria-label="Manage Items"
           className="rounded-lg p-1.5 text-[#4b4b5a] hover:bg-[#f1f1f4]"
         >
@@ -316,7 +316,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
             </button>
             {canUpdate && (
               <Link
-                href="/pos/catalog/price-lists/upload"
+                href="/pos/price-lists/upload"
                 className="flex items-center gap-2 rounded-lg border border-[#5b21b6] bg-white px-3 py-2 text-sm font-medium text-[#5b21b6] hover:bg-[#f0e9fc] sm:px-4"
               >
                 <Upload className="h-4 w-4" />
@@ -500,7 +500,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <Link
-                            href={`/pos/catalog/price-lists/${pl.id}`}
+                            href={`/pos/price-lists/${pl.id}`}
                             className="truncate font-medium text-[#17171c] hover:text-[#3f1490] hover:underline"
                           >
                             {pl.name}
@@ -598,7 +598,7 @@ export default function PriceListsPageView({ session }: { session: SessionUser }
                         <tr key={pl.id} className="align-top hover:bg-[#fbfbfc]">
                           <td className="px-4 py-3">
                             <Link
-                              href={`/pos/catalog/price-lists/${pl.id}`}
+                              href={`/pos/price-lists/${pl.id}`}
                               className="block truncate font-medium text-[#17171c] hover:text-[#3f1490] hover:underline"
                             >
                               {pl.name}

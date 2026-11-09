@@ -2,25 +2,25 @@
 
 import { revalidatePath } from 'next/cache'
 import { api, type ApiResponse } from '@/src/libs/api/client'
-import { ApprovePriceListFormSchema } from '@/src/schema/inventory/price-lists'
+import { PriceListFormSchema } from '@/src/schema/inventory/price-lists'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
-export async function approvePriceList(id: string, input: unknown): Promise<ApiResponse<unknown>> {
+export async function updatePriceList(id: string, input: unknown): Promise<ApiResponse<unknown>> {
   const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }
-  if (!can(session, INVENTORY_PERMISSIONS.PRICE_LISTS_APPROVE)) {
+  if (!can(session, INVENTORY_PERMISSIONS.PRICE_LISTS_UPDATE)) {
     return {
       success: false,
       error: 'Forbidden',
-      message: 'You do not have permission to approve price lists',
+      message: 'You do not have permission to update price lists',
     }
   }
 
-  const parsed = ApprovePriceListFormSchema.safeParse(input)
+  const parsed = PriceListFormSchema.safeParse(input)
   if (!parsed.success) {
     return {
       success: false,
@@ -29,7 +29,7 @@ export async function approvePriceList(id: string, input: unknown): Promise<ApiR
     }
   }
 
-  const result = await api.post(`/inventory/price-lists/${id}/approve`, parsed.data)
+  const result = await api.patch(`/inventory/price-lists/${id}`, parsed.data)
 
   if (!result.success) {
     const errStr = Array.isArray(result.error) ? result.error.join(' ') : (result.error ?? '')
@@ -37,12 +37,12 @@ export async function approvePriceList(id: string, input: unknown): Promise<ApiR
       typeof result.message === 'string' ? result.message : JSON.stringify(result.message ?? '')
     return {
       success: false,
-      error: errStr || 'Failed to approve price list',
-      message: msg || errStr || 'Failed to approve price list',
+      error: errStr || 'Failed to update price list',
+      message: msg || errStr || 'Failed to update price list',
     }
   }
 
-  revalidatePath('/pos/catalog/price-lists')
+  revalidatePath('/pos/price-lists')
 
-  return { success: true, data: result.data, message: 'Price list approved' }
+  return { success: true, data: result.data, message: 'Price list updated successfully' }
 }

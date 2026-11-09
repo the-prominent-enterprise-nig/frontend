@@ -161,6 +161,17 @@ export function canManageSalesQuotas(user: SessionUser | null | undefined): bool
   return Boolean(user.isSuperAdmin || hasPrivilegedRole(user))
 }
 
+/**
+ * Head Office: the Business Owner, or anyone with no branch assigned. branchId
+ * comes from the employee record, so every branch-assigned user has one — Branch
+ * Manager and Stock Controller included — and a Head Office role has none. For
+ * what only Head Office may open (Price Lists): the permission row alone can't
+ * draw that line, because Branch Manager's module wildcards reach it.
+ */
+export function isHeadOffice(user: PermissionHolder): boolean {
+  return hasPrivilegedRole(user) || !user.branchId
+}
+
 export function can(user: PermissionHolder, permission: Permission): boolean {
   if (hasPrivilegedRole(user)) return true
   return user.permissions.some((p) => matchesPermission(p, permission))

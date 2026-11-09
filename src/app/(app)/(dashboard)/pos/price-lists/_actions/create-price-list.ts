@@ -7,16 +7,16 @@ import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
-export async function updatePriceList(id: string, input: unknown): Promise<ApiResponse<unknown>> {
+export async function createPriceList(input: unknown): Promise<ApiResponse<unknown>> {
   const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
   }
-  if (!can(session, INVENTORY_PERMISSIONS.PRICE_LISTS_UPDATE)) {
+  if (!can(session, INVENTORY_PERMISSIONS.PRICE_LISTS_CREATE)) {
     return {
       success: false,
       error: 'Forbidden',
-      message: 'You do not have permission to update price lists',
+      message: 'You do not have permission to create price lists',
     }
   }
 
@@ -29,7 +29,7 @@ export async function updatePriceList(id: string, input: unknown): Promise<ApiRe
     }
   }
 
-  const result = await api.patch(`/inventory/price-lists/${id}`, parsed.data)
+  const result = await api.post('/inventory/price-lists', parsed.data)
 
   if (!result.success) {
     const errStr = Array.isArray(result.error) ? result.error.join(' ') : (result.error ?? '')
@@ -37,12 +37,12 @@ export async function updatePriceList(id: string, input: unknown): Promise<ApiRe
       typeof result.message === 'string' ? result.message : JSON.stringify(result.message ?? '')
     return {
       success: false,
-      error: errStr || 'Failed to update price list',
-      message: msg || errStr || 'Failed to update price list',
+      error: errStr || 'Failed to create price list',
+      message: msg || errStr || 'Failed to create price list',
     }
   }
 
-  revalidatePath('/pos/catalog/price-lists')
+  revalidatePath('/pos/price-lists')
 
-  return { success: true, data: result.data, message: 'Price list updated successfully' }
+  return { success: true, data: result.data, message: 'Price list created successfully' }
 }

@@ -97,7 +97,7 @@ export function PriceListDetailPageView({
       <div className={`w-full min-h-full bg-zinc-50 p-4 md:p-6 lg:p-8 ${PLEX}`}>
         <div className="mx-auto max-w-3xl">
           <Link
-            href="/pos/catalog/price-lists"
+            href="/pos/price-lists"
             className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-[#4b4b5a] hover:text-[#3f1490]"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
@@ -146,7 +146,7 @@ export function PriceListDetailPageView({
       <div className="space-y-5">
         <div>
           <Link
-            href="/pos/catalog/price-lists"
+            href="/pos/price-lists"
             className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#4b4b5a] hover:text-[#3f1490]"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
@@ -290,7 +290,7 @@ export function PriceListDetailPageView({
 
           {canEdit && (
             <Link
-              href={`/pos/catalog/price-lists/${priceListId}/upload`}
+              href={`/pos/price-lists/${priceListId}/upload`}
               className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 py-2 text-sm font-medium text-[#3f1490] hover:bg-[#f0e9fc]"
             >
               <Upload className="h-4 w-4" />

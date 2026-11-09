@@ -6,14 +6,7 @@ import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
-/** Bulk counterpart to remove-price-list-item.ts's single-item DELETE —
- * backs the item-management page's checkbox-driven "Remove N items" action
- * (Scenario 34). The per-row single-item DELETE stays for the row's own
- * Remove button. */
-export async function removePriceListItems(
-  priceListId: string,
-  itemIds: string[]
-): Promise<ApiResponse<unknown>> {
+export async function resubmitPriceList(id: string): Promise<ApiResponse<unknown>> {
   const session = await getSessionIfAvailable()
   if (!session) {
     return { success: false, error: 'Unauthorized', message: 'Authentication required' }
@@ -22,13 +15,11 @@ export async function removePriceListItems(
     return {
       success: false,
       error: 'Forbidden',
-      message: 'You do not have permission to edit price list items',
+      message: 'You do not have permission to resubmit price lists',
     }
   }
 
-  const result = await api.delete(`/inventory/price-lists/${priceListId}/items`, {
-    body: { itemIds },
-  })
+  const result = await api.post(`/inventory/price-lists/${id}/resubmit`, {})
 
   if (!result.success) {
     const errStr = Array.isArray(result.error) ? result.error.join(' ') : (result.error ?? '')
@@ -36,12 +27,12 @@ export async function removePriceListItems(
       typeof result.message === 'string' ? result.message : JSON.stringify(result.message ?? '')
     return {
       success: false,
-      error: errStr || 'Failed to remove items',
-      message: msg || errStr || 'Failed to remove items',
+      error: errStr || 'Failed to resubmit price list',
+      message: msg || errStr || 'Failed to resubmit price list',
     }
   }
 
-  revalidatePath('/pos/catalog/price-lists')
+  revalidatePath('/pos/price-lists')
 
-  return { success: true, data: result.data, message: 'Items removed' }
+  return { success: true, data: result.data, message: 'Price list resubmitted for approval' }
 }

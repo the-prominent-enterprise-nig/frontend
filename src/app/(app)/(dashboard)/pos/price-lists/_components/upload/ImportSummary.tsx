@@ -94,7 +94,7 @@ export function ImportSummary({
           <span>
             {result.totals.otherPriceUse.toLocaleString()} row(s) are for other price uses and were
             skipped. To send the whole sheet — every price use — in one go, use{' '}
-            <Link href="/pos/catalog/price-lists/upload" className="font-medium underline">
+            <Link href="/pos/price-lists/upload" className="font-medium underline">
               Bulk upload
             </Link>
             .

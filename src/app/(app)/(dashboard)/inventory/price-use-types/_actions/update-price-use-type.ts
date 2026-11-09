@@ -40,7 +40,7 @@ export async function updatePriceUseType(
   }
 
   revalidatePath('/inventory/price-use-types')
-  revalidatePath('/pos/catalog/price-lists')
+  revalidatePath('/pos/price-lists')
 
   return { success: true, data: result.data, message: 'Price use type updated' }
 }
