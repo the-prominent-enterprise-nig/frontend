@@ -9,6 +9,7 @@ import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../_actions/get-branches'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import TablePagination from '@/src/components/common/TablePagination'
+import ExportButton from '@/src/components/common/ExportButton'
 import type { InstallmentAccount } from '@/src/schema/crm/types'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
 
@@ -202,6 +203,24 @@ export default function InstallmentAccountsList({ canLoadAging }: { canLoadAging
               Load aging sheet
             </Link>
           )}
+          {/* NIG #43 — the accounts the filters below match, every page of
+              them, so a branch can hand a collector his own list as an
+              itinerary (the AR Aging Report is the whole book). */}
+          <ExportButton
+            endpoint="/crm/installment-accounts/export"
+            params={{
+              search: search || undefined,
+              category: categoryFilter || undefined,
+              status: statusFilter || undefined,
+              branchId: branchFilter || undefined,
+              collectorId: collectorFilter || undefined,
+              dueFrom: dueFrom || undefined,
+              dueTo: dueTo || undefined,
+              ...(dueSort && { sortBy: 'dueDate', sortOrder: dueSort }),
+            }}
+            fallbackFilename="installment-accounts.xlsx"
+            disabled={loading || !!error || meta.total === 0}
+          />
         </div>
       </header>
 

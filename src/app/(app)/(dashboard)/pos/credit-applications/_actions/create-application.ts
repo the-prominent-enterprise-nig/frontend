@@ -45,10 +45,13 @@ export async function createCreditApplication(
     // number AND lost its priceListItemId, which is what the curated down
     // payment and the rate-card instalment figures hang off. estimatedPrice
     // stays in the form for the on-screen financing preview only.
-    items: parsed.data.items.map(({ itemId, serialNumberId }) => ({
+    items: parsed.data.items.map(({ itemId, serialNumberId, priceOverridden }) => ({
       itemId,
       // Scenario 64 item 28 — remembered, not reserved. See the DTO.
       ...(serialNumberId ? { serialNumberId } : {}),
+      // Nov UAT — the cart said this item's price was overridden. Only a true
+      // is sent; it is what lets the down payment be 0.
+      ...(priceOverridden ? { priceOverridden: true } : {}),
     })),
     // Scenario 64 item 27. Rows are added as needed rather than being three
     // fixed slots, so `position` is renumbered over the FILLED rows: blanks

@@ -72,6 +72,14 @@ function getMetadataItems(log: UserAuditLog): string[] {
   return items.filter((item): item is string => typeof item === 'string')
 }
 
+// Why a recorded entry was changed — the Business Owner's EDIT_RECORDED and
+// AMEND_PAID_VOUCHER rows carry it in metadata.reason. Shown on the row itself
+// and above the before/after grid, never only inside the expanded diff.
+function getMetadataReason(log: UserAuditLog): string | null {
+  const reason = log.metadata?.reason
+  return typeof reason === 'string' && reason.trim() ? reason.trim() : null
+}
+
 function ScopeBadge({
   log,
   branchNameById,
@@ -454,6 +462,7 @@ export default function AuditLogsSection({
                   const { module, resource } = formatResourceType(log.resourceType)
                   const preview = buildActionPreview(log)
                   const metadataItems = getMetadataItems(log)
+                  const reason = getMetadataReason(log)
                   return (
                     <Fragment key={log.id}>
                       <tr
@@ -478,6 +487,15 @@ export default function AuditLogsSection({
                               title={preview}
                             >
                               {preview}
+                            </div>
+                          )}
+                          {reason && (
+                            <div
+                              className="mt-1 max-w-[16rem] break-words text-xs text-zinc-600"
+                              data-testid="audit-log-reason"
+                            >
+                              <span className="font-medium text-zinc-500">Reason: </span>
+                              {reason}
                             </div>
                           )}
                         </td>
@@ -521,6 +539,17 @@ export default function AuditLogsSection({
                       {isExpanded && (
                         <tr className="border-t border-zinc-100 bg-zinc-50/60">
                           <td colSpan={5} className="px-4 py-3">
+                            {reason && (
+                              <p
+                                className="mb-2 text-xs text-zinc-700"
+                                data-testid="audit-log-reason-detail"
+                              >
+                                <span className="font-medium text-zinc-500">
+                                  Reason for this change:{' '}
+                                </span>
+                                {reason}
+                              </p>
+                            )}
                             <SnapshotDiff oldValues={log.oldValues} newValues={log.newValues} />
                           </td>
                         </tr>

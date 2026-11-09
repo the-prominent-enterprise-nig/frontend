@@ -1093,7 +1093,7 @@ export function buildCustomerLedgerHtml(
       (r) => `<tr>
         <td>${fmtDate(r.date)}</td>
         <td class="mono">${esc(r.ref)}</td>
-        <td class="right">${r.inst > 0 ? r.inst : '—'}</td>
+        <td class="right">${r.instLabel ? esc(r.instLabel) : r.inst > 0 ? r.inst : '—'}</td>
         <td>${esc(r.description)}</td>
         <td class="right">${r.debit > 0 ? fmt(r.debit) : '—'}</td>
         <td class="right">${r.credit > 0 ? fmt(r.credit) : '—'}</td>
@@ -1297,7 +1297,7 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
       (r) => `<tr>
         <td>${fmtDate(r.date)}</td>
         <td class="mono">${esc(r.ref)}</td>
-        <td class="right">${r.inst > 0 ? r.inst : '—'}</td>
+        <td class="right">${r.instLabel ? esc(r.instLabel) : r.inst > 0 ? r.inst : '—'}</td>
         <td>${esc(r.description)}</td>
         ${showScheme ? `<td>${esc(r.scheme ?? '')}</td>` : ''}
         <td class="right">${r.debit > 0 ? fmt(r.debit) : '—'}</td>

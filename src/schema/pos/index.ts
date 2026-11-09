@@ -1389,6 +1389,8 @@ export interface InstallmentSchedule {
     /** The SI No. the customer holds. */
     siNo: string
     branchId: string | null
+    /** Where the account sits; null on an account with no branch. */
+    branchName: string | null
     /** The sheet's balance, before collections taken in the system. */
     storedBalance: number
     /** What those collections have relieved since. */

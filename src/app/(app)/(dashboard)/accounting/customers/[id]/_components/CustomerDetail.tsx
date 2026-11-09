@@ -13,6 +13,7 @@ import {
 import { getCustomerById, Customer } from '@/src/libs/data/AccountingData'
 import { ARInvoices, fmtDate, fmtMoney, type ARInvoice } from '@/src/libs/data/AccountingV2Data'
 import { customersApi } from '@/src/libs/api/crm'
+import AgingAccountsList from '@/src/components/crm/AgingAccountsList'
 import type { InstallmentSchedule } from '@/src/schema/pos'
 import { CUSTOMER_TYPE_LABELS } from '@/src/schema/crm/types'
 
@@ -67,10 +68,16 @@ export default function CustomerDetail({ id }: { id: string }) {
   // customer owes.
   const [invoices, setInvoices] = useState<ARInvoice[]>([])
   const [installmentSchedules, setInstallmentSchedules] = useState<InstallmentSchedule[]>([])
+  // Accounts loaded from the aging sheet have no POS plan, so they are kept out
+  // of the Installments list above and shown in their own card.
+  const [agingAccounts, setAgingAccounts] = useState<InstallmentSchedule[]>([])
 
   useEffect(() => {
-    customersApi.getInstallmentSchedules(id).then((res) => {
-      if (res.success && res.data) setInstallmentSchedules(res.data)
+    customersApi.getInstallmentSchedules(id, { withAgingAccounts: true }).then((res) => {
+      if (res.success && res.data) {
+        setInstallmentSchedules(res.data.filter((s) => !s.isAgingAccount))
+        setAgingAccounts(res.data.filter((s) => s.isAgingAccount))
+      }
     })
   }, [id])
 
@@ -290,6 +297,10 @@ export default function CustomerDetail({ id }: { id: string }) {
                 </ul>
               )}
             </div>
+
+            {agingAccounts.length > 0 && (
+              <AgingAccountsList plans={agingAccounts} className="mt-4 rounded-lg p-4" />
+            )}
 
             <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-4">
               <div className="mb-3 flex items-center justify-between">

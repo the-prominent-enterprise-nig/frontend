@@ -10,12 +10,12 @@ import type {
 } from '@/src/schema/pos/sales-reports'
 import { getSalesDailyMonitoring } from '../../_actions/get-sales-reports'
 import { monitoringWeeks, type MonitoringWeek } from './monitoring-weeks'
-import { peso, percent, periodLabel } from './scorecard-format'
+import { peso, percent, periodLabel, shortDay, throughNote } from './scorecard-format'
 
 /**
  * Scenario 85 Part 6 — Daily Sales Monitoring: one column per branch (and
  * the AC Unit + Services line), one row per day in collapsible 8-day weeks,
- * each day's total over its office sales; then the month to date against
+ * each day's total over its office sales; then the period's total against
  * quota, and last year's figures from the system's own sales.
  *
  * The same rows as the Branch Scorecard, read day by day, so the two never
@@ -53,13 +53,14 @@ export default function DailyMonitoringPanel({
     <div className="flex flex-col gap-4">
       <div>
         <p className="text-[11px] font-semibold tracking-wide text-prominent-purple-700">
-          {periodLabel(period.from, period.asOf)}
+          {periodLabel(period.from, period.to)}
         </p>
         <h2 className="text-lg font-semibold text-zinc-900">{title}</h2>
         <p className="text-xs text-zinc-500">Daily Sales Monitoring</p>
         <p className="mt-1 text-[11px] text-zinc-500">
-          Month to date through the To date. Sales are gross (LCP, VAT-inclusive), with refunds
-          netted in.
+          From the From date through the To date.{throughNote(period)} Sales are gross (LCP,
+          VAT-inclusive), with refunds netted in. Quota is each month&apos;s quota, prorated for the
+          days of it the period covers.
         </p>
       </div>
       <MonitoringGrid data={query.data} />
@@ -81,7 +82,8 @@ function sum(row: ScorecardRow, indexes: number[], field: 'total' | 'office'): n
 
 function MonitoringGrid({ data }: { data: DailyMonitoring }): React.JSX.Element {
   const columns = columnsOf(data.scorecard.rows)
-  const weeks = monitoringWeeks(data.scorecard.period.daysElapsed)
+  const days = data.scorecard.rows[0]?.daily.map((d) => d.day) ?? []
+  const weeks = monitoringWeeks(days)
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const allCollapsed = collapsed.size === weeks.length
 
@@ -194,7 +196,7 @@ function WeekRows({
         week.dayIndexes.map((i) => (
           <Fragment key={i}>
             <ValueRow
-              label={String(i + 1)}
+              label={shortDay(columns[0]?.daily[i]?.day ?? '')}
               columns={columns}
               value={(c) => c.daily[i]?.total ?? 0}
             />
@@ -258,7 +260,7 @@ function ValueRow({
   )
 }
 
-/** Month to date per column, against its quota — the scorecard's own figures. */
+/** The period's total per column, against its quota — the scorecard's own figures. */
 function SummaryRows({
   columns,
   weeks,
