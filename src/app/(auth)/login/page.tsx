@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { login } from '@/src/libs/auth/actions/login'
+import { clearClientSession } from '@/src/libs/auth/clear-client-session'
 import { LoginSchema, type LoginInput } from '@/src/schema/auth/login'
 import Link from 'next/link'
 import {
@@ -48,6 +49,7 @@ export default function LoginPage() {
         return
       }
 
+      clearClientSession()
       router.push(result.redirectTo ?? '/')
     } catch {
       setSubmitError('Unable to sign in. Please refresh and try again.')
