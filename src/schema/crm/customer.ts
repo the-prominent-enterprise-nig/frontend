@@ -85,6 +85,8 @@ export const createCustomerSchema = z.object({
   customerType: CustomerTypeEnum.optional(),
   companyName: z.string().max(255).optional().or(z.literal('')),
   businessCategory: z.enum(['private', 'government']).optional().or(z.literal('')),
+  // Business customers only; the backend refuses it on any other type.
+  isInstitutional: z.boolean().optional(),
   employeeNumber: z.string().max(50).optional().or(z.literal('')),
   birthday: z.date().optional(),
   // Scenario 64 item 27 — the credit application mockup's CUSTOMER PROFILE

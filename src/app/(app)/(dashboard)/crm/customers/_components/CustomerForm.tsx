@@ -36,6 +36,7 @@ type FormState = {
   customerType: CustomerType
   companyName: string
   businessCategory: string
+  isInstitutional: boolean
   employeeNumber: string
   birthday: string
   // Scenario 64 item 27 — the credit application mockup's CUSTOMER PROFILE
@@ -89,6 +90,7 @@ const empty: FormState = {
   customerType: 'individual',
   companyName: '',
   businessCategory: '',
+  isInstitutional: false,
   employeeNumber: '',
   birthday: '',
   altPhone: '',
@@ -220,6 +222,7 @@ export default function CustomerForm({
           customerType: c.customerType,
           companyName: c.companyName ?? '',
           businessCategory: c.businessCategory ?? '',
+          isInstitutional: c.isInstitutional ?? false,
           employeeNumber: c.employeeNumber ?? '',
           birthday: c.birthday ? c.birthday.slice(0, 10) : '',
           altPhone: c.altPhone ?? '',
@@ -343,6 +346,9 @@ export default function CustomerForm({
         form.customerType === 'business' && form.businessCategory
           ? (form.businessCategory as 'private' | 'government')
           : undefined,
+      // Business only. Left out for any other type: the backend clears the
+      // tag itself when a customer is re-typed away from Business.
+      isInstitutional: form.customerType === 'business' ? form.isInstitutional : undefined,
       employeeNumber:
         form.customerType === 'employee' ? form.employeeNumber || undefined : undefined,
       birthday: form.birthday ? new Date(form.birthday) : undefined,

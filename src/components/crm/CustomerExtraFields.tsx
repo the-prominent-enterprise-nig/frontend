@@ -216,6 +216,8 @@ export interface CustomerExtraFieldsValues {
    *  two labels. See the Customer type's comment for why. */
   companyName: string
   businessCategory: string
+  /** Business only — the form shows the checkbox for a business alone. */
+  isInstitutional: boolean
   employeeNumber: string
   birthday: string
   // Scenario 64 item 27 — the credit application mockup's CUSTOMER PROFILE
@@ -354,6 +356,15 @@ export default function CustomerExtraFields({
               placeholder="Select category"
             />
           </div>
+          <label className="mt-2 flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={values.isInstitutional}
+              onChange={(e) => onChange({ isInstitutional: e.target.checked })}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            Institutional
+          </label>
         </div>
       )}
 

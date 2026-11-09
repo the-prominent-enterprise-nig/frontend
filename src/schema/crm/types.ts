@@ -180,6 +180,9 @@ export interface Customer {
    *  labels it Company name for a business and Employer otherwise. */
   companyName?: string | null
   businessCategory?: 'private' | 'government' | null
+  /** A business customer tagged Institutional — a label only, separate from
+   *  businessCategory. Always false for any other customer type. */
+  isInstitutional?: boolean
   employeeNumber?: string | null
   birthday?: string | null
   // Scenario 64 item 27 — the credit application mockup's CUSTOMER PROFILE

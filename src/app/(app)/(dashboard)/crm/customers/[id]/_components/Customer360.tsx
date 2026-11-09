@@ -286,6 +286,7 @@ export default function Customer360({
             {data.customerType === 'business' && data.businessCategory
               ? `${data.businessCategory === 'government' ? 'Government' : 'Private'} · `
               : ''}
+            {data.customerType === 'business' && data.isInstitutional ? 'Institutional · ' : ''}
             {data.customerType === 'employee' && data.employeeNumber
               ? `Employee ID: ${data.employeeNumber} · `
               : ''}

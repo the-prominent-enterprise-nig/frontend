@@ -133,6 +133,8 @@ export type CustomerFilters = {
   groupId?: string
   branchId?: string
   accountType?: CustomerAccountType
+  /** true: only Institutional customers; false: only untagged ones. */
+  isInstitutional?: boolean
   page?: number
   limit?: number
 } & Record<string, string | number | boolean | undefined>

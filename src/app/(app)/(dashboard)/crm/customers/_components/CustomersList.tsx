@@ -64,6 +64,8 @@ export default function CustomersList({
   // just not how anyone narrows this list.
   const [branchFilter, setBranchFilter] = useState('')
   const [accountTypeFilter, setAccountTypeFilter] = useState('')
+  // '' = everyone, 'true' = Institutional only, 'false' = untagged only.
+  const [institutionalFilter, setInstitutionalFilter] = useState('')
   const [groupIdFilter, setGroupIdFilter] = useState('')
   const [branches, setBranches] = useState<BranchLite[]>([])
   const [loading, setLoading] = useState(true)
@@ -78,6 +80,7 @@ export default function CustomersList({
         search: search || undefined,
         branchId: branchFilter || undefined,
         accountType: (accountTypeFilter || undefined) as CustomerAccountType | undefined,
+        isInstitutional: institutionalFilter === '' ? undefined : institutionalFilter === 'true',
         groupId: groupIdFilter || undefined,
         limit: 50,
       })
@@ -86,7 +89,7 @@ export default function CustomersList({
       setLoading(false)
     }, 250)
     return () => clearTimeout(t)
-  }, [search, branchFilter, accountTypeFilter, groupIdFilter])
+  }, [search, branchFilter, accountTypeFilter, institutionalFilter, groupIdFilter])
 
   useEffect(() => {
     BranchesApi.list().then((r) => setBranches(r.data?.data ?? []))
@@ -155,6 +158,16 @@ export default function CustomersList({
           <option value="">Cash &amp; charge</option>
           <option value="cash">Cash</option>
           <option value="charge">Charge</option>
+        </select>
+        <select
+          value={institutionalFilter}
+          onChange={(e) => setInstitutionalFilter(e.target.value)}
+          aria-label="Filter by Institutional"
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+        >
+          <option value="">Institutional &amp; not</option>
+          <option value="true">Institutional</option>
+          <option value="false">Not institutional</option>
         </select>
         <input
           value={groupIdFilter}
@@ -226,6 +239,11 @@ export default function CustomersList({
                         <span className="block font-medium text-gray-900 group-hover:text-prominent-orange-700 group-hover:underline">
                           {c.name}
                         </span>
+                        {c.isInstitutional && (
+                          <span className="mt-0.5 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+                            Institutional
+                          </span>
+                        )}
                         <div className="truncate text-[12px] text-gray-500">
                           {c.companyName ??
                             (c.customerType === 'employee' && c.employeeNumber ? (
