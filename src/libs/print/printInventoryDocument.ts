@@ -8,6 +8,8 @@ import {
   receivingReportBranchLine,
   receivingReportMetaSlots,
   receivingReportGrossUnitCosts,
+  receivingReportReceivedOnly,
+  receivingReportRows,
 } from '@/src/libs/format/receiving-report'
 import { receivingReportDriverHelper } from '@/src/libs/format/receiving-driver-helper'
 
@@ -88,7 +90,8 @@ export function buildReceivingReportHtml(
   opts: { showAmounts?: boolean; showPrices?: boolean } = {}
 ): string {
   const doc = data as PrintDocumentEnvelope
-  const rr = doc.document as Record<string, unknown>
+  // Only what actually arrived — a transfer receipt also carries its 0-received lines.
+  const rr = receivingReportReceivedOnly(doc.document as Record<string, unknown>)
   const enterprise = doc.enterprise
   const lines = Array.isArray(rr.lines) ? (rr.lines as Record<string, unknown>[]) : []
   // Costs reach the document only for whoever may see them — the Business
@@ -133,31 +136,26 @@ export function buildReceivingReportHtml(
     rr as Parameters<typeof receivingReportGrossUnitCosts>[0]
   )
 
-  const rows = lines
-    .map((l, i) => {
-      const item = l.item as
-        | {
-            name?: string
-            modelNumber?: string
-            brand?: { name?: string }
-            primaryCategory?: { name?: string }
-          }
-        | undefined
-      const serials = (l.serialNumbers as string[] | undefined) ?? []
-      const qty = Number(l.quantityReceived ?? 0)
-      const unitCost = grossUnitCosts[i] ?? null
-      totalQty += qty
-      if (unitCost != null) totalAmount += qty * unitCost
+  // Same Brand / Subgroup / Model (and unit cost) prints as one row — the
+  // on-screen sheet groups through this same helper.
+  const rows = receivingReportRows(
+    lines as Parameters<typeof receivingReportRows>[0],
+    grossUnitCosts,
+    rr.notes as string | null | undefined
+  )
+    .map((row) => {
+      totalQty += row.quantity
+      if (row.unitCost != null) totalAmount += row.quantity * row.unitCost
       return `<tr>
-        <td class="mono">${serials.length > 0 ? esc(serials.join(', ')) : ''}</td>
-        <td>${esc(item?.brand?.name) || ''}</td>
-        <td>${esc(item?.primaryCategory?.name) || ''}</td>
-        <td>${esc(item?.modelNumber) || esc(item?.name) || ''}</td>
-        <td class="right">${qty}</td>
+        <td class="mono">${esc(row.serials.join(', '))}${row.remark ? `<div class="remark">${esc(row.remark)}</div>` : ''}</td>
+        <td>${esc(row.brand)}</td>
+        <td>${esc(row.subgroup)}</td>
+        <td>${esc(row.model)}</td>
+        <td class="right">${row.quantity}</td>
         ${
           showAmounts
-            ? `<td class="right">${unitCost != null ? fmtMoney(unitCost) : '—'}</td>
-        <td class="right">${unitCost != null ? fmtMoney(qty * unitCost) : '—'}</td>`
+            ? `<td class="right">${row.unitCost != null ? fmtMoney(row.unitCost) : '—'}</td>
+        <td class="right">${row.unitCost != null ? fmtMoney(row.quantity * row.unitCost) : '—'}</td>`
             : ''
         }
       </tr>`
@@ -196,13 +194,14 @@ export function buildReceivingReportHtml(
     thead th { background: #f5f5f5; text-align: center; font-weight: 700; }
     td.right, th.right { text-align: right; }
     td.mono { font-family: "Courier New", monospace; }
+    .remark { font-family: Arial, sans-serif; font-size: 10px; color: #92400e; margin-top: 2px; }
     .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
     .total-wrap table { width: auto; }
     .total-wrap td { font-weight: 700; }
     .total-wrap td.label { text-align: right; }
     .total-wrap td.value { text-align: right; min-width: 120px; }
     .signatures { margin-top: 40px; display: flex; gap: 56px; }
-    .sig-block { flex: 1; }
+    .sig-block { flex: 0 1 320px; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
     .sig-line { border-bottom: 1px solid #333; }
     .sig-name { margin: 4px 0 0; font-size: 12px; color: #333; }
@@ -280,7 +279,6 @@ export function buildReceivingReportHtml(
       <div class="sig-block">
         <p class="sig-label">Received by:</p>
         <div class="sig-line"></div>
-        ${rr.receivedByName ? `<p class="sig-name">${esc(rr.receivedByName)}</p>` : ''}
       </div>
     </div>
 
@@ -569,6 +567,40 @@ export function buildStockTransferHtml(data: unknown): string {
   // Blank (—) until the transfer is received.
   const receipts = transferReceipts(transfer)
 
+  // The sheet prints the transfer as it was created: every line with the
+  // serial that was dispatched. A receipt-time Wrong serial / Wrong unit is
+  // recorded on the receiving report, not here — a swap repointed the line at
+  // the unit that arrived, so the dispatched serial is read back from
+  // receiptCorrectedFromSerialNumber.
+  const serialCell = (l: Record<string, unknown>, serial?: string): string => {
+    const item = l.item as { isSerialTracked?: boolean } | undefined
+    const dispatched = (l.receiptCorrectedFromSerialNumber as string | null | undefined) || serial
+    return (
+      esc(dispatched) ||
+      (item?.isSerialTracked && awaitingDispatch ? '<em>Assigned at dispatch</em>' : '—')
+    )
+  }
+
+  // Once anything has been received, a line still short gets a note under
+  // its item, worded like the drawer's Received column — so a partial
+  // receipt's sheet can't read as if every unit arrived. Received lines stay
+  // plain.
+  const showStatus = ['received', 'partially_received'].includes(String(transfer.status))
+  const shortfallNote = (l: Record<string, unknown>): string => {
+    if (!showStatus) return ''
+    const received = Number(l.receivedQuantity ?? 0)
+    const qty = Number(l.quantity ?? 0)
+    const lost = (l.serialNumber as { status?: string } | null)?.status === 'lost_in_transit'
+    // A serial line not received yet prints plain — the sheet shows the
+    // transfer as created, and the receipts say what arrived.
+    const text = lost
+      ? 'Lost in Transit'
+      : received >= qty || l.serialNumberId
+        ? ''
+        : `${received} of ${qty} received`
+    return text ? `<div class="line-status">${text}</div>` : ''
+  }
+
   let totalQty = 0
   const rows = lines
     .map((l, i) => {
@@ -580,8 +612,8 @@ export function buildStockTransferHtml(data: unknown): string {
       totalQty += qty
       return `<tr>
         <td class="num">${i + 1}</td>
-        <td>${esc(item?.name) || '—'}</td>
-        ${hasSerialLine ? `<td class="mono">${esc(serial) || (item?.isSerialTracked && awaitingDispatch ? '<em>Assigned at dispatch</em>' : '—')}</td>` : ''}
+        <td>${esc(item?.name) || '—'}${shortfallNote(l)}</td>
+        ${hasSerialLine ? `<td class="mono">${serialCell(l, serial)}</td>` : ''}
         <td class="right">${qty}</td>
       </tr>`
     })
@@ -617,6 +649,7 @@ export function buildStockTransferHtml(data: unknown): string {
     td.num, th.num { text-align: center; width: 32px; }
     td.right, th.right { text-align: right; }
     td.mono { font-family: "Courier New", monospace; }
+    .line-status { font-size: 10px; color: #555; margin-top: 2px; }
     .total-wrap { display: flex; justify-content: flex-end; margin-top: 12px; }
     .total-wrap table { width: auto; }
     .total-wrap td { font-weight: 700; }

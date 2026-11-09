@@ -1215,7 +1215,7 @@ function InstallmentScheduleDetailModal({
             <Row label="Term" value={`${schedule.termMonths} months`} />
             <Row label="Down payment" value={formatPeso(schedule.downPayment)} />
             {schedule.installmentAccount && (
-              <Row label="Rebate" value={formatPeso(schedule.installmentAccount.ppd)} />
+              <Row label="Rebate" value={formatPeso(schedule.installmentAccount.ppd ?? 0)} />
             )}
             <div className="border-t border-gray-200 pt-2">
               <Row label="Total price (contract)" value={formatPeso(contractTotal)} bold />
