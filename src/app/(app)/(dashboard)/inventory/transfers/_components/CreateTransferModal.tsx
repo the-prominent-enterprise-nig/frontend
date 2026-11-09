@@ -20,6 +20,7 @@ import {
   type TransferSummary,
 } from '@/src/schema/inventory/transfers'
 import {
+  caravanScopeBranchId,
   isCaravanBranch,
   isCaravanEnded,
   warehouseLabel,
@@ -578,13 +579,18 @@ export default function CreateTransferModal({
   const editingCaravanDestination = isEditing && isCaravanDestination && !isCreatingNewCaravan
 
   // A caravan still running is a destination like any branch; an ended one
-  // takes no new stock. A branch-scoped user gets the caravans their own
-  // branch hosts alongside their branch.
+  // takes no new stock. Whenever the destination is open (sending directly,
+  // a Warehouse Custodian, head office) every running caravan is offered,
+  // whoever hosts it — just as every branch is. Only a request, whose
+  // destination is the user's own side, keeps to the caravans their branch
+  // hosts.
+  const caravanScope = caravanScopeBranchId(warehouses, currentUserBranchId)
+  const destinationOpen = canPickAnyDestination || sendsDirect
   const runningCaravans = warehouses.filter(
     (wh) =>
       isCaravanBranch(wh.branch) &&
       !isCaravanEnded(wh.branch) &&
-      (!currentUserBranchId || wh.branch?.hostBranch?.id === currentUserBranchId)
+      (!caravanScope || destinationOpen || wh.branch?.hostBranch?.id === caravanScope)
   )
   const branchDestinations = [
     // A Warehouse Custodian, head office and anyone sending directly can send
@@ -604,14 +610,14 @@ export default function CreateTransferModal({
   // Host branch for a new caravan: a real branch, never another caravan. A
   // branch-scoped user can only host at their own branch (the backend
   // enforces the same).
-  const hostBranchOptions = (currentUserBranchId ? ownBranchWarehouses : warehouses)
+  const hostBranchOptions = (caravanScope ? ownBranchWarehouses : warehouses)
     .filter((wh) => !!wh.branchId && !isCaravanBranch(wh.branch))
     .map((wh) => ({ value: wh.branchId as string, label: branchLabel(wh) }))
 
   // The host is always the user's own pick — the source branch says nothing
   // about where the event is. Only a branch-scoped user, who can host at
   // their own branch alone, gets it filled in.
-  const defaultHostBranchId = currentUserBranchId ?? ''
+  const defaultHostBranchId = caravanScope ?? ''
 
   // Ticking / unticking "Send directly" swaps which end is the user's own
   // branch (see sendsDirect). The lock effects fill the newly locked end; this
@@ -923,7 +929,7 @@ export default function CreateTransferModal({
                       control={control as unknown as Control<CaravanFieldsForm>}
                       errors={errors}
                       hostBranchOptions={hostBranchOptions}
-                      hostLocked={!!currentUserBranchId}
+                      hostLocked={!!caravanScope}
                     />
                   )}
                   {/* Same column template as the route grid above (with an
@@ -1066,6 +1072,8 @@ export default function CreateTransferModal({
                     placeholder="Add item — search name or SKU…"
                     stockWarehouseId={fromId || undefined}
                     stockFromOtherBranch
+                    // A caravan sends only what it holds — no catalog tail.
+                    stockOnly={isCaravanBranch(fromWarehouse?.branch)}
                   />
                 </div>
               </div>

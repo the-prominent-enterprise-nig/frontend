@@ -70,7 +70,7 @@ const BRANCH_PASSWORD = 'dev-prominent-enterprise-2026'
 test.describe.configure({ mode: 'serial' })
 
 test.describe('Accounting — Inter-Account Transfer (Scenario 40 Part 3 / Scenario 61)', () => {
-  test('transfers money, shows the voucher pop-up, lists it in history, and edits only clearing date + reference', async ({
+  test('transfers money, shows the voucher pop-up, lists it in history, and edits the clearing date and reference (the owner also gets the full edit, with a reason)', async ({
     page,
     request,
   }) => {
@@ -201,6 +201,12 @@ test.describe('Accounting — Inter-Account Transfer (Scenario 40 Part 3 / Scena
     // transfer Pending again.
     await page.getByRole('button', { name: 'Edit' }).click()
     const form = page.locator('form')
+    // The Business Owner sees the whole transfer to correct (date, accounts,
+    // amount, description, branch) and has to say why; anyone else gets only the
+    // clearing date and reference (the backend e2e covers that side).
+    await expect(page.getByTestId('transfer-edit-date')).toBeVisible()
+    await expect(page.getByTestId('transfer-edit-reason')).toBeVisible()
+    await fillStable(page.getByTestId('transfer-edit-reason'), 'E2E clearing date correction')
     await expect(form.getByText('Cleared', { exact: true })).toBeVisible()
     await expect(form.getByText('Reference', { exact: true })).toBeVisible()
     await expect(page.getByRole('combobox', { name: 'On the same date' })).toBeVisible()
@@ -220,6 +226,7 @@ test.describe('Accounting — Inter-Account Transfer (Scenario 40 Part 3 / Scena
 
     // A later date with none typed is refused, as when recording it.
     await page.getByRole('button', { name: 'Edit' }).click()
+    await fillStable(page.getByTestId('transfer-edit-reason'), 'E2E clearing date correction')
     await expect(page.getByRole('combobox', { name: 'On a later date' })).toBeVisible()
     await expect(page.getByLabel('Cleared Date')).toHaveValue(nextWeek)
     await page.getByLabel('Cleared Date').fill('')

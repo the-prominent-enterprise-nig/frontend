@@ -4,20 +4,12 @@ import { MANILA_TZ, manilaDateOf, manilaToday } from '@/src/libs/format/manila-d
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import {
-  Plus,
-  Search,
-  Wallet,
-  FileClock,
-  Upload,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
-} from 'lucide-react'
+import { Search, Wallet, FileClock, Upload, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { installmentAccountsApi, collectorsApi } from '@/src/libs/api/crm'
 import { getBranches } from '../_actions/get-branches'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import TablePagination from '@/src/components/common/TablePagination'
+import ExportButton from '@/src/components/common/ExportButton'
 import type { InstallmentAccount } from '@/src/schema/crm/types'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
 
@@ -102,13 +94,7 @@ const SORT_OPTIONS = [
   { value: 'desc', label: 'Upcoming Due' },
 ]
 
-export default function InstallmentAccountsList({
-  canCreate,
-  canLoadAging,
-}: {
-  canCreate: boolean
-  canLoadAging: boolean
-}) {
+export default function InstallmentAccountsList({ canLoadAging }: { canLoadAging: boolean }) {
   const router = useRouter()
   const [accounts, setAccounts] = useState<InstallmentAccount[]>([])
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
@@ -217,15 +203,24 @@ export default function InstallmentAccountsList({
               Load aging sheet
             </Link>
           )}
-          {canCreate && (
-            <Link
-              href="/crm/installment-accounts/new"
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-prominent-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-prominent-orange-700 sm:flex-none"
-            >
-              <Plus className="h-4 w-4" />
-              New account
-            </Link>
-          )}
+          {/* NIG #43 — the accounts the filters below match, every page of
+              them, so a branch can hand a collector his own list as an
+              itinerary (the AR Aging Report is the whole book). */}
+          <ExportButton
+            endpoint="/crm/installment-accounts/export"
+            params={{
+              search: search || undefined,
+              category: categoryFilter || undefined,
+              status: statusFilter || undefined,
+              branchId: branchFilter || undefined,
+              collectorId: collectorFilter || undefined,
+              dueFrom: dueFrom || undefined,
+              dueTo: dueTo || undefined,
+              ...(dueSort && { sortBy: 'dueDate', sortOrder: dueSort }),
+            }}
+            fallbackFilename="installment-accounts.xlsx"
+            disabled={loading || !!error || meta.total === 0}
+          />
         </div>
       </header>
 

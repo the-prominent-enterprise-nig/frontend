@@ -1,11 +1,12 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   useForm,
   useFieldArray,
   useWatch,
+  useFormState,
   Controller,
   type Control,
   type UseFormSetValue,
@@ -64,6 +65,14 @@ import {
   serialScanProps,
 } from '../../purchase-orders/_components/receive-po/serialScan'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
+import { getSenderSerials, type SenderSerial } from '../_actions/get-sender-serials'
+import {
+  buildWrongUnitNote,
+  hasWrongUnitNote,
+  serialCorrectionReason,
+  splitUnitLabel,
+  wrongUnitBySerial,
+} from '@/src/libs/inventory/wrong-unit-notes'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
@@ -554,178 +563,503 @@ function UnlistedSerialInputs({
   )
 }
 
-// "The wrong serial was sent" — surfaced only for someone holding the same
-// serial-override permission that gates a dispatch-time override, since
-// rewriting or repointing a serial record at receipt is the same class of
-// action. Two mutually exclusive corrections: a typo-fix rewrites the same
-// physical unit's recorded serial in place; a unit-swap repoints this line
-// at a different unit that actually arrived (search scoped to this item,
-// across every branch, since the true unit could be a stray record
-// anywhere). Both force quantityReceived to 1 — a correction only makes
-// sense for a unit that did show up.
+/** Item name without its spec tail and "(1 of 2)" counter — "SHARP
+ * HMDX41PW — 14-Cup Capacity… (1 of 2)" reads as "SHARP HMDX41PW". */
+function shortItemName(name: string | undefined): string | undefined {
+  return name
+    ?.split(' — ')[0]
+    .replace(/\s*\(\d+ of \d+\)\s*$/, '')
+    .trim()
+}
+
+/** "250502400 (SHARP HMDX41PW)" — the serial with a short model tag. */
+function unitLabel(serial: string | undefined, itemName: string | undefined): string {
+  const model = shortItemName(itemName)
+  if (!serial) return model ?? '—'
+  return model ? `${serial} (${model})` : serial
+}
+
+// Two receive-time exceptions on a serial line, each behind its own link:
+//
+// "Wrong serial?" — a different unit of the SAME item arrived. The receiver
+// picks it from that item's in-stock units — the sender's first, then every
+// other branch, since the true unit could be a stray record anywhere; the
+// line is repointed at it and the dispatched serial is flagged lost in
+// transit. Gated on the serial-override permission — the same class of
+// action as a dispatch-time override — and needs a reason.
+//
+// "Wrong unit?" — the receiver picks the unit that arrived from what the
+// sender could have shipped by mistake: anything in stock at the source
+// warehouse (any model) plus this transfer's other dispatched units. Nothing
+// is repointed — a note naming the picked unit is added to the receipt notes.
+// Flagging leaves the line unticked — the dispatched unit never arrived — so
+// it stays outstanding for a later receive, where the earlier receipt's note
+// shows it again (`flaggedUnit`) and the receiver ticks it themselves. Open
+// to every receiver; no override needed.
 function SerialReceiveCorrection({
   control,
   setValue,
   index,
   itemId,
+  transferId,
+  ownSerial,
+  lineLabel,
+  sourceBranchLabel,
+  flaggedUnit,
   canOverrideSerial,
 }: {
   control: Control<ReceiveTransferFormValues>
   setValue: UseFormSetValue<ReceiveTransferFormValues>
   index: number
   itemId: string | undefined
+  transferId: string
+  ownSerial: string | undefined
+  lineLabel: string
+  /** The dispatching branch — heads its own serials in both pickers. */
+  sourceBranchLabel: string
+  /** The wrong unit an earlier receipt already flagged on this line. */
+  flaggedUnit: string | undefined
   canOverrideSerial: boolean
 }) {
-  const [openMode, setOpenMode] = useState<'typo' | 'swap' | null>(null)
-  const correctedSerialNumber = useWatch({ control, name: `lines.${index}.correctedSerialNumber` })
+  const [mode, setMode] = useState<'serial' | 'unit' | null>(null)
+  const [addedNote, setAddedNote] = useState<string | null>(null)
+  const [arrivedReceived, setArrivedReceived] = useState(false)
   const replacementSerialNumberId = useWatch({
     control,
     name: `lines.${index}.replacementSerialNumberId`,
   })
-  const replacementSerialLabel = useWatch({
-    control,
-    name: `lines.${index}.replacementSerialLabel`,
-  })
-  const correctionReason = useWatch({ control, name: `lines.${index}.correctionReason` }) ?? ''
+  const notes = useWatch({ control, name: 'notes' }) ?? ''
+  const quantityReceived = useWatch({ control, name: `lines.${index}.quantityReceived` })
+  const activeMode = mode ?? (replacementSerialNumberId ? 'serial' : null)
 
-  if (!canOverrideSerial) return null
-
-  const activeMode: 'typo' | 'swap' | null = correctedSerialNumber
-    ? 'typo'
-    : replacementSerialNumberId
-      ? 'swap'
-      : openMode
-
-  function clearCorrection() {
-    setOpenMode(null)
-    setValue(`lines.${index}.correctedSerialNumber`, '')
+  function clearSerial(): void {
+    setMode(null)
     setValue(`lines.${index}.replacementSerialNumberId`, '')
     setValue(`lines.${index}.replacementSerialLabel`, '')
     setValue(`lines.${index}.correctionReason`, '')
   }
 
-  if (!activeMode) {
+  // Record the discrepancy in the receipt notes and untick the line — a
+  // different unit arrived, so the dispatched one hasn't been received yet.
+  // A registered in-stock unit is also received in its own right (moved here
+  // as an extra line); one of this transfer's own in-transit units isn't —
+  // the receiver ticks that unit's own line instead.
+  function flagWithNote(note: string, picked: SenderSerial): void {
+    setMode(null)
+    setAddedNote(note)
+    setValue(`lines.${index}.quantityReceived`, 0, { shouldDirty: true })
+    const receivable = picked.status === 'in_stock' && !!picked.item?.id
+    setValue(`lines.${index}.arrivedSerialNumberId`, receivable ? picked.id : '')
+    setValue(`lines.${index}.arrivedItemId`, receivable ? picked.item?.id : '')
+    setArrivedReceived(receivable)
+    const bullet = `• ${note}`
+    if (!notes.includes(bullet)) {
+      setValue('notes', notes.trim() ? `${notes.trim()}\n${bullet}` : bullet, {
+        shouldDirty: true,
+      })
+    }
+  }
+
+  function undoNote(): void {
+    const next = notes
+      .split('\n')
+      .filter((l) => l.trim() !== `• ${addedNote}`)
+      .join('\n')
+      .trim()
+    setValue('notes', next, { shouldDirty: true })
+    setValue(`lines.${index}.arrivedSerialNumberId`, '')
+    setValue(`lines.${index}.arrivedItemId`, '')
+    setAddedNote(null)
+    setArrivedReceived(false)
+  }
+
+  const received = quantityReceived === 1
+  if (addedNote) {
     return (
-      <button
-        type="button"
-        onClick={() => setOpenMode('typo')}
-        className="mt-1 text-[11px] font-medium text-amber-700 hover:text-amber-800"
-      >
-        Wrong serial received?
-      </button>
+      <AddedNoteNotice
+        note={addedNote}
+        received={received}
+        arrivedReceived={arrivedReceived}
+        onUndo={undoNote}
+      />
     )
   }
+  if (activeMode === 'serial') {
+    return (
+      <WrongSerialPanel
+        control={control}
+        setValue={setValue}
+        index={index}
+        itemId={itemId}
+        transferId={transferId}
+        ownSerial={ownSerial}
+        sourceBranchLabel={sourceBranchLabel}
+        onCancel={clearSerial}
+      />
+    )
+  }
+  if (activeMode === 'unit') {
+    return (
+      <WrongUnitPanel
+        index={index}
+        transferId={transferId}
+        ownSerial={ownSerial}
+        sourceBranchLabel={sourceBranchLabel}
+        onPick={(label, picked) => flagWithNote(buildWrongUnitNote(lineLabel, label), picked)}
+        onCancel={() => setMode(null)}
+      />
+    )
+  }
+  // A line flagged on an earlier receipt is still outstanding, so it can be
+  // flagged again here — the notice just reminds the receiver what arrived.
+  return (
+    <>
+      {flaggedUnit && <FlaggedUnitNotice unit={flaggedUnit} received={received} />}
+      <SerialCorrectionLinks
+        canOverrideSerial={canOverrideSerial}
+        onWrongSerial={() => setMode('serial')}
+        onWrongUnit={() => setMode('unit')}
+      />
+    </>
+  )
+}
+
+function SerialCorrectionLinks({
+  canOverrideSerial,
+  onWrongSerial,
+  onWrongUnit,
+}: {
+  canOverrideSerial: boolean
+  onWrongSerial: () => void
+  onWrongUnit: () => void
+}): React.JSX.Element {
+  return (
+    <div className="mt-1 flex items-center gap-3">
+      {canOverrideSerial && (
+        <button
+          type="button"
+          onClick={onWrongSerial}
+          className="text-[11px] font-medium text-amber-700 hover:text-amber-800"
+        >
+          Wrong serial?
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onWrongUnit}
+        className="text-[11px] font-medium text-amber-700 hover:text-amber-800"
+      >
+        Wrong unit?
+      </button>
+    </div>
+  )
+}
+
+function AddedNoteNotice({
+  note,
+  received,
+  arrivedReceived,
+  onUndo,
+}: {
+  note: string
+  received: boolean
+  /** The unit that arrived will be received (moved here) with this receipt. */
+  arrivedReceived: boolean
+  onUndo: () => void
+}): React.JSX.Element {
+  return (
+    <div className="mt-1.5 flex items-start justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+      <p className="text-[11px] text-amber-800">
+        {received ? 'Received' : 'Flagged'} — added to receipt notes:{' '}
+        <span className="font-medium">{note}</span>
+        {arrivedReceived &&
+          '. The unit that arrived is received into this branch with this receipt'}
+        {!received && '. This line stays outstanding for a later receive.'}
+      </p>
+      <button
+        type="button"
+        onClick={onUndo}
+        className="shrink-0 text-[11px] font-medium text-amber-700 hover:text-amber-900"
+      >
+        Undo
+      </button>
+    </div>
+  )
+}
+
+/** A wrong unit flagged on an earlier receipt — ticking Received now
+ * receives the unit that arrived in its place. */
+function FlaggedUnitNotice({
+  unit,
+  received,
+}: {
+  unit: string
+  received: boolean
+}): React.JSX.Element {
+  return (
+    <p className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800">
+      Wrong unit flagged earlier — <span className="font-medium">{unit}</span> arrived instead.
+      {received ? ' Will be received.' : ' Tick Received to receive it.'}
+    </p>
+  )
+}
+
+/** "Brand Model · Warehouse" under each serial — enough to tell units apart. */
+function senderSerialSecondary(s: SenderSerial): string | undefined {
+  const model = [s.item?.brand?.name, s.item?.modelNumber || s.item?.name].filter(Boolean).join(' ')
+  return [model, s.currentWarehouse?.name].filter(Boolean).join(' · ') || undefined
+}
+
+/** With `sourceBranchLabel`, results sit under two headings — the sending
+ * branch's own stock first (where a wrong unit most likely came from), then
+ * "Other Branches". Sorted stably so each heading is drawn only once. */
+function toSenderSerialOptions(
+  serials: SenderSerial[],
+  ownSerial: string | undefined,
+  sourceBranchLabel: string | undefined
+): SearchComboboxOption[] {
+  const kept = serials.filter((s) => s.serialNumber !== ownSerial)
+  const ordered = sourceBranchLabel
+    ? [...kept.filter((s) => s.fromSender), ...kept.filter((s) => !s.fromSender)]
+    : kept
+  return ordered.map((s) => ({
+    id: s.id,
+    primary: s.serialNumber,
+    secondary: senderSerialSecondary(s),
+    group: sourceBranchLabel && (s.fromSender ? sourceBranchLabel : 'Other Branches'),
+    meta: s,
+  }))
+}
+
+/** Sender's units first, then other branches — searchable by serial,
+ * brand, model, item name or SKU. `itemId` narrows to one item's stock. */
+function SenderSerialSearch({
+  queryKey,
+  transferId,
+  itemId,
+  ownSerial,
+  sourceBranchLabel,
+  placeholder,
+  onSelect,
+}: {
+  queryKey: string
+  transferId: string
+  itemId?: string
+  ownSerial: string | undefined
+  sourceBranchLabel?: string
+  placeholder: string
+  onSelect: (s: SenderSerial) => void
+}): React.JSX.Element {
+  return (
+    <SearchCombobox
+      value=""
+      onChange={() => {}}
+      onSelect={(option) => onSelect(option.meta as SenderSerial)}
+      queryKey={queryKey}
+      placeholder={placeholder}
+      typeToSearchMessage="Search by serial, brand or model"
+      emptyMessage="No matching units"
+      search={async (query) => {
+        const res = await getSenderSerials(transferId, query, itemId)
+        return toSenderSerialOptions(res.data ?? [], ownSerial, sourceBranchLabel)
+      }}
+    />
+  )
+}
+
+function CorrectionPanelHeader({
+  title,
+  onCancel,
+}: {
+  title: string
+  onCancel: () => void
+}): React.JSX.Element {
+  return (
+    <div className="mb-1.5 flex items-center justify-between">
+      <p className="text-[11px] font-medium text-amber-900">{title}</p>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="text-amber-600 hover:text-amber-800"
+        aria-label="Cancel correction"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
+}
+
+function WrongUnitPanel({
+  index,
+  transferId,
+  ownSerial,
+  sourceBranchLabel,
+  onPick,
+  onCancel,
+}: {
+  index: number
+  transferId: string
+  ownSerial: string | undefined
+  sourceBranchLabel: string
+  onPick: (label: string, picked: SenderSerial) => void
+  onCancel: () => void
+}): React.JSX.Element {
+  return (
+    <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 p-2">
+      <CorrectionPanelHeader title="Wrong unit" onCancel={onCancel} />
+      <SenderSerialSearch
+        queryKey={`receive-wrong-unit-search-${transferId}-${index}`}
+        transferId={transferId}
+        ownSerial={ownSerial}
+        sourceBranchLabel={sourceBranchLabel}
+        placeholder="Search the unit that actually arrived…"
+        onSelect={(s) =>
+          onPick(
+            unitLabel(
+              s.serialNumber,
+              s.item?.modelNumber
+                ? [s.item.brand?.name, s.item.modelNumber].filter(Boolean).join(' ')
+                : s.item?.name
+            ),
+            s
+          )
+        }
+      />
+      <p className="mt-1 text-[11px] text-amber-600">
+        The unit you pick is received into this branch and moved off the branch it was counted at.
+        This line stays unreceived, and a note is added to the receipt.
+      </p>
+    </div>
+  )
+}
+
+function WrongSerialPanel({
+  control,
+  setValue,
+  index,
+  itemId,
+  transferId,
+  ownSerial,
+  sourceBranchLabel,
+  onCancel,
+}: {
+  control: Control<ReceiveTransferFormValues>
+  setValue: UseFormSetValue<ReceiveTransferFormValues>
+  index: number
+  itemId: string | undefined
+  transferId: string
+  ownSerial: string | undefined
+  sourceBranchLabel: string
+  onCancel: () => void
+}): React.JSX.Element {
+  const replacementSerialLabel = useWatch({
+    control,
+    name: `lines.${index}.replacementSerialLabel`,
+  })
+  const { errors } = useFormState({ control, name: `lines.${index}` })
+  const reasonError = errors.lines?.[index]?.correctionReason?.message
 
   return (
     <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 p-2">
-      <div className="mb-1.5 flex items-center justify-between">
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setValue(`lines.${index}.replacementSerialNumberId`, '')
-              setValue(`lines.${index}.replacementSerialLabel`, '')
-              setOpenMode('typo')
-            }}
-            className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
-              activeMode === 'typo' ? 'bg-amber-200 text-amber-900' : 'text-amber-700'
-            }`}
-          >
-            Fix typo
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setValue(`lines.${index}.correctedSerialNumber`, '')
-              setOpenMode('swap')
-            }}
-            className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
-              activeMode === 'swap' ? 'bg-amber-200 text-amber-900' : 'text-amber-700'
-            }`}
-          >
-            Different unit arrived
-          </button>
-        </div>
-        <button
-          type="button"
-          onClick={clearCorrection}
-          className="text-amber-600 hover:text-amber-800"
-          aria-label="Cancel correction"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {activeMode === 'typo' ? (
-        <Controller
-          name={`lines.${index}.correctedSerialNumber`}
-          control={control}
-          render={({ field }) => (
-            <input
-              {...field}
-              value={field.value ?? ''}
-              type="text"
-              placeholder="Correct serial number"
-              onChange={(e) => {
-                field.onChange(e.target.value)
-                setValue(`lines.${index}.quantityReceived`, 1)
-              }}
-              className="w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-500"
-            />
-          )}
-        />
-      ) : (
-        <>
-          <SearchCombobox
-            value=""
-            onChange={() => {}}
-            onSelect={(option) => {
-              setValue(`lines.${index}.replacementSerialNumberId`, option.id, {
-                shouldValidate: true,
-              })
-              setValue(`lines.${index}.replacementSerialLabel`, option.primary)
-              setValue(`lines.${index}.quantityReceived`, 1)
-            }}
-            queryKey={`receive-serial-swap-search-${itemId}-${index}`}
-            placeholder="Search the serial that actually arrived…"
-            typeToSearchMessage="Type a serial number to search across every branch…"
-            emptyMessage="No matching serial numbers"
-            search={async (query) => {
-              const res = await getSerialNumbers({
-                itemId,
-                search: query || undefined,
-                status: 'in_stock',
-                limit: 25,
-                scope: 'override',
-              })
-              return (res.data?.data ?? []).map((s) => ({
-                id: s.id,
-                primary: s.serialNumber,
-                secondary:
-                  [s.currentWarehouse?.name, s.status].filter(Boolean).join(' · ') || undefined,
-              }))
-            }}
-          />
-          {replacementSerialLabel && (
-            <p className="mt-1 text-[11px] text-amber-700">
-              Will link to: {replacementSerialLabel}
-            </p>
-          )}
-          <p className="mt-1 text-[11px] text-amber-600">
-            Not registered yet? Add it in the serial numbers module first, then search for it here.
-          </p>
-        </>
-      )}
-
-      <input
-        value={correctionReason}
-        onChange={(e) => setValue(`lines.${index}.correctionReason`, e.target.value)}
-        type="text"
-        placeholder="Reason for the correction (required)"
-        className="mt-1.5 w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-500"
+      <CorrectionPanelHeader title="Wrong serial" onCancel={onCancel} />
+      <SenderSerialSearch
+        queryKey={`receive-serial-swap-search-${transferId}-${itemId}-${index}`}
+        transferId={transferId}
+        itemId={itemId}
+        ownSerial={ownSerial}
+        sourceBranchLabel={sourceBranchLabel}
+        placeholder="Search the serial that actually arrived…"
+        onSelect={(s) => {
+          setValue(`lines.${index}.replacementSerialNumberId`, s.id, {
+            shouldValidate: true,
+          })
+          setValue(`lines.${index}.replacementSerialLabel`, s.serialNumber)
+          setValue(`lines.${index}.quantityReceived`, 1)
+        }}
       />
+      {replacementSerialLabel && (
+        <p className="mt-1 text-[11px] text-amber-700">Will link to: {replacementSerialLabel}</p>
+      )}
+      <p className="mt-1 text-[11px] text-amber-600">
+        Not registered yet? Add it in the serial numbers module first, then search for it here.
+      </p>
+      {/* A Controller (not a bare setValue input) so RHF can focus this box
+          on a failed submit and revalidate as the user types the reason. */}
+      <Controller
+        name={`lines.${index}.correctionReason`}
+        control={control}
+        render={({ field }) => (
+          <input
+            {...field}
+            value={field.value ?? ''}
+            type="text"
+            placeholder="Reason for the correction (required)"
+            aria-invalid={!!reasonError}
+            className={`mt-1.5 w-full rounded border bg-white px-2 py-1 text-xs outline-none ${
+              reasonError
+                ? 'border-red-400 focus:border-red-500'
+                : 'border-amber-300 focus:border-amber-500'
+            }`}
+          />
+        )}
+      />
+      {reasonError && (
+        <p className="mt-1 text-[11px] text-red-600">
+          Type why the serial is being corrected (e.g. &quot;label misprinted&quot;) before you
+          submit. To skip the correction, cancel it with the ✕ above.
+        </p>
+      )}
     </div>
   )
+}
+
+/** Row 2 of a "Wrong unit" line: the unit that actually arrived, marked
+ * Received while the dispatched line above stays Not received yet. It counts
+ * as one more unit in "N of N units received", on both sides. The receipt note only holds its serial and
+ * brand/model — there's no SKU or serial id to link. */
+function ArrivedUnitRow({
+  label,
+  dispatchedSerial,
+  showReceived,
+}: {
+  label: string
+  dispatchedSerial: string
+  showReceived: boolean
+}): React.JSX.Element {
+  const { serial, model } = splitUnitLabel(label)
+  return (
+    <tr>
+      <td className="px-3 py-2.5">
+        <p className="text-[12.5px] font-medium text-[#17171c]">{model ?? 'Unit received'}</p>
+        <p className="mt-0.5 text-[10.5px] text-ink-muted">
+          Arrived in place of {dispatchedSerial}
+        </p>
+      </td>
+      <td className="px-3 py-2 font-mono text-[13px] font-semibold text-[#0b0b0f]">{serial}</td>
+      <td className="px-3 py-2 text-right font-medium text-zinc-700">1</td>
+      {showReceived && (
+        <td className="px-3 py-2 text-right">
+          <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+            Received
+          </span>
+        </td>
+      )}
+    </tr>
+  )
+}
+
+/** Summary line under the receive lines when a serial correction is missing
+ * its reason — names the serial(s) so the user knows exactly which box to
+ * fill, instead of the generic "some entries are invalid". */
+function missingCorrectionReasonMessage(
+  lineErrors: FieldErrors<ReceiveTransferFormValues>['lines']
+): string | null {
+  if (!Array.isArray(lineErrors)) return null
+  const count = lineErrors.filter((e) => e?.correctionReason).length
+  if (count === 0) return null
+  return count === 1
+    ? 'A serial correction is missing its reason. Fill in the highlighted reason box, or cancel the correction, then submit again.'
+    : `${count} serial corrections are missing a reason. Fill in each highlighted reason box, or cancel those corrections, then submit again.`
 }
 
 /** One label/value cell in the drawer's facts strip. Missing values read as
@@ -744,7 +1078,7 @@ function Fact({
     <div className="min-w-0">
       <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-ink-muted`}>{label}</p>
       <p
-        className={`mt-1 truncate text-[13px] font-medium ${mono ? MONO : ''} ${
+        className={`mt-1 wrap-break-word text-[13px] font-medium ${mono ? MONO : ''} ${
           value ? 'text-[#17171c]' : 'text-ink-muted'
         }`}
       >
@@ -789,9 +1123,9 @@ type Props = {
   // The dispatcher is never the receiver (WH-01) — compared against the
   // transfer's dispatchedById to withhold Receive from whoever shipped it.
   currentUserId?: string
-  // The Business Owner is exempt from that rule: they may receive a transfer
-  // they dispatched themselves.
-  currentUserIsBusinessOwner?: boolean
+  // The Business Owner and the Branch Manager are exempt from that rule: they
+  // may receive a transfer they dispatched themselves.
+  currentUserExemptFromDispatcherRule?: boolean
   // The region of the caller's own warehouse branch — drives whether they can
   // act on a transfer touching a real standalone warehouse (branchId: null,
   // Scenario 27), which exact branch-ownership can never match. null/
@@ -856,7 +1190,7 @@ export default function TransferDetailModal({
   canManagerReject,
   currentUserBranchId,
   currentUserId,
-  currentUserIsBusinessOwner = false,
+  currentUserExemptFromDispatcherRule = false,
   currentUserRegion,
   onAccept,
   onReject,
@@ -1026,32 +1360,29 @@ export default function TransferDetailModal({
   // A real standalone warehouse (branchId: null — Scenario 27, ported from
   // Warehouse Request) falls back to region match instead of exact branch
   // ownership, since ownership can never be satisfied for one.
-  const inScope = (warehouseBranchId: string | null | undefined, warehouseRegion?: string | null) =>
+  // A caravan the user's branch hosts counts as theirs too: it has no staff,
+  // so the host's people receive into it, send out of it and cancel its
+  // requests — the backend's resolveActorBranchIds rule.
+  const inScope = (wh: TransferSummary['toWarehouse'] | null | undefined): boolean =>
     !currentUserBranchId ||
-    warehouseBranchId === currentUserBranchId ||
-    (warehouseBranchId === null && warehouseRegion === currentUserRegion)
-  const canAcceptThis =
-    canAccept && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
-  const canRejectThis =
-    canReject && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
-  const canProposeSubstitutionThis =
-    canProposeSubstitution &&
-    inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
-  const canConfirmSubstitutionThis =
-    canConfirmSubstitution &&
-    inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
-  const canDispatchThis =
-    canDispatch && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
+    wh?.branchId === currentUserBranchId ||
+    (wh?.branchId === null && wh?.region === currentUserRegion) ||
+    (!!wh?.branch?.hostBranch && wh.branch.hostBranch.id === currentUserBranchId)
+  const canAcceptThis = canAccept && inScope(transfer?.fromWarehouse)
+  const canRejectThis = canReject && inScope(transfer?.fromWarehouse)
+  const canProposeSubstitutionThis = canProposeSubstitution && inScope(transfer?.fromWarehouse)
+  const canConfirmSubstitutionThis = canConfirmSubstitution && inScope(transfer?.toWarehouse)
+  const canDispatchThis = canDispatch && inScope(transfer?.fromWarehouse)
   // Mirrors the backend's receive() refusal: whoever dispatched a transfer
   // can't also confirm it arrived, even head office, which inScope lets
   // through. A transfer dispatched before dispatchedById existed has none.
-  // The Business Owner is exempt, so for them it is never "dispatched by me".
+  // The Business Owner and the Branch Manager are exempt, so for them it is
+  // never "dispatched by me".
   const dispatchedByMe =
-    !currentUserIsBusinessOwner &&
+    !currentUserExemptFromDispatcherRule &&
     !!transfer?.dispatchedById &&
     transfer.dispatchedById === currentUserId
-  const canReceiveInScope =
-    canReceive && inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+  const canReceiveInScope = canReceive && inScope(transfer?.toWarehouse)
   const canReceiveThis = canReceiveInScope && !dispatchedByMe
   const receiveBlockedForDispatcher =
     canReceiveInScope &&
@@ -1059,17 +1390,17 @@ export default function TransferDetailModal({
     (status === 'in_transit' || status === 'partially_received')
   // Manager approval is scoped to the TO warehouse's branch too — it's the
   // requester's own branch manager signing off, same direction as receive.
-  const canManagerApproveThis =
-    canManagerApprove && inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
-  const canManagerRejectThis =
-    canManagerReject && inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+  const canManagerApproveThis = canManagerApprove && inScope(transfer?.toWarehouse)
+  const canManagerRejectThis = canManagerReject && inScope(transfer?.toWarehouse)
   // Cancelling withdraws YOUR OWN request — scoped to the requester's own
   // branch (TO warehouse), same direction as manager-approval above. The
   // source branch has its own dedicated decline path (Reject/Reject HQ),
   // which captures a reason, so it doesn't get a "Cancel" button here too.
+  // Whoever raised it may withdraw it too, wherever they sit — mirrors the
+  // backend (a Warehouse Custodian's caravan consign lands on the host).
+  const raisedByMe = !!transfer?.requestedById && transfer.requestedById === currentUserId
   const canCancelThis =
-    CANCELLABLE_STATUSES.has(status) &&
-    inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+    CANCELLABLE_STATUSES.has(status) && (inScope(transfer?.toWarehouse) || raisedByMe)
   // Two kinds of transfer are refused by the backend's update() and so are
   // never offered here: one the UDS module auto-paired (the UDS owns which
   // unit ships, not this form), and one whose lines are pinned to a specific
@@ -1087,7 +1418,7 @@ export default function TransferDetailModal({
     EDITABLE_STATUSES.has(status) &&
     !isUdsPaired &&
     !hasPinnedSerial &&
-    inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+    inScope(transfer?.toWarehouse)
 
   // Only worth a column when at least one line actually carries a serial —
   // otherwise every row just shows a distracting "—".
@@ -1102,10 +1433,17 @@ export default function TransferDetailModal({
   )
   const isReceivedStatus = status === 'received' || status === 'partially_received'
   const totalUnits = (transfer?.lines ?? []).reduce((sum, l) => sum + Number(l.quantity), 0)
-  const receivedUnits = (transfer?.lines ?? []).reduce(
-    (sum, l) => sum + Number(l.receivedQuantity ?? 0),
-    0
-  )
+  // Receive-time "Wrong unit" notes, keyed by the serial each was logged against.
+  const wrongUnits = wrongUnitBySerial(transfer?.goodsReceipts)
+  // Each unit that arrived in place of a flagged one is its own received row
+  // in the items table — count it on both sides of "N of N units received",
+  // while the dispatched line it was flagged on still waits to be received.
+  const arrivedUnits = (transfer?.lines ?? []).filter(
+    (l) => !!l.serialNumber?.serialNumber && wrongUnits.has(l.serialNumber.serialNumber)
+  ).length
+  const receivedUnits =
+    (transfer?.lines ?? []).reduce((sum, l) => sum + Number(l.receivedQuantity ?? 0), 0) +
+    arrivedUnits
 
   // A serial-tracked item requested with quantity > 1 is stored as several
   // separate quantity-1 lines (CreateTransferModal splits it so the backend's
@@ -1141,6 +1479,15 @@ export default function TransferDetailModal({
   // receive call, so there can be more than one — aggregate extras across
   // all of them, not just the first.
   const extraLinesReceived = (transfer?.goodsReceipts ?? []).flatMap((grn) => grn.lines ?? [])
+  // When the last receipt was actually saved. `receivedDate` is only the date
+  // picked on the form (stored as midnight UTC, so it reads 8:00 AM in
+  // Manila) — kept as the fallback when no receipt came back.
+  const lastReceivedAt =
+    (transfer?.goodsReceipts ?? [])
+      .map((grn) => grn.receivedAt)
+      .filter((v): v is string => !!v)
+      .sort()
+      .at(-1) ?? transfer?.receivedDate
 
   // A repair transfer auto-paired by the UDS module tracks its specific
   // serial separately (the UDS's own line) — never require an assignment
@@ -1270,8 +1617,12 @@ export default function TransferDetailModal({
     if (!transfer) return
     // With serials unticked by default, an untouched form would post a
     // receipt of nothing — refuse it rather than record an empty RR.
+    // A Wrong unit flag leaves its line unticked, so a receipt carrying only
+    // flags is still worth saving — the note is what keeps the flag.
     const receivedAny =
-      data.lines.some((l) => Number(l.quantityReceived) > 0) || (data.extraLines?.length ?? 0) > 0
+      data.lines.some((l) => Number(l.quantityReceived) > 0) ||
+      (data.extraLines?.length ?? 0) > 0 ||
+      hasWrongUnitNote(data.notes)
     if (!receivedAny) {
       receiveForm.setError('root', {
         message: 'Tick at least one unit (or enter a quantity) to record a receipt.',
@@ -1405,7 +1756,7 @@ export default function TransferDetailModal({
               Stock Transfer
             </div>
             <div className="flex flex-wrap items-center gap-2.5">
-              <p className={`${MONO} truncate text-[17px] font-semibold tracking-[-.01em]`}>
+              <p className={`${MONO} wrap-break-word text-[17px] font-semibold tracking-[-.01em]`}>
                 {transfer?.transferNumber ??
                   (transfer ? `#${transfer.id.slice(0, 8).toUpperCase()}` : '—')}
               </p>
@@ -1420,7 +1771,7 @@ export default function TransferDetailModal({
               )}
             </div>
             {transfer && (
-              <p className="truncate text-[11.5px] text-ink-muted">
+              <p className="text-[11.5px] text-ink-muted">
                 Requested {formatDateOnly(transfer.createdAt ?? transfer.transferDate)}
                 {transfer.requestedByName ? ` by ${transfer.requestedByName}` : ''}
               </p>
@@ -1478,9 +1829,9 @@ export default function TransferDetailModal({
                     <LocationName
                       wh={transfer.fromWarehouse}
                       className="mt-1 text-[16px] font-semibold"
-                      subtitleClassName="text-[12px] text-[#4b4b5a]"
+                      wrap
                     />
-                    <p className="mt-0.5 truncate text-[11.5px] text-ink-muted">
+                    <p className="mt-0.5 text-[11.5px] text-ink-muted">
                       Sends the stock · deducted on dispatch
                     </p>
                   </div>
@@ -1494,9 +1845,9 @@ export default function TransferDetailModal({
                     <LocationName
                       wh={transfer.toWarehouse}
                       className="mt-1 text-[16px] font-semibold"
-                      subtitleClassName="text-[12px] text-[#4b4b5a]"
+                      wrap
                     />
-                    <p className="mt-0.5 truncate text-[11.5px] text-ink-muted">
+                    <p className="mt-0.5 text-[11.5px] text-ink-muted">
                       Asked for the stock · added on receipt
                     </p>
                   </div>
@@ -1656,7 +2007,7 @@ export default function TransferDetailModal({
                   <span
                     className={`${MONO} rounded-full bg-white px-2.5 py-1 text-[10.5px] uppercase tracking-[0.07em] text-[#4b4b5a] ring-1 ring-[#e4e4e9]`}
                   >
-                    {receivedUnits} of {totalUnits} units received
+                    {receivedUnits} of {totalUnits + arrivedUnits} units received
                   </span>
                 </div>
                 <div className="overflow-hidden rounded-xl border border-[#e4e4e9] bg-white">
@@ -1690,82 +2041,127 @@ export default function TransferDetailModal({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#f1f1f4]">
-                      {displayLines.map((line, i) => (
-                        <tr key={line.id ?? i}>
-                          <td className="px-3 py-2.5">
-                            <p className="text-[12.5px] font-medium text-[#17171c]">
-                              {line.item?.name ?? line.itemId ?? '—'}
-                            </p>
-                            {line.item?.sku && (
-                              <p className={`${MONO} mt-0.5 text-[10.5px] text-ink-muted`}>
-                                {line.item.sku}
-                              </p>
+                      {displayLines.map((line, i) => {
+                        // A "Wrong unit" flag: this row stays the unit that was
+                        // dispatched, with a remark (Not received yet — the
+                        // flag leaves it unticked). The unit that actually
+                        // arrived gets its own row below, marked Received.
+                        const wrongUnit = line.serialNumber?.serialNumber
+                          ? wrongUnits.get(line.serialNumber.serialNumber)
+                          : undefined
+                        const wrongUnitReceived =
+                          !!wrongUnit && Number(line.receivedQuantity ?? 0) >= 1
+                        return (
+                          <Fragment key={line.id ?? i}>
+                            <tr>
+                              <td className="px-3 py-2.5">
+                                <p className="text-[12.5px] font-medium text-[#17171c]">
+                                  {line.item?.name ?? line.itemId ?? '—'}
+                                </p>
+                                {line.item?.sku && (
+                                  <p className={`${MONO} mt-0.5 text-[10.5px] text-ink-muted`}>
+                                    {line.item.sku}
+                                  </p>
+                                )}
+                              </td>
+                              {hasSerialLine && (
+                                <td className="px-3 py-2 font-mono text-[13px] font-semibold text-[#0b0b0f]">
+                                  {awaitingDispatch &&
+                                  !line.serialNumber?.serialNumber &&
+                                  line.item?.isSerialTracked ? (
+                                    <span className="font-sans text-xs italic text-zinc-400">
+                                      Assigned at dispatch
+                                    </span>
+                                  ) : line.receiptCorrectedFromSerial ? (
+                                    // Wrong serial swap — the unit that actually
+                                    // arrived (the line's serial now) leads; the
+                                    // serial that was dispatched goes in the note.
+                                    <>
+                                      <LineSerial line={line} />
+                                      <p className="mt-0.5 font-sans text-[11px] font-medium text-amber-700">
+                                        Wrong serial — dispatched{' '}
+                                        <SerialLink
+                                          serialId={line.receiptCorrectedFromSerial.id}
+                                          serialNumber={
+                                            line.receiptCorrectedFromSerial.serialNumber
+                                          }
+                                        />
+                                        {serialCorrectionReason(line.receiptCorrectionReason) &&
+                                          ` (reason: ${serialCorrectionReason(line.receiptCorrectionReason)})`}
+                                      </p>
+                                    </>
+                                  ) : line.receiptCorrectionReason ? (
+                                    // Typo fix — same unit, its serial rewritten
+                                    // in place; the old text survives only here.
+                                    <>
+                                      <LineSerial line={line} />
+                                      <p className="mt-0.5 font-sans text-[11px] font-medium text-amber-700">
+                                        {line.receiptCorrectedFromSerialNumber
+                                          ? `Serial typo fixed — was recorded as ${line.receiptCorrectedFromSerialNumber}`
+                                          : 'Serial typo fixed at receipt'}
+                                        {serialCorrectionReason(line.receiptCorrectionReason) &&
+                                          ` (reason: ${serialCorrectionReason(line.receiptCorrectionReason)})`}
+                                      </p>
+                                    </>
+                                  ) : (
+                                    <LineSerial line={line} />
+                                  )}
+                                  {wrongUnit && (
+                                    <p className="mt-0.5 font-sans text-[11px] font-medium text-amber-700">
+                                      Wrong unit — {wrongUnit} arrived instead
+                                    </p>
+                                  )}
+                                </td>
+                              )}
+                              <td className="px-3 py-2 text-right font-medium text-zinc-700">
+                                {line.quantity}
+                              </td>
+                              {isReceivedStatus && (
+                                <td className="px-3 py-2 text-right">
+                                  {line.serialNumberId ? (
+                                    line.serialNumber?.status === 'lost_in_transit' ? (
+                                      <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                                        Lost in Transit
+                                      </span>
+                                    ) : Number(line.receivedQuantity ?? 0) < 1 ? (
+                                      // Scenario 71 — left unticked on a partial
+                                      // receive: still on its way, not lost.
+                                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                                        Not received yet
+                                      </span>
+                                    ) : wrongUnitReceived ? (
+                                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                                        Wrong unit
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                                        Received
+                                      </span>
+                                    )
+                                  ) : (
+                                    <div className="flex items-center justify-end gap-2">
+                                      <span className="font-medium text-zinc-700">
+                                        {line.receivedQuantity ?? 0}
+                                      </span>
+                                      <QtyVarianceBadge
+                                        ordered={line.quantity}
+                                        received={line.receivedQuantity ?? 0}
+                                      />
+                                    </div>
+                                  )}
+                                </td>
+                              )}
+                            </tr>
+                            {wrongUnit && line.serialNumber?.serialNumber && (
+                              <ArrivedUnitRow
+                                label={wrongUnit}
+                                dispatchedSerial={line.serialNumber.serialNumber}
+                                showReceived={isReceivedStatus}
+                              />
                             )}
-                          </td>
-                          {hasSerialLine && (
-                            <td className="px-3 py-2 font-mono text-[13px] font-semibold text-[#0b0b0f]">
-                              {awaitingDispatch &&
-                              !line.serialNumber?.serialNumber &&
-                              line.item?.isSerialTracked ? (
-                                <span className="font-sans text-xs italic text-zinc-400">
-                                  Assigned at dispatch
-                                </span>
-                              ) : line.receiptCorrectedFromSerial ? (
-                                <span
-                                  title={`Corrected at receipt — was ${line.receiptCorrectedFromSerial.serialNumber}.${line.receiptCorrectionReason ? ` ${line.receiptCorrectionReason}` : ''}`}
-                                >
-                                  <span className="text-zinc-300 line-through">
-                                    {line.receiptCorrectedFromSerial.serialNumber}
-                                  </span>{' '}
-                                  <LineSerial line={line} />
-                                </span>
-                              ) : line.receiptCorrectionReason ? (
-                                <span
-                                  title={`Corrected at receipt. ${line.receiptCorrectionReason}`}
-                                >
-                                  <LineSerial line={line} /> *
-                                </span>
-                              ) : (
-                                <LineSerial line={line} />
-                              )}
-                            </td>
-                          )}
-                          <td className="px-3 py-2 text-right font-medium text-zinc-700">
-                            {line.quantity}
-                          </td>
-                          {isReceivedStatus && (
-                            <td className="px-3 py-2 text-right">
-                              {line.serialNumberId ? (
-                                line.serialNumber?.status === 'lost_in_transit' ? (
-                                  <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                                    Lost in Transit
-                                  </span>
-                                ) : Number(line.receivedQuantity ?? 0) < 1 ? (
-                                  // Scenario 71 — left unticked on a partial
-                                  // receive: still on its way, not lost.
-                                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                                    Not received yet
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-                                    Received
-                                  </span>
-                                )
-                              ) : (
-                                <div className="flex items-center justify-end gap-2">
-                                  <span className="font-medium text-zinc-700">
-                                    {line.receivedQuantity ?? 0}
-                                  </span>
-                                  <QtyVarianceBadge
-                                    ordered={line.quantity}
-                                    received={line.receivedQuantity ?? 0}
-                                  />
-                                </div>
-                              )}
-                            </td>
-                          )}
-                        </tr>
-                      ))}
+                          </Fragment>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -2031,7 +2427,7 @@ export default function TransferDetailModal({
                   <LedgerEvent
                     icon={<CheckCircle className="h-3.5 w-3.5" />}
                     label={`Received — stock added to ${branchLabel(transfer.toWarehouse, 'destination')}`}
-                    timestamp={transfer.receivedDate}
+                    timestamp={lastReceivedAt}
                     color="text-green-700 bg-green-100"
                   />
                 )}
@@ -2039,7 +2435,7 @@ export default function TransferDetailModal({
                   <LedgerEvent
                     icon={<AlertTriangle className="h-3.5 w-3.5" />}
                     label="Partially received — see item table for shortfalls"
-                    timestamp={transfer.receivedDate}
+                    timestamp={lastReceivedAt}
                     color="text-amber-700 bg-amber-100"
                   />
                 )}
@@ -2354,6 +2750,15 @@ export default function TransferDetailModal({
                             setValue={receiveForm.setValue}
                             index={idx}
                             itemId={lineField.itemId}
+                            transferId={transfer.id}
+                            ownSerial={lineField.serialLabel}
+                            lineLabel={unitLabel(lineField.serialLabel, lineField.itemLabel)}
+                            sourceBranchLabel={branchLabel(transfer.fromWarehouse, 'Source Branch')}
+                            flaggedUnit={
+                              lineField.serialLabel
+                                ? wrongUnits.get(lineField.serialLabel)
+                                : undefined
+                            }
                             canOverrideSerial={canOverrideSerial}
                           />
                         )}
@@ -2362,7 +2767,8 @@ export default function TransferDetailModal({
                   </div>
                   {receiveForm.formState.errors.lines && (
                     <p className="mt-1 text-xs text-red-600">
-                      Check the values above — some entries are invalid.
+                      {missingCorrectionReasonMessage(receiveForm.formState.errors.lines) ??
+                        'Check the values above — some entries are invalid.'}
                     </p>
                   )}
                 </div>
@@ -2494,11 +2900,11 @@ export default function TransferDetailModal({
                     name="notes"
                     control={receiveForm.control}
                     render={({ field }) => (
-                      <input
+                      <textarea
                         {...field}
-                        type="text"
+                        rows={3}
                         placeholder="Optional receipt notes…"
-                        className={fieldClass}
+                        className={`${fieldClass} resize-y`}
                       />
                     )}
                   />
@@ -2601,7 +3007,7 @@ export default function TransferDetailModal({
                   className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
                 >
                   <CheckCircle className="h-4 w-4" />
-                  Mark Received
+                  Receive
                 </button>
               )}
               {status === 'partially_received' && canReceiveThis && (
@@ -2611,7 +3017,7 @@ export default function TransferDetailModal({
                   className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4c1a99]"
                 >
                   <AlertTriangle className="h-4 w-4" />
-                  Receive Remaining
+                  Receive
                 </button>
               )}
               {status === 'pending_manager_approval' && canManagerRejectThis && (

@@ -165,7 +165,7 @@ test.describe('Inventory — Stock Transfer accept/reject + receiving report', (
     await expect(modal.getByText('In Transit', { exact: true })).toBeVisible({ timeout: 10_000 })
 
     await clickStable(
-      modal.getByRole('button', { name: 'Mark Received' }),
+      modal.getByRole('button', { name: 'Receive', exact: true }),
       modal.getByRole('button', { name: 'Confirm Receipt' })
     )
     // Serial units start unticked (Scenario 71 item 23); a quantity-only

@@ -6,11 +6,12 @@ import type { SalesReportsParams, Scorecard } from '@/src/schema/pos/sales-repor
 import { getSalesScorecard } from '../../_actions/get-sales-reports'
 import DailyMonitoringPanel from './DailyMonitoringPanel'
 import ScorecardTable from './ScorecardTable'
-import { peso, percent, periodLabel } from './scorecard-format'
+import { peso, percent, periodLabel, throughNote } from './scorecard-format'
 
 /**
  * Scenario 85 Parts 5–6 — the Sales per Branch tab: Branch Scorecard and
- * Daily Sales Monitoring. Both read the To date's month, to date.
+ * Daily Sales Monitoring. Both read the From–To period (this month to date
+ * unless the user picks dates; NIG UAT 2026-11-09).
  */
 
 type SubTab = 'scorecard' | 'daily'
@@ -94,7 +95,7 @@ function ScorecardPanel({
     <div className="flex flex-col gap-4">
       <div>
         <p className="text-[11px] font-semibold tracking-wide text-prominent-purple-700">
-          {periodLabel(card.period.from, card.period.asOf)}
+          {periodLabel(card.period.from, card.period.to)}
         </p>
         <h2 className="text-lg font-semibold text-zinc-900">{title}</h2>
         <p className="text-xs text-zinc-500">Branch Scorecard</p>
@@ -102,11 +103,13 @@ function ScorecardPanel({
       <Kpis card={card} />
       <ScorecardTable card={card} />
       <p className="text-[11px] leading-relaxed text-zinc-500">
-        Month to date through the To date. Sales are gross (LCP, VAT-inclusive), with refunds netted
-        in. Click a branch to see its daily sales. The tick on each bar marks where a branch should
-        be today to stay on pace for the month. Status: Met is 100% or more, Ahead is at or past the
-        tick, Behind is past half of it, Far behind is under half. AC Unit + Services carries every
-        Split Type unit and service line, so it counts in Grand Total but not in Total Branches.
+        From the From date through the To date.{throughNote(card.period)} Quota is each month&apos;s
+        quota, prorated for the days of it the period covers. Sales are gross (LCP, VAT-inclusive),
+        with refunds netted in. Click a branch to see its daily sales. The tick on each bar marks
+        where a branch should be today to stay on pace for the period. Status: Met is 100% or more,
+        Ahead is at or past the tick, Behind is past half of it, Far behind is under half. AC Unit +
+        Services carries every Split Type unit and service line, so it counts in Grand Total but not
+        in Total Branches.
       </p>
     </div>
   )
@@ -117,10 +120,7 @@ function Kpis({ card }: { card: Scorecard }): React.JSX.Element {
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Kpi label="Total Branches (gross)" value={peso(tb.total)} />
-      <Kpi
-        label={`Ach Rate (month pace ${percent(card.period.pace)})`}
-        value={percent(tb.achRate)}
-      />
+      <Kpi label={`Ach Rate (pace ${percent(card.period.pace)})`} value={percent(tb.achRate)} />
       <Kpi label="Ahead of pace or met" value={`${card.aheadOrMet} of ${card.branchCount}`} />
       <Kpi label="BTS (balance to quota)" value={peso(tb.bts)} />
     </div>

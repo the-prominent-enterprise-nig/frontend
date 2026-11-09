@@ -159,8 +159,8 @@ export function LedgerTable({
               <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px] text-gray-600">
                 {row.ref}
               </td>
-              <td className="px-3 py-1.5 text-right text-gray-600">
-                {row.inst > 0 ? row.inst : '—'}
+              <td className="whitespace-nowrap px-3 py-1.5 text-right text-gray-600">
+                {row.instLabel ?? (row.inst > 0 ? row.inst : '—')}
               </td>
               <td className="px-3 py-1.5 font-medium text-prominent-purple-900">
                 {row.description}

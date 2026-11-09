@@ -49,6 +49,7 @@ import { ARInvoices, fmtMoney, fmtDate, type PaymentMethod } from '@/src/libs/da
 import type {
   PosCustomer,
   CollectionsCustomer,
+  InstallmentSchedule,
   InstallmentScheduleLineWithInvoice,
   PaymentMethodConfig,
 } from '@/src/schema/pos'
@@ -71,6 +72,11 @@ const STATUS_STYLES: Record<string, string> = {
   DRAFT: 'bg-zinc-100 text-zinc-500',
   CANCELLED: 'bg-zinc-100 text-zinc-400',
 }
+
+// The backend lists at most this many aging-sheet customers (see
+// AGING_COLLECTIONS_LIST_LIMIT in pos-customers.service.ts); a list this long
+// has probably been cut, so the screen says how to reach the rest.
+const LONG_LIST_AT = 200
 
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
@@ -218,6 +224,28 @@ function toggleLineSelection(
   return next
 }
 
+// A loaded (aging-sheet) account is collected on its own. The bulk-payment
+// endpoint only settles installment dues — it walks a plan's schedule, and an
+// aging account has none — so an aging account cannot share one collection with
+// another account or with a POS plan's dues. Ticking one replaces whatever else
+// was ticked, and ticking a POS due drops any aging account, so the panel never
+// holds a selection the backend would refuse.
+function selectionAfterToggle(
+  schedules: InstallmentSchedule[],
+  plan: InstallmentSchedule,
+  line: InstallmentScheduleLineWithInvoice,
+  selected: Set<string>
+): Set<string> {
+  if (line.isAgingAccount) {
+    return selected.has(line.id) ? new Set() : new Set([line.id])
+  }
+  const agingIds = new Set(
+    schedules.filter((s) => s.isAgingAccount).flatMap((s) => s.lines.map((l) => l.id))
+  )
+  const withoutAging = new Set([...selected].filter((id) => !agingIds.has(id)))
+  return toggleLineSelection(plan.lines, line, withoutAging)
+}
+
 // The AR service reports these guards as bare codes, deliberately — they are
 // an API contract its own e2e specs assert on. This screen is where a cashier
 // reads them, so translate them here rather than leaking "rebate_exceeds_ppd"
@@ -285,7 +313,10 @@ function dueSuggestions(
   return {
     isLate,
     suggestedRebate: ppd,
-    penaltyEligible: daysLate >= PENALTY_GRACE_DAYS,
+    // A loaded (aging-sheet) account carries its penalty beside the balance,
+    // never inside it, and the backend refuses a rebate or penalty on an
+    // invoice with no plan behind it — so none is ever offered.
+    penaltyEligible: !line.isAgingAccount && daysLate >= PENALTY_GRACE_DAYS,
   }
 }
 
@@ -412,7 +443,12 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
 
   const debouncedQuery = useDebounced(query, 300)
   const customersQuery = useCollectionsCustomers(branchId || undefined, debouncedQuery || undefined)
-  const schedulesQuery = useCustomerInstallmentSchedules(customer?.id)
+  // Asks for the customer's loaded (aging-sheet) accounts too — each comes back
+  // as a one-due plan. Without them a customer from the aging upload showed
+  // "No installment plans" here, though the ledger and CRM both had them.
+  const schedulesQuery = useCustomerInstallmentSchedules(customer?.id, {
+    withAgingAccounts: true,
+  })
 
   const customers = customersQuery.data?.success ? (customersQuery.data.data ?? []) : []
   const schedules = schedulesQuery.data?.success ? (schedulesQuery.data.data ?? []) : []
@@ -528,17 +564,30 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                   </p>
                 </div>
               ) : (
-                <ul className="divide-y divide-zinc-100">
-                  {customers.map((c) => (
-                    <CollectionsCustomerRow
-                      key={c.id}
-                      customer={c}
-                      onSelect={() =>
-                        selectCustomer({ id: c.id, name: c.name, phone: c.phone ?? undefined })
-                      }
-                    />
-                  ))}
-                </ul>
+                <>
+                  <ul className="divide-y divide-zinc-100">
+                    {customers.map((c) => (
+                      <CollectionsCustomerRow
+                        key={c.id}
+                        customer={c}
+                        onSelect={() =>
+                          selectCustomer({ id: c.id, name: c.name, phone: c.phone ?? undefined })
+                        }
+                      />
+                    ))}
+                  </ul>
+                  {/* The aging upload has ~12,700 accounts, so the list stops at the
+                      most overdue (the backend caps it) — the filter reaches the rest. */}
+                  {customers.length >= LONG_LIST_AT && (
+                    <p
+                      data-testid="collections-long-list-hint"
+                      className="border-t border-zinc-100 px-5 py-3 text-center text-[12px] text-zinc-500"
+                    >
+                      This list shows the most overdue first and stops here. Type a name or phone
+                      above to find anyone else.
+                    </p>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -607,6 +656,12 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                     )}
                   </div>
                 )}
+                {openSchedules.some((s) => s.isAgingAccount) && openSchedules.length > 1 && (
+                  <p data-testid="aging-collected-alone-note" className="text-[12px] text-zinc-500">
+                    An aging account is collected on its own — ticking one clears any other
+                    selection.
+                  </p>
+                )}
 
                 <div className="space-y-4">
                   {openSchedules.map((s) => (
@@ -634,7 +689,8 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                             }`}
                           />
                           <span className="font-mono">
-                            {s.posTransaction?.salesInvoiceNumber?.trim() ||
+                            {s.agingAccount?.siNo ||
+                              s.posTransaction?.salesInvoiceNumber?.trim() ||
                               s.posTransaction?.transactionNumber ||
                               s.id}
                           </span>
@@ -652,6 +708,14 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                           {s.lines[0]?.arInvoice.isEmployeeApplianceLoan && (
                             <span className="mr-2 rounded-full bg-prominent-purple-50 px-2 py-0.5 text-[11px] font-medium text-prominent-purple-700">
                               Appliance loan · paid by payroll
+                            </span>
+                          )}
+                          {s.isAgingAccount && (
+                            <span
+                              data-testid="aging-account-badge"
+                              className="mr-2 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600"
+                            >
+                              Aging account
                             </span>
                           )}
                           {s.termMonths} mo · Monthly {fmtMoney(s.monthlyInstallment)}
@@ -691,29 +755,63 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                                           checked={isSelected}
                                           onChange={() =>
                                             setSelectedLineIds((prev) =>
-                                              toggleLineSelection(s.lines, line, prev)
+                                              selectionAfterToggle(schedules, s, line, prev)
                                             )
                                           }
                                           title={
-                                            !isNextDue
-                                              ? 'Selecting this also selects every earlier unpaid due — dues are settled in order.'
-                                              : undefined
+                                            line.isAgingAccount
+                                              ? 'An aging account is collected on its own — ticking it clears any other selection.'
+                                              : !isNextDue
+                                                ? 'Selecting this also selects every earlier unpaid due — dues are settled in order.'
+                                                : undefined
                                           }
                                           className="h-4 w-4 shrink-0 rounded border-zinc-300 text-prominent-purple-600 focus:ring-prominent-purple-500"
                                         />
                                       )}
                                       <div className="min-w-0">
-                                        <div className="text-[13px] text-zinc-800">
-                                          Payment {line.lineNumber} of {s.lines.length} · due{' '}
-                                          {fmtDate(line.dueDate)}
-                                        </div>
-                                        <div className="flex items-center gap-2 text-[12px] text-zinc-500">
-                                          <StatusBadge status={dueStatus(line)} />
-                                          <span>
-                                            {fmtMoney(Number(line.paidAmount))} of{' '}
-                                            {fmtMoney(Number(line.amount))} paid
-                                          </span>
-                                        </div>
+                                        {line.isAgingAccount && s.agingAccount ? (
+                                          // The sheet keeps no per-month schedule, so this is
+                                          // the whole balance, dated at its next due date.
+                                          <>
+                                            <div
+                                              className="text-[13px] text-zinc-800"
+                                              data-testid="aging-account-balance"
+                                            >
+                                              Outstanding {fmtMoney(s.agingAccount.outstanding)} ·
+                                              next due {fmtDate(line.dueDate)}
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-2 text-[12px] text-zinc-500">
+                                              <StatusBadge status={dueStatus(line)} />
+                                              <span>
+                                                {s.agingAccount.dueNow > 0
+                                                  ? `${fmtMoney(s.agingAccount.dueNow)} due now`
+                                                  : 'Nothing due yet'}
+                                                {s.agingAccount.collected > 0 &&
+                                                  ` · ${fmtMoney(s.agingAccount.collected)} collected here`}
+                                              </span>
+                                            </div>
+                                            {s.agingAccount.penalty > 0 && (
+                                              <div className="mt-0.5 text-[11px] text-zinc-400">
+                                                Sheet penalty {fmtMoney(s.agingAccount.penalty)} —
+                                                for reference, not added to the balance.
+                                              </div>
+                                            )}
+                                          </>
+                                        ) : (
+                                          <>
+                                            <div className="text-[13px] text-zinc-800">
+                                              Payment {line.lineNumber} of {s.lines.length} · due{' '}
+                                              {fmtDate(line.dueDate)}
+                                            </div>
+                                            <div className="flex items-center gap-2 text-[12px] text-zinc-500">
+                                              <StatusBadge status={dueStatus(line)} />
+                                              <span>
+                                                {fmtMoney(Number(line.paidAmount))} of{' '}
+                                                {fmtMoney(Number(line.amount))} paid
+                                              </span>
+                                            </div>
+                                          </>
+                                        )}
                                       </div>
                                     </div>
                                     {isFullyPaid && (
@@ -1434,7 +1532,9 @@ function PaymentPanel({
                   return (
                     <tr key={line.id}>
                       <td className="px-3 py-2 text-zinc-700">
-                        Payment {line.lineNumber} · due {fmtDate(line.dueDate)}
+                        {line.isAgingAccount
+                          ? `Balance · due ${fmtDate(line.dueDate)}`
+                          : `Payment ${line.lineNumber} · due ${fmtDate(line.dueDate)}`}
                       </td>
                       <td className="px-3 py-2">
                         {isLate ? (
@@ -1661,9 +1761,10 @@ function PaymentPanel({
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               This exceeds the outstanding balance{single
                 ? ''
-                : ' across the selected dues'} by {fmtMoney(totalApplied - outstandingTotal)}. The
-              extra will automatically apply toward the next unpaid due on this schedule — or be
-              recorded as a flagged overpayment if there isn&apos;t one.
+                : ' across the selected dues'} by {fmtMoney(totalApplied - outstandingTotal)}.{' '}
+              {lines.every((l) => l.line.isAgingAccount)
+                ? 'An aging account has no later due to carry it, so check the amount before collecting.'
+                : 'The extra will automatically apply toward the next unpaid due on this schedule — or be recorded as a flagged overpayment if there isn’t one.'}
             </div>
           )}
 

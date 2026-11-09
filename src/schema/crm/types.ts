@@ -384,6 +384,7 @@ export interface CollectorDetail extends Collector {
   installmentAccounts: CollectorInstallmentAccountSummary[]
   remittances: CollectorRemittance[]
   areas: { barangayCode: string }[]
+  towns: { cityCode: string; cityName: string }[]
 }
 
 export interface AccountingCustomerLite {
@@ -564,6 +565,10 @@ export interface InstallmentLedgerRow {
   ref: string
   /** Installment line number this row belongs to; 0 for non-bill rows. */
   inst: number
+  /** How the Inst. column reads where a bare number won't do — "1–7 of 12" on
+   * the Billing row that stands for seven installments at once. Omitted: show
+   * `inst`. */
+  instLabel?: string
   description: string
   debit: number
   credit: number
@@ -582,12 +587,58 @@ export interface InstallmentLedgerRow {
   scheme?: string
 }
 
+/** Docket NIG #38 — what the "Existing customer" ledger (an account loaded
+ * from the aging sheet) draws beside its rows. Worked out by the server from
+ * the same rows, so no figure here can disagree with the table. Absent on a
+ * POS plan's ledger, which keeps the paper-form layout. */
+export interface ExistingLedgerSummary {
+  /** The beginning-balance cut-off (the end of that Manila day). */
+  asOf: string
+  term: number
+  monthlyInstallment: number
+  /** Installments billed at the cut-off — the sheet's MOS RUN. */
+  billedAtCutoff: number
+  /** Installments billed as of today: those at the cut-off plus the Bills since. */
+  billed: number
+  /** The Bill rows posted since the cut-off. */
+  billsSince: { date: string; inst: number }[]
+  /** How many installments still carry a balance (with billed, unpaid MIs). */
+  installmentsWithBalance: number
+  /** Due, less any penalty counted inside it. */
+  miDue: number
+  /** The sheet's late penalty. */
+  penalty: number
+  /** Whether that penalty is counted inside Due and Outstanding. */
+  penaltyInDue: boolean
+  totalDue: number
+  outstanding: number
+  totalPayments: number
+  totalRebates: number
+  /** Billed so far — the Billing row plus the Bills posted since. */
+  totalBilling: number
+  paidPercent: number
+  contract: {
+    listedCashPrice: number
+    downPayment: number
+    dpBalance: number
+    pnv: number
+    totalPrice: number
+    rebate: number
+    unitDescription: string | null
+    unitType: string | null
+    agent: string | null
+    address: string | null
+  }
+}
+
 export interface InstallmentLedger {
   account: InstallmentAccountDetail
   saleReference: string | null
   saleDate: string | null
   firstInstallmentDate: string | null
   rows: InstallmentLedgerRow[]
+  /** Present only for an account loaded from the aging sheet. */
+  existing?: ExistingLedgerSummary
 }
 
 // Unified per-customer ledger — merges installment, charge, and cash sales
@@ -732,6 +783,10 @@ export interface AgingReportRow {
    * Null means no due date on record: reported as unknown, never as current. */
   daysOverdue: number | null
   bucket: AgingBucket | null
+  /** NIG #40 — the part of `ob` that sits in this row's bucket. An overdue row
+   * keeps all of it; a row that is not overdue shows only what it owes for the
+   * report's month under Current (0 once the month is paid). */
+  bucketAmount?: number
 }
 
 export const AGING_BUCKETS = ['current', '1_30', '31_60', '61_90', '90_plus'] as const
@@ -745,8 +800,10 @@ export const AGING_BUCKET_LABELS: Record<AgingBucket, string> = {
   '90_plus': '90+ days',
 }
 
-/** Outstanding split by bucket, present at every subtotal level. */
-export type AgingBucketTotals = Record<AgingBucket, number> & { unknown: number }
+/** Outstanding split by bucket, present at every subtotal level. `later` is
+ * what falls due after the report's month — outstanding, but in no bucket
+ * (Current is only the month's due, NIG #40) — so the entries add up to `ob`. */
+export type AgingBucketTotals = Record<AgingBucket, number> & { unknown: number; later: number }
 
 export interface AgingReportSubtotal {
   count: number

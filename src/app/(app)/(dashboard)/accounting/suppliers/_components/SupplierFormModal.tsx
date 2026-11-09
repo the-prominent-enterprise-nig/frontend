@@ -71,6 +71,7 @@ const EMPTY_DEFAULTS: CreateSupplierFormValues = {
   status: undefined,
   notes: undefined,
   type: 'SUPPLIER',
+  isServiceCenter: false,
   businessType: undefined,
   alphanumericTaxCode: undefined,
   taxRate: undefined,
@@ -104,6 +105,7 @@ function toFormValues(supplier: SupplierDetail): CreateSupplierFormValues {
     status: supplier.status,
     notes: supplier.notes ?? undefined,
     type: supplier.type,
+    isServiceCenter: supplier.isServiceCenter ?? false,
     businessType: supplier.businessType ?? undefined,
     alphanumericTaxCode: supplier.alphanumericTaxCode ?? undefined,
     taxRate: supplier.taxRate ?? undefined,
@@ -366,6 +368,32 @@ export function SupplierFormModal({
                         placeholder="e.g. Appliance distributor"
                         className={fieldClass}
                       />
+                    )}
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <Controller
+                    name="isServiceCenter"
+                    control={control}
+                    render={({ field }) => (
+                      <label className="flex cursor-pointer items-start gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={field.value ?? false}
+                          onChange={(e) => field.onChange(e.target.checked)}
+                          onBlur={field.onBlur}
+                          className="mt-0.5 h-4 w-4 accent-prominent-purple-700"
+                        />
+                        <span className="flex flex-col gap-0.5">
+                          <span className="text-[13px] font-medium">Service center</span>
+                          <span className={hintClass}>
+                            Repairs units for us — an authorized service center or a roving
+                            technician. Only service centers are offered when picking who repairs a
+                            unit (UDS, Receiving Report, Delivery Receipt).
+                          </span>
+                        </span>
+                      </label>
                     )}
                   />
                 </div>

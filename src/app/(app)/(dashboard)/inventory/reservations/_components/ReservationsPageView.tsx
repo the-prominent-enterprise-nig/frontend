@@ -9,6 +9,7 @@ import { useReservations } from '../_hooks/useReservations'
 import ReservationModal from './ReservationModal'
 import type { ReservationFormValues } from '@/src/schema/inventory/reservations'
 import { MANILA_TZ } from '@/src/libs/format/manila-date'
+import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 
 function statusBadge(status?: string | null) {
   if (status === 'active') return 'bg-green-100 text-green-700'
@@ -196,31 +197,15 @@ export default function ReservationsPageView({ session }: { session: SessionUser
             </div>
           )}
 
-          {pagination.totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-zinc-100 px-4 py-3 text-sm text-zinc-500">
-              <span>
-                Page {page} of {pagination.totalPages}
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.max(1, page - 1))}
-                  disabled={page <= 1}
-                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                  disabled={page >= pagination.totalPages}
-                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
+          <ListFooterPager
+            page={page}
+            pageCount={pagination.totalPages}
+            total={pagination.total}
+            limit={pagination.limit}
+            noun="reservations"
+            onPageChange={setPage}
+            showPageNumber={false}
+          />
         </div>
       </div>
 

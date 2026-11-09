@@ -92,7 +92,7 @@ test.describe('Transfer Receive panel — serial number styling (STR-02)', () =>
     const modal = receiver.locator('.fixed.inset-0.z-50')
     await expect(modal.getByText(reason, { exact: true })).toBeVisible({ timeout: 20_000 })
 
-    await modal.getByRole('button', { name: 'Mark Received' }).click()
+    await modal.getByRole('button', { name: 'Receive', exact: true }).click()
     const serialText = modal.getByTestId('receive-line-serial')
     await expect(serialText).toHaveText(serial!.serialNumber)
     // #0b0b0f, semibold — the same as the detail table's serial cell; it was

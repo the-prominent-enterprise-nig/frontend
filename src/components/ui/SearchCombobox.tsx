@@ -16,6 +16,9 @@ export type SearchComboboxOption = {
   secondary?: string
   /** Short right-aligned note beside `primary` — e.g. "4 in stock". */
   badge?: string
+  /** Options sharing a group sit under one small heading. Return them already
+   * ordered by group — a heading is drawn wherever the group changes. */
+  group?: string
   /** Opaque extra data a caller's own `search` mapper can attach to an
    * option and read back via `onSelect` — e.g. a flag that changes how the
    * parent form renders once a specific result is picked. Never read by
@@ -66,6 +69,24 @@ type Props = {
     label: (typed: string) => string
     onAdd: (typed: string) => void
   }
+}
+
+type OptionSection = { key: string; group?: string; options: SearchComboboxOption[] }
+
+/** Consecutive options sharing a `group` become one section under one heading. */
+function groupOptions(options: SearchComboboxOption[]): OptionSection[] {
+  const sections: OptionSection[] = []
+  for (const option of options) {
+    const last = sections[sections.length - 1]
+    if (last && last.group === option.group) last.options.push(option)
+    else
+      sections.push({
+        key: `${sections.length}-${option.group ?? option.id}`,
+        group: option.group,
+        options: [option],
+      })
+  }
+  return sections
 }
 
 /**
@@ -286,32 +307,48 @@ export function SearchCombobox({
                 {debouncedQuery ? `${emptyMessage} for "${debouncedQuery}"` : typeToSearchMessage}
               </p>
             ) : (
-              options.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  data-testid="search-combobox-option"
-                  onClick={() => handleSelect(option)}
-                  className={`flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm transition-colors hover:bg-zinc-50 ${
-                    option.id === value
-                      ? 'bg-prominent-purple-50 text-prominent-purple-700'
-                      : 'text-zinc-800'
-                  }`}
-                >
-                  <span className="flex w-full items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate font-medium">{option.primary}</span>
-                    {option.badge && (
-                      <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                        {option.badge}
+              groupOptions(options).map((section) => (
+                <div key={section.key}>
+                  {/* Pinned while its group scrolls past, so the list always
+                      says whose stock is on screen. */}
+                  {section.group && (
+                    <p className="sticky top-0 z-10 flex items-center justify-between border-y border-zinc-100 bg-zinc-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-subtle">
+                      <span className="truncate">{section.group}</span>
+                      <span className="shrink-0 font-medium text-ink-faint">
+                        {section.options.length}
                       </span>
-                    )}
-                  </span>
-                  {option.secondary && (
-                    <span className="w-full truncate font-mono text-xs text-zinc-400">
-                      {option.secondary}
-                    </span>
+                    </p>
                   )}
-                </button>
+                  {section.options.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      data-testid="search-combobox-option"
+                      onClick={() => handleSelect(option)}
+                      className={`flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm transition-colors hover:bg-zinc-50 ${
+                        option.id === value
+                          ? 'bg-prominent-purple-50 text-prominent-purple-700'
+                          : 'text-zinc-800'
+                      }`}
+                    >
+                      <span className="flex w-full items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate font-medium">
+                          {option.primary}
+                        </span>
+                        {option.badge && (
+                          <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                            {option.badge}
+                          </span>
+                        )}
+                      </span>
+                      {option.secondary && (
+                        <span className="w-full truncate font-mono text-xs text-zinc-400">
+                          {option.secondary}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
               ))
             )}
             {addOption &&

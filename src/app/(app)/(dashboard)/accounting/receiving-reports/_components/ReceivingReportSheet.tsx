@@ -6,6 +6,8 @@ import {
   receivingReportGrossUnitCosts,
   receivingReportMetaSlots,
   receivingReportReasonLabel,
+  receivingReportReceivedOnly,
+  receivingReportRows,
   receivingReportSourceName,
   receivingReportSourceSubtitle,
 } from '@/src/libs/format/receiving-report'
@@ -47,6 +49,8 @@ export interface ReceivingReportDocument {
      * can be absent — a delivery often arrives with a driver and no helper. */
     driverName?: string | null
     helperName?: string | null
+    /** Receipt notes — the receive form logs each "Wrong unit" here. */
+    notes?: string | null
     /** Set only on a receipt that came from a branch transfer rather than a
      * supplier. Its number takes the sheet's PO slot — see
      * receivingReportSourceRef(). */
@@ -77,6 +81,11 @@ export interface ReceivingReportDocument {
       unitCost?: number | string | null
       isFreebie?: boolean
       serialNumbers?: string[] | null
+      /** A receipt-time serial correction on the transfer line it closed. */
+      stockTransferLine?: {
+        receiptCorrectedFromSerialId?: string | null
+        receiptCorrectedFromSerialNumber?: string | null
+      } | null
       purchaseOrderLine?: {
         purchaseOrder?: { code?: string | null; orderDate?: string | null } | null
       } | null
@@ -129,7 +138,7 @@ export default function ReceivingReportSheet({
    * (see canSeeSupplierPrices) only. Everyone else gets quantities. */
   showPrices?: boolean
 }) {
-  const rr = doc.document
+  const rr = receivingReportReceivedOnly(doc.document)
   const enterprise = doc.enterprise
   const lines = rr.lines ?? []
   const metaSlots = receivingReportMetaSlots(rr)
@@ -153,6 +162,8 @@ export default function ReceivingReportSheet({
     }
   })
 
+  // Same Brand / Subgroup / Model (and unit cost) reads as one row.
+  const rows = receivingReportRows(lines, grossUnitCosts, rr.notes)
   const showCost = showPrices && hasAnyCost
   const vatAmount = Number(rr.vatAmount ?? 0)
   const withheldAmount = Number(rr.withheldAmount ?? 0)
@@ -264,29 +275,30 @@ export default function ReceivingReportSheet({
             </tr>
           </thead>
           <tbody>
-            {lines.map((l, i) => {
-              const qty = Number(l.quantityReceived ?? 0)
-              const unitCost = grossUnitCosts[i] ?? null
-              return (
-                <tr key={l.id}>
-                  <td className={`${TD} font-mono`}>{(l.serialNumbers ?? []).join(', ')}</td>
-                  <td className={TD}>{l.item?.brand?.name ?? ''}</td>
-                  <td className={TD}>{l.item?.primaryCategory?.name ?? ''}</td>
-                  <td className={TD}>{l.item?.modelNumber || l.item?.name || ''}</td>
-                  <td className={`${TD} text-right tabular-nums`}>{qty}</td>
-                  {showCost && (
-                    <>
-                      <td className={`${TD} text-right tabular-nums`}>
-                        {unitCost != null ? fmtAmount(unitCost) : '—'}
-                      </td>
-                      <td className={`${TD} text-right tabular-nums`}>
-                        {unitCost != null ? fmtAmount(qty * unitCost) : '—'}
-                      </td>
-                    </>
+            {rows.map((row) => (
+              <tr key={row.key}>
+                <td className={`${TD} font-mono`}>
+                  {row.serials.join(', ')}
+                  {row.remark && (
+                    <div className="mt-0.5 font-sans text-[10px] text-amber-800">{row.remark}</div>
                   )}
-                </tr>
-              )
-            })}
+                </td>
+                <td className={TD}>{row.brand}</td>
+                <td className={TD}>{row.subgroup}</td>
+                <td className={TD}>{row.model}</td>
+                <td className={`${TD} text-right tabular-nums`}>{row.quantity}</td>
+                {showCost && (
+                  <>
+                    <td className={`${TD} text-right tabular-nums`}>
+                      {row.unitCost != null ? fmtAmount(row.unitCost) : '—'}
+                    </td>
+                    <td className={`${TD} text-right tabular-nums`}>
+                      {row.unitCost != null ? fmtAmount(row.quantity * row.unitCost) : '—'}
+                    </td>
+                  </>
+                )}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -327,6 +339,7 @@ export default function ReceivingReportSheet({
 
       <div className="mt-10 w-60">
         <p className="mb-8 font-bold text-prominent-purple-900">Received by:</p>
+        {/* Left blank for a hand signature — no printed name. */}
         <div className="border-b border-gray-700" />
       </div>
     </div>

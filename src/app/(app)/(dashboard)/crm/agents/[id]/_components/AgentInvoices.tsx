@@ -1,10 +1,10 @@
 'use client'
 
-import { MANILA_TZ } from '@/src/libs/format/manila-date'
-import React, { useEffect, useState } from 'react'
+import { MANILA_TZ, manilaDateOf } from '@/src/libs/format/manila-date'
+import React, { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, Pencil, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { agentsApi } from '@/src/libs/api/crm'
 import { saleDocNo } from '@/src/libs/format/saleDocNo'
@@ -37,6 +37,18 @@ function fmtDate(d: string): string {
   })
 }
 
+const DATE_INPUT =
+  'h-9 rounded-lg border border-zinc-200 bg-white px-2.5 text-sm text-zinc-700 outline-none transition-colors focus:border-purple-500 focus:ring-2 focus:ring-purple-100'
+
+/** When the agent's money went out for a sale — the date of its recorded
+ * Commissions - Sales voucher, or of its Commissions - SMI voucher when only
+ * that one is out. A draft voucher isn't paid yet, so it gives no date; a sale
+ * with nothing released has none either. */
+function releasedDateOf(r: AgentInvoice): string | null {
+  const paid = [r.released, r.smiReleased].find((x) => x && !x.isDraft)
+  return paid ? paid.date : null
+}
+
 const SALE_TYPE_LABEL: Record<AgentSaleType, string> = {
   installment: 'Installment',
   tpf: 'TPF',
@@ -66,6 +78,9 @@ export default function AgentInvoices({
   const [agent, setAgent] = useState<Agent | null>(null)
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [invoices, setInvoices] = useState<AgentInvoice[] | null>(null)
+  // Released-date range, 'YYYY-MM-DD' Manila days; '' = no bound on that side.
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
   const [notFound, setNotFound] = useState(false)
   // Inline edit — the header turns into the agent form in place.
   const [editForm, setEditForm] = useState<AgentFormState | null>(null)
@@ -127,9 +142,28 @@ export default function AgentInvoices({
     }
   }, [id])
 
-  const rows = invoices ?? []
-  const totalCommission = rows.reduce((sum, r) => sum + (r.commission ?? 0), 0)
-  const totalSmi = rows.reduce((sum, r) => sum + (r.smi ?? 0), 0)
+  // Newest release first, sales with nothing released after them. With a range
+  // set, only sales released inside it stay — an unreleased sale has no date to
+  // fall in a range. The tiles total what is listed.
+  const rows = useMemo(() => {
+    const dated = (invoices ?? []).map((r) => {
+      const date = releasedDateOf(r)
+      return { r, date, day: date ? manilaDateOf(date) : null }
+    })
+    const kept =
+      from || to
+        ? dated.filter(({ day }) => day !== null && (!from || day >= from) && (!to || day <= to))
+        : dated
+    return kept.sort((a, b) => {
+      if (a.day === b.day) return 0
+      if (a.day === null) return 1
+      if (b.day === null) return -1
+      return b.day.localeCompare(a.day)
+    })
+  }, [invoices, from, to])
+  const totalCommission = rows.reduce((sum, { r }) => sum + (r.commission ?? 0), 0)
+  const totalSmi = rows.reduce((sum, { r }) => sum + (r.smi ?? 0), 0)
+  const hasRange = from !== '' || to !== ''
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -256,18 +290,62 @@ export default function AgentInvoices({
             <Stat label="SMI" value={invoices === null ? '-' : fmtMoney(totalSmi)} />
           </div>
 
+          {invoices !== null && invoices.length > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-zinc-500">
+              <span>Released</span>
+              <input
+                type="date"
+                value={from}
+                max={to || undefined}
+                onChange={(e) => setFrom(e.target.value)}
+                className={DATE_INPUT}
+                aria-label="Released from"
+              />
+              <span>–</span>
+              <input
+                type="date"
+                value={to}
+                min={from || undefined}
+                onChange={(e) => setTo(e.target.value)}
+                className={DATE_INPUT}
+                aria-label="Released to"
+              />
+              {hasRange && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFrom('')
+                      setTo('')
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
+                  >
+                    <X className="h-3.5 w-3.5" /> Clear
+                  </button>
+                  <span className="text-xs text-zinc-400">
+                    Sales with nothing released yet have no date, so they are left out.
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+
           <div className="bg-white rounded-lg shadow-sm border border-zinc-200 overflow-hidden">
             <div className="overflow-x-auto">
               {invoices === null ? (
                 <div className="p-8 text-center text-sm text-zinc-400">Loading...</div>
-              ) : rows.length === 0 ? (
+              ) : invoices.length === 0 ? (
                 <div className="p-8 text-center text-sm text-zinc-400">No invoices sold yet.</div>
+              ) : rows.length === 0 ? (
+                <div className="p-8 text-center text-sm text-zinc-400">
+                  Nothing was released in this date range.
+                </div>
               ) : (
                 <table className="w-full">
                   <thead className="bg-zinc-50 border-b border-zinc-200">
                     <tr>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
-                        Date
+                        Released Date
                       </th>
                       <th className="text-left px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
                         SI / DR No.
@@ -290,10 +368,10 @@ export default function AgentInvoices({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
-                    {rows.map((r) => (
+                    {rows.map(({ r, date }) => (
                       <tr key={r.id} className="hover:bg-zinc-50">
                         <td className="px-4 py-3 text-sm text-zinc-500 whitespace-nowrap">
-                          {fmtDate(r.date)}
+                          {date ? fmtDate(date) : '-'}
                         </td>
                         <td className="px-4 py-3 text-sm whitespace-nowrap">
                           {/* The SI/DR the customer holds on paper — never the internal

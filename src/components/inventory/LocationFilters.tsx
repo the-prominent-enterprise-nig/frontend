@@ -15,15 +15,18 @@ type Chrome = { idle: string; focused: string }
 export function LocationFilters({
   filter,
   chrome,
+  fill = false,
 }: {
   filter: LocationFilter
   chrome?: Chrome
+  /** Grow to share the row's free width (min widths kept) instead of fixed widths. */
+  fill?: boolean
 }): React.ReactElement {
   return (
     <>
       {/* Operations — the client's name for region. */}
       <SearchableSelect
-        className="w-[216px]"
+        className={fill ? 'min-w-[180px] flex-1' : 'w-[216px]'}
         value={filter.region ?? ''}
         onChange={(v) => filter.setRegion((v || undefined) as Region | undefined)}
         placeholder="All Operations"
@@ -34,7 +37,7 @@ export function LocationFilters({
       {/* Branches — across branches and the 2 standalone warehouses. */}
       <SearchableSelect
         multiple
-        className="w-[220px]"
+        className={fill ? 'min-w-[200px] flex-1' : 'w-[220px]'}
         value={filter.locations}
         onChange={filter.setLocations}
         placeholder="All Branches"

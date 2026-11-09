@@ -1339,6 +1339,10 @@ export interface InstallmentScheduleLineWithInvoice {
    * be read here. */
   paidAmount: number
   settledAt: string | null
+  /** A loaded (aging-sheet) account's one "due" — its whole outstanding
+   * balance. Collected like any due, but with no rebate and no late penalty:
+   * the sheet keeps its penalty beside the balance, never inside it. */
+  isAgingAccount?: boolean
   arInvoice: {
     id: string
     invoiceNumber: string
@@ -1375,8 +1379,30 @@ export interface InstallmentSchedule {
      * booked before it became required at checkout. */
     salesInvoiceNumber: string | null
     occurredAt: string
+  } | null
+  financingTerm?: { termMonths: number; factorRate: number } | null
+  /** A loaded (aging-sheet) account, returned as a one-due plan so POS
+   * Collections can collect it. Only sent when Collections asks for it. */
+  isAgingAccount?: boolean
+  agingAccount?: {
+    accountNumber: string
+    /** The SI No. the customer holds. */
+    siNo: string
+    branchId: string | null
+    /** Where the account sits; null on an account with no branch. */
+    branchName: string | null
+    /** The sheet's balance, before collections taken in the system. */
+    storedBalance: number
+    /** What those collections have relieved since. */
+    collected: number
+    /** Still owed — what the ledger and the aging report show. */
+    outstanding: number
+    /** Demandable today: the sheet's Total Due once its due date has come. */
+    dueNow: number
+    nextDueDate: string
+    /** The sheet's late penalty — shown beside the balance, never added to it. */
+    penalty: number
   }
-  financingTerm?: { termMonths: number; factorRate: number }
   lines: InstallmentScheduleLineWithInvoice[]
   // Scenario 23 Gap 2 — plural since Gap 5's term-grouping means a schedule
   // can cover several items sharing one term, not just one.
@@ -1398,7 +1424,8 @@ export interface InstallmentSchedule {
   // line creates one, but the relation is optional).
   installmentAccount: {
     id: string
-    ppd: number
+    /** Null on a loaded (aging-sheet) account — it has no plan to earn one. */
+    ppd: number | null
     status: 'active' | 'closed' | 'early_closed' | 'written_off'
   } | null
 }

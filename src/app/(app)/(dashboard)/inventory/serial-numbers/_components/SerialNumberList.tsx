@@ -10,6 +10,7 @@ import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { hasPrivilegedRole, type SessionUser } from '@/src/libs/guards/permission'
 import {
+  caravanScopeBranchId,
   isCaravanBranch,
   warehouseLabel,
   type WarehouseSummary,
@@ -40,6 +41,10 @@ import { DestinationCell, LocationNote, ServiceCenterLocation } from './SerialWh
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { LocationFilters } from '@/src/components/inventory/LocationFilters'
+import {
+  ListFooterPager,
+  STOCK_LEDGER_PAGE_SIZES,
+} from '@/src/components/inventory/ListFooterPager'
 import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
 import SerialHistoryContent from '@/src/components/inventory/serial-history/SerialHistoryContent'
 
@@ -114,14 +119,30 @@ function MetricCell({
   value,
   sub,
   highlight,
+  active,
+  onClick,
 }: {
   label: string
   value: number
   sub: string
   highlight?: boolean
+  /** The status this count stands for is the one filtering the list. */
+  active?: boolean
+  /** Clicking a count filters the list to it. */
+  onClick?: () => void
 }) {
+  const tone = active
+    ? 'bg-[#f1ebfb] shadow-[inset_0_-2px_0_#5b21b6]'
+    : highlight
+      ? 'bg-[#f4fbf7] hover:bg-[#eaf7f0]'
+      : 'hover:bg-[#fbfbfc]'
   return (
-    <div className={`flex flex-col gap-1 px-4 py-3 ${highlight ? 'bg-[#f4fbf7]' : ''}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex flex-col gap-1 px-4 py-3 text-left transition-colors ${tone}`}
+    >
       <span className={`${MONO} text-[10px] uppercase tracking-[.08em] text-ink-muted`}>
         {label}
       </span>
@@ -133,7 +154,7 @@ function MetricCell({
         {value.toLocaleString()}
       </span>
       <span className="text-[11px] text-ink-muted">{sub}</span>
-    </div>
+    </button>
   )
 }
 
@@ -199,6 +220,10 @@ export default function SerialNumberList({
   // Unit cost is for Business Owner / Accountant, as on receiving.
   const canViewCost = hasPermission(session, INVENTORY_PERMISSIONS.RECEIVE_COST_VIEW)
   const canConsign = canTransfer && canManageCaravan
+  // The overall view across locations is head office's (NIG, 2026-11-09):
+  // branch staff see only their own units — the backend enforces it — so the
+  // Location filter would do nothing for them.
+  const seesAllLocations = !session.branchId
   const [isRegisterOpen, setIsRegisterOpen] = useState(false)
   const [isImportOpen, setIsImportOpen] = useState(false)
 
@@ -221,7 +246,6 @@ export default function SerialNumberList({
     resetFilters,
     page,
     setPage,
-    limit,
     setLimit,
     warehouseOptions,
     itemOptions,
@@ -240,7 +264,7 @@ export default function SerialNumberList({
     pickedCaravanKey,
     pickCaravan,
     groupSerials,
-  } = useSerialNumbers({ initialCaravanId })
+  } = useSerialNumbers({ initialCaravanId, viewerBranchId: session.branchId })
 
   // Nothing ticked means every class shows; the last class can't be unticked, so
   // the list never goes blank by accident.
@@ -280,7 +304,10 @@ export default function SerialNumberList({
   const caravanActions: CaravanActions = {
     canEdit: canManageCaravan,
     canClose: canManageCaravan && (hasPrivilegedRole(session) || !session.branchId),
-    hostBranchOptions: hostBranchChoices(warehouseOptions, session.branchId),
+    hostBranchOptions: hostBranchChoices(
+      warehouseOptions,
+      caravanScopeBranchId(warehouseOptions, session.branchId)
+    ),
     hostLocked: !!session.branchId,
   }
 
@@ -312,6 +339,10 @@ export default function SerialNumberList({
     )
   }, [itemOptions])
 
+  // A count clicked again goes back to every status.
+  const toggleStatus = (status: SerialStatus): void =>
+    setStatusFilter(statusFilter === status ? undefined : status)
+
   const hasFilters =
     statusFilter ||
     locationFilter.locations.length > 0 ||
@@ -331,7 +362,7 @@ export default function SerialNumberList({
     const pinnedLines = selection.selected.flatMap((s) =>
       s.item ? [{ serialNumberId: s.id, itemId: s.item.id, itemLabel: s.item.name }] : []
     )
-    saveStockTransferDraft({ fromWarehouseId: source.id, pinnedLines })
+    saveStockTransferDraft({ fromWarehouseId: source.id, pinnedLines }, session.id)
     router.push('/inventory/stock-transaction?tab=transfers')
   }
   const { consignToCaravan, isConsigning } = useConsignToCaravan(selection.clear)
@@ -356,16 +387,6 @@ export default function SerialNumberList({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {/* Status sits with the header actions, as on the mockup. */}
-            <SearchableSelect
-              className="w-[150px]"
-              value={statusFilter ?? ''}
-              onChange={(v) => setStatusFilter((v || undefined) as SerialStatus | undefined)}
-              placeholder="All statuses"
-              chrome={CONTROL_CHROME}
-              clearable
-              options={statusOptions}
-            />
             {canManage && (
               <button
                 type="button"
@@ -392,16 +413,43 @@ export default function SerialNumberList({
             aggregate to show. */}
         {!caravanView && !isLoading && (
           <div className="grid grid-cols-2 divide-x divide-y divide-[#eeeef1] overflow-hidden rounded-xl border border-[#e4e4e9] bg-white min-[640px]:grid-cols-3 min-[1080px]:grid-cols-5 min-[1080px]:divide-y-0">
-            <MetricCell label="Registered" value={pagination.total} sub="total units" />
+            {/* Each count filters the list to its status; Registered clears it. */}
+            <MetricCell
+              label="Registered"
+              value={pagination.total}
+              sub="total units"
+              active={!statusFilter}
+              onClick={() => setStatusFilter(undefined)}
+            />
             <MetricCell
               label="In Stock"
               value={statusCounts.in_stock}
               sub="available to sell"
               highlight
+              active={statusFilter === 'in_stock'}
+              onClick={() => toggleStatus('in_stock')}
             />
-            <MetricCell label="Reserved" value={statusCounts.held} sub="claimed for a sale" />
-            <MetricCell label="Pulled Out" value={statusCounts.pulled_out} sub="repossessed" />
-            <MetricCell label="Sold" value={statusCounts.sold} sub="out of stock" />
+            <MetricCell
+              label="Reserved"
+              value={statusCounts.held}
+              sub="claimed for a sale"
+              active={statusFilter === 'held'}
+              onClick={() => toggleStatus('held')}
+            />
+            <MetricCell
+              label="Pulled Out"
+              value={statusCounts.pulled_out}
+              sub="repossessed"
+              active={statusFilter === 'pulled_out'}
+              onClick={() => toggleStatus('pulled_out')}
+            />
+            <MetricCell
+              label="Sold"
+              value={statusCounts.sold}
+              sub="out of stock"
+              active={statusFilter === 'sold'}
+              onClick={() => toggleStatus('sold')}
+            />
           </div>
         )}
 
@@ -434,21 +482,6 @@ export default function SerialNumberList({
           </div>
         )}
 
-        {/* Locator — the serial search sits above the filters. */}
-        {isLocator && (
-          <label className="flex h-11 items-center gap-3 rounded-xl border border-[#5b21b6] bg-white px-4 focus-within:shadow-[0_0_0_3px_#f0e9fc]">
-            <Search className="h-4 w-4 shrink-0 text-[#5b21b6]" />
-            <input
-              type="search"
-              autoFocus
-              value={search ?? ''}
-              onChange={(e) => setSearch(e.target.value || undefined)}
-              placeholder="Search a serial number…"
-              className="min-w-0 flex-1 border-none bg-transparent p-0 text-[14px] text-[#17171c] outline-none placeholder:text-ink-faint"
-            />
-          </label>
-        )}
-
         {/* Scenario 60 Part 3 — ended caravans still holding stock. The
             Caravan tab's own cards already show them, so only on All Serials.
             Gated on transfers:create: those are the people who can act. */}
@@ -461,24 +494,28 @@ export default function SerialNumberList({
         )}
 
         {/* Filter bar */}
-        <div className="flex flex-wrap items-center gap-[10px] rounded-xl border border-[#e4e4e9] bg-white p-3 min-[1400px]:flex-nowrap">
-          {!isLocator && (
-            <div
-              className={`flex h-[38px] min-w-[180px] flex-[1_1_180px] items-center gap-[9px] rounded-lg border px-3 transition-colors ${CONTROL_CHROME.idle} focus-within:border-[#5b21b6] focus-within:shadow-[0_0_0_3px_#f0e9fc]`}
-            >
-              <Search className="h-3.25 w-3.25 shrink-0 text-ink-muted" />
-              <input
-                value={search ?? ''}
-                onChange={(e) => setSearch(e.target.value || undefined)}
-                placeholder={
-                  caravanView
-                    ? 'Search serial, item, RR, supplier, caravan or location…'
-                    : 'Search serial, brand, model, category, RR or supplier…'
-                }
-                className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-ink-faint"
-              />
-            </div>
-          )}
+        {/* Head office also gets the location filters, so the search takes a
+            line of its own above them; branch staff keep one row. */}
+        <div
+          className={`flex flex-wrap items-center gap-[10px] rounded-xl border border-[#e4e4e9] bg-white p-3 ${seesAllLocations ? '' : 'min-[1400px]:flex-nowrap'}`}
+        >
+          {/* The Locator shares this bar; it opens with the search focused. */}
+          <div
+            className={`flex h-[38px] min-w-[180px] items-center gap-[9px] rounded-lg border px-3 transition-colors ${seesAllLocations ? 'basis-full' : 'flex-[1_1_180px]'} ${CONTROL_CHROME.idle} focus-within:border-[#5b21b6] focus-within:shadow-[0_0_0_3px_#f0e9fc]`}
+          >
+            <Search className="h-3.25 w-3.25 shrink-0 text-ink-muted" />
+            <input
+              autoFocus={isLocator}
+              value={search ?? ''}
+              onChange={(e) => setSearch(e.target.value || undefined)}
+              placeholder={
+                caravanView
+                  ? 'Search serial, item, RR, supplier, caravan or location…'
+                  : 'Search serial, brand, model, category, RR or supplier…'
+              }
+              className="min-w-0 flex-1 border-none bg-transparent p-0 text-[13px] text-[#17171c] outline-none placeholder:text-ink-faint"
+            />
+          </div>
 
           {!caravanView && (
             <div
@@ -500,10 +537,21 @@ export default function SerialNumberList({
             </div>
           )}
 
+          {/* Status — with the other filters, so Clear resets it too. */}
+          <SearchableSelect
+            className="min-w-[150px] flex-1"
+            value={statusFilter ?? ''}
+            onChange={(v) => setStatusFilter((v || undefined) as SerialStatus | undefined)}
+            placeholder="All statuses"
+            chrome={CONTROL_CHROME}
+            clearable
+            options={statusOptions}
+          />
+
           {caravanView && (
             <SearchableSelect
               multiple
-              className="w-[200px]"
+              className="min-w-[200px] flex-1"
               value={caravanHostIds}
               onChange={setCaravanHostIds}
               placeholder="All host branches"
@@ -516,7 +564,7 @@ export default function SerialNumberList({
 
           {caravanView ? (
             <SearchableSelect
-              className="w-[320px]"
+              className="min-w-[260px] flex-[2]"
               value={caravanId ?? ''}
               onChange={(v) => setCaravanId(v || undefined)}
               placeholder="All caravans"
@@ -524,13 +572,13 @@ export default function SerialNumberList({
               clearable
               options={caravanOptions}
             />
-          ) : (
-            <LocationFilters filter={locationFilter} chrome={CONTROL_CHROME} />
-          )}
+          ) : seesAllLocations ? (
+            <LocationFilters filter={locationFilter} chrome={CONTROL_CHROME} fill />
+          ) : null}
 
           {!caravanView && (
             <SearchableSelect
-              className="w-[150px]"
+              className="min-w-[150px] flex-1"
               value={brandFilter ?? ''}
               onChange={(v) => setBrandFilter(v || undefined)}
               placeholder="All brands"
@@ -544,58 +592,13 @@ export default function SerialNumberList({
             <button
               type="button"
               onClick={resetFilters}
-              className="ml-auto flex items-center gap-1.5 rounded-lg px-[11px] py-[6px] text-[12.5px] text-[#5b21b6] hover:bg-[#f1ebfb]"
+              className="ml-auto flex shrink-0 items-center gap-1.5 rounded-lg px-[11px] py-[6px] text-[12.5px] text-[#5b21b6] hover:bg-[#f1ebfb]"
             >
               <X className="h-3.5 w-3.5" />
               Clear
             </button>
           )}
         </div>
-
-        {showTransfer && selection.selected.length > 0 && (
-          <div className="flex flex-wrap items-center gap-3 rounded-[9px] border border-[#ddd0f7] bg-[#f1ebfb] p-3">
-            <span className="text-[12.5px] font-medium text-[#3f1490]">
-              {selection.selected.length} selected
-            </span>
-            {showSelection && (
-              <button
-                type="button"
-                onClick={() => setIsConsignOpen(true)}
-                disabled={selection.mixedSources || selection.hasRepairUnits}
-                className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-[#4c1a9b] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Truck className="h-3.5 w-3.5" />
-                Consign to Caravan
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={openStockTransfer}
-              disabled={selection.mixedSources}
-              className="flex items-center gap-1.5 rounded-lg border border-[#5b21b6] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-[#f7f3fd] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <ArrowRightLeft className="h-3.5 w-3.5" />
-              Stock Transfer
-            </button>
-            <button
-              type="button"
-              onClick={selection.clear}
-              className="rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-white"
-            >
-              Clear
-            </button>
-            {selection.mixedSources && (
-              <span className="text-[12px] text-[#8a4b06]">
-                Tick units from one branch only — a transfer leaves from a single source.
-              </span>
-            )}
-            {showSelection && !selection.mixedSources && selection.hasRepairUnits && (
-              <span className="text-[12px] text-[#8a4b06]">
-                Units in repair can go on a Stock Transfer.
-              </span>
-            )}
-          </div>
-        )}
 
         {/* Table card */}
         {(!caravanView || caravanReady) && (
@@ -861,54 +864,65 @@ export default function SerialNumberList({
                   </table>
                 </div>
               )}
+              <ListFooterPager
+                page={page}
+                pageCount={pagination.totalPages}
+                total={pagination.total}
+                limit={pagination.limit}
+                noun={caravanView ? 'items' : 'units'}
+                onPageChange={setPage}
+                onLimitChange={setLimit}
+                pageSizes={STOCK_LEDGER_PAGE_SIZES}
+                showPageNumber={false}
+              />
             </div>
-
-            {pagination.total > 0 && (
-              <div className="flex flex-wrap items-center justify-between gap-[14px] text-[11.5px] text-ink-muted">
-                <div className="flex items-center gap-[14px]">
-                  <span>
-                    Showing {(page - 1) * pagination.limit + 1}–
-                    {Math.min(page * pagination.limit, pagination.total)} of {pagination.total}
-                  </span>
-                  <div className="flex items-center gap-[10px]">
-                    <span>Rows</span>
-                    <select
-                      value={limit}
-                      onChange={(e) => setLimit(Number(e.target.value))}
-                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[9px] py-1.5 text-[12px] text-[#3d3d4a]"
-                    >
-                      <option value={20}>20</option>
-                      <option value={50}>50</option>
-                      <option value={100}>100</option>
-                    </select>
-                  </div>
-                </div>
-                {pagination.totalPages > 1 && (
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setPage(Math.max(1, page - 1))}
-                      disabled={page <= 1}
-                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-ink-faint"
-                    >
-                      Previous
-                    </button>
-                    <span className="px-3 py-1.5 font-medium text-[#17171c]">
-                      {page} / {pagination.totalPages}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                      disabled={page >= pagination.totalPages}
-                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-ink-faint"
-                    >
-                      Next
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
           </>
+        )}
+
+        {/* Pinned to the bottom while scrolling the list, so the actions stay in reach. */}
+        {showTransfer && selection.selected.length > 0 && (
+          <div className="sticky bottom-4 z-20 flex flex-wrap items-center gap-3 rounded-[9px] bg-[#5b21b6] p-3 shadow-[0_8px_24px_rgba(63,20,144,0.35)]">
+            <span className="text-[12.5px] font-medium text-white">
+              {selection.selected.length} selected
+            </span>
+            {showSelection && (
+              <button
+                type="button"
+                onClick={() => setIsConsignOpen(true)}
+                disabled={selection.mixedSources || selection.hasRepairUnits}
+                className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-[#f1ebfb] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Truck className="h-3.5 w-3.5" />
+                Consign to Caravan
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={openStockTransfer}
+              disabled={selection.mixedSources}
+              className="flex items-center gap-1.5 rounded-lg border border-white/70 bg-transparent px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+              Stock Transfer
+            </button>
+            <button
+              type="button"
+              onClick={selection.clear}
+              className="rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-white hover:bg-white/10"
+            >
+              Clear
+            </button>
+            {selection.mixedSources && (
+              <span className="text-[12px] text-[#fde68a]">
+                Tick units from one branch only — a transfer leaves from a single source.
+              </span>
+            )}
+            {showSelection && !selection.mixedSources && selection.hasRepairUnits && (
+              <span className="text-[12px] text-[#fde68a]">
+                Units in repair can go on a Stock Transfer.
+              </span>
+            )}
+          </div>
         )}
       </div>
 

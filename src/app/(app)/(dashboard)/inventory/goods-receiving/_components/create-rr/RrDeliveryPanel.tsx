@@ -6,6 +6,7 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import SearchableSelect, { type SearchableSelectOption } from '@/src/components/ui/SearchableSelect'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
+import { RepairProvidersFallbackNote } from '@/src/components/inventory/RepairProvidersFallbackNote'
 import type { ReceiveStockFormValues } from '@/src/schema/inventory/goods-receiving'
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import { CONTROL_CHROME, MONO } from '../../../purchase-orders/_components/procurementTokens'
@@ -279,6 +280,7 @@ export function RrDeliveryPanel({
                   />
                 )}
               />
+              <RepairProvidersFallbackNote />
             </Field>
           </div>
         )}
@@ -337,6 +339,7 @@ export function RrDeliveryPanel({
                 control={control}
                 render={({ field }) => (
                   <SupplierSearchCombobox
+                    serviceCentersOnly
                     value={field.value ?? ''}
                     onChange={(id) => field.onChange(id || undefined)}
                     onSelect={(option) => field.onChange(option.id)}

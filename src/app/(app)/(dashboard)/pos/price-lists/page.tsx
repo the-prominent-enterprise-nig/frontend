@@ -1,0 +1,28 @@
+import { redirect } from 'next/navigation'
+import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { can, isHeadOffice } from '@/src/libs/guards/permission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { PriceListsPageView } from './_components'
+
+export const metadata = {
+  title: 'Price Lists | NIG Central',
+  description: 'Manage item price lists and pricing tiers',
+}
+
+export default async function PriceListsPage() {
+  const session = await getSessionOrNull()
+
+  if (!session) {
+    redirect('/login')
+  }
+
+  if (!isHeadOffice(session) || !can(session, INVENTORY_PERMISSIONS.PRICE_LISTS_READ)) {
+    redirect('/403')
+  }
+
+  return (
+    <div className="min-h-screen bg-[#fbfbfc]">
+      <PriceListsPageView session={session} />
+    </div>
+  )
+}

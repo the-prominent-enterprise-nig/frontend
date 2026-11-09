@@ -38,6 +38,7 @@ function AgingTab(): ReactElement {
     agingData,
     isAgingLoading,
     isAgingFetching,
+    refetchAging,
     typeOptions,
   } = useInventoryReports()
 
@@ -52,6 +53,7 @@ function AgingTab(): ReactElement {
           setPage={setPage}
           filters={agingFilters}
           onFiltersChange={applyAgingFilters}
+          onRefresh={refetchAging}
           warehouses={warehouseOptions}
           typeOptions={typeOptions}
         />

@@ -34,14 +34,13 @@ const TABS: { key: SalesReportsTab; label: string }[] = [
   { key: 'report', label: 'Sales Report' },
 ]
 
-/** What the Sales per Branch views are scoped to: the caller's own branch,
- * the chosen branch, the chosen region ("Negros Operations"), or all. */
-/** A branch-locked non-owner sees one branch, so "per Branch" would mislead.
- * The Business Owner always keeps "Sales per Branch". */
+/** A branch-locked user sees one branch, so "per Branch" would mislead. */
 function tabLabel(tab: SalesReportsTab, label: string, branchLocked: boolean): string {
   return tab === 'branch' && branchLocked ? 'Branch Sales' : label
 }
 
+/** What the Sales per Branch views are scoped to: the caller's own branch,
+ * the chosen branch, the chosen region ("Negros Operations"), or all. */
 function scopeTitle(filters: Filters, options: SalesFilterOptions | undefined): string {
   const name = (list: { id: string; name: string }[] | undefined, id: string) =>
     list?.find((o) => o.id === id)?.name
@@ -52,19 +51,16 @@ function scopeTitle(filters: Filters, options: SalesFilterOptions | undefined): 
   return region ? `${region} Operations` : 'All Operations'
 }
 
-/** Region and Branch are Business Owner only: for everyone else they are
- * hidden on every tab and left out of every query and export. */
+/** Region and Branch are for whoever sees more than one branch: the Business
+ * Owner and Head Office staff (NIG UAT 2026-11-09). A branch-tied user is
+ * held to their own branch by the API, so theirs are left out of every query
+ * and export. */
 function withoutScope(params: SalesReportsParams): SalesReportsParams {
   return { ...params, regions: undefined, branchIds: undefined }
 }
 
-export default function SalesReportsView({ isOwner }: { isOwner: boolean }): React.JSX.Element {
+export default function SalesReportsView(): React.JSX.Element {
   const report = useSalesReportFilters()
-  const hideScope = !isOwner
-  const params = hideScope ? withoutScope(report.apiParams) : report.apiParams
-  const hasFilters = hideScope
-    ? Boolean(report.filters.type || report.filters.group || report.filters.brand)
-    : report.hasFilters
 
   const options = useQuery({
     queryKey: ['pos-sales-report-filters'],
@@ -74,6 +70,11 @@ export default function SalesReportsView({ isOwner }: { isOwner: boolean }): Rea
     },
     staleTime: 5 * 60_000,
   })
+  const branchLocked = Boolean(options.data?.branchLocked)
+  const params = branchLocked ? withoutScope(report.apiParams) : report.apiParams
+  const hasFilters = branchLocked
+    ? Boolean(report.filters.type || report.filters.group || report.filters.brand)
+    : report.hasFilters
 
   const summary = useQuery({
     queryKey: ['pos-sales-report-summary', params],
@@ -117,7 +118,7 @@ export default function SalesReportsView({ isOwner }: { isOwner: boolean }): Rea
                 : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50'
             }`}
           >
-            {tabLabel(t.key, t.label, !isOwner && Boolean(options.data?.branchLocked))}
+            {tabLabel(t.key, t.label, branchLocked)}
           </button>
         ))}
       </div>
@@ -131,7 +132,6 @@ export default function SalesReportsView({ isOwner }: { isOwner: boolean }): Rea
         onRegion={report.setRegion}
         onClear={report.clearFilters}
         hasFilters={hasFilters}
-        hideScope={hideScope}
       />
 
       {summary.isError && (
@@ -143,18 +143,11 @@ export default function SalesReportsView({ isOwner }: { isOwner: boolean }): Rea
       <SalesStatCards summary={summary.data} loading={summary.isLoading} />
 
       {report.filters.tab === 'report' ? (
-        <SalesReportTab params={params} />
+        <SalesReportTab params={params} showCost={!branchLocked} />
       ) : report.filters.tab === 'dashboard' ? (
         <DashboardTab params={params} />
       ) : (
-        <SalesPerBranchTab
-          params={params}
-          title={
-            hideScope && !options.data?.branchLocked
-              ? 'All Operations'
-              : scopeTitle(report.filters, options.data)
-          }
-        />
+        <SalesPerBranchTab params={params} title={scopeTitle(report.filters, options.data)} />
       )}
     </div>
   )

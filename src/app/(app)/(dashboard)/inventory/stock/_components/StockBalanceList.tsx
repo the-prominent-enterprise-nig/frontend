@@ -11,8 +11,12 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import type { StockBalance, StockStateFilter } from '@/src/schema/inventory/goods-receiving'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
+import {
+  ListFooterPager,
+  STOCK_LEDGER_PAGE_SIZES,
+} from '@/src/components/inventory/ListFooterPager'
 import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
-import { stockStatusOf, type StockStatus } from '@/src/libs/inventory/stock-status'
+import { stockStatusOf, stockTotalOf, type StockStatus } from '@/src/libs/inventory/stock-status'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // This screen follows the Purchase Orders / Receiving Reports design's own
@@ -48,7 +52,8 @@ const REGION_OPTIONS = [
 // after the item roll-up so the filter and the visible badge can never
 // disagree. `in_transit` is a different axis: units on an open transfer,
 // counted off transfer lines rather than the balance row's own quantities, so
-// a row can be both In Stock and have units in transit.
+// a row can be both In Stock and have units in transit. `sold` is another
+// such axis — items with any sold units, matching the Sold column.
 //
 // Deliberately no In Transit column: rows roll up per item across locations, so
 // a single qty there would flatten "3 in transit to Bago, 2 to Ajuy" into an
@@ -60,6 +65,7 @@ const STOCK_STATE_OPTIONS = [
   { value: 'fully_reserved', label: 'Fully Reserved' },
   { value: 'out', label: 'Out of Stock' },
   { value: 'in_transit', label: 'In Transit' },
+  { value: 'sold', label: 'Sold' },
 ]
 
 const CONTROL_CHROME = {
@@ -119,7 +125,6 @@ export default function StockBalanceList({
     resetFilters,
     page,
     setPage,
-    limit,
     setLimit,
     locationOptions,
     locationsLoading,
@@ -187,7 +192,12 @@ export default function StockBalanceList({
                 Total
               </span>
               <span className={`${MONO} text-[17px] font-semibold tracking-[-.01em]`}>
-                {(summary?.totalOnHandQty ?? 0).toLocaleString()}
+                {stockTotalOf({
+                  availableQty: summary?.totalAvailableQty ?? 0,
+                  reservedQty: summary?.totalReservedQty ?? 0,
+                  soldQty: summary?.totalSoldQty ?? 0,
+                  inTransitQty: summary?.totalInTransitQty ?? 0,
+                }).toLocaleString()}
               </span>
             </div>
             <div className="flex flex-col gap-1 px-4 py-3">
@@ -235,9 +245,10 @@ export default function StockBalanceList({
         <div className="flex flex-wrap items-center gap-[10px] rounded-xl border border-[#e4e4e9] bg-white p-3">
           {/* Search — brand, model or category only. Serial numbers were
               deliberately dropped: a serial belongs to one unit, not to the
-              rolled-up quantity this list reports. */}
+              rolled-up quantity this list reports. A line of its own, the
+              filters below it (as on the General Stockbook's head-office bar). */}
           <div
-            className={`flex h-[38px] min-w-[220px] flex-[1_1_280px] items-center gap-[9px] rounded-lg border px-3 transition-colors ${
+            className={`flex h-[38px] min-w-[220px] basis-full items-center gap-[9px] rounded-lg border px-3 transition-colors ${
               searchFocus ? CONTROL_CHROME.focused : CONTROL_CHROME.idle
             }`}
           >
@@ -266,7 +277,7 @@ export default function StockBalanceList({
 
           {/* Operations — the client's name for region. */}
           <SearchableSelect
-            className="w-[216px]"
+            className="min-w-[180px] flex-1"
             value={region ?? ''}
             onChange={(v) => setRegion((v || undefined) as 'panay' | 'negros' | undefined)}
             placeholder="All Operations"
@@ -279,7 +290,7 @@ export default function StockBalanceList({
               warehouses. */}
           <SearchableSelect
             multiple
-            className="w-[220px]"
+            className="min-w-[200px] flex-1"
             value={locations}
             onChange={setLocations}
             placeholder="All Branches"
@@ -291,7 +302,7 @@ export default function StockBalanceList({
           />
 
           <CategorySelect
-            className="w-[200px]"
+            className="min-w-[180px] flex-1"
             value={categoryId}
             onChange={setCategoryId}
             options={categoryOptions}
@@ -300,7 +311,7 @@ export default function StockBalanceList({
 
           {/* Stock state — settled stock vs units still on an open transfer. */}
           <SearchableSelect
-            className="w-[170px]"
+            className="min-w-[160px] flex-1"
             value={stockStatus ?? ''}
             onChange={(v) => setStockStatus((v || undefined) as StockStateFilter | undefined)}
             placeholder="All Stock"
@@ -313,7 +324,7 @@ export default function StockBalanceList({
             <button
               type="button"
               onClick={resetFilters}
-              className="ml-auto flex items-center gap-1.5 rounded-lg px-[11px] py-[6px] text-[12.5px] text-[#5b21b6] hover:bg-[#f1ebfb]"
+              className="ml-auto flex shrink-0 items-center gap-1.5 rounded-lg px-[11px] py-[6px] text-[12.5px] text-[#5b21b6] hover:bg-[#f1ebfb]"
             >
               <X className="h-3.5 w-3.5" />
               Clear {activeFilterCount > 0 ? activeFilterCount : ''}{' '}
@@ -400,7 +411,7 @@ export default function StockBalanceList({
                       role="cell"
                       className={`${MONO} text-right text-[13.5px] font-semibold text-[#17171c]`}
                     >
-                      {bal.onHandQty.toLocaleString()}
+                      {stockTotalOf(bal).toLocaleString()}
                     </span>
 
                     <span
@@ -439,42 +450,17 @@ export default function StockBalanceList({
                 )
               })}
 
-              <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
-                <span className="text-[11.5px] text-ink-muted">
-                  Showing {(page - 1) * pagination.limit + 1}–
-                  {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} items
-                </span>
-                <div className="flex items-center gap-[10px]">
-                  <span className="text-[11.5px] text-ink-muted">Rows</span>
-                  <select
-                    value={limit}
-                    onChange={(e) => setLimit(Number(e.target.value))}
-                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[9px] py-1.5 text-[12px] text-[#3d3d4a]"
-                  >
-                    <option value={20}>20</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setPage(Math.max(1, page - 1))}
-                      disabled={page <= 1}
-                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-ink-faint"
-                    >
-                      Previous
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                      disabled={page >= pagination.totalPages}
-                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-ink-faint"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <ListFooterPager
+                page={page}
+                pageCount={pagination.totalPages}
+                total={pagination.total}
+                limit={pagination.limit}
+                noun="items"
+                onPageChange={setPage}
+                onLimitChange={setLimit}
+                pageSizes={STOCK_LEDGER_PAGE_SIZES}
+                showPageNumber={false}
+              />
             </div>
           )}
 
@@ -512,7 +498,7 @@ export default function StockBalanceList({
 
                     <div className="grid grid-cols-5 gap-[6px]">
                       {[
-                        { label: 'Total', value: bal.onHandQty, tone: 'text-[#17171c]' },
+                        { label: 'Total', value: stockTotalOf(bal), tone: 'text-[#17171c]' },
                         {
                           label: 'Transferred',
                           value: bal.inTransitQty,

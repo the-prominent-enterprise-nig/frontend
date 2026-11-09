@@ -58,7 +58,8 @@ function hostOptions(
 export function useSerialNumbers(
   // Scenario 60 Part 3 — opens straight onto one caravan (`?caravan=` deep
   // link), or onto the Caravan view with every caravan (`?caravan=all`).
-  opts: { initialCaravanId?: string } = {}
+  // `viewerBranchId` — the viewer's own branch; null/undefined is head office.
+  opts: { initialCaravanId?: string; viewerBranchId?: string | null } = {}
 ) {
   const queryClient = useQueryClient()
 
@@ -282,8 +283,14 @@ export function useSerialNumbers(
   })
 
   const serials = serialsQuery.data?.data?.data ?? []
-  const caravanWarehouses = (warehousesQuery.data?.data?.data ?? []).filter((wh) =>
-    isCaravanBranch(wh.branch)
+  // Viewing caravans is per host branch: branch staff get the ones their
+  // branch hosts, head office every one. A Warehouse Custodian's warehouse
+  // list carries every caravan (they can send to any), so the host has to be
+  // checked here too — the units endpoint applies the same rule.
+  const caravanWarehouses = (warehousesQuery.data?.data?.data ?? []).filter(
+    (wh) =>
+      isCaravanBranch(wh.branch) &&
+      (!opts.viewerBranchId || wh.branch?.hostBranch?.id === opts.viewerBranchId)
   )
   // Whichever list is on screen owns the pager — "By Item" pages over groups,
   // not over units, so its own total is the one the footer must count.

@@ -1,7 +1,7 @@
 'use client'
 
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
-import { useForm, Controller, useWatch } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2 } from 'lucide-react'
 import {
@@ -10,11 +10,8 @@ import {
   type Uds,
 } from '@/src/schema/inventory/uds'
 import type { ApiResponse } from '@/src/libs/api/client'
-import {
-  NoSupplierOnFileNote,
-  ProviderCoverageWarning,
-  useProviderOptions,
-} from './ProviderCoverageWarning'
+import { providerOptions as toProviderOptions } from '../_lib/providerOptions'
+import { RepairProvidersFallbackNote } from '@/src/components/inventory/RepairProvidersFallbackNote'
 
 export type SupplierOption = { id: string; code: string; name: string }
 
@@ -43,11 +40,7 @@ export default function SetRepairProviderModal({
     resolver: zodResolver(SetRepairProviderFormSchema),
     defaultValues: { repairProviderId: uds?.repairProviderId ?? '' },
   })
-  const providerId = useWatch({ control, name: 'repairProviderId' })
-  const { options: providerOptions, noneOnFile } = useProviderOptions(
-    supplierOptions,
-    uds?.lines.map((l) => l.serialNumberId) ?? []
-  )
+  const providerOptions = toProviderOptions(supplierOptions, uds?.repairProvider)
 
   if (!isOpen || !uds) return null
 
@@ -101,11 +94,7 @@ export default function SetRepairProviderModal({
               {errors.repairProviderId && (
                 <p className="mt-1 text-xs text-red-600">{errors.repairProviderId.message}</p>
               )}
-              <NoSupplierOnFileNote show={noneOnFile} />
-              <ProviderCoverageWarning
-                supplierId={providerId}
-                serialIds={uds.lines.map((l) => l.serialNumberId)}
-              />
+              <RepairProvidersFallbackNote />
             </div>
           </div>
 

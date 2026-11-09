@@ -274,6 +274,12 @@ const StockBalanceSummarySchema = z.object({
   totalSoldQty: z.number().optional(),
   // Units in transit across the filtered set, summed server-side.
   totalInTransitQty: z.number().optional(),
+  // On-hand units per item category — the cost-free health view for roles
+  // without valuation (Branch Custodian).
+  byCategory: z.array(z.object({ category: z.string(), totalOnHandQty: z.number() })).optional(),
+  byWarehouse: z
+    .array(z.object({ warehouseName: z.string(), totalOnHandQty: z.number() }))
+    .optional(),
 })
 
 export const StockBalanceListResponseSchema = z
@@ -584,6 +590,7 @@ export type WithholdingSummaryResponse = z.infer<typeof WithholdingSummaryRespon
 export const StockStateFilterSchema = z.enum([
   'in_stock',
   'in_transit',
+  'sold',
   'out',
   'fully_reserved',
   'low',

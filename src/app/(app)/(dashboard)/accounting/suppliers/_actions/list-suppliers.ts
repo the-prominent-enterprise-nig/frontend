@@ -12,6 +12,8 @@ export async function listSuppliers(params?: {
   search?: string
   limit?: number
   page?: number
+  /** true = service centers only, false = everyone else, omit = all. */
+  isServiceCenter?: boolean
 }): Promise<ApiResponse<PaginatedSupplier>> {
   try {
     const result = await api.get<unknown>('/suppliers', { ...params }, { tags: ['suppliers'] })

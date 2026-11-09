@@ -1,4 +1,5 @@
 import { caravanLabel } from '@/src/libs/format/locationLabel'
+import { splitUnitLabel, wrongUnitBySerial } from '@/src/libs/inventory/wrong-unit-notes'
 
 /**
  * The purchase order a receiving report came from.
@@ -119,8 +120,9 @@ export interface ReceivingReportMetaSlot {
  * The meta column after RR No. and RR Date, in print order — shared so the
  * printed RR and the on-screen sheet cannot drift apart again.
  *
- * A supplier or transfer receipt: Reference (their DR, or the SI when no DR
- * was given), then the source document and its date. A customer return has
+ * A supplier receipt: Reference (their DR, or the SI when no DR was given),
+ * then the PO and its date. A transfer receipt: just the transfer and its
+ * date — there is no supplier paperwork to reference. A customer return has
  * no supplier paperwork or PO — it points back at the sales invoice the unit
  * was sold on — so it gets Invoice No. and Invoice Date instead, and nothing
  * at all when the receipt was posted before that invoice was saved.
@@ -152,14 +154,15 @@ export function receivingReportMetaSlots(
   }
   const source = receivingReportSourceRef(report)
   const dated = source.dated instanceof Date ? source.dated.toISOString() : source.dated
-  return [
-    {
-      label: 'Reference',
-      value: report?.deliveryReceiptNumber || report?.supplierInvoiceNumber || null,
-    },
+  const sourceSlots: ReceivingReportMetaSlot[] = [
     { label: source.label, value: source.code },
     { label: source.datedLabel, value: dated, isDate: true },
   ]
+  // A transfer receipt has no supplier DR or SI to point at, so a Reference
+  // slot would only ever print "—".
+  if (report?.stockTransfer) return sourceSlots
+  const reference = report?.deliveryReceiptNumber || report?.supplierInvoiceNumber || null
+  return [{ label: 'Reference', value: reference }, ...sourceSlots]
 }
 
 /**
@@ -294,6 +297,21 @@ export function receivingReportBranchLine(
  *
  * Returns null per line where the line carries no cost at all.
  */
+/**
+ * The receipt with only the lines that actually arrived. A transfer receipt
+ * also records every outstanding line it resolved at 0 (the backend's audit
+ * trail of what this batch closed out, serial included) — but a receiving
+ * report lists what was received, so those never print. Applied before the
+ * index-aligned helpers above, so the sheet and the printout agree.
+ */
+export function receivingReportReceivedOnly<T extends { lines?: unknown }>(report: T): T {
+  if (!Array.isArray(report.lines)) return report
+  const lines = (report.lines as { quantityReceived?: unknown }[]).filter(
+    (l) => Number(l.quantityReceived ?? 0) > 0
+  )
+  return { ...report, lines }
+}
+
 export function receivingReportGrossUnitCosts(report: {
   vatAmount?: number | string | null
   lines?: { quantityReceived?: number | string | null; unitCost?: number | string | null }[] | null
@@ -308,4 +326,106 @@ export function receivingReportGrossUnitCosts(report: {
   return lines.map((l) =>
     l.unitCost == null ? null : Math.round((Number(l.unitCost) / netShare) * 100) / 100
   )
+}
+
+/** A receiving-report line as the row-grouping below reads it. */
+type GroupableLine = {
+  quantityReceived?: unknown
+  serialNumbers?: string[] | null
+  item?: {
+    name?: string | null
+    modelNumber?: string | null
+    brand?: { name?: string | null } | null
+    primaryCategory?: { name?: string | null } | null
+  } | null
+  /** The transfer line this receipt line closed — carries a receipt-time
+   * serial correction, when there was one. */
+  stockTransferLine?: {
+    receiptCorrectedFromSerialId?: string | null
+    receiptCorrectedFromSerialNumber?: string | null
+  } | null
+}
+
+/** One printed row: every received line with the same Brand, Subgroup,
+ * Model and unit cost, quantities summed and serials listed together. */
+export interface ReceivingReportRow {
+  key: string
+  brand: string
+  subgroup: string
+  model: string
+  quantity: number
+  serials: string[]
+  unitCost: number | null
+  /** Short receipt-time correction tag ("Wrong serial — dispatched X"). */
+  remark?: string
+}
+
+/**
+ * The item table's rows, shared by the on-screen sheet and the printout. A
+ * transfer RR carries one line per serial, so five units of one model would
+ * read as five identical rows; they collapse into one. Lines whose unit
+ * cost differs stay apart, so Qty × Unit cost still equals Amount.
+ * `grossUnitCosts` is index-aligned with `lines`.
+ *
+ * Serials print as they now stand. A unit corrected at receipt (Wrong serial,
+ * or a Wrong unit that arrived in place of a dispatched one) gets its own row
+ * with a short tag naming the dispatched serial; the full story — reason
+ * included — stays on the transfer. `notes` is the receipt's own notes, where
+ * the receive form logs each Wrong unit.
+ */
+export function receivingReportRows(
+  lines: GroupableLine[],
+  grossUnitCosts: (number | null)[],
+  notes?: string | null
+): ReceivingReportRow[] {
+  const inPlaceOf = arrivedInPlaceOf(notes)
+  const rows = new Map<string, ReceivingReportRow>()
+  lines.forEach((line, i) => {
+    const remark = correctionRemark(line, inPlaceOf)
+    const row = rowFor(rows, line, grossUnitCosts[i] ?? null, remark ? i : null)
+    row.quantity += Number(line.quantityReceived ?? 0)
+    row.serials.push(...(line.serialNumbers ?? []))
+    if (remark) row.remark = remark
+  })
+  return [...rows.values()]
+}
+
+/** Serial that arrived → the dispatched serial it came in place of. */
+function arrivedInPlaceOf(notes: string | null | undefined): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const [expected, received] of wrongUnitBySerial([{ notes }])) {
+    map.set(splitUnitLabel(received).serial, expected)
+  }
+  return map
+}
+
+function correctionRemark(line: GroupableLine, inPlaceOf: Map<string, string>): string | undefined {
+  const correction = line.stockTransferLine
+  const was = correction?.receiptCorrectedFromSerialNumber
+  if (was) {
+    // A swap repoints the line at another unit; a typo-fix keeps the unit.
+    return correction?.receiptCorrectedFromSerialId
+      ? `Wrong serial — dispatched ${was}`
+      : `Serial typo fixed — was recorded as ${was}`
+  }
+  const expected = (line.serialNumbers ?? []).map((s) => inPlaceOf.get(s)).find(Boolean)
+  return expected ? `Wrong unit — expected ${expected}` : undefined
+}
+
+function rowFor(
+  rows: Map<string, ReceivingReportRow>,
+  line: GroupableLine,
+  unitCost: number | null,
+  ownRow: number | null
+): ReceivingReportRow {
+  const brand = line.item?.brand?.name ?? ''
+  const subgroup = line.item?.primaryCategory?.name ?? ''
+  const model = line.item?.modelNumber || line.item?.name || ''
+  // A tagged line keeps a row of its own, so its tag can't land on a group.
+  const key = JSON.stringify([brand, subgroup, model, unitCost, ownRow])
+  const existing = rows.get(key)
+  if (existing) return existing
+  const row = { key, brand, subgroup, model, quantity: 0, serials: [], unitCost }
+  rows.set(key, row)
+  return row
 }

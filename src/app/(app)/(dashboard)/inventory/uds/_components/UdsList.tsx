@@ -271,16 +271,19 @@ export default function UdsList({ session }: { session: SessionUser }) {
           if (!canCreateTransfer || !uds.warehouseId) {
             return setSelectedStep({ uds, target: 'in_transit' })
           }
-          saveStockTransferDraft({
-            fromWarehouseId: uds.warehouseId,
-            pinnedLines: uds.lines.map((l) => ({
-              itemId: l.itemId,
-              itemLabel: l.item.name,
-              serialNumberId: l.serialNumberId,
-            })),
-            toMain: true,
-            reason: `Repair — ${uds.code} to Main for assessment`,
-          })
+          saveStockTransferDraft(
+            {
+              fromWarehouseId: uds.warehouseId,
+              pinnedLines: uds.lines.map((l) => ({
+                itemId: l.itemId,
+                itemLabel: l.item.name,
+                serialNumberId: l.serialNumberId,
+              })),
+              toMain: true,
+              reason: `Repair — ${uds.code} to Main for assessment`,
+            },
+            session.id
+          )
           router.push('/inventory/stock-transaction?tab=transfers')
         },
         viewTransfer: (number) =>
@@ -290,7 +293,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
         viewDr: (id) => router.push(`/inventory/delivery-receipts/${id}`),
         canCreateDr,
       }),
-    [router, canCreateDr, canCreateTransfer, canCreateRr]
+    [router, canCreateDr, canCreateTransfer, canCreateRr, session.id]
   )
 
   const hasFilters = !!statusFilter || !!reasonFilter || !!warehouseFilter || !!providerFilter

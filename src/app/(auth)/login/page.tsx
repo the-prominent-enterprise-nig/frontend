@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { login } from '@/src/libs/auth/actions/login'
+import { clearClientSession } from '@/src/libs/auth/clear-client-session'
 import { LoginSchema, type LoginInput } from '@/src/schema/auth/login'
 import Link from 'next/link'
 import {
@@ -48,6 +49,16 @@ export default function LoginPage() {
         return
       }
 
+      // Every logout ends up on this page, and the browser keeps one React Query
+      // cache for the whole tab. Logging out and in as someone else is a client
+      // navigation, not a page load, so without this the new person's first
+      // minute draws the previous person's session (['me'] has a 60s staleTime):
+      // their buttons, their reason boxes, their branch's lists. The server still
+      // enforces what the new account may do; this only stops the screen from
+      // showing the old account's version of it.
+      // clearClientSession also resets the persisted POS branch and pending-refund
+      // badge, not just the query cache.
+      clearClientSession()
       router.push(result.redirectTo ?? '/')
     } catch {
       setSubmitError('Unable to sign in. Please refresh and try again.')

@@ -14,7 +14,11 @@ const FILTER_KEYS: SalesFilterKey[] = ['region', 'branch', 'type', 'group', 'bra
 
 export interface SalesReportFilters {
   tab: SalesReportsTab
+  /** Dashboard and Sales Report. */
   range: DateRange
+  /** Sales per Branch keeps its own dates: quotas are monthly, so it opens on
+   * this month to date rather than the Dashboard's twelve months. */
+  branchRange: DateRange
   region: string
   branch: string
   type: string
@@ -33,12 +37,22 @@ export function defaultRange(now = new Date()): DateRange {
   return { from: iso(new Date(now.getFullYear(), now.getMonth() - 11, 1)), to: iso(now) }
 }
 
+/** This month to date — Sales per Branch's default. */
+export function monthToDate(now = new Date()): DateRange {
+  return { from: iso(new Date(now.getFullYear(), now.getMonth(), 1)), to: iso(now) }
+}
+
 function readFilters(params: URLSearchParams): SalesReportFilters {
   const tab = params.get('tab') as SalesReportsTab | null
   const fallback = defaultRange()
+  const linked = { from: params.get('from'), to: params.get('to') }
   return {
     tab: tab && TABS.includes(tab) ? tab : 'dashboard',
-    range: { from: params.get('from') ?? fallback.from, to: params.get('to') ?? fallback.to },
+    range: { from: linked.from ?? fallback.from, to: linked.to ?? fallback.to },
+    branchRange:
+      tab === 'branch' && linked.from && linked.to
+        ? { from: linked.from, to: linked.to }
+        : monthToDate(),
     region: params.get('region') ?? '',
     branch: params.get('branch') ?? '',
     type: params.get('type') ?? '',
@@ -47,11 +61,17 @@ function readFilters(params: URLSearchParams): SalesReportFilters {
   }
 }
 
+/** The date range the active tab reads. */
+export function activeRange(filters: SalesReportFilters): DateRange {
+  return filters.tab === 'branch' ? filters.branchRange : filters.range
+}
+
 /** The filters as the backend takes them. Empty values are left off. */
 export function toApiParams(filters: SalesReportFilters): SalesReportsParams {
+  const range = activeRange(filters)
   return {
-    startDate: filters.range.from || undefined,
-    endDate: filters.range.to || undefined,
+    startDate: range.from || undefined,
+    endDate: range.to || undefined,
     regions: filters.region || undefined,
     branchIds: filters.branch || undefined,
     itemTypeIds: filters.type || undefined,
@@ -81,7 +101,9 @@ export function useSalesReportFilters() {
     filters,
     apiParams: useMemo(() => toApiParams(filters), [filters]),
     setTab: (tab: SalesReportsTab) => write({ tab }),
-    setRange: (range: DateRange) => write({ range }),
+    /** Sets the active tab's dates. */
+    setRange: (range: DateRange) =>
+      write(filters.tab === 'branch' ? { branchRange: range } : { range }),
     setFilter: (key: SalesFilterKey, value: string) => write({ [key]: value }),
     /** Changing region clears a branch that isn't in it. */
     setRegion: (region: string, branchStillValid: boolean) =>
