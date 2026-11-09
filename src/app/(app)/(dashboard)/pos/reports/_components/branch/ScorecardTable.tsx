@@ -3,7 +3,7 @@
 import { Fragment, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { Scorecard, ScorecardFigures, ScorecardRow } from '@/src/schema/pos/sales-reports'
-import { STATUS_STYLE, peso, percent } from './scorecard-format'
+import { STATUS_STYLE, peso, percent, shortDay } from './scorecard-format'
 
 /**
  * Scenario 85 Part 5 — the scorecard table: one row per branch (and the AC
@@ -202,8 +202,8 @@ function DailyRow({ row }: { row: ScorecardRow }): React.JSX.Element {
           {Array.from({ length: lead }, (_, i) => (
             <span key={`pad-${i}`} aria-hidden />
           ))}
-          {row.daily.map((d) => (
-            <DayCell key={d.day} entry={d} />
+          {row.daily.map((d, i) => (
+            <DayCell key={d.day} entry={d} withMonth={i === 0 || d.day.endsWith('-01')} />
           ))}
         </div>
       </td>
@@ -220,14 +220,22 @@ function DailyLegend(): React.JSX.Element {
   )
 }
 
-function DayCell({ entry }: { entry: DailyEntry }): React.JSX.Element {
+/** `withMonth` names the month on the first day shown and on each 1st, so a
+ * period across months reads 'Oct 30, 31, Nov 1'. */
+function DayCell({
+  entry,
+  withMonth,
+}: {
+  entry: DailyEntry
+  withMonth: boolean
+}): React.JSX.Element {
   const hasSales = entry.total > 0
   return (
     <div
       className={`rounded-md border px-2 py-1.5 text-right ${hasSales ? 'border-zinc-200 bg-white' : 'border-zinc-100 bg-transparent'}`}
     >
       <p className="text-left text-[10px] font-medium text-zinc-500">
-        {Number(entry.day.slice(8))}
+        {withMonth ? shortDay(entry.day) : Number(entry.day.slice(8))}
       </p>
       <p
         className={`text-xs tabular-nums ${hasSales ? 'font-semibold text-zinc-900' : 'text-zinc-300'}`}

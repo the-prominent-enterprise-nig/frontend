@@ -12,7 +12,9 @@ import { money } from './SalesStatCards'
  * sales export". Paged server-side (a twelve-month range is thousands of
  * units); the totals cover every unit the filters match, not just this page.
  * The Excel export (header button) carries the full column set, including
- * the client's Credit and SMI columns, which are not yet defined.
+ * the client's Credit and SMI columns, which are not yet defined (waiting on
+ * NIG, 2026-11-09). Unit Cost is left out for a branch-tied user, who never
+ * gets it from the API either (NIG UAT 2026-11-09).
  */
 
 const PAGE_SIZE = 50
@@ -36,17 +38,32 @@ const COLUMNS: Column[] = [
   { header: 'Serial No.', cell: (l) => l.serialNumbers },
   { header: 'Qty', cell: (l) => l.quantity, numeric: true },
   { header: 'LCP', cell: (l) => money(l.lcp), numeric: true },
-  { header: 'Unit Cost', cell: (l) => money(l.unitCost), numeric: true },
+  {
+    header: 'Unit Cost',
+    cell: (l) => (l.unitCost === null ? '' : money(l.unitCost)),
+    numeric: true,
+  },
   { header: 'Price Used', cell: (l) => l.priceUseName },
   { header: 'Agent', cell: (l) => l.agentName },
   { header: 'Commission', cell: (l) => (l.commission ? money(l.commission) : ''), numeric: true },
+  // Same as the Excel: in the client's layout, empty until NIG defines them.
+  { header: 'Credit', cell: () => '' },
+  { header: 'SMI', cell: () => '' },
 ]
+
+function columnsFor(showCost: boolean): Column[] {
+  return showCost ? COLUMNS : COLUMNS.filter((c) => c.header !== 'Unit Cost')
+}
 
 export default function SalesReportTab({
   params,
+  showCost,
 }: {
   params: SalesReportsParams
+  /** False for a branch-tied user. */
+  showCost: boolean
 }): React.JSX.Element {
+  const columns = columnsFor(showCost)
   // Page 7 of the old result means nothing against new filters.
   const filterKey = JSON.stringify(params)
   const [paging, setPaging] = useState({ key: filterKey, page: 1 })
@@ -85,7 +102,7 @@ export default function SalesReportTab({
         <table className="min-w-max text-xs">
           <thead className="sticky top-0 z-10">
             <tr>
-              {COLUMNS.map((c) => (
+              {columns.map((c) => (
                 <th
                   key={c.header}
                   scope="col"
@@ -97,13 +114,13 @@ export default function SalesReportTab({
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
-            <StateRow query={query} empty={data?.total === 0} />
+            <StateRow query={query} empty={data?.total === 0} colSpan={columns.length} />
             {data?.rows.map((line, i) => (
               <tr
                 key={`${line.transactionId}-${i}`}
                 className={line.isRefund ? 'bg-red-50/60' : 'hover:bg-zinc-50'}
               >
-                {COLUMNS.map((c) => (
+                {columns.map((c) => (
                   <td
                     key={c.header}
                     className={`border-r border-zinc-100 px-3 py-1.5 whitespace-nowrap text-zinc-800 ${c.numeric ? 'text-right tabular-nums' : ''}`}
@@ -138,9 +155,11 @@ export default function SalesReportTab({
 function StateRow({
   query,
   empty,
+  colSpan,
 }: {
   query: { isLoading: boolean; isError: boolean }
   empty: boolean
+  colSpan: number
 }): React.JSX.Element | null {
   const message = query.isLoading
     ? 'Loading…'
@@ -152,7 +171,7 @@ function StateRow({
   if (!message) return null
   return (
     <tr>
-      <td colSpan={COLUMNS.length} className="px-4 py-10 text-center text-sm text-zinc-500">
+      <td colSpan={colSpan} className="px-4 py-10 text-center text-sm text-zinc-500">
         {message}
       </td>
     </tr>
