@@ -424,11 +424,21 @@ function AcknowledgementReceiptDetailBody({
     )
   }
 
+  // The backend fixes a receipt's money once it is posted when it acknowledges
+  // another branch's cash turnover (turnover_receipt_amounts_locked) or settles
+  // an invoice (settlement_receipt_amounts_locked). Everything else on the
+  // receipt still edits; only the account and amount are held.
+  const moneyLocked = !!receipt.turnoverLine || receipt.grossAmount != null
+  const moneyLockedNote = receipt.turnoverLine
+    ? "This receipt acknowledges another branch's cash turnover, so its account and amount are fixed once posted."
+    : 'This is a settlement receipt, so its account and amount are fixed once posted.'
+
   // Mirrors the backend's own check — amount/accountId are the two fields
   // that drove the journal entry already posted at create(), so changing
   // either needs a correction reason and posts a new adjusting entry for
   // just the delta (the original is never touched).
   const financialChange =
+    !moneyLocked &&
     !!editForm &&
     (Number(editForm.amount) !== receipt.amount ||
       (editForm.accountId || null) !== receipt.accountId)
@@ -447,9 +457,11 @@ function AcknowledgementReceiptDetailBody({
     setEditError(null)
     const res = await AcknowledgementReceipts.update(receipt.id, {
       payerName: editForm.payerName,
-      accountId: editForm.accountId || undefined,
+      // Left out entirely on a receipt whose money is fixed, so a save never
+      // carries a "change" the server would refuse.
+      accountId: moneyLocked ? undefined : editForm.accountId || undefined,
       reason: editForm.reason || undefined,
-      amount: Number(editForm.amount),
+      amount: moneyLocked ? undefined : Number(editForm.amount),
       correctionReason: editForm.correctionReason || undefined,
       ...(ownerEdit ? { editReason: editReason.trim() } : {}),
       paymentDate: editForm.paymentDate,
@@ -659,13 +671,29 @@ function AcknowledgementReceiptDetailBody({
             </Field>
 
             <Field label="Account">
-              <CategorySelect
-                value={editForm.accountId || undefined}
-                onChange={(value) => setEditForm({ ...editForm, accountId: value ?? '' })}
-                options={accountOptions}
-                placeholder="Select account…"
-                noun="accounts"
-              />
+              {/* The server refuses a new account (or amount) on a turnover or
+                  settlement receipt, so the form doesn't offer it: nothing here
+                  can be saved, and the Correction Reason it would ask for
+                  never applies. */}
+              {moneyLocked ? (
+                <>
+                  <p
+                    data-testid="receipt-account-locked"
+                    className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700"
+                  >
+                    {receipt.creditsAr ? 'Accounts Receivable' : accountLabel(receipt.account)}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500">{moneyLockedNote}</p>
+                </>
+              ) : (
+                <CategorySelect
+                  value={editForm.accountId || undefined}
+                  onChange={(value) => setEditForm({ ...editForm, accountId: value ?? '' })}
+                  options={accountOptions}
+                  placeholder="Select account…"
+                  noun="accounts"
+                />
+              )}
             </Field>
 
             <Field label="Description">
@@ -685,7 +713,7 @@ function AcknowledgementReceiptDetailBody({
                 <input
                   type="number"
                   step="0.01"
-                  readOnly={receipt.grossAmount != null}
+                  readOnly={moneyLocked}
                   value={editForm.amount}
                   onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm read-only:cursor-default read-only:bg-gray-50 read-only:text-gray-700"
