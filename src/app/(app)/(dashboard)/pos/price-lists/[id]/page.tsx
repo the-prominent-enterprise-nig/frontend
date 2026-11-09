@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
+import { can, isHeadOffice } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { PriceListDetailPageView } from './_components/PriceListDetailPageView'
 
@@ -16,7 +16,7 @@ export default async function PriceListDetailPage({ params }: { params: Promise<
     redirect('/login')
   }
 
-  if (!can(session, INVENTORY_PERMISSIONS.PRICE_LISTS_READ)) {
+  if (!isHeadOffice(session) || !can(session, INVENTORY_PERMISSIONS.PRICE_LISTS_READ)) {
     redirect('/403')
   }
 

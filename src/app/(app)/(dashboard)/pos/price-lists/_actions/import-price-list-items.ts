@@ -75,8 +75,8 @@ export async function importPriceListItems(
     }
 
     if (!dryRun) {
-      revalidatePath('/pos/catalog/price-lists')
-      if (priceListId) revalidatePath(`/pos/catalog/price-lists/${priceListId}`)
+      revalidatePath('/pos/price-lists')
+      if (priceListId) revalidatePath(`/pos/price-lists/${priceListId}`)
     }
     return {
       success: true,

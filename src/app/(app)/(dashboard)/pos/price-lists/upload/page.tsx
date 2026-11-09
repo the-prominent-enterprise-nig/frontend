@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
+import { can, isHeadOffice } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { AllListsUploadPageView } from '../_components/upload/AllListsUploadPageView'
 
@@ -16,7 +16,7 @@ export default async function UploadPriceListPage() {
     redirect('/login')
   }
 
-  if (!can(session, INVENTORY_PERMISSIONS.PRICE_LISTS_UPDATE)) {
+  if (!isHeadOffice(session) || !can(session, INVENTORY_PERMISSIONS.PRICE_LISTS_UPDATE)) {
     redirect('/403')
   }
 

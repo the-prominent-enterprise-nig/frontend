@@ -20,7 +20,7 @@ export function AllListsUploadPageView() {
       <div className="space-y-5">
         <div>
           <Link
-            href="/pos/catalog/price-lists"
+            href="/pos/price-lists"
             className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#4b4b5a] hover:text-[#3f1490]"
           >
             <ArrowLeft className="h-3.5 w-3.5" />

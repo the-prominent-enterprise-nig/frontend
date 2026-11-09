@@ -55,9 +55,7 @@ export function ImportDone({ result, priceListId, onUploadAnother }: Props) {
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <Link
-          href={
-            priceListId ? `/pos/catalog/price-lists/${priceListId}` : '/pos/catalog/price-lists'
-          }
+          href={priceListId ? `/pos/price-lists/${priceListId}` : '/pos/price-lists'}
           className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
         >
           {priceListId ? 'Back to price list' : 'Back to price lists'}

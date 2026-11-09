@@ -28,7 +28,7 @@ function usePriceListHeader(priceListId: string) {
 function BackLink({ priceListId, label }: { priceListId: string; label: string }) {
   return (
     <Link
-      href={`/pos/catalog/price-lists/${priceListId}`}
+      href={`/pos/price-lists/${priceListId}`}
       className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#4b4b5a] hover:text-[#3f1490]"
     >
       <ArrowLeft className="h-3.5 w-3.5" />
@@ -90,7 +90,7 @@ export function PriceListUploadPageView({ priceListId }: { priceListId: string }
             <span className="font-medium">{priceList.name}</span> only. Have the whole sheet, with
             every price use? Use{' '}
             <Link
-              href="/pos/catalog/price-lists/upload"
+              href="/pos/price-lists/upload"
               className="font-medium text-[#5b21b6] hover:text-[#3f1490]"
             >
               Bulk upload

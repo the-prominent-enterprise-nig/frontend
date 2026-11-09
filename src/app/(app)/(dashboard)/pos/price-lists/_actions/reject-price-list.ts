@@ -42,7 +42,7 @@ export async function rejectPriceList(id: string, input: unknown): Promise<ApiRe
     }
   }
 
-  revalidatePath('/pos/catalog/price-lists')
+  revalidatePath('/pos/price-lists')
 
   return { success: true, data: result.data, message: 'Price list rejected' }
 }

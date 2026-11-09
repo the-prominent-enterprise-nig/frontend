@@ -39,7 +39,7 @@ export async function deletePriceList(id: string): Promise<ApiResponse<unknown>>
     }
   }
 
-  revalidatePath('/pos/catalog/price-lists')
+  revalidatePath('/pos/price-lists')
 
   return { success: true, data: result.data, message: 'Price list deleted' }
 }

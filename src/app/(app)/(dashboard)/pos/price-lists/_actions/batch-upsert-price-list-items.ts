@@ -7,9 +7,12 @@ import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 
-export async function upsertPriceListItem(
+/** Batch counterpart to upsert-price-list-items.ts's single-item action —
+ * one network call with an array body, backing the item-management page's
+ * multi-select "Add N Items" flow (Scenario 34). */
+export async function batchUpsertPriceListItems(
   priceListId: string,
-  input: unknown
+  items: unknown[]
 ): Promise<ApiResponse<unknown>> {
   const session = await getSessionIfAvailable()
   if (!session) {
@@ -23,17 +26,18 @@ export async function upsertPriceListItem(
     }
   }
 
-  const parsed = UpsertPriceListItemFormSchema.safeParse(input)
-  if (!parsed.success) {
+  const parsed = items.map((item) => UpsertPriceListItemFormSchema.safeParse(item))
+  const firstFailure = parsed.find((p) => !p.success)
+  if (firstFailure && !firstFailure.success) {
     return {
       success: false,
       error: 'Validation failed',
-      message: parsed.error.issues.map((i) => i.message).join(', '),
+      message: firstFailure.error.issues.map((i) => i.message).join(', '),
     }
   }
 
   const result = await api.post(`/inventory/price-lists/${priceListId}/items`, {
-    items: [parsed.data],
+    items: parsed.map((p) => (p.success ? p.data : undefined)),
   })
 
   if (!result.success) {
@@ -42,12 +46,12 @@ export async function upsertPriceListItem(
       typeof result.message === 'string' ? result.message : JSON.stringify(result.message ?? '')
     return {
       success: false,
-      error: errStr || 'Failed to save item',
-      message: msg || errStr || 'Failed to save item',
+      error: errStr || 'Failed to add items',
+      message: msg || errStr || 'Failed to add items',
     }
   }
 
-  revalidatePath('/pos/catalog/price-lists')
+  revalidatePath('/pos/price-lists')
 
-  return { success: true, data: result.data, message: 'Item saved' }
+  return { success: true, data: result.data, message: 'Items added' }
 }
