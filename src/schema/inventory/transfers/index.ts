@@ -179,6 +179,11 @@ export const ReceiveTransferLineSchema = z
     // before the value is sent to the API.
     replacementSerialLabel: z.string().optional(),
     correctionReason: z.string().max(500).optional(),
+    // "Wrong unit" — the registered unit that arrived in this line's place
+    // (any model). Sent as an extra line, so it is received and moved here;
+    // this line itself stays at 0.
+    arrivedSerialNumberId: z.string().optional(),
+    arrivedItemId: z.string().optional(),
   })
   .refine((d) => d.quantityReceived <= d.dispatchedQty, {
     message: 'Cannot receive more than what was dispatched',
@@ -323,6 +328,9 @@ const TransferLineSchema = z.object({
     .nullable()
     .optional(),
   receiptCorrectionReason: z.string().nullable().optional(),
+  // The serial text before either correction — the only record of a
+  // typo-fix's old value, since that rewrites serialNumber in place.
+  receiptCorrectedFromSerialNumber: z.string().nullable().optional(),
   // The source warehouse's counter-offer when it can't fulfil this line as
   // requested — present only while the transfer is
   // pending_substitution_confirmation.

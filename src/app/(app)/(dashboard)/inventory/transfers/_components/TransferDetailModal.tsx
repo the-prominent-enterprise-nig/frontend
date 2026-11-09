@@ -6,6 +6,7 @@ import {
   useForm,
   useFieldArray,
   useWatch,
+  useFormState,
   Controller,
   type Control,
   type UseFormSetValue,
@@ -622,6 +623,7 @@ function SerialReceiveCorrection({
 }) {
   const [mode, setMode] = useState<'serial' | 'unit' | null>(null)
   const [addedNote, setAddedNote] = useState<string | null>(null)
+  const [arrivedReceived, setArrivedReceived] = useState(false)
   const replacementSerialNumberId = useWatch({
     control,
     name: `lines.${index}.replacementSerialNumberId`,
@@ -639,10 +641,17 @@ function SerialReceiveCorrection({
 
   // Record the discrepancy in the receipt notes and untick the line — a
   // different unit arrived, so the dispatched one hasn't been received yet.
-  function flagWithNote(note: string): void {
+  // A registered in-stock unit is also received in its own right (moved here
+  // as an extra line); one of this transfer's own in-transit units isn't —
+  // the receiver ticks that unit's own line instead.
+  function flagWithNote(note: string, picked: SenderSerial): void {
     setMode(null)
     setAddedNote(note)
     setValue(`lines.${index}.quantityReceived`, 0, { shouldDirty: true })
+    const receivable = picked.status === 'in_stock' && !!picked.item?.id
+    setValue(`lines.${index}.arrivedSerialNumberId`, receivable ? picked.id : '')
+    setValue(`lines.${index}.arrivedItemId`, receivable ? picked.item?.id : '')
+    setArrivedReceived(receivable)
     const bullet = `• ${note}`
     if (!notes.includes(bullet)) {
       setValue('notes', notes.trim() ? `${notes.trim()}\n${bullet}` : bullet, {
@@ -658,12 +667,22 @@ function SerialReceiveCorrection({
       .join('\n')
       .trim()
     setValue('notes', next, { shouldDirty: true })
+    setValue(`lines.${index}.arrivedSerialNumberId`, '')
+    setValue(`lines.${index}.arrivedItemId`, '')
     setAddedNote(null)
+    setArrivedReceived(false)
   }
 
   const received = quantityReceived === 1
   if (addedNote) {
-    return <AddedNoteNotice note={addedNote} received={received} onUndo={undoNote} />
+    return (
+      <AddedNoteNotice
+        note={addedNote}
+        received={received}
+        arrivedReceived={arrivedReceived}
+        onUndo={undoNote}
+      />
+    )
   }
   if (flaggedUnit) {
     return <FlaggedUnitNotice unit={flaggedUnit} received={received} />
@@ -689,7 +708,7 @@ function SerialReceiveCorrection({
         transferId={transferId}
         ownSerial={ownSerial}
         sourceBranchLabel={sourceBranchLabel}
-        onPick={(picked) => flagWithNote(buildWrongUnitNote(lineLabel, picked))}
+        onPick={(label, picked) => flagWithNote(buildWrongUnitNote(lineLabel, label), picked)}
         onCancel={() => setMode(null)}
       />
     )
@@ -719,10 +738,13 @@ function SerialReceiveCorrection({
 function AddedNoteNotice({
   note,
   received,
+  arrivedReceived,
   onUndo,
 }: {
   note: string
   received: boolean
+  /** The unit that arrived will be received (moved here) with this receipt. */
+  arrivedReceived: boolean
   onUndo: () => void
 }): React.JSX.Element {
   return (
@@ -730,7 +752,9 @@ function AddedNoteNotice({
       <p className="text-[11px] text-amber-800">
         {received ? 'Received' : 'Flagged'} — added to receipt notes:{' '}
         <span className="font-medium">{note}</span>
-        {!received && '. Not received — it stays flagged for a later receive.'}
+        {arrivedReceived &&
+          '. The unit that arrived is received into this branch with this receipt'}
+        {!received && '. This line stays outstanding for a later receive.'}
       </p>
       <button
         type="button"
@@ -857,7 +881,7 @@ function WrongUnitPanel({
   transferId: string
   ownSerial: string | undefined
   sourceBranchLabel: string
-  onPick: (label: string) => void
+  onPick: (label: string, picked: SenderSerial) => void
   onCancel: () => void
 }): React.JSX.Element {
   return (
@@ -876,12 +900,14 @@ function WrongUnitPanel({
               s.item?.modelNumber
                 ? [s.item.brand?.name, s.item.modelNumber].filter(Boolean).join(' ')
                 : s.item?.name
-            )
+            ),
+            s
           )
         }
       />
       <p className="mt-1 text-[11px] text-amber-600">
-        Picking a unit receives this line and adds a note to the receipt notes.
+        The unit you pick is received into this branch and moved off the branch it was counted at.
+        This line stays unreceived, and a note is added to the receipt.
       </p>
     </div>
   )
@@ -910,7 +936,8 @@ function WrongSerialPanel({
     control,
     name: `lines.${index}.replacementSerialLabel`,
   })
-  const correctionReason = useWatch({ control, name: `lines.${index}.correctionReason` }) ?? ''
+  const { errors } = useFormState({ control, name: `lines.${index}` })
+  const reasonError = errors.lines?.[index]?.correctionReason?.message
 
   return (
     <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 p-2">
@@ -936,13 +963,32 @@ function WrongSerialPanel({
       <p className="mt-1 text-[11px] text-amber-600">
         Not registered yet? Add it in the serial numbers module first, then search for it here.
       </p>
-      <input
-        value={correctionReason}
-        onChange={(e) => setValue(`lines.${index}.correctionReason`, e.target.value)}
-        type="text"
-        placeholder="Reason for the correction (required)"
-        className="mt-1.5 w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-500"
+      {/* A Controller (not a bare setValue input) so RHF can focus this box
+          on a failed submit and revalidate as the user types the reason. */}
+      <Controller
+        name={`lines.${index}.correctionReason`}
+        control={control}
+        render={({ field }) => (
+          <input
+            {...field}
+            value={field.value ?? ''}
+            type="text"
+            placeholder="Reason for the correction (required)"
+            aria-invalid={!!reasonError}
+            className={`mt-1.5 w-full rounded border bg-white px-2 py-1 text-xs outline-none ${
+              reasonError
+                ? 'border-red-400 focus:border-red-500'
+                : 'border-amber-300 focus:border-amber-500'
+            }`}
+          />
+        )}
       />
+      {reasonError && (
+        <p className="mt-1 text-[11px] text-red-600">
+          Type why the serial is being corrected (e.g. &quot;label misprinted&quot;) before you
+          submit. To skip the correction, cancel it with the ✕ above.
+        </p>
+      )}
     </div>
   )
 }
@@ -980,6 +1026,20 @@ function ArrivedUnitRow({
       )}
     </tr>
   )
+}
+
+/** Summary line under the receive lines when a serial correction is missing
+ * its reason — names the serial(s) so the user knows exactly which box to
+ * fill, instead of the generic "some entries are invalid". */
+function missingCorrectionReasonMessage(
+  lineErrors: FieldErrors<ReceiveTransferFormValues>['lines']
+): string | null {
+  if (!Array.isArray(lineErrors)) return null
+  const count = lineErrors.filter((e) => e?.correctionReason).length
+  if (count === 0) return null
+  return count === 1
+    ? 'A serial correction is missing its reason. Fill in the highlighted reason box, or cancel the correction, then submit again.'
+    : `${count} serial corrections are missing a reason. Fill in each highlighted reason box, or cancel those corrections, then submit again.`
 }
 
 /** One label/value cell in the drawer's facts strip. Missing values read as
@@ -2014,11 +2074,18 @@ export default function TransferDetailModal({
                                       </p>
                                     </>
                                   ) : line.receiptCorrectionReason ? (
-                                    <span
-                                      title={`Corrected at receipt. ${line.receiptCorrectionReason}`}
-                                    >
-                                      <LineSerial line={line} /> *
-                                    </span>
+                                    // Typo fix — same unit, its serial rewritten
+                                    // in place; the old text survives only here.
+                                    <>
+                                      <LineSerial line={line} />
+                                      <p className="mt-0.5 font-sans text-[11px] font-medium text-amber-700">
+                                        {line.receiptCorrectedFromSerialNumber
+                                          ? `Serial corrected — was ${line.receiptCorrectedFromSerialNumber}`
+                                          : 'Serial corrected at receipt'}
+                                        {serialCorrectionReason(line.receiptCorrectionReason) &&
+                                          ` (reason: ${serialCorrectionReason(line.receiptCorrectionReason)})`}
+                                      </p>
+                                    </>
                                   ) : (
                                     <LineSerial line={line} />
                                   )}
@@ -2683,7 +2750,8 @@ export default function TransferDetailModal({
                   </div>
                   {receiveForm.formState.errors.lines && (
                     <p className="mt-1 text-xs text-red-600">
-                      Check the values above — some entries are invalid.
+                      {missingCorrectionReasonMessage(receiveForm.formState.errors.lines) ??
+                        'Check the values above — some entries are invalid.'}
                     </p>
                   )}
                 </div>

@@ -119,8 +119,9 @@ export interface ReceivingReportMetaSlot {
  * The meta column after RR No. and RR Date, in print order — shared so the
  * printed RR and the on-screen sheet cannot drift apart again.
  *
- * A supplier or transfer receipt: Reference (their DR, or the SI when no DR
- * was given), then the source document and its date. A customer return has
+ * A supplier receipt: Reference (their DR, or the SI when no DR was given),
+ * then the PO and its date. A transfer receipt: just the transfer and its
+ * date — there is no supplier paperwork to reference. A customer return has
  * no supplier paperwork or PO — it points back at the sales invoice the unit
  * was sold on — so it gets Invoice No. and Invoice Date instead, and nothing
  * at all when the receipt was posted before that invoice was saved.
@@ -146,14 +147,15 @@ export function receivingReportMetaSlots(
   }
   const source = receivingReportSourceRef(report)
   const dated = source.dated instanceof Date ? source.dated.toISOString() : source.dated
-  return [
-    {
-      label: 'Reference',
-      value: report?.deliveryReceiptNumber || report?.supplierInvoiceNumber || null,
-    },
+  const sourceSlots: ReceivingReportMetaSlot[] = [
     { label: source.label, value: source.code },
     { label: source.datedLabel, value: dated, isDate: true },
   ]
+  // A transfer receipt has no supplier DR or SI to point at, so a Reference
+  // slot would only ever print "—".
+  if (report?.stockTransfer) return sourceSlots
+  const reference = report?.deliveryReceiptNumber || report?.supplierInvoiceNumber || null
+  return [{ label: 'Reference', value: reference }, ...sourceSlots]
 }
 
 /**
@@ -285,6 +287,21 @@ export function receivingReportBranchLine(
  *
  * Returns null per line where the line carries no cost at all.
  */
+/**
+ * The receipt with only the lines that actually arrived. A transfer receipt
+ * also records every outstanding line it resolved at 0 (the backend's audit
+ * trail of what this batch closed out, serial included) — but a receiving
+ * report lists what was received, so those never print. Applied before the
+ * index-aligned helpers above, so the sheet and the printout agree.
+ */
+export function receivingReportReceivedOnly<T extends { lines?: unknown }>(report: T): T {
+  if (!Array.isArray(report.lines)) return report
+  const lines = (report.lines as { quantityReceived?: unknown }[]).filter(
+    (l) => Number(l.quantityReceived ?? 0) > 0
+  )
+  return { ...report, lines }
+}
+
 export function receivingReportGrossUnitCosts(report: {
   vatAmount?: number | string | null
   lines?: { quantityReceived?: number | string | null; unitCost?: number | string | null }[] | null
@@ -299,4 +316,67 @@ export function receivingReportGrossUnitCosts(report: {
   return lines.map((l) =>
     l.unitCost == null ? null : Math.round((Number(l.unitCost) / netShare) * 100) / 100
   )
+}
+
+/** A receiving-report line as the row-grouping below reads it. */
+type GroupableLine = {
+  quantityReceived?: unknown
+  serialNumbers?: string[] | null
+  item?: {
+    name?: string | null
+    modelNumber?: string | null
+    brand?: { name?: string | null } | null
+    primaryCategory?: { name?: string | null } | null
+  } | null
+}
+
+/** One printed row: every received line with the same Brand, Subgroup,
+ * Model and unit cost, quantities summed and serials listed together. */
+export interface ReceivingReportRow {
+  key: string
+  brand: string
+  subgroup: string
+  model: string
+  quantity: number
+  serials: string[]
+  unitCost: number | null
+}
+
+/**
+ * The item table's rows, shared by the on-screen sheet and the printout. A
+ * transfer RR carries one line per serial, so five units of one model would
+ * read as five identical rows; they collapse into one. Lines whose unit
+ * cost differs stay apart, so Qty × Unit cost still equals Amount.
+ * `grossUnitCosts` is index-aligned with `lines`.
+ *
+ * Serials print as they now stand — a receipt-time correction (wrong serial
+ * or wrong unit) is the transfer's history, shown on the transfer, not here.
+ */
+export function receivingReportRows(
+  lines: GroupableLine[],
+  grossUnitCosts: (number | null)[]
+): ReceivingReportRow[] {
+  const rows = new Map<string, ReceivingReportRow>()
+  lines.forEach((line, i) => {
+    const row = rowFor(rows, line, grossUnitCosts[i] ?? null)
+    row.quantity += Number(line.quantityReceived ?? 0)
+    row.serials.push(...(line.serialNumbers ?? []))
+  })
+  return [...rows.values()]
+}
+
+function rowFor(
+  rows: Map<string, ReceivingReportRow>,
+  line: GroupableLine,
+  unitCost: number | null
+): ReceivingReportRow {
+  const brand = line.item?.brand?.name ?? ''
+  const subgroup = line.item?.primaryCategory?.name ?? ''
+  const model = line.item?.modelNumber || line.item?.name || ''
+  const key = JSON.stringify([brand, subgroup, model, unitCost])
+  const existing = rows.get(key)
+  if (existing) return existing
+  const row = { key, brand, subgroup, model, quantity: 0, serials: [], unitCost }
+  rows.set(key, row)
+  return row
 }
