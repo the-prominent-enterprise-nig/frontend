@@ -38,6 +38,10 @@ type Props = {
    * another branch that balances (locked to the caller's own branch) can't
    * see. */
   stockFromOtherBranch?: boolean
+  /** With `stockWarehouseId`: list only the items stocked there, without the
+   * rest of the catalog after them — for a source that can't send anything
+   * it doesn't hold (a caravan). */
+  stockOnly?: boolean
   /** Drops serial-tracked items from the results — for a picker whose flow
    * has no way to capture the arriving unit's actual serial (e.g. a
    * transfer's unlisted-item receipt line, which only records a bare
@@ -155,8 +159,10 @@ async function searchStockedFirst(
   query: string,
   warehouseId: string,
   excludeSerialTracked?: boolean,
-  fromOtherBranch?: boolean
+  fromOtherBranch?: boolean,
+  stockOnly?: boolean
 ): Promise<SearchComboboxOption[]> {
+  if (stockOnly && !excludeSerialTracked) return searchStocked(query, warehouseId, fromOtherBranch)
   const [stocked, catalog] = await Promise.all([
     searchStocked(query, warehouseId, fromOtherBranch),
     searchCatalog(query, excludeSerialTracked),
@@ -168,10 +174,9 @@ async function searchStockedFirst(
     ? stocked.filter((o) => catalogById.has(o.id))
     : stocked
   const stockedIds = new Set(stockedFiltered.map((o) => o.id))
-  return [
-    ...stockedFiltered.map((o) => ({ ...o, meta: catalogById.get(o.id)?.meta })),
-    ...catalog.filter((o) => !stockedIds.has(o.id)),
-  ]
+  const stockedWithMeta = stockedFiltered.map((o) => ({ ...o, meta: catalogById.get(o.id)?.meta }))
+  if (stockOnly) return stockedWithMeta
+  return [...stockedWithMeta, ...catalog.filter((o) => !stockedIds.has(o.id))]
 }
 
 export function ItemSearchCombobox({
@@ -185,6 +190,7 @@ export function ItemSearchCombobox({
   disabled,
   stockWarehouseId,
   stockFromOtherBranch,
+  stockOnly,
   excludeSerialTracked,
   supplierId,
 }: Props) {
@@ -201,7 +207,7 @@ export function ItemSearchCombobox({
         supplierId
           ? `items-search-supplier-${supplierId}`
           : stockWarehouseId
-            ? `items-search-stock-${stockFromOtherBranch ? 'source-' : ''}${stockWarehouseId}`
+            ? `items-search-stock-${stockFromOtherBranch ? 'source-' : ''}${stockOnly ? 'only-' : ''}${stockWarehouseId}`
             : 'items-search'
       }
       placeholder={placeholder}
@@ -215,7 +221,8 @@ export function ItemSearchCombobox({
                 query,
                 stockWarehouseId,
                 excludeSerialTracked,
-                stockFromOtherBranch
+                stockFromOtherBranch,
+                stockOnly
               )
             : searchCatalog(query, excludeSerialTracked)
       }

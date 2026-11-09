@@ -579,15 +579,18 @@ export default function CreateTransferModal({
   const editingCaravanDestination = isEditing && isCaravanDestination && !isCreatingNewCaravan
 
   // A caravan still running is a destination like any branch; an ended one
-  // takes no new stock. A branch-scoped user gets the caravans their own
-  // branch hosts alongside their branch; a Warehouse Custodian (whose branch
-  // hosts none) gets every running caravan, as head office does.
+  // takes no new stock. Whenever the destination is open (sending directly,
+  // a Warehouse Custodian, head office) every running caravan is offered,
+  // whoever hosts it — just as every branch is. Only a request, whose
+  // destination is the user's own side, keeps to the caravans their branch
+  // hosts.
   const caravanScope = caravanScopeBranchId(warehouses, currentUserBranchId)
+  const destinationOpen = canPickAnyDestination || sendsDirect
   const runningCaravans = warehouses.filter(
     (wh) =>
       isCaravanBranch(wh.branch) &&
       !isCaravanEnded(wh.branch) &&
-      (!caravanScope || wh.branch?.hostBranch?.id === caravanScope)
+      (!caravanScope || destinationOpen || wh.branch?.hostBranch?.id === caravanScope)
   )
   const branchDestinations = [
     // A Warehouse Custodian, head office and anyone sending directly can send
@@ -1069,6 +1072,8 @@ export default function CreateTransferModal({
                     placeholder="Add item — search name or SKU…"
                     stockWarehouseId={fromId || undefined}
                     stockFromOtherBranch
+                    // A caravan sends only what it holds — no catalog tail.
+                    stockOnly={isCaravanBranch(fromWarehouse?.branch)}
                   />
                 </div>
               </div>

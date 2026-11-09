@@ -105,13 +105,18 @@ export function branchLabel(wh: Parameters<typeof warehouseLabel>[0]): string {
 export function LocationName({
   wh,
   className = '',
+  wrap = false,
 }: {
   wh: Parameters<typeof warehouseLabel>[0]
   className?: string
+  /** Wraps a long name onto more lines instead of clipping it (detail views). */
+  wrap?: boolean
 }): React.ReactElement {
   const branch = wh?.branch
   const name = branch?.isTemporary ? (branch.eventName ?? branch.name) : warehouseLabel(wh)
-  return <span className={`block truncate ${className}`}>{name}</span>
+  return (
+    <span className={`block ${wrap ? 'wrap-break-word' : 'truncate'} ${className}`}>{name}</span>
+  )
 }
 
 export function StatusChip({ status }: { status: TransferStatus }) {
