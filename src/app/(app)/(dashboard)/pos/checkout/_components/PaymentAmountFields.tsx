@@ -53,9 +53,13 @@ export function ReferenceField({
  * (QR/GCash/Billers, card, bank transfer — and only on a sale without a down
  * payment; a down-payment sale has a single CR instead, asked once elsewhere).
  */
+const pesos = (n: number) =>
+  new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(n)
+
 export default function PaymentAmountFields({
   index,
   row,
+  exactAmount,
   numbered,
   reference,
   invalid,
@@ -63,6 +67,9 @@ export default function PaymentAmountFields({
 }: {
   index: number
   row: PaymentRow
+  /** What this payment would have to be to settle what is still owed, given the
+   * other payments (Nov UAT #28 — "Use exact ₱X"). Zero or less hides the button. */
+  exactAmount: number
   /** Several payments: each field is named by its payment. */
   numbered: boolean
   reference: { label: string; required: boolean } | null
@@ -93,6 +100,16 @@ export default function PaymentAmountFields({
             }}
           />
         </div>
+        {exactAmount > 0 && (
+          <button
+            type="button"
+            data-testid={`payment-use-exact-${index}`}
+            onClick={() => onChange({ amount: exactAmount })}
+            className="mt-1 rounded-full border border-prominent-purple-300 bg-white px-3 py-1 text-xs font-semibold text-prominent-purple-700 transition-colors hover:bg-prominent-purple-50"
+          >
+            Use exact {pesos(exactAmount)}
+          </button>
+        )}
       </div>
       {reference && (
         <ReferenceField

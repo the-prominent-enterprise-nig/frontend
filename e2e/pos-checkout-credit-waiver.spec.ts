@@ -426,7 +426,7 @@ test.describe('POS Checkout — waiving the credit application (Scenario 71 Part
     await expect(section.getByRole('combobox', { name: 'Pick a reason…' })).toBeVisible()
   })
 
-  test('S80 POS-09 / POS-06: Cash/Installment and Inhouse/TPF sit above the cart; the down payment tender sits below the plan', async ({
+  test('S80 POS-09 / POS-06: Cash/Installment and Inhouse/TPF sit in the Payment card, after the cart; the down payment tender sits below the plan', async ({
     page,
   }) => {
     const customer = await createApplicant(page.request, 'S80LY')
@@ -436,7 +436,13 @@ test.describe('POS Checkout — waiving the credit application (Scenario 71 Part
     await expect(picker.getByRole('button', { name: 'Inhouse Installment' })).toBeVisible()
     await expect(picker.getByRole('button', { name: 'TPF Installment' })).toBeVisible()
     const y = async (testId: string) => (await page.getByTestId(testId).first().boundingBox())!.y
-    expect(await y('payment-mode-picker')).toBeLessThan(await y('override-price'))
+    // Nov UAT #28 — the checkout is a column of cards (Document, Customer and
+    // agent, Items and VAT, Payment): the picker is part of Payment, which
+    // follows the cart. It used to sit above the cart.
+    await expect(
+      page.getByTestId('checkout-payment').getByTestId('payment-mode-picker')
+    ).toBeVisible()
+    expect(await y('payment-mode-picker')).toBeGreaterThan(await y('override-price'))
 
     await openCustomSelect(page.getByRole('combobox', { name: 'Select a term…' }))
     await page.getByRole('listbox').getByRole('option').first().click()

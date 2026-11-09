@@ -2,9 +2,12 @@
 
 import { useState } from 'react'
 import { X, Check, Tag } from 'lucide-react'
+import UnitDetails, { type OverrideUnit } from './OverrideUnitDetails'
 
 type Props = {
   itemName: string
+  /** The unit being marked down — its Brand, Type and Serial Number(s). */
+  unit: OverrideUnit
   /** The price the line is on now — the resolved one, or the one already typed
    * over it. Shown as context and used to prefill the field. */
   currentPrice: number | null
@@ -23,6 +26,7 @@ type Props = {
  * looks at every override in the end-of-day review (Scenario 71). */
 export default function PriceOverrideDialog({
   itemName,
+  unit,
   currentPrice,
   listPrice,
   onClose,
@@ -63,6 +67,9 @@ export default function PriceOverrideDialog({
               <p className="text-xs text-gray-500">{itemName}</p>
             </div>
           </div>
+
+          {/* Nov UAT #28 — an override names the unit it applies to. */}
+          <UnitDetails unit={unit} />
 
           <div className="space-y-3">
             <div>

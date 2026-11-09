@@ -316,6 +316,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
     itemLabel?: string
     quantity?: number
     pinnedLines?: { itemId: string; itemLabel?: string; serialNumberId: string }[]
+    toMain?: boolean
+    reason?: string
   } | null>(null)
 
   // Item 360's Stock tab "Request transfer" deep-links here with a source
@@ -345,6 +347,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
       setCreateDraft({
         fromWarehouseId: stockDraft.fromWarehouseId,
         pinnedLines: stockDraft.pinnedLines,
+        toMain: stockDraft.toMain,
+        reason: stockDraft.reason,
       })
       setIsCreateOpen(true)
       return

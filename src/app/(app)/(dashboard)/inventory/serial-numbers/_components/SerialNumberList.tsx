@@ -20,7 +20,6 @@ import {
   SERIAL_STATUS_COLORS,
   SERIAL_STATUS_DOT_COLORS,
   SERIAL_STATUS_FILTER_GROUPS,
-  type SerialNumberSummary,
   type SerialStatus,
 } from '@/src/schema/inventory/serial-numbers'
 import RegisterSerialsModal from './RegisterSerialsModal'
@@ -37,7 +36,8 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { formatAge, formatShortDate } from '@/src/libs/format/date'
-import { originLabel, originRef, soldDestination } from '@/src/libs/format/serial-provenance'
+import { originLabel, originRef } from '@/src/libs/format/serial-provenance'
+import { DestinationCell, LocationNote, ServiceCenterLocation } from './SerialWhereaboutsCells'
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { LocationFilters } from '@/src/components/inventory/LocationFilters'
@@ -67,7 +67,24 @@ const CONTROL_CHROME = {
   focused: 'border-[#5b21b6] shadow-[0_0_0_3px_#f0e9fc]',
 }
 
-function SerialStatusPill({ status }: { status: SerialStatus }) {
+/** A repossessed unit back on the shelf reads Repossessed, not In Stock. */
+function SerialStatusPill({
+  status,
+  repossessed = false,
+}: {
+  status: SerialStatus
+  repossessed?: boolean
+}): React.JSX.Element {
+  if (repossessed && status === 'in_stock') {
+    return (
+      <StatusBadge
+        label="Repossessed"
+        colorClassName="bg-teal-50 text-teal-700"
+        dotClassName="bg-teal-600"
+        size="xs"
+      />
+    )
+  }
   return (
     <StatusBadge
       label={SERIAL_STATUS_LABELS[status]}
@@ -760,30 +777,39 @@ export default function SerialNumberList({
                               </div>
                             </td>
                             <td className="px-4 py-[11px] text-[13.5px] text-[#4b4b5a] hidden sm:table-cell">
-                              <div className="font-medium text-[#17171c]">
-                                {serial.consignedToVenue ??
-                                  locationLabel(serial.warehouse ?? serial.currentWarehouse)}
-                              </div>
-                              <div
-                                className={`${MONO} whitespace-nowrap text-[12.5px] text-[#5b21b6]`}
-                              >
-                                {serial.goodsReceiptLine?.goodsReceipt ? (
-                                  <Link
-                                    href={`/accounting/receiving-reports/${serial.goodsReceiptLine.goodsReceipt.id}`}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="underline-offset-2 hover:underline"
+                              {serial.consignedToSupplier ? (
+                                <ServiceCenterLocation serial={serial} />
+                              ) : (
+                                <>
+                                  <div className="font-medium text-[#17171c]">
+                                    {serial.consignedToVenue ??
+                                      locationLabel(serial.warehouse ?? serial.currentWarehouse)}
+                                    <LocationNote serial={serial} />
+                                  </div>
+                                  <div
+                                    className={`${MONO} whitespace-nowrap text-[12.5px] text-[#5b21b6]`}
                                   >
-                                    {serial.goodsReceiptLine.goodsReceipt.code}
-                                  </Link>
-                                ) : (
-                                  '—'
-                                )}
-                              </div>
-                              <div className="text-[12.5px] text-ink-muted">
-                                {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
-                                  ? formatShortDate(serial.goodsReceiptLine.goodsReceipt.receivedAt)
-                                  : '—'}
-                              </div>
+                                    {serial.goodsReceiptLine?.goodsReceipt ? (
+                                      <Link
+                                        href={`/accounting/receiving-reports/${serial.goodsReceiptLine.goodsReceipt.id}`}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="underline-offset-2 hover:underline"
+                                      >
+                                        {serial.goodsReceiptLine.goodsReceipt.code}
+                                      </Link>
+                                    ) : (
+                                      '—'
+                                    )}
+                                  </div>
+                                  <div className="text-[12.5px] text-ink-muted">
+                                    {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
+                                      ? formatShortDate(
+                                          serial.goodsReceiptLine.goodsReceipt.receivedAt
+                                        )
+                                      : '—'}
+                                  </div>
+                                </>
+                              )}
                             </td>
                             <td className="px-4 py-[11px] text-[13.5px] text-[#4b4b5a] hidden md:table-cell">
                               <DestinationCell serial={serial} />
@@ -803,7 +829,10 @@ export default function SerialNumberList({
                             )}
                             <td className="px-4 py-[11px] text-center">
                               <div className="flex flex-col items-center gap-1">
-                                <SerialStatusPill status={serial.status} />
+                                <SerialStatusPill
+                                  status={serial.status}
+                                  repossessed={serial.receivedAs === 'repo'}
+                                />
                                 {serial.openTransfer && (
                                   <OpenTransferChip number={serial.openTransfer.transferNumber} />
                                 )}
@@ -922,23 +951,5 @@ export default function SerialNumberList({
         currentUserBranchId={session.branchId}
       />
     </div>
-  )
-}
-
-/** A sold unit's destination is its buyer and the sale; any other unit's is
- * where it is stored, and the transfer already claiming it (NIG #10). */
-function DestinationCell({ serial }: { serial: SerialNumberSummary }): React.JSX.Element {
-  const sold = soldDestination(serial)
-  const date = sold ? sold.date : serial.locationSince
-  return (
-    <>
-      <div className="font-medium text-[#17171c]">
-        {sold ? sold.name : locationLabel(serial.currentWarehouse ?? serial.warehouse)}
-      </div>
-      <div className={`${MONO} whitespace-nowrap text-[12.5px] text-[#5b21b6]`}>
-        {(sold ? sold.ref : serial.openTransfer?.transferNumber) ?? '—'}
-      </div>
-      <div className="text-[12.5px] text-ink-muted">{date ? formatShortDate(date) : '—'}</div>
-    </>
   )
 }

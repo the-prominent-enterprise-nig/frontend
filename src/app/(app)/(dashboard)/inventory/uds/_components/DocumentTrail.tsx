@@ -294,7 +294,13 @@ export default function DocumentTrail({ uds }: { uds: Uds }): React.ReactElement
             outstanding ? 'bg-amber-50 text-amber-700' : 'bg-green-50 text-green-700'
           }`}
         >
-          {outstanding ? `${outstanding} outstanding` : 'Complete'}
+          {/* Nothing overdue is not the same as done: an open sheet with
+              hops still ahead is only up to date so far. */}
+          {outstanding
+            ? `${outstanding} outstanding`
+            : uds.status === 'completed'
+              ? 'Complete'
+              : 'Up to date'}
         </span>
       </div>
 

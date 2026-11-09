@@ -10,27 +10,6 @@ import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
 import { CUSTOMER_TYPE_LABELS } from '@/src/schema/crm/types'
 import type { Customer, CustomerAccountType } from '@/src/schema/crm/types'
 
-const ACCOUNT_TYPE_LABEL: Record<CustomerAccountType, string> = {
-  cash: 'Cash',
-  charge: 'Charge',
-}
-
-const ACCOUNT_TYPE_COLORS: Record<CustomerAccountType, string> = {
-  cash: 'bg-sky-50 text-sky-700 ring-sky-200',
-  charge: 'bg-prominent-purple-50 text-prominent-purple-700 ring-prominent-purple-200',
-}
-
-function AccountTypeChip({ accountType }: { accountType?: CustomerAccountType }) {
-  if (!accountType) return <span className="text-gray-400">—</span>
-  return (
-    <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${ACCOUNT_TYPE_COLORS[accountType]}`}
-    >
-      {ACCOUNT_TYPE_LABEL[accountType]}
-    </span>
-  )
-}
-
 function initials(name: string): string {
   return (
     name
@@ -172,28 +151,27 @@ export default function CustomersList({
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Email / Phone</th>
               <th className="px-4 py-3">Branch</th>
-              <th className="px-4 py-3">Type</th>
               {canScheduleReminder && <th className="px-4 py-3"></th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 text-gray-800">
             {loading && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
                   Loading…
                 </td>
               </tr>
             )}
             {!loading && error && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-red-500">
+                <td colSpan={5} className="px-4 py-8 text-center text-red-500">
                   {error}
                 </td>
               </tr>
             )}
             {!loading && !error && customers.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
+                <td colSpan={5} className="px-4 py-12 text-center text-gray-400">
                   No customers found.
                 </td>
               </tr>
@@ -245,9 +223,6 @@ export default function CustomersList({
                   </td>
                   <td className="px-4 py-3 text-[13px] text-gray-700">
                     {c.branch?.name ?? <span className="text-gray-400">—</span>}
-                  </td>
-                  <td className="px-4 py-3">
-                    <AccountTypeChip accountType={c.accountType} />
                   </td>
                   {canScheduleReminder && (
                     <td className="px-4 py-3">

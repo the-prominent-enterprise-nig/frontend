@@ -46,6 +46,8 @@ type Params = {
   // Scenario 72 — only items this supplier supplies (Item Master); the UDS
   // unit picker once a repair provider is chosen.
   itemSupplierId?: string
+  /** Only units repossessed from this customer (Redeemed unit DRs). */
+  repossessedFromCustomerId?: string
 }
 
 export async function getSerialNumbers(
@@ -72,6 +74,7 @@ export async function getSerialNumbers(
     freeForTransfer: params.freeForTransfer ? 'true' : undefined,
     region: params.region,
     itemSupplierId: params.itemSupplierId,
+    repossessedFromCustomerId: params.repossessedFromCustomerId,
   }
 
   const result = await api.get<SerialNumberListResponse>('/inventory/serial-numbers', query)
