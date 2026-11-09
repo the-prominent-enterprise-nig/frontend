@@ -14,8 +14,9 @@ import { showToast } from '@/src/components/ui/toast'
 
 /** Ticket #24 follow-up — "Edit entry" on a recorded sale (the client's
  * mockup puts it beside Refund; their comment: "it is not editable"). Clicking
- * it turns the sale's own fields into inputs where they sit in the transaction modal — the
- * SI / DR No., the agent, each payment's reference no. — with Save below.
+ * it turns the sale's SI / DR No. and agent into inputs where they sit in the
+ * transaction modal, with Save below. A payment's CR # is not editable: it is
+ * also on the down payment's collection receipt.
  * The Business Owner and the Sales Admin Clerk; each change is kept in the audit log with what it
  * read before and after. What is posted to the books, stock or an installment account (prices,
  * items, terms, the customer, the date) is not editable: Refund or a void
@@ -24,13 +25,11 @@ import { showToast } from '@/src/components/ui/toast'
 interface FormValues {
   docNo: string
   agentId: string
-  refs: Record<string, string>
 }
 
 const valuesOf = (tx: PosTransaction): FormValues => ({
   docNo: tx.salesInvoiceNumber ?? '',
   agentId: tx.sellingAgent?.id ?? '',
-  refs: Object.fromEntries((tx.payments ?? []).map((p) => [p.id, p.referenceNumber ?? ''])),
 })
 
 /** The server's message without its machine code ("nothing_changed: …"). */
@@ -42,10 +41,6 @@ function changesOf(tx: PosTransaction, form: FormValues): EditRecordedSaleInput 
   if (form.docNo.trim() !== (tx.salesInvoiceNumber ?? ''))
     changes.documentNumber = form.docNo.trim()
   if (form.agentId !== (tx.sellingAgent?.id ?? '')) changes.sellingAgentId = form.agentId || null
-  const payments = (tx.payments ?? [])
-    .filter((p) => (form.refs[p.id] ?? '').trim() !== (p.referenceNumber ?? ''))
-    .map((p) => ({ id: p.id, referenceNumber: (form.refs[p.id] ?? '').trim() || null }))
-  if (payments.length > 0) changes.payments = payments
   return Object.keys(changes).length > 0 ? changes : null
 }
 
@@ -115,8 +110,6 @@ export function useEditEntryForm(tx: PosTransaction) {
     values,
     setDocNo: (docNo: string) => setValues((v) => ({ ...v, docNo })),
     setAgentId: (agentId: string) => setValues((v) => ({ ...v, agentId })),
-    setRef: (paymentId: string, ref: string) =>
-      setValues((v) => ({ ...v, refs: { ...v.refs, [paymentId]: ref } })),
     agentOptions,
     agentsLoading: agents.isLoading,
   }
@@ -155,35 +148,11 @@ export function AgentInput({ form }: { form: EditEntryForm }) {
   )
 }
 
-/** A payment's reference no. as an input, under that payment. */
-export function PaymentRefInput({
-  form,
-  paymentId,
-  label,
-}: {
-  form: EditEntryForm
-  paymentId: string
-  label: string
-}) {
-  return (
-    <input
-      aria-label={label}
-      className={`${editInputClass} mt-1 font-mono text-xs normal-case`}
-      placeholder="CR # / reference no."
-      value={form.values.refs[paymentId] ?? ''}
-      maxLength={100}
-      onChange={(e) => form.setRef(paymentId, e.target.value)}
-    />
-  )
-}
-
 /** Where Refund / Edit entry sit, while editing: Cancel and Save. */
 export function EditEntryBar({ form, card }: { form: EditEntryForm; card: string }) {
   return (
     <div className={`${card} space-y-3`} data-testid="edit-entry-bar">
-      <p className="text-xs text-gray-500">
-        Only the SI / DR No., agent and reference numbers can be changed.
-      </p>
+      <p className="text-xs text-gray-500">Only the SI / DR No. and agent can be changed.</p>
       {form.error && (
         <p role="alert" data-testid="edit-entry-error" className="text-sm text-red-600">
           {form.error}

@@ -39,7 +39,6 @@ import {
   AgentInput,
   DocNoInput,
   EditEntryBar,
-  PaymentRefInput,
   useEditEntryForm,
   type EditEntryForm,
 } from './EditEntry'
@@ -537,24 +536,16 @@ export function TransactionDetail({
                             ? qrTenderLabel(p.paymentMethodOption?.name)
                             : p.paymentMethod.replace('_', ' ')}
                         </span>
-                        {editing ? (
-                          <PaymentRefInput
-                            form={editEntry}
-                            paymentId={p.id}
-                            label={`Reference no. for the ${p.paymentMethod.replace('_', ' ')} payment of ${formatCurrency(p.amount)}`}
-                          />
-                        ) : (
-                          p.referenceNumber && (
-                            <span
-                              className={
-                                isFull
-                                  ? 'mt-0.5 block text-xs normal-case text-gray-500'
-                                  : 'block font-mono text-[10px] normal-case text-gray-400'
-                              }
-                            >
-                              {isFull ? 'Reference #' : 'CR#'} {p.referenceNumber}
-                            </span>
-                          )
+                        {p.referenceNumber && (
+                          <span
+                            className={
+                              isFull
+                                ? 'mt-0.5 block text-xs normal-case text-gray-500'
+                                : 'block font-mono text-[10px] normal-case text-gray-400'
+                            }
+                          >
+                            {isFull ? 'Reference #' : 'CR#'} {p.referenceNumber}
+                          </span>
                         )}
                       </span>
                       <span className="shrink-0 font-medium text-gray-900">

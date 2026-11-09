@@ -1778,7 +1778,6 @@ export async function searchUsers(
 export interface EditRecordedSaleInput {
   documentNumber?: string
   sellingAgentId?: string | null
-  payments?: { id: string; referenceNumber: string | null }[]
 }
 
 export async function editRecordedSale(

@@ -4,8 +4,9 @@ import { gotoReady, fillStable, loginAs } from './utils'
 // Ticket #24 follow-up (client comment, Nov 9): the mockup of a transaction
 // page has "Edit entry" beside Refund, and "it is not editable". The Business
 // Owner clicks Edit entry and the sale's own fields turn into inputs where
-// they are in the transaction modal (NIG's mockup) — the SI / DR No., the
-// agent, each payment's reference no. — with Save below. The Business Owner and the Sales Admin Clerk only (the server
+// they are in the transaction modal (NIG's mockup) — the SI / DR No. and
+// the agent — with Save below. A payment's CR # is not editable (it is also
+// on the collection receipt). The Business Owner and the Sales Admin Clerk only (the server
 // test pos-edit-recorded-sale covers the clerk); branch staff don't see it.
 //
 // Setup goes through the API: a cash sale at Bago with an agent and a cash
@@ -129,7 +130,7 @@ async function pickAgent(page: Page, name: string): Promise<void> {
   await page.getByTestId('searchable-select-option').filter({ hasText: name }).first().click()
 }
 
-test('the owner edits the SI No., agent and CR # in place in the transaction modal and saves', async ({
+test('the owner edits the SI No. and agent in place in the transaction modal and saves; the CR # is not editable', async ({
   page,
 }) => {
   const stamp = Date.now()
@@ -150,9 +151,9 @@ test('the owner edits the SI No., agent and CR # in place in the transaction mod
 
   await fillStable(docNo, `${si}-FIXED`)
   await pickAgent(page, secondAgent.name)
-  const cr = page.getByLabel(/^Reference no\. for the cash payment/)
-  await expect(cr).toHaveValue(`CR-${stamp}`)
-  await fillStable(cr, `CR-${stamp}-B`)
+  // The CR # stays as text: no box for it.
+  await expect(page.getByLabel(/^Reference no\./)).toHaveCount(0)
+  await expect(page.getByText(`Reference # CR-${stamp}`)).toBeVisible()
 
   await page.getByRole('button', { name: 'Save changes' }).click()
   await expect(page.getByText('Entry updated')).toBeVisible({ timeout: 15_000 })
@@ -161,14 +162,14 @@ test('the owner edits the SI No., agent and CR # in place in the transaction mod
   await expect(page.getByTestId('edit-entry-bar')).toHaveCount(0)
   await expect(page.getByRole('heading', { level: 2 })).toHaveText(`${si}-FIXED`)
   await expect(page.getByText(secondAgent.name).first()).toBeVisible()
-  await expect(page.getByText(`Reference # CR-${stamp}-B`)).toBeVisible()
+  await expect(page.getByText(`Reference # CR-${stamp}`)).toBeVisible()
   await expect(page.getByRole('button', { name: 'Edit entry' })).toBeVisible()
 
   // Saved on the server, and the list finds the sale by its new number.
   const detail = await (await page.request.get(`/api/pos/transactions/${id}`)).json()
   expect(detail.salesInvoiceNumber).toBe(`${si}-FIXED`)
   expect(detail.sellingAgent?.id).toBe(secondAgent.id)
-  expect(detail.payments[0].referenceNumber).toBe(`CR-${stamp}-B`)
+  expect(detail.payments[0].referenceNumber).toBe(`CR-${stamp}`)
   await gotoReady(page, '/pos/transactions')
   await fillStable(page.getByPlaceholder('Search…'), `${si}-FIXED`)
   await expect(page.locator('tbody tr', { hasText: `${si}-FIXED` })).toBeVisible({
