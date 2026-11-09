@@ -684,9 +684,6 @@ function SerialReceiveCorrection({
       />
     )
   }
-  if (flaggedUnit) {
-    return <FlaggedUnitNotice unit={flaggedUnit} received={received} />
-  }
   if (activeMode === 'serial') {
     return (
       <WrongSerialPanel
@@ -713,12 +710,35 @@ function SerialReceiveCorrection({
       />
     )
   }
+  // A line flagged on an earlier receipt is still outstanding, so it can be
+  // flagged again here — the notice just reminds the receiver what arrived.
+  return (
+    <>
+      {flaggedUnit && <FlaggedUnitNotice unit={flaggedUnit} received={received} />}
+      <SerialCorrectionLinks
+        canOverrideSerial={canOverrideSerial}
+        onWrongSerial={() => setMode('serial')}
+        onWrongUnit={() => setMode('unit')}
+      />
+    </>
+  )
+}
+
+function SerialCorrectionLinks({
+  canOverrideSerial,
+  onWrongSerial,
+  onWrongUnit,
+}: {
+  canOverrideSerial: boolean
+  onWrongSerial: () => void
+  onWrongUnit: () => void
+}): React.JSX.Element {
   return (
     <div className="mt-1 flex items-center gap-3">
       {canOverrideSerial && (
         <button
           type="button"
-          onClick={() => setMode('serial')}
+          onClick={onWrongSerial}
           className="text-[11px] font-medium text-amber-700 hover:text-amber-800"
         >
           Wrong serial?
@@ -726,7 +746,7 @@ function SerialReceiveCorrection({
       )}
       <button
         type="button"
-        onClick={() => setMode('unit')}
+        onClick={onWrongUnit}
         className="text-[11px] font-medium text-amber-700 hover:text-amber-800"
       >
         Wrong unit?
