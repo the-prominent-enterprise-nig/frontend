@@ -7,7 +7,8 @@ import { useRouter } from 'next/navigation'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, ChevronDown, Loader2, UserPlus } from 'lucide-react'
+// ChevronDown — used by the Customer Profile toggle, commented out (Nov UAT).
+import { ArrowLeft, /* ChevronDown, */ Loader2, UserPlus } from 'lucide-react'
 import {
   CreateCreditApplicationFormSchema,
   type CreateCreditApplicationFormValues,
@@ -221,11 +222,15 @@ export default function NewCreditApplicationForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applicant?.id, setValue])
 
+  // Nov UAT — the Customer Profile is no longer collapsible: it is always
+  // shown, since the profile is confirmed with the applicant at the counter.
+  // The collapse behaviour is kept below, commented out, in case it returns.
+  //
   // Collapsed by default. The profile is prefilled from the customer, so
   // what it needs is a glance and a nod — twelve boxes open by default made
   // the page look like twelve questions before the application itself began.
   // It opens on its own when something in it is actually missing (below).
-  const [profileOpen, setProfileOpen] = useState(false)
+  // const [profileOpen, setProfileOpen] = useState(false)
   const [serverError, setServerError] = useState<string | undefined>(undefined)
   const [isOrchestrating, setIsOrchestrating] = useState(false)
 
@@ -245,7 +250,7 @@ export default function NewCreditApplicationForm({
 
   // The fields the credit decision leans on. A returning customer captured
   // before they existed has none of them, and nothing would ever prompt for
-  // them — so the block opens itself rather than waiting to be found.
+  // them — so the header names what's missing.
   const profileGaps = applicant
     ? [
         !applicant.phone && 'mobile',
@@ -256,12 +261,13 @@ export default function NewCreditApplicationForm({
       ].filter(Boolean as unknown as (v: unknown) => v is string)
     : []
 
-  useEffect(() => {
-    if (profileGaps.length > 0) setProfileOpen(true)
-    // Only when a different customer resolves — not on every refetch, which
-    // would re-open a block the user had just closed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applicant?.id])
+  // Nov UAT — not collapsible any more (see profileOpen above).
+  // useEffect(() => {
+  //   if (profileGaps.length > 0) setProfileOpen(true)
+  //   // Only when a different customer resolves — not on every refetch, which
+  //   // would re-open a block the user had just closed.
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [applicant?.id])
 
   async function handleFormSubmit(data: CreateCreditApplicationFormValues) {
     setServerError(undefined)
@@ -551,10 +557,16 @@ export default function NewCreditApplicationForm({
 
             {applicantCustomerId && (
               <div className="rounded-lg border border-zinc-200">
+                {/* Nov UAT — a plain header, not a toggle. The collapsible
+                    version was:
                 <button
                   type="button"
                   onClick={() => setProfileOpen((open) => !open)}
                   aria-expanded={profileOpen}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                > */}
+                <div
+                  data-testid="customer-profile-header"
                   className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
                 >
                   <div className="min-w-0">
@@ -565,27 +577,28 @@ export default function NewCreditApplicationForm({
                         : profileSummary || 'Confirm or correct while the applicant is here'}
                     </p>
                   </div>
-                  <ChevronDown
+                  {/* <ChevronDown
                     className={`h-4 w-4 shrink-0 text-zinc-400 transition-transform ${
                       profileOpen ? 'rotate-180' : ''
                     }`}
+                  /> */}
+                </div>
+                {/* </button> */}
+                {/* {profileOpen && ( */}
+                <div className="border-t border-zinc-200 p-4">
+                  <p className="mb-3 text-xs text-zinc-500">
+                    Changes save back to the customer&apos;s record, not to this application.
+                  </p>
+                  <ApplicantContactFields
+                    control={control}
+                    setValue={setValue}
+                    errors={errors}
+                    customerType={watch('applicantCustomerType')}
+                    homeAddress={applicant?.homeAddress}
+                    homeBarangayCode={applicant?.homeBarangayCode}
                   />
-                </button>
-                {profileOpen && (
-                  <div className="border-t border-zinc-200 p-4">
-                    <p className="mb-3 text-xs text-zinc-500">
-                      Changes save back to the customer&apos;s record, not to this application.
-                    </p>
-                    <ApplicantContactFields
-                      control={control}
-                      setValue={setValue}
-                      errors={errors}
-                      customerType={watch('applicantCustomerType')}
-                      homeAddress={applicant?.homeAddress}
-                      homeBarangayCode={applicant?.homeBarangayCode}
-                    />
-                  </div>
-                )}
+                </div>
+                {/* )} */}
               </div>
             )}
 

@@ -46,7 +46,8 @@ const SALE_TYPE_LABEL: Record<AgentSaleType, string> = {
 }
 
 // Scenario 78 — every invoice the agent sold, with its commission and the
-// Commissions - Sales voucher that released it. Replaces the Scenario-01
+// Commissions - Sales voucher that released it, and beside it the SMI and the
+// Commissions - SMI voucher that released that. Replaces the Scenario-01
 // commission-only dialog: that one was driven by AgentCommission, so an agent
 // with no rate set (the whole imported roster) showed nothing, and it named
 // the POS number rather than the SI. A page rather than a dialog so the list
@@ -128,6 +129,7 @@ export default function AgentInvoices({
 
   const rows = invoices ?? []
   const totalCommission = rows.reduce((sum, r) => sum + (r.commission ?? 0), 0)
+  const totalSmi = rows.reduce((sum, r) => sum + (r.smi ?? 0), 0)
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -251,6 +253,7 @@ export default function AgentInvoices({
           <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Stat label="Invoices" value={invoices === null ? '-' : String(rows.length)} />
             <Stat label="Commission" value={invoices === null ? '-' : fmtMoney(totalCommission)} />
+            <Stat label="SMI" value={invoices === null ? '-' : fmtMoney(totalSmi)} />
           </div>
 
           <div className="bg-white rounded-lg shadow-sm border border-zinc-200 overflow-hidden">
@@ -281,6 +284,9 @@ export default function AgentInvoices({
                       <th className="text-right px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
                         Commission
                       </th>
+                      <th className="text-right px-4 py-3 text-xs font-semibold text-zinc-600 uppercase">
+                        SMI
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
@@ -301,9 +307,16 @@ export default function AgentInvoices({
                         <td className="px-4 py-3 text-sm text-right text-zinc-700 whitespace-nowrap">
                           {fmtMoney(r.totalAmount)}
                         </td>
-                        <CommissionCell
-                          commission={r.commission}
+                        <ReleaseCell
+                          amount={r.commission}
                           release={r.released}
+                          notReleased="Commission not released"
+                          guardLeave={guardLeave}
+                        />
+                        <ReleaseCell
+                          amount={r.smi}
+                          release={r.smiReleased}
+                          notReleased="SMI not released"
                           guardLeave={guardLeave}
                         />
                       </tr>
@@ -371,22 +384,25 @@ function sameAgentForm(a: AgentFormState, b: AgentFormState): boolean {
   return JSON.stringify(norm(a)) === JSON.stringify(norm(b))
 }
 
-/** A sale's commission with the voucher that released it under it — linked to
- * the expense, with a Draft badge while it is still a draft (a draft carries no
- * commission yet, so its amount is a dash). */
-function CommissionCell({
-  commission,
+/** A sale's commission or SMI with the voucher that released it under it —
+ * linked to the expense, with a Draft badge while it is still a draft (a draft
+ * carries no amount yet, so it shows a dash). */
+function ReleaseCell({
+  amount,
   release,
+  notReleased,
   guardLeave,
 }: {
-  commission: number | null
+  amount: number | null
   release: AgentInvoiceRelease | null
+  /** What an unreleased sale says, e.g. "SMI not released". */
+  notReleased: string
   guardLeave: (href: string) => (e: React.MouseEvent) => void
 }) {
   if (!release) {
     return (
       <td className="px-4 py-3 text-sm text-right whitespace-nowrap">
-        <span className="text-xs text-zinc-400">Commission not released</span>
+        <span className="text-xs text-zinc-400">{notReleased}</span>
       </td>
     )
   }
@@ -394,7 +410,7 @@ function CommissionCell({
   return (
     <td className="px-4 py-3 text-sm text-right whitespace-nowrap">
       <span className="block font-semibold text-emerald-700">
-        {commission != null ? fmtMoney(commission) : '-'}
+        {amount != null ? fmtMoney(amount) : '-'}
       </span>
       <span className="block text-xs text-zinc-500">
         <Link

@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   Banknote,
-  CalendarClock,
   CheckCircle2,
   ChevronDown,
   Loader2,
@@ -50,6 +49,7 @@ import { ARInvoices, fmtMoney, fmtDate, type PaymentMethod } from '@/src/libs/da
 import type {
   PosCustomer,
   CollectionsCustomer,
+  InstallmentSchedule,
   InstallmentScheduleLineWithInvoice,
   PaymentMethodConfig,
 } from '@/src/schema/pos'
@@ -72,6 +72,11 @@ const STATUS_STYLES: Record<string, string> = {
   DRAFT: 'bg-zinc-100 text-zinc-500',
   CANCELLED: 'bg-zinc-100 text-zinc-400',
 }
+
+// The backend lists at most this many aging-sheet customers (see
+// AGING_COLLECTIONS_LIST_LIMIT in pos-customers.service.ts); a list this long
+// has probably been cut, so the screen says how to reach the rest.
+const LONG_LIST_AT = 200
 
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
@@ -219,6 +224,28 @@ function toggleLineSelection(
   return next
 }
 
+// A loaded (aging-sheet) account is collected on its own. The bulk-payment
+// endpoint only settles installment dues — it walks a plan's schedule, and an
+// aging account has none — so an aging account cannot share one collection with
+// another account or with a POS plan's dues. Ticking one replaces whatever else
+// was ticked, and ticking a POS due drops any aging account, so the panel never
+// holds a selection the backend would refuse.
+function selectionAfterToggle(
+  schedules: InstallmentSchedule[],
+  plan: InstallmentSchedule,
+  line: InstallmentScheduleLineWithInvoice,
+  selected: Set<string>
+): Set<string> {
+  if (line.isAgingAccount) {
+    return selected.has(line.id) ? new Set() : new Set([line.id])
+  }
+  const agingIds = new Set(
+    schedules.filter((s) => s.isAgingAccount).flatMap((s) => s.lines.map((l) => l.id))
+  )
+  const withoutAging = new Set([...selected].filter((id) => !agingIds.has(id)))
+  return toggleLineSelection(plan.lines, line, withoutAging)
+}
+
 // The AR service reports these guards as bare codes, deliberately — they are
 // an API contract its own e2e specs assert on. This screen is where a cashier
 // reads them, so translate them here rather than leaking "rebate_exceeds_ppd"
@@ -286,7 +313,10 @@ function dueSuggestions(
   return {
     isLate,
     suggestedRebate: ppd,
-    penaltyEligible: daysLate >= PENALTY_GRACE_DAYS,
+    // A loaded (aging-sheet) account carries its penalty beside the balance,
+    // never inside it, and the backend refuses a rebate or penalty on an
+    // invoice with no plan behind it — so none is ever offered.
+    penaltyEligible: !line.isAgingAccount && daysLate >= PENALTY_GRACE_DAYS,
   }
 }
 
@@ -410,15 +440,15 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
   // checked and still counts toward the payment.
   const [collapsedPlanIds, setCollapsedPlanIds] = useState<Set<string>>(new Set())
   const [pendingScheduleId, setPendingScheduleId] = useState<string | null>(null)
-  // Scenario 54 — lets a collector preview due statuses/rebate eligibility as
-  // of a hypothetical date instead of real today. Local component state only:
-  // never persisted (no localStorage/URL param), so it's gone the moment this
-  // screen unmounts — no other screen or backend "now" is ever affected.
-  const [overrideDateIso, setOverrideDateIso] = useState<string | null>(null)
 
   const debouncedQuery = useDebounced(query, 300)
   const customersQuery = useCollectionsCustomers(branchId || undefined, debouncedQuery || undefined)
-  const schedulesQuery = useCustomerInstallmentSchedules(customer?.id)
+  // Asks for the customer's loaded (aging-sheet) accounts too — each comes back
+  // as a one-due plan. Without them a customer from the aging upload showed
+  // "No installment plans" here, though the ledger and CRM both had them.
+  const schedulesQuery = useCustomerInstallmentSchedules(customer?.id, {
+    withAgingAccounts: true,
+  })
 
   const customers = customersQuery.data?.success ? (customersQuery.data.data ?? []) : []
   const schedules = schedulesQuery.data?.success ? (schedulesQuery.data.data ?? []) : []
@@ -426,17 +456,10 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
   // does not list it (its history lives on the ledger and the AR invoice). A
   // plan with some dues still open keeps its paid ones in view as progress.
   const openSchedules = schedules.filter((s) => s.lines.some((l) => !l.settledAt))
-  // Scenario 54 — the simulated "now" this screen reads dues against: the
-  // override while one's active, real today otherwise. PaymentPanel seeds its
-  // Payment date from this, so Status/Rebate/Penalty are assessed — and the
-  // collection recorded — as of the simulated date, the only way a late
-  // penalty can really be charged against a due that isn't late yet. With no
-  // override this is real today and the Payment date field is capped there.
-  const effectivePaymentDateIso = overrideDateIso ?? manilaToday()
   // Only `ppd` is carried here — NOT a precomputed suggestedRebate/
   // penaltyEligible. PaymentPanel's own Payment date field is freely
-  // editable independently of effectivePaymentDateIso, and the backend
-  // recomputes rebate/penalty caps against whatever date actually submits —
+  // editable (it opens on today), and the backend recomputes rebate/penalty
+  // caps against whatever date actually submits —
   // so PaymentPanel derives its own live preview from dueSuggestions() +
   // its current form.paymentDate, never a value baked in at selection time.
   const selectedPayableLines = schedules.flatMap((s) =>
@@ -504,46 +527,6 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
           <h1 className="text-xl font-bold text-prominent-purple-900">Collections</h1>
         </div>
 
-        {/* Scenario 54 — simulate a hypothetical "today" across this screen
-            only. Local state, never persisted: switching screens or
-            reloading always comes back to real today. */}
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 shadow-sm">
-          <label className="flex items-center gap-2 text-sm font-medium text-zinc-600">
-            <CalendarClock className="h-4 w-4 text-zinc-400" />
-            Override current date
-          </label>
-          {/* Oct 29 UAT DC-02 — never a future date: past days only. */}
-          <input
-            type="date"
-            data-testid="collections-override-date"
-            max={manilaToday()}
-            value={overrideDateIso ?? manilaToday()}
-            onChange={(e) => {
-              const v = e.target.value
-              if (!v || v >= manilaToday()) setOverrideDateIso(null)
-              else setOverrideDateIso(v)
-            }}
-            className={`${fieldClass} w-auto`}
-          />
-          {overrideDateIso && (
-            <button
-              type="button"
-              onClick={() => setOverrideDateIso(null)}
-              className="text-sm font-medium text-prominent-purple-600 hover:underline"
-            >
-              Reset to today
-            </button>
-          )}
-        </div>
-        {overrideDateIso && (
-          <div className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-white">
-            <CalendarClock className="h-4 w-4 shrink-0" />
-            Viewing this screen as of {fmtDate(overrideDateIso)}, not today — due statuses and
-            rebate eligibility below reflect this date. A payment collected now is still dated
-            today; this date only decides whether a due counts as on time or late.
-          </div>
-        )}
-
         {!customer ? (
           <div className="space-y-3">
             <div className="flex flex-col gap-3 sm:flex-row">
@@ -581,17 +564,30 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                   </p>
                 </div>
               ) : (
-                <ul className="divide-y divide-zinc-100">
-                  {customers.map((c) => (
-                    <CollectionsCustomerRow
-                      key={c.id}
-                      customer={c}
-                      onSelect={() =>
-                        selectCustomer({ id: c.id, name: c.name, phone: c.phone ?? undefined })
-                      }
-                    />
-                  ))}
-                </ul>
+                <>
+                  <ul className="divide-y divide-zinc-100">
+                    {customers.map((c) => (
+                      <CollectionsCustomerRow
+                        key={c.id}
+                        customer={c}
+                        onSelect={() =>
+                          selectCustomer({ id: c.id, name: c.name, phone: c.phone ?? undefined })
+                        }
+                      />
+                    ))}
+                  </ul>
+                  {/* The aging upload has ~12,700 accounts, so the list stops at the
+                      most overdue (the backend caps it) — the filter reaches the rest. */}
+                  {customers.length >= LONG_LIST_AT && (
+                    <p
+                      data-testid="collections-long-list-hint"
+                      className="border-t border-zinc-100 px-5 py-3 text-center text-[12px] text-zinc-500"
+                    >
+                      This list shows the most overdue first and stops here. Type a name or phone
+                      above to find anyone else.
+                    </p>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -660,6 +656,12 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                     )}
                   </div>
                 )}
+                {openSchedules.some((s) => s.isAgingAccount) && openSchedules.length > 1 && (
+                  <p data-testid="aging-collected-alone-note" className="text-[12px] text-zinc-500">
+                    An aging account is collected on its own — ticking one clears any other
+                    selection.
+                  </p>
+                )}
 
                 <div className="space-y-4">
                   {openSchedules.map((s) => (
@@ -687,7 +689,8 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                             }`}
                           />
                           <span className="font-mono">
-                            {s.posTransaction?.salesInvoiceNumber?.trim() ||
+                            {s.agingAccount?.siNo ||
+                              s.posTransaction?.salesInvoiceNumber?.trim() ||
                               s.posTransaction?.transactionNumber ||
                               s.id}
                           </span>
@@ -705,6 +708,14 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                           {s.lines[0]?.arInvoice.isEmployeeApplianceLoan && (
                             <span className="mr-2 rounded-full bg-prominent-purple-50 px-2 py-0.5 text-[11px] font-medium text-prominent-purple-700">
                               Appliance loan · paid by payroll
+                            </span>
+                          )}
+                          {s.isAgingAccount && (
+                            <span
+                              data-testid="aging-account-badge"
+                              className="mr-2 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600"
+                            >
+                              Aging account
                             </span>
                           )}
                           {s.termMonths} mo · Monthly {fmtMoney(s.monthlyInstallment)}
@@ -744,31 +755,63 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                                           checked={isSelected}
                                           onChange={() =>
                                             setSelectedLineIds((prev) =>
-                                              toggleLineSelection(s.lines, line, prev)
+                                              selectionAfterToggle(schedules, s, line, prev)
                                             )
                                           }
                                           title={
-                                            !isNextDue
-                                              ? 'Selecting this also selects every earlier unpaid due — dues are settled in order.'
-                                              : undefined
+                                            line.isAgingAccount
+                                              ? 'An aging account is collected on its own — ticking it clears any other selection.'
+                                              : !isNextDue
+                                                ? 'Selecting this also selects every earlier unpaid due — dues are settled in order.'
+                                                : undefined
                                           }
                                           className="h-4 w-4 shrink-0 rounded border-zinc-300 text-prominent-purple-600 focus:ring-prominent-purple-500"
                                         />
                                       )}
                                       <div className="min-w-0">
-                                        <div className="text-[13px] text-zinc-800">
-                                          Payment {line.lineNumber} of {s.lines.length} · due{' '}
-                                          {fmtDate(line.dueDate)}
-                                        </div>
-                                        <div className="flex items-center gap-2 text-[12px] text-zinc-500">
-                                          <StatusBadge
-                                            status={dueStatus(line, overrideDateIso ?? undefined)}
-                                          />
-                                          <span>
-                                            {fmtMoney(Number(line.paidAmount))} of{' '}
-                                            {fmtMoney(Number(line.amount))} paid
-                                          </span>
-                                        </div>
+                                        {line.isAgingAccount && s.agingAccount ? (
+                                          // The sheet keeps no per-month schedule, so this is
+                                          // the whole balance, dated at its next due date.
+                                          <>
+                                            <div
+                                              className="text-[13px] text-zinc-800"
+                                              data-testid="aging-account-balance"
+                                            >
+                                              Outstanding {fmtMoney(s.agingAccount.outstanding)} ·
+                                              next due {fmtDate(line.dueDate)}
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-2 text-[12px] text-zinc-500">
+                                              <StatusBadge status={dueStatus(line)} />
+                                              <span>
+                                                {s.agingAccount.dueNow > 0
+                                                  ? `${fmtMoney(s.agingAccount.dueNow)} due now`
+                                                  : 'Nothing due yet'}
+                                                {s.agingAccount.collected > 0 &&
+                                                  ` · ${fmtMoney(s.agingAccount.collected)} collected here`}
+                                              </span>
+                                            </div>
+                                            {s.agingAccount.penalty > 0 && (
+                                              <div className="mt-0.5 text-[11px] text-zinc-400">
+                                                Sheet penalty {fmtMoney(s.agingAccount.penalty)} —
+                                                for reference, not added to the balance.
+                                              </div>
+                                            )}
+                                          </>
+                                        ) : (
+                                          <>
+                                            <div className="text-[13px] text-zinc-800">
+                                              Payment {line.lineNumber} of {s.lines.length} · due{' '}
+                                              {fmtDate(line.dueDate)}
+                                            </div>
+                                            <div className="flex items-center gap-2 text-[12px] text-zinc-500">
+                                              <StatusBadge status={dueStatus(line)} />
+                                              <span>
+                                                {fmtMoney(Number(line.paidAmount))} of{' '}
+                                                {fmtMoney(Number(line.amount))} paid
+                                              </span>
+                                            </div>
+                                          </>
+                                        )}
                                       </div>
                                     </div>
                                     {isFullyPaid && (
@@ -799,15 +842,7 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                     // the previous selection should never carry over, same as
                     // the old "Pay Selected" opened a brand-new modal each
                     // time (see the component's own doc comment).
-                    //
-                    // Scenario 84 (DC-01 / CL-04) — and whenever the date
-                    // override changes. The panel seeds its Payment date, and
-                    // its rebate/penalty defaults, from the override once, when
-                    // it mounts: an override set AFTER ticking the dues moved
-                    // the banner but left the Payment date on today, so the
-                    // collection saved on the wrong day and never reached the
-                    // overridden day's Collection Report or ledger row.
-                    key={`${Array.from(selectedLineIds).sort().join(',')}|${effectivePaymentDateIso}`}
+                    key={Array.from(selectedLineIds).sort().join(',')}
                     lines={selectedPayableLines}
                     payrollOnly={
                       openSchedules.length > 0 &&
@@ -815,7 +850,6 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                     }
                     customerName={customer?.name}
                     defaultBranchId={branchId || undefined}
-                    initialPaymentDateIso={effectivePaymentDateIso}
                     onClearSelection={() => setSelectedLineIds(new Set())}
                     onCollected={async () => {
                       await Promise.all([schedulesQuery.refetch(), customersQuery.refetch()])
@@ -872,7 +906,6 @@ function PaymentPanel({
   payrollOnly,
   customerName,
   defaultBranchId,
-  initialPaymentDateIso,
   onClearSelection,
   onCollected,
 }: {
@@ -894,11 +927,6 @@ function PaymentPanel({
   /** Falls back to the Collections list's own branch filter, if the cashier
    * had one set — used only until the session's own branch resolves below. */
   defaultBranchId?: string
-  /** Scenario 54 — the screen's simulated "now": its active date override, or
-   * real today with none active. Seeds the Payment date, which drives the
-   * Status/Rebate/Penalty figures and the date the collection is recorded on.
-   * Without an override the field is capped at real today. */
-  initialPaymentDateIso: string
   onClearSelection: () => void
   /** Async: resolves only once the parent's post-payment refetch has
    * actually landed, so the caller can keep the submit button's
@@ -919,9 +947,9 @@ function PaymentPanel({
   const [showIssues, setShowIssues] = useState(false)
   const [form, setForm] = useState({
     withholdingAmount: '0',
-    // The date override, when one is active — so the penalty/rebate the
-    // backend assesses for this date are the ones previewed below.
-    paymentDate: initialPaymentDateIso.slice(0, 10),
+    // Opens on today; the penalty/rebate previewed below follow whatever
+    // this field holds, same as the backend assesses them.
+    paymentDate: manilaToday(),
     // The collection's ONE CR number — every payment's receipt carries it.
     reference: '',
     notes: '',
@@ -977,7 +1005,7 @@ function PaymentPanel({
   // rebate granted (see dueSuggestions — no longer auto-forfeited), but
   // defaults unchecked since it's a cashier exception, not the earned norm.
   // Penalty defaults checked whenever a due qualifies (15+ days late) —
-  // developer-confirmed (this feature is "real" now, not simulate-only).
+  // developer-confirmed.
   // Both keyed by line.id so a batch's dues can be applied/waived
   // independently of each other. Seeded once at mount, against the Payment
   // date field's own starting value — this panel remounts fresh whenever
@@ -991,7 +1019,7 @@ function PaymentPanel({
   const [rebateChecked, setRebateChecked] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
       lines.map(({ line, ppd }) => {
-        const s = dueSuggestions(line, ppd, initialPaymentDateIso)
+        const s = dueSuggestions(line, ppd, manilaToday())
         return [line.id, !s.isLate && (s.suggestedRebate ?? 0) > 0]
       })
     )
@@ -1004,7 +1032,7 @@ function PaymentPanel({
     Object.fromEntries(
       lines.map(({ line, ppd }) => [
         line.id,
-        dueSuggestions(line, ppd, initialPaymentDateIso).penaltyEligible,
+        dueSuggestions(line, ppd, manilaToday()).penaltyEligible,
       ])
     )
   )
@@ -1092,8 +1120,8 @@ function PaymentPanel({
     0
   )
 
-  // Capped at real today (the override can't go forward either — Oct 29 UAT
-  // DC-02), so "not today" can only mean a prior day.
+  // Capped at real today (Oct 29 UAT DC-02), so "not today" can only mean a
+  // prior day.
   const maxPaymentDate = manilaToday()
   // Live per-due split of whatever's currently typed into Total, plus each
   // due's own resolved rebate/penalty — drives both the dues-list preview
@@ -1504,7 +1532,9 @@ function PaymentPanel({
                   return (
                     <tr key={line.id}>
                       <td className="px-3 py-2 text-zinc-700">
-                        Payment {line.lineNumber} · due {fmtDate(line.dueDate)}
+                        {line.isAgingAccount
+                          ? `Balance · due ${fmtDate(line.dueDate)}`
+                          : `Payment ${line.lineNumber} · due ${fmtDate(line.dueDate)}`}
                       </td>
                       <td className="px-3 py-2">
                         {isLate ? (
@@ -1633,7 +1663,7 @@ function PaymentPanel({
                 // was received, and a forward-dated receipt would be
                 // invisible to the daily collection report (it windows on
                 // CollectionReceipt.paymentDate). No exception since the
-                // Oct 29 UAT (DC-02): the override can't go forward either.
+                // Oct 29 UAT (DC-02).
                 max={maxPaymentDate}
                 value={form.paymentDate}
                 onChange={(e) => setForm({ ...form, paymentDate: e.target.value })}
@@ -1731,9 +1761,10 @@ function PaymentPanel({
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               This exceeds the outstanding balance{single
                 ? ''
-                : ' across the selected dues'} by {fmtMoney(totalApplied - outstandingTotal)}. The
-              extra will automatically apply toward the next unpaid due on this schedule — or be
-              recorded as a flagged overpayment if there isn&apos;t one.
+                : ' across the selected dues'} by {fmtMoney(totalApplied - outstandingTotal)}.{' '}
+              {lines.every((l) => l.line.isAgingAccount)
+                ? 'An aging account has no later due to carry it, so check the amount before collecting.'
+                : 'The extra will automatically apply toward the next unpaid due on this schedule — or be recorded as a flagged overpayment if there isn’t one.'}
             </div>
           )}
 

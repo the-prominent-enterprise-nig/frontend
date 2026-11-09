@@ -42,6 +42,7 @@ export type HubTabId =
   | 'employee-cash-loans'
   | 'drivers'
   | 'vehicles'
+  | 'electricity'
   | 'bank-accounts'
   | 'undeposited-funds'
   | 'inter-account-transfer'
@@ -150,6 +151,16 @@ export const EXPENSES_HUB: Hub = {
       label: 'Vehicles',
       href: '/accounting/vehicles',
       permissions: [...DRIVER_ACCESS.READ, ACCOUNTING_PERMISSIONS.EXPENSE_READ],
+    },
+    {
+      // The payments recorded on Electricity / Light Expense (read-only), the way
+      // Vehicles reads back what was spent on each plate. It reads existing
+      // expenses, so the Expense form asks for nothing extra. Kept under the
+      // expense permission.
+      id: 'electricity',
+      label: 'Electricity',
+      href: '/accounting/electricity',
+      permissions: [ACCOUNTING_PERMISSIONS.EXPENSE_READ],
     },
   ],
 }

@@ -274,6 +274,12 @@ export interface AgentInvoice {
   commission: number | null
   /** The live Commissions - Sales voucher paying this sale's commission. */
   released: AgentInvoiceRelease | null
+  /** What accounting recorded in Expenses for this sale's SMI — the
+   * Commissions - SMI line's amount, read exactly like `commission`. Null
+   * until a recorded entry exists (a draft carries none). */
+  smi: number | null
+  /** The live Commissions - SMI voucher paying this sale's SMI. */
+  smiReleased: AgentInvoiceRelease | null
 }
 
 export interface AgentInvoiceRelease {
@@ -378,6 +384,7 @@ export interface CollectorDetail extends Collector {
   installmentAccounts: CollectorInstallmentAccountSummary[]
   remittances: CollectorRemittance[]
   areas: { barangayCode: string }[]
+  towns: { cityCode: string; cityName: string }[]
 }
 
 export interface AccountingCustomerLite {
@@ -439,6 +446,10 @@ export interface InstallmentAccountDetail extends InstallmentAccount {
   // (Commissions - Sales, recorded entries only). Zero until it is encoded.
   // Shown only to users who can read agents.
   salesCommission?: number | string
+  // The SMI on this sale — what accounting encoded in Expenses (Commissions -
+  // SMI, recorded entries only), shown beside the commission to the same
+  // users. Zero until it is encoded.
+  salesSmi?: number | string
   // The sale's receipt: when it was rung up, by whom, and how it was paid
   // for at the register. Null for hand-entered/imported accounts (POS-only).
   saleReceipt?: {
@@ -566,6 +577,10 @@ export interface InstallmentLedgerRow {
    * footer/summary that sums `debit`/`credit` across rows must skip these,
    * or it double-counts. Omitted (falsy) for every real money-moving row. */
   displayOnly?: boolean
+  /** On a Sale row only: the sale's Scheme — the Price Use it was priced under
+   * (WIP, SSC, …), or "Price Override" when its price was manually overridden.
+   * Omitted everywhere else (and by a backend that predates it). */
+  scheme?: string
 }
 
 export interface InstallmentLedger {
@@ -718,6 +733,10 @@ export interface AgingReportRow {
    * Null means no due date on record: reported as unknown, never as current. */
   daysOverdue: number | null
   bucket: AgingBucket | null
+  /** NIG #40 — the part of `ob` that sits in this row's bucket. An overdue row
+   * keeps all of it; a row that is not overdue shows only what it owes for the
+   * report's month under Current (0 once the month is paid). */
+  bucketAmount?: number
 }
 
 export const AGING_BUCKETS = ['current', '1_30', '31_60', '61_90', '90_plus'] as const
@@ -731,8 +750,10 @@ export const AGING_BUCKET_LABELS: Record<AgingBucket, string> = {
   '90_plus': '90+ days',
 }
 
-/** Outstanding split by bucket, present at every subtotal level. */
-export type AgingBucketTotals = Record<AgingBucket, number> & { unknown: number }
+/** Outstanding split by bucket, present at every subtotal level. `later` is
+ * what falls due after the report's month — outstanding, but in no bucket
+ * (Current is only the month's due, NIG #40) — so the entries add up to `ob`. */
+export type AgingBucketTotals = Record<AgingBucket, number> & { unknown: number; later: number }
 
 export interface AgingReportSubtotal {
   count: number

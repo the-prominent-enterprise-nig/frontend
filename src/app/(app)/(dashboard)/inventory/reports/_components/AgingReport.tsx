@@ -3,6 +3,7 @@ import ExportButton from '@/src/components/common/ExportButton'
 import TablePagination from '@/src/components/common/TablePagination'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { useState, type ReactElement } from 'react'
+import { Loader2 } from 'lucide-react'
 import { useAgingCategoryOptions, type AgingFilters } from '../_hooks/useInventoryReports'
 import {
   type AgingReportItem,
@@ -24,6 +25,8 @@ interface Props {
   /** The filters the report on screen was loaded with. */
   filters: AgingFilters
   onFiltersChange: (filters: AgingFilters) => void
+  /** Re-runs the report on the same filters (the button reads "Refresh"). */
+  onRefresh: () => void
   warehouses: Option[]
   /** Item types: the report's Types. */
   typeOptions: Option[]
@@ -90,7 +93,13 @@ function locationLabel(name: string | null): string {
   return /^(panay|negros)\b/i.test(name) ? name : name.replace(/\s+warehouse$/i, '')
 }
 
+/** The backend leaves cost out for a branch user; the screen follows it. */
+function hasCost(data: AgingReportResponse): boolean {
+  return data.totals.totalValue !== undefined
+}
+
 function SummaryCards({ data }: { data: AgingReportResponse }): ReactElement {
+  const showCost = hasCost(data)
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {CARDS.map((card) => {
@@ -103,7 +112,9 @@ function SummaryCards({ data }: { data: AgingReportResponse }): ReactElement {
             <p className={`mt-1 text-[32px] font-bold leading-tight ${card.figure}`}>
               {(figures?.count ?? 0).toLocaleString()}
             </p>
-            <p className="text-[15px] text-zinc-600">{peso.format(figures?.totalValue ?? 0)}</p>
+            {showCost && (
+              <p className="text-[15px] text-zinc-600">{peso.format(figures?.totalValue ?? 0)}</p>
+            )}
           </div>
         )
       })}
@@ -156,6 +167,8 @@ type FilterBarProps = Pick<Props, 'warehouses' | 'typeOptions'> & {
   onDraftChange: (patch: Partial<AgingFilters>) => void
   onProcess: () => void
   isDirty: boolean
+  /** The report is loading — the button says so and can't be pressed twice. */
+  isBusy: boolean
 }
 
 /** The staged filters; they only reach the report on Process. */
@@ -164,6 +177,7 @@ function FilterBar({
   onDraftChange: set,
   onProcess,
   isDirty,
+  isBusy,
   warehouses,
   typeOptions,
 }: FilterBarProps): ReactElement {
@@ -218,9 +232,11 @@ function FilterBar({
       <button
         type="button"
         onClick={onProcess}
-        className="inline-flex h-10 items-center justify-center rounded-xl bg-prominent-purple-700 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-prominent-purple-800"
+        disabled={isBusy}
+        className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-prominent-purple-700 px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-prominent-purple-800 disabled:cursor-wait disabled:opacity-80"
       >
-        {isDirty ? 'Process' : 'Refresh'}
+        {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+        {isBusy ? 'Processing…' : isDirty ? 'Process' : 'Refresh'}
       </button>
     </div>
   )
@@ -237,7 +253,7 @@ function AgePill({ months }: { months: number | null }): ReactElement {
   )
 }
 
-function AgingRow({ row }: { row: AgingReportItem }): ReactElement {
+function AgingRow({ row, showCost }: { row: AgingReportItem; showCost: boolean }): ReactElement {
   return (
     <tr className="even:bg-zinc-100/70">
       <td className="px-4 py-3 font-semibold text-zinc-900">{row.serialNumber}</td>
@@ -250,20 +266,24 @@ function AgingRow({ row }: { row: AgingReportItem }): ReactElement {
       <td className="px-4 py-3 text-center">
         <AgePill months={row.storeMonths} />
       </td>
-      <td className="px-4 py-3 text-right tabular-nums text-zinc-700">
-        {amount.format(row.unitCost)}
-      </td>
+      {showCost && (
+        <td className="px-4 py-3 text-right tabular-nums text-zinc-700">
+          {amount.format(row.unitCost ?? 0)}
+        </td>
+      )}
     </tr>
   )
 }
 
 function AgingTable({ data }: { data: AgingReportResponse }): ReactElement {
+  const showCost = hasCost(data)
+  const columns = showCost ? COLUMNS : COLUMNS.filter((c) => c !== 'Cost')
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-[#4c1d95] text-left text-white">
-            {COLUMNS.map((c) => (
+            {columns.map((c) => (
               <th
                 key={c}
                 className={`px-4 py-3.5 font-medium ${c === 'Cost' ? 'text-right' : c.endsWith('Age') ? 'text-center' : ''}`}
@@ -275,19 +295,21 @@ function AgingTable({ data }: { data: AgingReportResponse }): ReactElement {
         </thead>
         <tbody>
           {data.data.map((row) => (
-            <AgingRow key={row.serialNumberId} row={row} />
+            <AgingRow key={row.serialNumberId} row={row} showCost={showCost} />
           ))}
         </tbody>
-        <tfoot>
-          <tr className="border-y border-zinc-200">
-            <td colSpan={6} className="px-4 py-3 text-right font-semibold text-zinc-900">
-              Total Cost:
-            </td>
-            <td className="px-4 py-3 text-right font-semibold tabular-nums text-zinc-900">
-              {peso.format(data.totals.totalValue)}
-            </td>
-          </tr>
-        </tfoot>
+        {showCost && (
+          <tfoot>
+            <tr className="border-y border-zinc-200">
+              <td colSpan={6} className="px-4 py-3 text-right font-semibold text-zinc-900">
+                Total Cost:
+              </td>
+              <td className="px-4 py-3 text-right font-semibold tabular-nums text-zinc-900">
+                {peso.format(data.totals.totalValue ?? 0)}
+              </td>
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   )
@@ -319,6 +341,7 @@ export default function AgingReport({
   setPage,
   filters,
   onFiltersChange,
+  onRefresh,
   warehouses,
   typeOptions,
 }: Props): ReactElement {
@@ -351,8 +374,13 @@ export default function AgingReport({
       <FilterBar
         draft={draft}
         onDraftChange={(patch) => setDraft((d) => ({ ...d, ...patch }))}
-        onProcess={() => onFiltersChange({ ...draft, asOf: draft.asOf || filters.asOf })}
+        // Same filters: re-run the report. Applying them again changed no
+        // query key, so "Refresh" used to do nothing at all.
+        onProcess={() =>
+          isDirty ? onFiltersChange({ ...draft, asOf: draft.asOf || filters.asOf }) : onRefresh()
+        }
         isDirty={isDirty}
+        isBusy={isFetching}
         warehouses={warehouses}
         typeOptions={typeOptions}
       />

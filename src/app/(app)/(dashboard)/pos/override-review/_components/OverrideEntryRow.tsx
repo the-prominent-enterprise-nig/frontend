@@ -223,6 +223,16 @@ export default function OverrideEntryRow({
               {entry.quantity !== 1 && ` × ${entry.quantity}`}
             </Field>
             {entry.item.sku && <Field label="SKU">{entry.item.sku}</Field>}
+            {entry.brand && (
+              <Field label="Brand" testId="entry-brand">
+                {entry.brand}
+              </Field>
+            )}
+            {entry.itemType && (
+              <Field label="Type" testId="entry-type">
+                {entry.itemType}
+              </Field>
+            )}
             {entry.serials.length > 0 && (
               <Field label={entry.serials.length > 1 ? 'Serials' : 'Serial'} testId="entry-serial">
                 {entry.serials.map((serial) => (

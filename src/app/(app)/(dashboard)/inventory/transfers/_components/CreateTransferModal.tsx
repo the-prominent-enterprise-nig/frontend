@@ -20,6 +20,7 @@ import {
   type TransferSummary,
 } from '@/src/schema/inventory/transfers'
 import {
+  caravanScopeBranchId,
   isCaravanBranch,
   isCaravanEnded,
   warehouseLabel,
@@ -80,6 +81,11 @@ type Props = {
     // Set by General Stockbook's "Stock Transfer": each ticked unit becomes
     // one line pinned to that exact serial (quantity 1).
     pinnedLines?: { itemId: string; itemLabel?: string; serialNumberId: string }[]
+    // Set by the UDS list's "Send to Main": the repair unit goes to Main for
+    // assessment, so the destination is fixed there whatever the user's own
+    // branch lock would be.
+    toMain?: boolean
+    reason?: string
   } | null
   // Scenario 60 — a caravan can be created inline as the destination. It is
   // created first; its warehouse then becomes the transfer's toWarehouseId.
@@ -146,9 +152,11 @@ function collapseLinesForEdit(
 // Each branch has exactly one warehouse, so this picker is really choosing a
 // branch — display the branch's own name rather than the warehouse's
 // auto-generated "{branch} Warehouse" name. A caravan names its event and
-// host; one whose event is over says so, since it can still be a source.
+// host; one whose event is over says so — while it's still open it can be a
+// source, for sending its leftover stock back.
 function branchLabel(wh: WarehouseSummary): string {
   const label = warehouseLabel(wh)
+  if (wh.branch?.closedAt) return `${label} (closed)`
   return isCaravanEnded(wh.branch) ? `${label} (ended)` : label
 }
 
@@ -397,13 +405,15 @@ export default function CreateTransferModal({
           (!!currentUserRegion && wh.branchId === null && wh.region === currentUserRegion)
       )
     : []
-  // Only lock the field when it resolves to exactly one warehouse — if a
-  // branch ever has more than one, a Branch Manager still needs to choose
-  // among their own rather than have an arbitrary one silently picked. A
-  // Warehouse Custodian is never locked, and starts with no destination.
-  const lockedToWarehouseId =
-    !canPickAnyDestination && ownBranchWarehouses.length === 1
-      ? ownBranchWarehouses[0].id
+  // A field is only ever locked to the user's own warehouse when it resolves
+  // to exactly one — if a branch ever has more than one, a Branch Manager
+  // still needs to choose among their own rather than have an arbitrary one
+  // silently picked.
+  const ownWarehouseId = ownBranchWarehouses.length === 1 ? ownBranchWarehouses[0].id : undefined
+  // A repair ticket's trip to Main fixes the destination there instead.
+  const mainWarehouse =
+    !editing && initialDraft?.toMain
+      ? warehouses.find((wh) => wh.branch?.isMainBranch && !isCaravanBranch(wh.branch))
       : undefined
 
   // Remounts the header's "add item" search box after each pick — it never
@@ -437,6 +447,19 @@ export default function CreateTransferModal({
   const transferDate = watch('transferDate')
   const expectedArrival = watch('expectedArrival')
   const watchedLines = useWatch({ control, name: 'lines' }) ?? EMPTY_LINES
+
+  // "Send directly" turns a request into a send. Ticked, the user's own branch
+  // is the SOURCE (locked) and the destination is open; unticked it is a
+  // request — their own branch is the DESTINATION (locked) and the source is
+  // theirs to choose. A Warehouse Custodian's destination is never locked. A
+  // saved request keeps its route, so editing never flips it.
+  const sendsDirect = !isEditing && canSkipApproval && !!watch('skipDestinationApproval')
+  const lockedWarehouse =
+    mainWarehouse ??
+    (!canPickAnyDestination && !sendsDirect && ownWarehouseId ? ownBranchWarehouses[0] : undefined)
+  const lockedToWarehouseId = lockedWarehouse?.id
+  const lockedFromWarehouseId = sendsDirect ? ownWarehouseId : undefined
+
   // Live check (not gated behind a submit attempt) so the error and disabled
   // Save button appear the instant an invalid date is picked, not only after
   // the user tries to submit once.
@@ -477,7 +500,7 @@ export default function CreateTransferModal({
               toWarehouseId: initialDraft?.toWarehouseId ?? lockedToWarehouseId ?? '',
               transferDate: today,
               expectedArrival: '',
-              reason: '',
+              reason: initialDraft?.reason ?? '',
               destinationType: initialDraft?.toWarehouseId ? 'caravan' : 'branch',
               lines: initialDraft?.pinnedLines?.length
                 ? initialDraft.pinnedLines.map((pin) => ({
@@ -531,6 +554,15 @@ export default function CreateTransferModal({
     }
   }, [isOpen, isEditing, destinationIsCaravan, lockedToWarehouseId, setValue])
 
+  // Same re-sync for a direct send's locked source: ticking the box — or the
+  // warehouses finishing loading while it is ticked — puts the user's own
+  // branch in From.
+  useEffect(() => {
+    if (isOpen && lockedFromWarehouseId) {
+      setValue('fromWarehouseId', lockedFromWarehouseId, { shouldValidate: true })
+    }
+  }, [isOpen, lockedFromWarehouseId, setValue])
+
   const totalUnits = watchedLines.reduce((sum, l) => sum + (Number(l?.quantity) || 0), 0)
 
   // Scenario 60 — "For a caravan": the stock goes to a new caravan (a
@@ -547,20 +579,26 @@ export default function CreateTransferModal({
   const editingCaravanDestination = isEditing && isCaravanDestination && !isCreatingNewCaravan
 
   // A caravan still running is a destination like any branch; an ended one
-  // takes no new stock. A branch-scoped user gets the caravans their own
-  // branch hosts alongside their branch.
+  // takes no new stock. Whenever the destination is open (sending directly,
+  // a Warehouse Custodian, head office) every running caravan is offered,
+  // whoever hosts it — just as every branch is. Only a request, whose
+  // destination is the user's own side, keeps to the caravans their branch
+  // hosts.
+  const caravanScope = caravanScopeBranchId(warehouses, currentUserBranchId)
+  const destinationOpen = canPickAnyDestination || sendsDirect
   const runningCaravans = warehouses.filter(
     (wh) =>
       isCaravanBranch(wh.branch) &&
       !isCaravanEnded(wh.branch) &&
-      (!currentUserBranchId || wh.branch?.hostBranch?.id === currentUserBranchId)
+      (!caravanScope || destinationOpen || wh.branch?.hostBranch?.id === caravanScope)
   )
   const branchDestinations = [
-    // A Warehouse Custodian and head office can send to any branch; anyone
-    // else with a branch only to their own.
-    ...(currentUserBranchId && !canPickAnyDestination ? ownBranchWarehouses : warehouses).filter(
-      (wh) => !isCaravanBranch(wh.branch)
-    ),
+    // A Warehouse Custodian, head office and anyone sending directly can send
+    // to any branch; anyone else with a branch only requests to their own.
+    ...(currentUserBranchId && !canPickAnyDestination && !sendsDirect
+      ? ownBranchWarehouses
+      : warehouses
+    ).filter((wh) => !isCaravanBranch(wh.branch)),
     ...runningCaravans,
   ].filter((wh) => wh.id !== fromId)
 
@@ -572,14 +610,24 @@ export default function CreateTransferModal({
   // Host branch for a new caravan: a real branch, never another caravan. A
   // branch-scoped user can only host at their own branch (the backend
   // enforces the same).
-  const hostBranchOptions = (currentUserBranchId ? ownBranchWarehouses : warehouses)
+  const hostBranchOptions = (caravanScope ? ownBranchWarehouses : warehouses)
     .filter((wh) => !!wh.branchId && !isCaravanBranch(wh.branch))
     .map((wh) => ({ value: wh.branchId as string, label: branchLabel(wh) }))
 
   // The host is always the user's own pick — the source branch says nothing
   // about where the event is. Only a branch-scoped user, who can host at
   // their own branch alone, gets it filled in.
-  const defaultHostBranchId = currentUserBranchId ?? ''
+  const defaultHostBranchId = caravanScope ?? ''
+
+  // Ticking / unticking "Send directly" swaps which end is the user's own
+  // branch (see sendsDirect). The lock effects fill the newly locked end; this
+  // clears the end that just became open, so one branch is never both From and
+  // To.
+  function onSendDirectlyChange(checked: boolean): void {
+    if (isEditing || !ownWarehouseId) return
+    if (checked && toId === ownWarehouseId) setValue('toWarehouseId', '')
+    if (!checked && fromId === ownWarehouseId) setValue('fromWarehouseId', '')
+  }
 
   function setForCaravan(on: boolean): void {
     setValue('destinationType', on ? 'caravan' : 'branch')
@@ -703,7 +751,7 @@ export default function CreateTransferModal({
                   <span className="text-[13.5px] font-semibold text-[#17171c]">
                     Request details
                   </span>
-                  {canCreateCaravan && !isEditing && (
+                  {canCreateCaravan && !isEditing && !mainWarehouse && (
                     <label className="flex cursor-pointer items-center gap-2 text-[12px] text-[#3d3d4a]">
                       <input
                         type="checkbox"
@@ -741,25 +789,49 @@ export default function CreateTransferModal({
                         <Controller
                           name="fromWarehouseId"
                           control={control}
-                          render={({ field }) => (
-                            <SearchableSelect
-                              value={field.value ?? ''}
-                              onChange={field.onChange}
-                              placeholder="Search source branch…"
-                              chrome={CONTROL_CHROME}
-                              // The branch picked as the destination can't
-                              // also be the source — except when it is
-                              // sending to a caravan it hosts.
-                              options={warehouses
-                                .filter((wh) => isCaravanDestination || wh.id !== toId)
-                                .map((wh) => ({ value: wh.id, label: branchLabel(wh) }))}
-                            />
-                          )}
+                          render={({ field }) =>
+                            lockedFromWarehouseId ? (
+                              // A direct send always leaves from the user's
+                              // own branch.
+                              <SearchableSelect
+                                value={field.value ?? ''}
+                                onChange={field.onChange}
+                                disabled
+                                chrome={CONTROL_CHROME}
+                                options={[
+                                  {
+                                    value: lockedFromWarehouseId,
+                                    label: branchLabel(ownBranchWarehouses[0]),
+                                  },
+                                ]}
+                              />
+                            ) : (
+                              <SearchableSelect
+                                value={field.value ?? ''}
+                                onChange={field.onChange}
+                                placeholder="Search source branch…"
+                                chrome={CONTROL_CHROME}
+                                // The branch picked as the destination can't
+                                // also be the source — except when it is
+                                // sending to a caravan it hosts.
+                                // A closed caravan never appears: head office
+                                // can only close one that's empty with no open
+                                // transfer, so it has nothing to send and no
+                                // request can still point at it.
+                                options={warehouses
+                                  .filter((wh) => isCaravanDestination || wh.id !== toId)
+                                  .filter((wh) => !wh.branch?.closedAt)
+                                  .map((wh) => ({ value: wh.id, label: branchLabel(wh) }))}
+                              />
+                            )
+                          }
                         />
                         <p className="mt-1 text-[11px] text-[#4b4b5a]">
-                          {isCaravanBranch(fromWarehouse?.branch)
-                            ? `Caravan stock, recorded under ${fromWarehouse?.branch?.hostBranch?.name ?? 'its host branch'}.`
-                            : 'Stock leaves here.'}
+                          {lockedFromWarehouseId
+                            ? 'Direct sends always leave from your own branch.'
+                            : isCaravanBranch(fromWarehouse?.branch)
+                              ? `Caravan stock, recorded under ${fromWarehouse?.branch?.hostBranch?.name ?? 'its host branch'}.`
+                              : 'Stock leaves here.'}
                         </p>
                         {errors.fromWarehouseId && (
                           <p className="mt-1 text-[11.5px] text-[#b42318]">
@@ -800,7 +872,8 @@ export default function CreateTransferModal({
                                 name="toWarehouseId"
                                 control={control}
                                 render={({ field }) =>
-                                  lockedToWarehouseId && runningCaravans.length === 0 ? (
+                                  lockedWarehouse &&
+                                  (mainWarehouse || runningCaravans.length === 0) ? (
                                     <SearchableSelect
                                       value={field.value ?? ''}
                                       onChange={field.onChange}
@@ -808,8 +881,8 @@ export default function CreateTransferModal({
                                       chrome={CONTROL_CHROME}
                                       options={[
                                         {
-                                          value: lockedToWarehouseId,
-                                          label: branchLabel(ownBranchWarehouses[0]),
+                                          value: lockedWarehouse.id,
+                                          label: branchLabel(lockedWarehouse),
                                         },
                                       ]}
                                     />
@@ -834,9 +907,11 @@ export default function CreateTransferModal({
                             <p className="mt-1 text-[11px] text-[#4b4b5a]">
                               {isCaravanDestination
                                 ? ''
-                                : lockedToWarehouseId
-                                  ? 'Requests are always routed to your own branch.'
-                                  : 'Stock arrives here.'}
+                                : mainWarehouse
+                                  ? 'Repair units go to Main for assessment.'
+                                  : lockedToWarehouseId
+                                    ? 'Requests are always routed to your own branch.'
+                                    : 'Stock arrives here.'}
                             </p>
                             {errors.toWarehouseId && (
                               <p className="mt-1 text-[11.5px] text-[#b42318]">
@@ -854,7 +929,7 @@ export default function CreateTransferModal({
                       control={control as unknown as Control<CaravanFieldsForm>}
                       errors={errors}
                       hostBranchOptions={hostBranchOptions}
-                      hostLocked={!!currentUserBranchId}
+                      hostLocked={!!caravanScope}
                     />
                   )}
                   {/* Same column template as the route grid above (with an
@@ -930,7 +1005,10 @@ export default function CreateTransferModal({
                             <input
                               type="checkbox"
                               checked={field.value ?? false}
-                              onChange={(e) => field.onChange(e.target.checked)}
+                              onChange={(e) => {
+                                field.onChange(e.target.checked)
+                                onSendDirectlyChange(e.target.checked)
+                              }}
                               className="mt-0.5"
                             />
                           )}
@@ -993,6 +1071,9 @@ export default function CreateTransferModal({
                     }}
                     placeholder="Add item — search name or SKU…"
                     stockWarehouseId={fromId || undefined}
+                    stockFromOtherBranch
+                    // A caravan sends only what it holds — no catalog tail.
+                    stockOnly={isCaravanBranch(fromWarehouse?.branch)}
                   />
                 </div>
               </div>

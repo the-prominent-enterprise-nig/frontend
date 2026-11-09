@@ -14,7 +14,6 @@ export default async function InstallmentAccountsPage() {
 
   return (
     <InstallmentAccountsList
-      canCreate={can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_CREATE)}
       canLoadAging={canAny(session, [
         CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_CREATE,
         ACCOUNTING_PERMISSIONS.AR_INVOICES_CREATE,

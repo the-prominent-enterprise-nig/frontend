@@ -47,6 +47,9 @@ export type CreateLocationFormValues = z.infer<typeof CreateLocationFormSchema>
 export const WarehouseBranchSchema = z.object({
   id: z.string(),
   name: z.string(),
+  isMainBranch: z.boolean().optional(),
+  // Head offices (Mabini, San Sebastian) are the only branches with departments.
+  isHeadOffice: z.boolean().optional(),
   isTemporary: z.boolean().optional(),
   eventName: z.string().nullable().optional(),
   startDate: z.string().nullable().optional(),
@@ -63,6 +66,18 @@ type LabelledWarehouse = { name: string; branch?: WarehouseBranch | null } | nul
 
 export function isCaravanBranch(branch: WarehouseBranch | null | undefined): boolean {
   return !!branch?.isTemporary
+}
+
+/** The branch a user's caravan pickers (host branch, running caravans) are
+ * limited to — null means every branch. Mirrors the backend's branchScopeOf:
+ * a Warehouse Custodian's branch (Negros/Panay Warehouse) owns no warehouse
+ * row and hosts no caravan, so they pick from every branch, as head office. */
+export function caravanScopeBranchId(
+  warehouses: { branchId?: string | null }[],
+  branchId: string | null | undefined
+): string | null {
+  if (!branchId) return null
+  return warehouses.some((wh) => wh.branchId === branchId) ? branchId : null
 }
 
 /** Ended once its host closed it, or its end date is before today — mirrors
@@ -94,6 +109,10 @@ export function caravanDaysLeft(endDate: string | null | undefined): number | nu
 }
 
 /** "Ends today", "3 days left", "Ended 2 days ago", "Closed today". */
+/** `?caravan=all` on the General Stockbook — the Caravan view with no single
+ * caravan picked (the ended-caravans banner links here). */
+export const ALL_CARAVANS = 'all'
+
 export function caravanCountdown(
   endDate: string | null | undefined,
   closedAt?: string | null

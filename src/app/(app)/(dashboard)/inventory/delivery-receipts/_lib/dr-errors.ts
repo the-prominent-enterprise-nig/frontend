@@ -21,6 +21,9 @@ const DR_ERROR_MESSAGES: Record<string, string> = {
   reason_required: 'Say why this stock is leaving.',
   lines_required: 'Add at least one item.',
   department_required: 'Pick the department that will use it.',
+  redeemed_unit_needs_serial: 'A redeemed unit is picked by its serial number.',
+  unit_not_repossessed_from_customer:
+    'Only a unit repossessed from this customer can be redeemed by them.',
   occasion_required: 'Pick the raffle occasion.',
   customer_required: 'Pick the customer from CRM.',
   supplier_required: 'Pick the supplier.',

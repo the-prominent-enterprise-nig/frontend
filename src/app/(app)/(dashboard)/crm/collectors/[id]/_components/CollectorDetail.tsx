@@ -162,11 +162,32 @@ export default function CollectorDetail({
       </div>
 
       <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Towns covered</h2>
+        {collector.towns.length === 0 ? (
+          <p className="py-2 text-[13px] text-gray-400">
+            No towns assigned — this collector won&apos;t be auto-matched to new installment
+            accounts by the customer&apos;s town.
+          </p>
+        ) : (
+          <ul className="flex flex-wrap gap-1.5">
+            {collector.towns.map((t) => (
+              <li
+                key={t.cityCode}
+                className="inline-flex items-center rounded-full bg-prominent-purple-50 px-3 py-1 text-[12px] font-medium text-prominent-purple-700 ring-1 ring-inset ring-prominent-purple-200"
+              >
+                {t.cityName}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="mt-4 rounded-xl border border-gray-200 bg-white p-5">
         <h2 className="mb-3 text-[14px] font-semibold text-gray-900">Coverage areas</h2>
         {collector.areas.length === 0 ? (
           <p className="py-2 text-[13px] text-gray-400">
-            No areas assigned — this collector won&apos;t be auto-matched to installment accounts by
-            customer location.
+            No barangays assigned — optional; a collector covering the customer&apos;s barangay is
+            preferred over one who only covers their town.
           </p>
         ) : (
           <ul className="flex flex-wrap gap-1.5">

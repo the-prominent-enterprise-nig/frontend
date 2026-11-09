@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, X, RefreshCw, ClipboardList, Download, Copy, Check, Plus } from 'lucide-react'
@@ -266,7 +267,7 @@ function PoLink({ report }: { report: ReceivingReport }) {
   const href = report.stockTransfer
     ? `/inventory/stock-transaction?tab=transfers&transfer=${encodeURIComponent(code)}`
     : poId
-      ? `/inventory/purchase-orders?tab=orders&po=${poId}`
+      ? `/inventory/stock-transaction?tab=purchase-orders&po=${poId}`
       : null
 
   // A typed-in (unlinked) PO number names a document the system doesn't
@@ -338,6 +339,7 @@ export default function ReceivingReportsTab({
     setStatus,
     resetFilters,
     setPage,
+    setLimit,
   } = useReceivingReports()
 
   const queryClient = useQueryClient()
@@ -358,6 +360,15 @@ export default function ReceivingReportsTab({
   // would never open. `autoOpened` makes it fire once — without it, closing
   // the modal while ?new=1 is still in the URL would immediately reopen it.
   const wantsNew = searchParams.get('new') === '1'
+  // The UDS list's "Receive Back" also names the service center and the
+  // ticket's units, so the form opens on them.
+  const serviceCenterPreset = useMemo(() => {
+    const serviceCenterId = searchParams.get('serviceCenter')
+    const serials = searchParams.get('serials')?.split(',').filter(Boolean) ?? []
+    return wantsNew && serviceCenterId && serials.length
+      ? { serviceCenterId, serialNumberIds: serials }
+      : null
+  }, [wantsNew, searchParams])
   const [autoOpened, setAutoOpened] = useState(false)
 
   useEffect(() => {
@@ -375,7 +386,7 @@ export default function ReceivingReportsTab({
     setIsCreateOpen(false)
     if (!wantsNew) return
     const next = new URLSearchParams(searchParams.toString())
-    next.delete('new')
+    ;['new', 'serviceCenter', 'serials'].forEach((key) => next.delete(key))
     const qs = next.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }, [wantsNew, searchParams, router, pathname])
@@ -410,6 +421,8 @@ export default function ReceivingReportsTab({
         queryClient.invalidateQueries({ queryKey: ['inventory-receiving-reports'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-receiving-reports-summary'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-stock-balances'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
       } else if (result.errorCode !== 'receiving_warehouse_mismatch') {
         // That one code is a confirmable warning, not a failure — the modal
         // shows its own banner and "Receive anyway" instead of this toast.
@@ -866,36 +879,15 @@ export default function ReceivingReportsTab({
               })}
             </div>
 
-            {/* Pagination */}
-            <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
-              <span className="text-[11.5px] text-ink-muted">
-                Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of{' '}
-                {total.toLocaleString()} receipts
-              </span>
-              {totalPages > 1 && (
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setPage(Math.max(1, page - 1))}
-                    disabled={page <= 1}
-                    className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-ink-faint"
-                  >
-                    Previous
-                  </button>
-                  <span className="px-2 py-1.5 text-[12px] tabular-nums text-[#4b4b5a]">
-                    {page} / {totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setPage(Math.min(totalPages, page + 1))}
-                    disabled={page >= totalPages}
-                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-ink-faint"
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
-            </div>
+            <ListFooterPager
+              page={page}
+              pageCount={totalPages}
+              total={total}
+              limit={limit}
+              noun="receipts"
+              onPageChange={setPage}
+              onLimitChange={setLimit}
+            />
           </>
         )}
       </div>
@@ -915,6 +907,7 @@ export default function ReceivingReportsTab({
           subtitle="Record what was delivered against a purchase order."
           submitLabel="Create Receiving Report"
           submittingLabel="Creating…"
+          serviceCenterPreset={serviceCenterPreset}
         />
       )}
     </div>

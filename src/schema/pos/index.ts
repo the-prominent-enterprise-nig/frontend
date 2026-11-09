@@ -482,6 +482,8 @@ export interface PosSaleAccountSummary {
   agentName: string | null
   /** Null when the viewer may not read agents. */
   commission: number | null
+  /** The SMI paid on the sale; null when the viewer may not read agents. */
+  smi: number | null
   /** Each unit's own share of the credit, keyed by line id. */
   lineCredits: Record<string, number>
 }
@@ -562,6 +564,11 @@ export interface CreateTransactionLineInput {
    * priced from before the override. The server reads the list price off it;
    * a list price is never sent. Omit when there was no price-list match. */
   overriddenFromPriceListItemId?: string
+  /** Nov UAT #28 — marks the line a freebie or a tie-up: given with a sold item
+   * at ₱0.00. Not a price override, never financed. */
+  promoTag?: 'freebie' | 'tie_up'
+  /** Only with promoTag: the itemId of the sold line it goes with. */
+  tiedToItemId?: string
   /** Per-line payment mode — lets one cart mix cash/installment lines.
    * Falls back to the transaction-level invoiceType when omitted. */
   invoiceType?: PosInvoiceType
@@ -1332,6 +1339,10 @@ export interface InstallmentScheduleLineWithInvoice {
    * be read here. */
   paidAmount: number
   settledAt: string | null
+  /** A loaded (aging-sheet) account's one "due" — its whole outstanding
+   * balance. Collected like any due, but with no rebate and no late penalty:
+   * the sheet keeps its penalty beside the balance, never inside it. */
+  isAgingAccount?: boolean
   arInvoice: {
     id: string
     invoiceNumber: string
@@ -1368,8 +1379,28 @@ export interface InstallmentSchedule {
      * booked before it became required at checkout. */
     salesInvoiceNumber: string | null
     occurredAt: string
+  } | null
+  financingTerm?: { termMonths: number; factorRate: number } | null
+  /** A loaded (aging-sheet) account, returned as a one-due plan so POS
+   * Collections can collect it. Only sent when Collections asks for it. */
+  isAgingAccount?: boolean
+  agingAccount?: {
+    accountNumber: string
+    /** The SI No. the customer holds. */
+    siNo: string
+    branchId: string | null
+    /** The sheet's balance, before collections taken in the system. */
+    storedBalance: number
+    /** What those collections have relieved since. */
+    collected: number
+    /** Still owed — what the ledger and the aging report show. */
+    outstanding: number
+    /** Demandable today: the sheet's Total Due once its due date has come. */
+    dueNow: number
+    nextDueDate: string
+    /** The sheet's late penalty — shown beside the balance, never added to it. */
+    penalty: number
   }
-  financingTerm?: { termMonths: number; factorRate: number }
   lines: InstallmentScheduleLineWithInvoice[]
   // Scenario 23 Gap 2 — plural since Gap 5's term-grouping means a schedule
   // can cover several items sharing one term, not just one.
@@ -1391,7 +1422,8 @@ export interface InstallmentSchedule {
   // line creates one, but the relation is optional).
   installmentAccount: {
     id: string
-    ppd: number
+    /** Null on a loaded (aging-sheet) account — it has no plan to earn one. */
+    ppd: number | null
     status: 'active' | 'closed' | 'early_closed' | 'written_off'
   } | null
 }
@@ -1706,6 +1738,9 @@ export interface PriceOverrideLogEntry {
   /** The whole sale's total, not just this line's. */
   saleTotal: number
   item: { id: string; name: string; sku: string | null }
+  /** The item's Brand and Type, as an override names the unit it was applied to (Nov UAT #28). */
+  brand: string | null
+  itemType: string | null
   /** Serial number(s) of the unit sold — two for a split-type item; empty when not serial-tracked. */
   serials: string[]
   /** The installment account this line's plan became; null for a cash or TPF line. */

@@ -24,6 +24,8 @@ export function DrVoidAction({ dr }: { dr: DrDetail }): React.JSX.Element {
     }
     showToast({ title: `${dr.drNumber} voided`, status: 'success' })
     await queryClient.invalidateQueries({ queryKey: ['delivery-receipts'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
+    await queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
     router.refresh()
     return true
   }

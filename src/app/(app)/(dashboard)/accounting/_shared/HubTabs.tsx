@@ -20,6 +20,7 @@ import {
   Truck,
   Users,
   Wallet,
+  Zap,
   type LucideIcon,
 } from 'lucide-react'
 import { TabNav } from '@/src/components/ui/TabNav'
@@ -39,6 +40,7 @@ const ICONS: Record<HubTabId, LucideIcon> = {
   'employee-cash-loans': HandCoins,
   drivers: IdCard,
   vehicles: Car,
+  electricity: Zap,
   'bank-accounts': Landmark,
   'undeposited-funds': Banknote,
   'inter-account-transfer': ArrowLeftRight,

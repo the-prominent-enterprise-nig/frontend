@@ -49,6 +49,9 @@ const HUBS: {
       // The roster by plate, with each vehicle's recorded expenses read-only. Reads on
       // inventory:transfers:read OR accounting:expense:read, so the Accountant sees it.
       { label: 'Vehicles', path: '/accounting/vehicles' },
+      // The payments recorded on Electricity / Light Expense, read-only. Kept under
+      // accounting:expense:read, so the Accountant sees it.
+      { label: 'Electricity', path: '/accounting/electricity' },
     ],
     formPath: '/accounting/expenses/new',
   },

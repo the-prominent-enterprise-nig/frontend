@@ -18,9 +18,9 @@ const blank = (v: string): string | undefined => (v.trim() === '' ? undefined : 
 
 /** A serialized form line is one backend line per picked serial. */
 function toLineBodies(l: DrFormValues['lines'][number]): Record<string, unknown>[] {
-  const unitCost = l.costTyped && l.unitCost != null ? l.unitCost : undefined
-  if (!l.isSerialTracked) return [{ itemId: l.itemId, quantity: l.quantity, unitCost }]
-  return l.serials.map((s) => ({ itemId: l.itemId, serialNumberId: s.id, quantity: 1, unitCost }))
+  // No cost from the browser: the backend values each line on posting.
+  if (!l.isSerialTracked) return [{ itemId: l.itemId, quantity: l.quantity }]
+  return l.serials.map((s) => ({ itemId: l.itemId, serialNumberId: s.id, quantity: 1 }))
 }
 
 /** Form values → the backend DTO. Empty strings are not sent (the API

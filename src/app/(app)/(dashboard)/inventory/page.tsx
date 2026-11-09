@@ -21,8 +21,17 @@ import {
 } from 'lucide-react'
 
 import { getInventoryDashboard } from '@/src/app/(app)/(dashboard)/inventory/_actions/get-inventory-dashboard'
-import { locationLabel } from '@/src/libs/format/locationLabel'
+import { useMe } from '@/src/hooks/useMe'
+import { can, canAny } from '@/src/libs/guards/permission'
+import {
+  INVENTORY_PERMISSIONS as P,
+  type InventoryPermission,
+} from '@/src/libs/guards/inventory-permissions'
 import { formatManilaDate, formatManilaTime } from '@/src/libs/format/manila-date'
+import {
+  buildActionQueue,
+  type ActionQueueSource,
+} from '@/src/app/(app)/(dashboard)/inventory/_lib/action-queue'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -39,6 +48,12 @@ function fmtNum(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
   return n.toLocaleString('en-PH')
+}
+
+/** Exact units with thousands separators — counts are read, not estimated. */
+function fmtUnits(n: number): string {
+  const v = Number.isFinite(n) ? n : 0
+  return `${v.toLocaleString('en-PH')} ${v === 1 ? 'unit' : 'units'}`
 }
 
 function daysFromNow(dateStr?: string | null) {
@@ -141,7 +156,7 @@ function DonutChart({
 function HBarChart({
   items,
 }: {
-  items: { label: string; value: number; color: string; badge?: string }[]
+  items: { label: string; value: number; color: string; display?: string }[]
 }) {
   const max = Math.max(...items.map((i) => i.value), 1)
   return (
@@ -150,12 +165,9 @@ function HBarChart({
         <div key={i}>
           <div className="flex items-center justify-between mb-1 gap-2">
             <span className="text-xs text-gray-600 truncate">{item.label}</span>
-            <div className="shrink-0 flex items-center gap-1.5">
-              <span className="text-xs font-semibold text-gray-900 tabular-nums">
-                {fmtNum(item.value)}
-              </span>
-              {item.badge && <span className="text-xs text-gray-400">{item.badge}</span>}
-            </div>
+            <span className="shrink-0 text-xs font-semibold text-gray-900 tabular-nums">
+              {item.display ?? fmtNum(item.value)}
+            </span>
           </div>
           <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
             <div
@@ -231,21 +243,22 @@ const INIT = {
   slowMovingCount: 0,
   deadStockCount: 0,
   inTransitCount: 0,
-  activeBackorders: 0,
   negativeViolations: 0,
   returnsCount: 0,
   openPrCount: 0,
   openPoCount: 0,
   valuationByCategory: [] as { label: string; value: number; color: string }[],
-  valuationByWarehouse: [] as { label: string; value: number; color: string; badge?: string }[],
-  agingBreakdown: [] as { label: string; value: number; color: string }[],
+  unitsByCategory: [] as { label: string; value: number; color: string }[],
+  unitsByWarehouse: [] as { label: string; value: number; color: string; display: string }[],
+  valuationByWarehouse: [] as { label: string; value: number; color: string; display?: string }[],
+  agingBreakdown: [] as { label: string; value: number; color: string; display?: string }[],
   abcSegments: [] as { label: string; value: number; color: string }[],
   stockoutAlertsList: [] as any[],
   expiringBatchesList: [] as any[],
   recentTransfersList: [] as any[],
   transferStatusCounts: {} as Record<string, number>,
   negativeViolationsList: [] as any[],
-  backordersList: [] as any[],
+  actionQueueSource: null as ActionQueueSource | null,
   purchasingActivityList: [] as any[],
 }
 
@@ -253,6 +266,19 @@ const INIT = {
 
 export default function InventoryPage() {
   const { pushPanel } = useUIShell()
+  const { data: me } = useMe()
+  // The backend scopes every figure to the caller's branch (custodians);
+  // Head Office has no branch and sees all of them.
+  // Valuation is quantity x cost; a role "without item cost" (Branch Custodian)
+  // gets the same card in on-hand units instead of pesos.
+  // Amounts stay with Head Office: a branch user (branchId set) gets units even
+  // when their role holds valuation (Branch Manager, Stock Controller).
+  const showValue = !me || (!me.branchId && can(me, P.REPORTS_VALUATION))
+  // Turnover also unlocks the Aging report (which carries cost), so roles
+  // without item cost don't hold it — the classification bars hide for them.
+  const showClassification = !me || can(me, P.REPORTS_TURNOVER)
+  const canOpen = (perms: InventoryPermission[]): boolean => !me || canAny(me, perms)
+  const scopeLabel = me ? (me.branchId ? (me.branchName ?? 'My branch') : 'All branches') : null
 
   const load = useCallback(async () => {
     // The sixteen reads (index order is documented in the action) run in parallel on the server:
@@ -306,7 +332,7 @@ export default function InventoryPage() {
         label: w.warehouseName,
         value: w.totalValue,
         color: COLORS[(i + 2) % COLORS.length],
-        badge: fmtMoney(w.totalValue),
+        display: fmtMoney(w.totalValue),
       }))
 
     // Turnover / ABC classification
@@ -328,7 +354,7 @@ export default function InventoryPage() {
       { label: '0–6 months', value: agingRaw['0_6']?.count ?? 0, color: '#10b981' },
       { label: '7–14 months', value: agingRaw['7_14']?.count ?? 0, color: '#f59e0b' },
       { label: '15+ months', value: agingRaw['15_plus']?.count ?? 0, color: '#ef4444' },
-    ]
+    ].map((b) => ({ ...b, display: fmtUnits(b.value) }))
     const abcSegments = [
       { label: 'Healthy', value: healthyCount, color: '#10b981' },
       { label: 'Slow Moving', value: slowMovingCount, color: '#f59e0b' },
@@ -360,6 +386,28 @@ export default function InventoryPage() {
     const balanceRaw = pick(6)
     const totalOnHand = balanceRaw?.summary?.totalOnHandQty ?? 0
     const totalAvailableQty = balanceRaw?.summary?.totalAvailableQty ?? 0
+    const unitsByWarehouse = ((balanceRaw?.summary?.byWarehouse ?? []) as any[])
+      .slice()
+      .sort((a, b) => b.totalOnHandQty - a.totalOnHandQty)
+      .slice(0, 8)
+      .map((w, i) => ({
+        label: w.warehouseName,
+        value: w.totalOnHandQty,
+        color: COLORS[(i + 2) % COLORS.length],
+        display: fmtUnits(w.totalOnHandQty),
+      }))
+    // Cost-free breakdown for roles without valuation (Branch Custodian).
+    const unitsByCategory = (
+      (balanceRaw?.summary?.byCategory ?? []) as { category: string; totalOnHandQty: number }[]
+    )
+      .slice()
+      .sort((a, b) => b.totalOnHandQty - a.totalOnHandQty)
+      .slice(0, 8)
+      .map((c, i) => ({
+        label: c.category,
+        value: c.totalOnHandQty,
+        color: COLORS[i % COLORS.length],
+      }))
 
     // Warehouses
     const warehouseList = arr(7)
@@ -377,9 +425,8 @@ export default function InventoryPage() {
     const negativeList = arr(9)
     const negativeViolations = total(9)
 
-    // Backorders
-    const backorderList = arr(10)
-    const activeBackorders = backorderList.filter((b) => b.status === 'pending').length || total(10)
+    // Action Queue — sorted into "yours" at render, once the session user is known
+    const actionQueueSource = (pick(10) as ActionQueueSource | null) ?? null
 
     // Returns
     const returnsCount = total(11)
@@ -429,12 +476,13 @@ export default function InventoryPage() {
       slowMovingCount,
       deadStockCount,
       inTransitCount,
-      activeBackorders,
       negativeViolations,
       returnsCount,
       openPrCount: openPrList.length,
       openPoCount: openPoList.length,
       valuationByCategory,
+      unitsByCategory,
+      unitsByWarehouse,
       valuationByWarehouse,
       agingBreakdown,
       abcSegments,
@@ -443,7 +491,7 @@ export default function InventoryPage() {
       recentTransfersList: transferList.slice(0, 8),
       transferStatusCounts,
       negativeViolationsList: negativeList.slice(0, 6),
-      backordersList: backorderList.slice(0, 8),
+      actionQueueSource,
       purchasingActivityList,
     }
   }, [])
@@ -460,6 +508,14 @@ export default function InventoryPage() {
   const s = data ?? INIT
 
   const loading = !s.loaded
+  const queue = useMemo(
+    () =>
+      me && s.actionQueueSource
+        ? buildActionQueue(me, s.actionQueueSource)
+        : { total: 0, groups: [], items: [] },
+    [me, s.actionQueueSource]
+  )
+  const queueLoading = loading || !me
 
   return (
     <div className="min-h-full bg-zinc-50">
@@ -467,7 +523,14 @@ export default function InventoryPage() {
       <div className="sticky top-0 z-10 border-b border-gray-200 bg-white/95 backdrop-blur px-6 py-4">
         <div className="mx-auto max-w-7xl flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Inventory Intelligence</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-gray-900">Inventory Intelligence</h1>
+              {scopeLabel && (
+                <span className="rounded-full border border-violet-100 bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700">
+                  {scopeLabel}
+                </span>
+              )}
+            </div>
             <p className="text-[11px] text-gray-400 mt-0.5">
               {s.lastUpdated
                 ? `Updated ${formatManilaTime(s.lastUpdated, { hour: '2-digit', minute: '2-digit' })}`
@@ -475,13 +538,15 @@ export default function InventoryPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Link
-              href="/inventory/reports"
-              className="hidden sm:flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              <BarChart2 className="h-3.5 w-3.5 text-gray-500" />
-              Reports
-            </Link>
+            {canOpen([P.REPORTS_TURNOVER, P.STOCK_COUNT_READ]) && (
+              <Link
+                href="/inventory/reports"
+                className="hidden sm:flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <BarChart2 className="h-3.5 w-3.5 text-gray-500" />
+                Reports
+              </Link>
+            )}
             <Link
               href="/inventory/items"
               className="hidden sm:flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors"
@@ -504,30 +569,37 @@ export default function InventoryPage() {
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
               {(
                 [
-                  { label: 'Stock Balances', href: '/inventory/stock', icon: BarChart2 },
+                  {
+                    label: 'Stock Balances',
+                    href: '/inventory/stock',
+                    icon: BarChart2,
+                    perms: [P.STOCKS_READ, P.RECEIVE_READ],
+                  },
                   {
                     label: 'Goods Receiving',
                     href: '/inventory/stock-transaction?tab=receiving',
                     icon: Package,
+                    perms: [P.RECEIVE_READ],
                   },
                   {
                     label: 'Physical Inventory',
                     href: '/inventory/reports?tab=physical-inventory',
                     icon: Layers,
+                    perms: [P.STOCK_COUNT_READ],
                   },
-                  { label: 'Quality Hold', href: '/inventory/quality-hold', icon: ShieldAlert },
-                  { label: 'Revaluation', href: '/inventory/revaluation', icon: TrendingUp },
                 ] as const
-              ).map(({ label, href, icon: Icon }, i) => (
-                <Link
-                  key={i}
-                  href={href}
-                  className="flex items-center justify-center gap-2 rounded-lg border border-gray-100 bg-gray-50/50 px-3.5 py-2 text-xs font-medium text-gray-700 hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700 transition-all"
-                >
-                  <Icon className="h-3.5 w-3.5 text-violet-400 shrink-0" />
-                  {label}
-                </Link>
-              ))}
+              )
+                .filter(({ perms }) => canOpen([...perms]))
+                .map(({ label, href, icon: Icon }, i) => (
+                  <Link
+                    key={i}
+                    href={href}
+                    className="flex items-center justify-center gap-2 rounded-lg border border-gray-100 bg-gray-50/50 px-3.5 py-2 text-xs font-medium text-gray-700 hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700 transition-all"
+                  >
+                    <Icon className="h-3.5 w-3.5 text-violet-400 shrink-0" />
+                    {label}
+                  </Link>
+                ))}
             </div>
           </div>
         </div>
@@ -543,14 +615,20 @@ export default function InventoryPage() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="text-sm font-semibold text-gray-900">
-                    Inventory Value by Category
+                    {showValue ? 'Inventory Value by Category' : 'Inventory by Category'}
                   </h2>
                   <p className="text-xs text-gray-400">
-                    Distribution of total stock value across product categories
+                    {showValue
+                      ? 'Distribution of total stock value across product categories'
+                      : 'Distribution of units on hand across product categories'}
                   </p>
                 </div>
                 <span className="shrink-0 text-xs font-semibold text-violet-700 bg-violet-50 px-2.5 py-0.5 rounded-full border border-violet-100">
-                  {loading ? '…' : fmtMoney(s.totalValue)}
+                  {loading
+                    ? '…'
+                    : showValue
+                      ? fmtMoney(s.totalValue)
+                      : `${s.totalOnHand.toLocaleString('en-PH')} units`}
                 </span>
               </div>
               {loading ? (
@@ -563,14 +641,20 @@ export default function InventoryPage() {
                   </div>
                 </div>
               ) : (
-                <DonutChart segments={s.valuationByCategory} />
+                <DonutChart segments={showValue ? s.valuationByCategory : s.unitsByCategory} />
               )}
             </div>
 
             <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
               <div className="mb-4">
-                <h2 className="text-sm font-semibold text-gray-900">Stock Classification</h2>
-                <p className="text-xs text-gray-400">Item health by movement velocity</p>
+                <h2 className="text-sm font-semibold text-gray-900">
+                  {showClassification ? 'Stock Classification' : 'Stock Availability'}
+                </h2>
+                <p className="text-xs text-gray-400">
+                  {showClassification
+                    ? 'Item health by movement velocity'
+                    : 'Units on hand: available vs reserved'}
+                </p>
               </div>
               {loading ? (
                 <div className="space-y-3">
@@ -580,38 +664,44 @@ export default function InventoryPage() {
                 </div>
               ) : (
                 <>
-                  <div className="space-y-3">
-                    {s.abcSegments.map((seg, i) => {
-                      const tot = s.abcSegments.reduce((a, b) => a + b.value, 0) || 1
-                      return (
-                        <div key={i}>
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-xs font-medium" style={{ color: seg.color }}>
-                              {seg.label}
-                            </span>
-                            <span className="text-xs text-gray-700 font-semibold tabular-nums">
-                              {fmtNum(seg.value)}{' '}
-                              <span className="text-gray-400 font-normal">
-                                ({Math.round((seg.value / tot) * 100)}%)
+                  {showClassification && (
+                    <div className="space-y-3">
+                      {s.abcSegments.map((seg, i) => {
+                        const tot = s.abcSegments.reduce((a, b) => a + b.value, 0) || 1
+                        return (
+                          <div key={i}>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-medium" style={{ color: seg.color }}>
+                                {seg.label}
                               </span>
-                            </span>
+                              <span className="text-xs text-gray-700 font-semibold tabular-nums">
+                                {fmtNum(seg.value)}{' '}
+                                <span className="text-gray-400 font-normal">
+                                  ({Math.round((seg.value / tot) * 100)}%)
+                                </span>
+                              </span>
+                            </div>
+                            <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                              <div
+                                className="h-full rounded-full transition-all duration-700"
+                                style={{
+                                  width: `${(seg.value / tot) * 100}%`,
+                                  backgroundColor: seg.color,
+                                }}
+                              />
+                            </div>
                           </div>
-                          <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all duration-700"
-                              style={{
-                                width: `${(seg.value / tot) * 100}%`,
-                                backgroundColor: seg.color,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
+                        )
+                      })}
+                    </div>
+                  )}
                   {s.totalOnHand > 0 && (
-                    <div className="mt-5 pt-4 border-t border-gray-100">
-                      <p className="text-xs font-semibold text-gray-600 mb-2">Stock Availability</p>
+                    <div className={showClassification ? 'mt-5 pt-4 border-t border-gray-100' : ''}>
+                      {showClassification && (
+                        <p className="text-xs font-semibold text-gray-600 mb-2">
+                          Stock Availability
+                        </p>
+                      )}
                       <div className="flex h-3 rounded-full overflow-hidden gap-px">
                         {[
                           { v: s.totalAvailableQty, c: '#10b981', t: 'Available' },
@@ -662,7 +752,7 @@ export default function InventoryPage() {
             <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
               <div className="mb-4">
                 <h2 className="text-sm font-semibold text-gray-900">Inventory Aging Analysis</h2>
-                <p className="text-xs text-gray-400">Items by days since last movement</p>
+                <p className="text-xs text-gray-400">In-stock units by months since received</p>
               </div>
               {loading ? (
                 <div className="space-y-3">
@@ -682,8 +772,14 @@ export default function InventoryPage() {
             <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h2 className="text-sm font-semibold text-gray-900">Stock Value by Warehouse</h2>
-                  <p className="text-xs text-gray-400">Valuation distribution across locations</p>
+                  <h2 className="text-sm font-semibold text-gray-900">
+                    {showValue ? 'Stock Value by Warehouse' : 'Stock by Warehouse'}
+                  </h2>
+                  <p className="text-xs text-gray-400">
+                    {showValue
+                      ? 'Valuation distribution across locations'
+                      : 'Units on hand across locations'}
+                  </p>
                 </div>
                 <Link
                   href="/inventory/warehouses"
@@ -698,12 +794,12 @@ export default function InventoryPage() {
                     <Sk key={i} className="h-8 w-full" />
                   ))}
                 </div>
-              ) : s.valuationByWarehouse.length === 0 ? (
+              ) : (showValue ? s.valuationByWarehouse : s.unitsByWarehouse).length === 0 ? (
                 <div className="flex h-20 items-center justify-center text-xs text-gray-400">
                   No warehouse data
                 </div>
               ) : (
-                <HBarChart items={s.valuationByWarehouse} />
+                <HBarChart items={showValue ? s.valuationByWarehouse : s.unitsByWarehouse} />
               )}
             </div>
           </div>
@@ -1037,7 +1133,7 @@ export default function InventoryPage() {
                   {loading ? '—' : s.openPrCount} Open PR{s.openPrCount === 1 ? '' : 's'}
                 </Link>
                 <Link
-                  href="/inventory/purchase-orders?tab=orders"
+                  href="/inventory/stock-transaction?tab=purchase-orders"
                   className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-200"
                 >
                   {loading ? '—' : s.openPoCount} Open PO{s.openPoCount === 1 ? '' : 's'}
@@ -1059,7 +1155,7 @@ export default function InventoryPage() {
                       href={
                         p.type === 'PR'
                           ? '/inventory/purchase-requests'
-                          : `/inventory/purchase-orders?tab=orders&po=${p.id}`
+                          : `/inventory/stock-transaction?tab=purchase-orders&po=${p.id}`
                       }
                       className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-gray-50 transition-colors"
                     >
@@ -1091,75 +1187,84 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {/* Pending Actions — items awaiting resolution, not really "planning" */}
+        {/* Action Queue — open documents whose next step is the viewer's */}
         <div>
           <div className="mb-3 flex items-center gap-2">
-            <Clock className="h-4 w-4 text-purple-500" />
-            <h2 className="text-base font-semibold text-gray-900">Pending Actions</h2>
+            <ClipboardCheck className="h-4 w-4 text-purple-500" />
+            <h2 className="text-base font-semibold text-gray-900">Action Queue</h2>
+            {!queueLoading && queue.total > 0 && (
+              <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold text-violet-700 tabular-nums">
+                {queue.total}
+              </span>
+            )}
           </div>
-          <div className="grid grid-cols-1 gap-4">
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-purple-500" />
-                  Active Backorders
-                </h3>
-                <Link
-                  href="/inventory/backorders"
-                  className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
-                >
-                  View all <ArrowUpRight className="h-3 w-3" />
-                </Link>
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="mb-3 text-[11px] text-gray-400">
+              Transfers, purchase requests and purchase orders whose next step is yours, oldest
+              first.
+            </p>
+            {queueLoading ? (
+              <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                {[...Array(4)].map((_, i) => (
+                  <Sk key={i} className="h-12 w-full" />
+                ))}
               </div>
-              {loading ? (
-                <div className="space-y-2">
-                  {[...Array(4)].map((_, i) => (
-                    <Sk key={i} className="h-12 w-full" />
+            ) : queue.total === 0 ? (
+              <EmptyState message="Nothing is waiting on you" />
+            ) : (
+              <>
+                <div className="mb-3 flex flex-wrap gap-1.5">
+                  {queue.groups.map((g) => (
+                    <span
+                      key={g.key}
+                      className="rounded-full bg-violet-50 px-2.5 py-0.5 text-[11px] font-medium text-violet-700"
+                    >
+                      {g.count} {g.label}
+                    </span>
                   ))}
                 </div>
-              ) : s.backordersList.length === 0 ? (
-                <EmptyState message="No active backorders" />
-              ) : (
-                <div className="space-y-2">
-                  {s.backordersList.map((b, i) => {
-                    const days = daysFromNow(b.commitmentDate)
-                    const overdue = days != null && days < 0
-                    return (
+                <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                  {queue.items.slice(0, 10).map((item) => (
+                    <Link key={`${item.ruleKey}-${item.doc.id}`} href={item.href} className="block">
                       <AlertRow
-                        key={i}
-                        urgency={overdue ? 'critical' : 'neutral'}
+                        urgency={
+                          (item.ageDays ?? 0) >= 7
+                            ? 'critical'
+                            : (item.ageDays ?? 0) >= 3
+                              ? 'warning'
+                              : 'neutral'
+                        }
                         left={
                           <div className="min-w-0">
-                            <p className="text-xs font-semibold text-gray-900 truncate">
-                              {b.item?.name ?? 'Unknown'}
+                            <p className="truncate text-xs font-semibold text-gray-900">
+                              {item.verb} · {item.doc.code}
                             </p>
-                            <p className="text-[11px] text-gray-500">
-                              SO {b.salesOrderId.slice(0, 8)}… · {b.backorderedQty} units
+                            <p className="truncate text-[11px] text-gray-500">
+                              {item.doc.kind === 'transfer'
+                                ? `${item.doc.from?.label ?? '—'} → ${item.doc.to?.label ?? '—'}`
+                                : (item.doc.from?.label ?? 'No supplier yet')}
                             </p>
                           </div>
                         }
                         right={
                           <>
-                            <span
-                              className={`text-xs font-bold ${overdue ? 'text-red-600' : 'text-gray-700'}`}
-                            >
-                              {overdue
-                                ? `${Math.abs(days!)}d overdue`
-                                : days != null
-                                  ? `${days}d`
-                                  : '—'}
+                            <span className="text-xs font-bold text-gray-700 tabular-nums">
+                              {item.ageDays == null ? '—' : `${item.ageDays}d`}
                             </span>
-                            <p className="text-[10px] text-gray-400 capitalize">
-                              {b.status.replace('_', ' ')}
-                            </p>
+                            <p className="text-[10px] text-gray-400">waiting</p>
                           </>
                         }
                       />
-                    )
-                  })}
+                    </Link>
+                  ))}
                 </div>
-              )}
-            </div>
+                {queue.total > 10 && (
+                  <p className="mt-3 text-[11px] text-gray-400">
+                    Showing the 10 oldest of {queue.total}.
+                  </p>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>

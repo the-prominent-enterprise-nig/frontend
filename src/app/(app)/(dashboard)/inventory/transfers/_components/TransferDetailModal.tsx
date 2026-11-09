@@ -6,6 +6,7 @@ import {
   useForm,
   useFieldArray,
   useWatch,
+  useFormState,
   Controller,
   type Control,
   type UseFormSetValue,
@@ -586,7 +587,10 @@ function SerialReceiveCorrection({
     control,
     name: `lines.${index}.replacementSerialLabel`,
   })
-  const correctionReason = useWatch({ control, name: `lines.${index}.correctionReason` }) ?? ''
+  const { errors } = useFormState({ control, name: `lines.${index}` })
+  const lineErrors = errors.lines?.[index]
+  const reasonError = lineErrors?.correctionReason?.message
+  const serialError = lineErrors?.correctedSerialNumber?.message
 
   if (!canOverrideSerial) return null
 
@@ -717,15 +721,50 @@ function SerialReceiveCorrection({
         </>
       )}
 
-      <input
-        value={correctionReason}
-        onChange={(e) => setValue(`lines.${index}.correctionReason`, e.target.value)}
-        type="text"
-        placeholder="Reason for the correction (required)"
-        className="mt-1.5 w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-500"
+      {serialError && <p className="mt-1 text-[11px] text-red-600">{serialError}</p>}
+
+      {/* A Controller (not a bare setValue input) so RHF can focus this box
+          on a failed submit and revalidate as the user types the reason. */}
+      <Controller
+        name={`lines.${index}.correctionReason`}
+        control={control}
+        render={({ field }) => (
+          <input
+            {...field}
+            value={field.value ?? ''}
+            type="text"
+            placeholder="Reason for the correction (required)"
+            aria-invalid={!!reasonError}
+            className={`mt-1.5 w-full rounded border bg-white px-2 py-1 text-xs outline-none ${
+              reasonError
+                ? 'border-red-400 focus:border-red-500'
+                : 'border-amber-300 focus:border-amber-500'
+            }`}
+          />
+        )}
       />
+      {reasonError && (
+        <p className="mt-1 text-[11px] text-red-600">
+          Type why the serial is being corrected (e.g. &quot;label misprinted&quot;) before you
+          submit. To skip the correction, cancel it with the ✕ above.
+        </p>
+      )}
     </div>
   )
+}
+
+/** Summary line under the receive lines when a serial correction is missing
+ * its reason — names the serial(s) so the user knows exactly which box to
+ * fill, instead of the generic "some entries are invalid". */
+function missingCorrectionReasonMessage(
+  lineErrors: FieldErrors<ReceiveTransferFormValues>['lines']
+): string | null {
+  if (!Array.isArray(lineErrors)) return null
+  const count = lineErrors.filter((e) => e?.correctionReason).length
+  if (count === 0) return null
+  return count === 1
+    ? 'A serial correction is missing its reason. Fill in the highlighted reason box, or cancel the correction, then submit again.'
+    : `${count} serial corrections are missing a reason. Fill in each highlighted reason box, or cancel those corrections, then submit again.`
 }
 
 /** One label/value cell in the drawer's facts strip. Missing values read as
@@ -744,7 +783,7 @@ function Fact({
     <div className="min-w-0">
       <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-ink-muted`}>{label}</p>
       <p
-        className={`mt-1 truncate text-[13px] font-medium ${mono ? MONO : ''} ${
+        className={`mt-1 wrap-break-word text-[13px] font-medium ${mono ? MONO : ''} ${
           value ? 'text-[#17171c]' : 'text-ink-muted'
         }`}
       >
@@ -789,6 +828,9 @@ type Props = {
   // The dispatcher is never the receiver (WH-01) — compared against the
   // transfer's dispatchedById to withhold Receive from whoever shipped it.
   currentUserId?: string
+  // The Business Owner and the Branch Manager are exempt from that rule: they
+  // may receive a transfer they dispatched themselves.
+  currentUserExemptFromDispatcherRule?: boolean
   // The region of the caller's own warehouse branch — drives whether they can
   // act on a transfer touching a real standalone warehouse (branchId: null,
   // Scenario 27), which exact branch-ownership can never match. null/
@@ -853,6 +895,7 @@ export default function TransferDetailModal({
   canManagerReject,
   currentUserBranchId,
   currentUserId,
+  currentUserExemptFromDispatcherRule = false,
   currentUserRegion,
   onAccept,
   onReject,
@@ -1022,28 +1065,29 @@ export default function TransferDetailModal({
   // A real standalone warehouse (branchId: null — Scenario 27, ported from
   // Warehouse Request) falls back to region match instead of exact branch
   // ownership, since ownership can never be satisfied for one.
-  const inScope = (warehouseBranchId: string | null | undefined, warehouseRegion?: string | null) =>
+  // A caravan the user's branch hosts counts as theirs too: it has no staff,
+  // so the host's people receive into it, send out of it and cancel its
+  // requests — the backend's resolveActorBranchIds rule.
+  const inScope = (wh: TransferSummary['toWarehouse'] | null | undefined): boolean =>
     !currentUserBranchId ||
-    warehouseBranchId === currentUserBranchId ||
-    (warehouseBranchId === null && warehouseRegion === currentUserRegion)
-  const canAcceptThis =
-    canAccept && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
-  const canRejectThis =
-    canReject && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
-  const canProposeSubstitutionThis =
-    canProposeSubstitution &&
-    inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
-  const canConfirmSubstitutionThis =
-    canConfirmSubstitution &&
-    inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
-  const canDispatchThis =
-    canDispatch && inScope(transfer?.fromWarehouse?.branchId, transfer?.fromWarehouse?.region)
+    wh?.branchId === currentUserBranchId ||
+    (wh?.branchId === null && wh?.region === currentUserRegion) ||
+    (!!wh?.branch?.hostBranch && wh.branch.hostBranch.id === currentUserBranchId)
+  const canAcceptThis = canAccept && inScope(transfer?.fromWarehouse)
+  const canRejectThis = canReject && inScope(transfer?.fromWarehouse)
+  const canProposeSubstitutionThis = canProposeSubstitution && inScope(transfer?.fromWarehouse)
+  const canConfirmSubstitutionThis = canConfirmSubstitution && inScope(transfer?.toWarehouse)
+  const canDispatchThis = canDispatch && inScope(transfer?.fromWarehouse)
   // Mirrors the backend's receive() refusal: whoever dispatched a transfer
   // can't also confirm it arrived, even head office, which inScope lets
   // through. A transfer dispatched before dispatchedById existed has none.
-  const dispatchedByMe = !!transfer?.dispatchedById && transfer.dispatchedById === currentUserId
-  const canReceiveInScope =
-    canReceive && inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+  // The Business Owner and the Branch Manager are exempt, so for them it is
+  // never "dispatched by me".
+  const dispatchedByMe =
+    !currentUserExemptFromDispatcherRule &&
+    !!transfer?.dispatchedById &&
+    transfer.dispatchedById === currentUserId
+  const canReceiveInScope = canReceive && inScope(transfer?.toWarehouse)
   const canReceiveThis = canReceiveInScope && !dispatchedByMe
   const receiveBlockedForDispatcher =
     canReceiveInScope &&
@@ -1051,17 +1095,17 @@ export default function TransferDetailModal({
     (status === 'in_transit' || status === 'partially_received')
   // Manager approval is scoped to the TO warehouse's branch too — it's the
   // requester's own branch manager signing off, same direction as receive.
-  const canManagerApproveThis =
-    canManagerApprove && inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
-  const canManagerRejectThis =
-    canManagerReject && inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+  const canManagerApproveThis = canManagerApprove && inScope(transfer?.toWarehouse)
+  const canManagerRejectThis = canManagerReject && inScope(transfer?.toWarehouse)
   // Cancelling withdraws YOUR OWN request — scoped to the requester's own
   // branch (TO warehouse), same direction as manager-approval above. The
   // source branch has its own dedicated decline path (Reject/Reject HQ),
   // which captures a reason, so it doesn't get a "Cancel" button here too.
+  // Whoever raised it may withdraw it too, wherever they sit — mirrors the
+  // backend (a Warehouse Custodian's caravan consign lands on the host).
+  const raisedByMe = !!transfer?.requestedById && transfer.requestedById === currentUserId
   const canCancelThis =
-    CANCELLABLE_STATUSES.has(status) &&
-    inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+    CANCELLABLE_STATUSES.has(status) && (inScope(transfer?.toWarehouse) || raisedByMe)
   // Two kinds of transfer are refused by the backend's update() and so are
   // never offered here: one the UDS module auto-paired (the UDS owns which
   // unit ships, not this form), and one whose lines are pinned to a specific
@@ -1079,7 +1123,7 @@ export default function TransferDetailModal({
     EDITABLE_STATUSES.has(status) &&
     !isUdsPaired &&
     !hasPinnedSerial &&
-    inScope(transfer?.toWarehouse?.branchId, transfer?.toWarehouse?.region)
+    inScope(transfer?.toWarehouse)
 
   // Only worth a column when at least one line actually carries a serial —
   // otherwise every row just shows a distracting "—".
@@ -1345,28 +1389,31 @@ export default function TransferDetailModal({
   const fieldClass =
     'w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
-  // Fleet roster (drivers and vehicles) lookups for the dispatch form — scoped
-  // to the source branch they are on file for, same as the branch the
-  // dispatching stock is leaving from. A caravan has no fleet of its own
-  // (drivers and vehicles are registered to real branches), so stock leaving a
-  // caravan goes out on its host branch's drivers and vehicles.
-  const fromBranch = transfer?.fromWarehouse?.branch
-  const dispatchFromBranchId = fromBranch?.isTemporary
-    ? (fromBranch.hostBranch?.id ?? fromBranch.id)
-    : fromBranch?.id
+  // Fleet roster lookups for the dispatch form. Neither list is scoped to a
+  // branch — not the one the stock leaves from, not the caller's own — so
+  // whoever dispatches may use any branch's driver and vehicle (a caravan has
+  // no fleet of its own, so this also covers stock leaving a caravan).
   // Plates come from the vehicle roster, driver names from the driver roster —
   // two separate lists, neither tied to the other (a driver is not assigned to
   // a plate; who drives what varies per trip). Phone/license/carrier stay
   // manual, they are not on either roster.
   async function searchDispatchVehicles(query: string): Promise<AutocompleteOption[]> {
-    const result = await searchVehicles({ q: query, branchId: dispatchFromBranchId })
+    const result = await searchVehicles({ q: query })
     if (!result.success || !result.data) return []
-    return result.data.map((v) => ({ id: v.id, label: v.plateNo, sublabel: v.tag }))
+    // Vehicles from every branch are offered, so the branch is shown beside
+    // the vehicle type to tell whose it is.
+    return result.data.map((v) => ({
+      id: v.id,
+      label: v.plateNo,
+      sublabel: [v.tag, v.branch?.name].filter(Boolean).join(' · ') || null,
+    }))
   }
   async function searchDispatchDrivers(query: string): Promise<AutocompleteOption[]> {
-    const result = await searchDrivers({ q: query, branchId: dispatchFromBranchId })
+    const result = await searchDrivers({ q: query })
     if (!result.success || !result.data) return []
-    return result.data.map((d) => ({ id: d.id, label: d.name }))
+    // Drivers from every branch are offered, so the branch is shown to tell
+    // two people of the same name apart.
+    return result.data.map((d) => ({ id: d.id, label: d.name, sublabel: d.branch?.name }))
   }
   // Scenario 71 item 22 — a pick fills only the field it is for.
   function pickDispatchVehicle(option: AutocompleteOption) {
@@ -1377,74 +1424,66 @@ export default function TransferDetailModal({
   }
 
   return (
-    // Right-hand drawer over a dimmed page, per the Stock Transfers design:
-    // the list stays visible behind it, which matters because reviewing a
-    // transfer is usually one step in working down the queue rather than a
-    // destination of its own. Keeps the same shell as before — header,
-    // scrolling body, pinned footer — so every internal form, state and
-    // handler below is untouched.
-    <div onClick={onClose} className="fixed inset-0 z-50 flex justify-end bg-[#17171c]/40">
+    // Full-bleed panel over the content area, the same shell as an opened
+    // Purchase Order (PoDetailModal): header, scrolling body on grey, pinned
+    // footer. Every internal form, state and handler below is untouched.
+    <div className="absolute inset-0 z-50 flex">
       <div
-        onClick={(e) => e.stopPropagation()}
-        className={`${PLEX} flex h-full w-full max-w-[min(1200px,96vw)] flex-col bg-white text-[#17171c] antialiased shadow-[-24px_0_60px_-30px_rgba(10,4,26,0.5)]`}
+        className={`${PLEX} flex h-full w-full flex-col bg-[#f2f2f3] text-[#17171c] antialiased`}
       >
         {/* Header — the transfer's own reference is the title, the way the
             design has it; "Request Details" stays as the dialog's accessible
             name (and the anchor e2e opens the drawer on). */}
-        <div className="border-b border-[#e4e4e9] px-6 pb-3 pt-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="sr-only">Request Details</h2>
-              <div className="flex items-center gap-2.5">
-                <p className={`${MONO} truncate text-[19px] font-semibold tracking-[-0.02em]`}>
-                  {transfer?.transferNumber ??
-                    (transfer ? `#${transfer.id.slice(0, 8).toUpperCase()}` : '—')}
-                </p>
-                {transfer && (
-                  <StatusBadge
-                    label={statusCfg.label}
-                    colorClassName={statusCfg.color}
-                    icon={<StatusIcon className="h-3.5 w-3.5" />}
-                    size="sm"
-                    className="shrink-0 px-2.5 py-1"
-                  />
-                )}
-              </div>
+        <div className="sticky top-0 z-40 flex flex-wrap items-start justify-between gap-4 border-b border-[#e4e4e9] bg-white px-5 py-3">
+          <div className="flex min-w-0 flex-col gap-[3px]">
+            <h2 className="sr-only">Request Details</h2>
+            <div className={`${MONO} text-[10.5px] uppercase tracking-[.08em] text-ink-subtle`}>
+              Stock Transfer
+            </div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <p className={`${MONO} wrap-break-word text-[17px] font-semibold tracking-[-.01em]`}>
+                {transfer?.transferNumber ??
+                  (transfer ? `#${transfer.id.slice(0, 8).toUpperCase()}` : '—')}
+              </p>
               {transfer && (
-                <p className="mt-1 truncate text-[12.5px] text-[#4b4b5a]">
-                  Requested {formatDateOnly(transfer.createdAt ?? transfer.transferDate)}
-                  {transfer.requestedByName ? ` by ${transfer.requestedByName}` : ''}
-                </p>
+                <StatusBadge
+                  label={statusCfg.label}
+                  colorClassName={statusCfg.color}
+                  icon={<StatusIcon className="h-3.5 w-3.5" />}
+                  size="sm"
+                  className="shrink-0 px-2.5 py-1"
+                />
               )}
             </div>
+            {transfer && (
+              <p className="text-[11.5px] text-ink-muted">
+                Requested {formatDateOnly(transfer.createdAt ?? transfer.transferDate)}
+                {transfer.requestedByName ? ` by ${transfer.requestedByName}` : ''}
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Edit acts on the request itself (WH-02). Hidden while an
+                inline form is open, same as the footer. */}
+            {transfer && !inlineFormOpen && canEditThis && onEdit && (
+              <button
+                type="button"
+                onClick={() => onEdit(transfer)}
+                className="flex items-center gap-1.5 rounded-lg border border-[#ddd0f7] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-[#f5f0ff]"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit Request
+              </button>
+            )}
             <button
               type="button"
               onClick={onClose}
               aria-label="Close dialog"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#e4e4e9] text-[#4b4b5a] hover:bg-[#f7f7f8] hover:text-[#17171c]"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-[#4b4b5a] hover:bg-[#f1f1f4] hover:text-[#17171c]"
             >
-              <X className="h-4 w-4" />
+              <X className="h-4.5 w-4.5" />
             </button>
           </div>
-          {transfer && (
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-              <TransferStageTrail transfer={transfer} status={status} />
-              {/* Edit acts on the request itself, so it rides on its
-                  progress row — an outlined button, not a text link (WH-02).
-                  Cancel sits with the footer's actions. Hidden while an
-                  inline form is open, same as the footer. */}
-              {!inlineFormOpen && canEditThis && onEdit && (
-                <button
-                  type="button"
-                  onClick={() => onEdit(transfer)}
-                  className="ml-auto flex items-center gap-1.5 rounded-lg border border-[#ddd0f7] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-[#f5f0ff]"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  Edit Request
-                </button>
-              )}
-            </div>
-          )}
         </div>
 
         {isLoading || !transfer ? (
@@ -1452,66 +1491,76 @@ export default function TransferDetailModal({
             <Loader2 className="h-6 w-6 animate-spin text-zinc-400" />
           </div>
         ) : (
-          <div className="flex-1 space-y-3.5 overflow-y-auto bg-[#f7f7f8] px-6 pb-[26px] pt-[18px]">
-            {/* Route — the two branches read as the record's subject, so no
+          <div className="flex-1 space-y-3.5 overflow-y-auto px-5 py-4">
+            {/* Lifecycle trail, in its own card as on a Purchase Order. */}
+            {status !== 'rejected' && status !== 'cancelled' && (
+              <div className="overflow-x-auto rounded-xl border border-[#e4e4e9] bg-white px-4 py-3.5">
+                <TransferStageTrail transfer={transfer} status={status} />
+              </div>
+            )}
+
+            {/* Route + facts, side by side like a PO's supplier + facts. */}
+            <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[1fr_1.15fr]">
+              {/* Route — the two branches read as the record's subject, so no
                 avatar initials competing with the names themselves. */}
-            <div className="rounded-xl border border-[#e4e4e9] bg-white p-3">
-              <div className="flex items-center gap-3 rounded-lg border border-[#eeeef1] bg-[#fbfbfc] px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  {/* Scenario 56 — who asks whom: the destination requests,
+              <div className="rounded-xl border border-[#e4e4e9] bg-white p-3">
+                <div className="flex items-center gap-3 rounded-lg border border-[#eeeef1] bg-[#fbfbfc] px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    {/* Scenario 56 — who asks whom: the destination requests,
                       the source supplies. */}
-                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-ink-muted`}>
-                    From · Supplying branch
-                  </p>
-                  <LocationName
-                    wh={transfer.fromWarehouse}
-                    className="mt-1 text-[16px] font-semibold"
-                    subtitleClassName="text-[12px] text-[#4b4b5a]"
-                  />
-                  <p className="mt-0.5 truncate text-[11.5px] text-ink-muted">
-                    Sends the stock · deducted on dispatch
-                  </p>
-                </div>
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#ddd0f7] bg-white text-[#5b21b6]">
-                  <ArrowRight className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1 text-right">
-                  <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-ink-muted`}>
-                    To · Requesting branch
-                  </p>
-                  <LocationName
-                    wh={transfer.toWarehouse}
-                    className="mt-1 text-[16px] font-semibold"
-                    subtitleClassName="text-[12px] text-[#4b4b5a]"
-                  />
-                  <p className="mt-0.5 truncate text-[11.5px] text-ink-muted">
-                    Asked for the stock · added on receipt
-                  </p>
+                    <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-ink-muted`}>
+                      From · Supplying branch
+                    </p>
+                    <LocationName
+                      wh={transfer.fromWarehouse}
+                      className="mt-1 text-[16px] font-semibold"
+                      wrap
+                    />
+                    <p className="mt-0.5 text-[11.5px] text-ink-muted">
+                      Sends the stock · deducted on dispatch
+                    </p>
+                  </div>
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#ddd0f7] bg-white text-[#5b21b6]">
+                    <ArrowRight className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 flex-1 text-right">
+                    <p className={`${MONO} text-[10px] uppercase tracking-[0.09em] text-ink-muted`}>
+                      To · Requesting branch
+                    </p>
+                    <LocationName
+                      wh={transfer.toWarehouse}
+                      className="mt-1 text-[16px] font-semibold"
+                      wrap
+                    />
+                    <p className="mt-0.5 text-[11.5px] text-ink-muted">
+                      Asked for the stock · added on receipt
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Facts */}
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl border border-[#e4e4e9] bg-white px-4 py-3.5 sm:grid-cols-4">
-              <Fact label="Transfer Ref" value={transfer.transferNumber} mono />
-              <Fact label="Transfer Date" value={formatDateOnly(transfer.transferDate)} />
-              <Fact
-                label="Expected Arrival"
-                value={transfer.expectedArrival ? formatDateOnly(transfer.expectedArrival) : null}
-              />
-              <Fact
-                label="Approved By"
-                value={
-                  transfer.acceptedByName
-                    ? `${transfer.acceptedByName} · ${branchLabel(transfer.fromWarehouse)}`
-                    : null
-                }
-              />
-              {transfer.reason && (
-                <div className="col-span-2 sm:col-span-4">
-                  <Fact label="Reason" value={transfer.reason} />
-                </div>
-              )}
+              {/* Facts */}
+              <div className="grid grid-cols-2 content-start gap-x-4 gap-y-3 rounded-xl border border-[#e4e4e9] bg-white p-4">
+                <Fact label="Transfer Ref" value={transfer.transferNumber} mono />
+                <Fact label="Transfer Date" value={formatDateOnly(transfer.transferDate)} />
+                <Fact
+                  label="Expected Arrival"
+                  value={transfer.expectedArrival ? formatDateOnly(transfer.expectedArrival) : null}
+                />
+                <Fact
+                  label="Approved By"
+                  value={
+                    transfer.acceptedByName
+                      ? `${transfer.acceptedByName} · ${branchLabel(transfer.fromWarehouse)}`
+                      : null
+                  }
+                />
+                {transfer.reason && (
+                  <div className="col-span-2">
+                    <Fact label="Reason" value={transfer.reason} />
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Manager rejection reason (the requester's own branch manager
@@ -2349,7 +2398,8 @@ export default function TransferDetailModal({
                   </div>
                   {receiveForm.formState.errors.lines && (
                     <p className="mt-1 text-xs text-red-600">
-                      Check the values above — some entries are invalid.
+                      {missingCorrectionReasonMessage(receiveForm.formState.errors.lines) ??
+                        'Check the values above — some entries are invalid.'}
                     </p>
                   )}
                 </div>
@@ -2522,7 +2572,7 @@ export default function TransferDetailModal({
 
         {/* Footer actions */}
         {transfer && !inlineFormOpen && (
-          <div className="flex items-center justify-between gap-4 border-t border-[#e4e4e9] bg-white px-6 py-3.5">
+          <div className="sticky bottom-0 z-40 flex items-center justify-between gap-4 border-t border-[#e4e4e9] bg-white px-5 py-3">
             <div className="min-w-0">
               <p className="text-[11.5px] text-ink-muted">
                 {totalUnits} {totalUnits === 1 ? 'unit' : 'units'} · {(transfer.lines ?? []).length}{' '}

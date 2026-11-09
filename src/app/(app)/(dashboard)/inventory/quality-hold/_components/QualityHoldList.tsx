@@ -1,5 +1,6 @@
 'use client'
 
+import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { useState } from 'react'
 import { Plus, X, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { useQualityHoldManager } from '../_hooks/useQualityHoldManager'
@@ -32,6 +33,8 @@ export default function QualityHoldList({ session }: { session: SessionUser }) {
     setItemFilter,
     page,
     setPage,
+    limit,
+    setLimit,
     selectedBatch,
     setSelectedBatch,
     itemOptions,
@@ -206,38 +209,18 @@ export default function QualityHoldList({ session }: { session: SessionUser }) {
               </table>
             </div>
           )}
+          {!isLoading && holds.length > 0 && (
+            <ListFooterPager
+              page={page}
+              pageCount={pagination.totalPages}
+              total={pagination.total}
+              limit={limit}
+              noun="holds"
+              onPageChange={setPage}
+              onLimitChange={setLimit}
+            />
+          )}
         </div>
-
-        {/* Pagination */}
-        {pagination.totalPages > 1 && (
-          <div className="flex items-center justify-between text-sm text-zinc-500">
-            <span>
-              Showing {(page - 1) * pagination.limit + 1}–
-              {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} holds
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPage(Math.max(1, page - 1))}
-                disabled={page <= 1}
-                className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-              >
-                Previous
-              </button>
-              <span className="px-3 py-1.5 font-medium text-zinc-700">
-                {page} / {pagination.totalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                disabled={page >= pagination.totalPages}
-                className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       <PlaceOnHoldModal

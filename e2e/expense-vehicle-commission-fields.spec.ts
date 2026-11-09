@@ -225,28 +225,35 @@ test.describe('Expense lines — Fuel, Vehicle Repair, Commission', () => {
     await expect(commission).toBeVisible()
     await expect(page.getByText('Sales Invoice No. *')).toBeVisible()
     await expect(page.getByTestId('expense-kind-chip')).toHaveText(/sales commission expense/i)
-    // The invoice picker is there from the start; the agent column reads the payee.
-    await expect(commission.locator('[aria-label="Sales agent"]')).toHaveText('—')
+    // The invoice picker is there from the start. The agent is the payee, named once above,
+    // so the line has no Sales Agent column of its own.
+    await expect(commission.getByText('Sales Agent *')).toHaveCount(0)
+    await expect(commission.locator('[aria-label="Line sales agent"]')).toHaveCount(0)
     // No plate / liters / repair columns on a commission-only entry.
     await expect(page.getByText('Plate Number *')).toHaveCount(0)
   })
 
-  test("Sales Agent payee: the line's Sales Agent column is the payee, read-only", async ({
+  test("Sales Agent payee: the line has no Sales Agent column — the payee's agent is on every line", async ({
     page,
   }) => {
     await pickPayee(page, 'Sales Agent')
     await pickAccount(page, 'Commissions - S', '6-01-040 — Commissions - Sales')
     const commission = kindRow(page, 'AGENT_COMMISSION')
-    await expect(commission.locator('[aria-label="Sales agent"]')).toHaveText('—')
+    await expect(commission.getByText('Sales Agent *')).toHaveCount(0)
 
     await page.locator('[aria-label="Select sales agent"]').click()
     const firstAgent = page.locator('body > div.fixed button').nth(1)
     await expect(firstAgent).toBeVisible({ timeout: 10_000 })
-    const agent = (await firstAgent.innerText()).trim()
     await firstAgent.click()
-    // Whoever the payee is, the column names — one cheque pays one agent, so a line
-    // cannot credit another.
-    await expect(commission.locator('[aria-label="Sales agent"]')).toHaveText(agent)
+    // Still no column once an agent is picked — one cheque pays one agent, so a line
+    // cannot credit another — and the invoice picker searches that agent's sales.
+    await expect(commission.getByText('Sales Agent *')).toHaveCount(0)
+    const lookup = page.waitForRequest(
+      (r) => r.url().includes('/expenses/lookups/sales') && r.url().includes('agentId=')
+    )
+    await commission.getByText('— Select —').first().click()
+    await page.keyboard.type('SI')
+    await lookup
   })
 
   test('Payee Other: no Special Account column for a Fuel line, back as soon as another line needs it', async ({

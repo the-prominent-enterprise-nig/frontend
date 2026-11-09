@@ -1,6 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
+import { describeDocumentError } from '@/src/libs/data/document-errors'
+import { useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -34,7 +36,7 @@ import {
   type PurchaseOrderSummary,
 } from '@/src/schema/inventory/purchase-orders'
 import { getSuppliers } from '../_actions/get-suppliers'
-import { getBranches } from '@/src/app/(app)/(dashboard)/pos/catalog/price-lists/_actions/get-branches'
+import { getBranches } from '@/src/app/(app)/(dashboard)/pos/price-lists/_actions/get-branches'
 import { getPurchaseOrder } from '../_actions/get-purchase-order'
 import { getPurchaseOrderDocument } from '../_actions/get-purchase-order-document'
 import { downloadReactNodeAsPdf } from '@/src/libs/print/htmlToPdf'
@@ -60,6 +62,7 @@ import {
   RequestGridRows,
   useOpenPurchaseRequests,
 } from './OpenPurchaseRequests'
+import { useSeesSupplierPrices } from '@/src/hooks/useSeesSupplierPrices'
 import { can, type SessionUser } from '@/src/libs/guards/permission'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 
@@ -89,6 +92,9 @@ const STATUS_FILTERS: { label: string; value: PoStatus | undefined }[] = [
  * overflow its card at the 1080px breakpoint. */
 const GRID =
   'grid grid-cols-[154px_minmax(0,1fr)_98px_106px_114px_132px_216px] gap-x-3 items-center'
+/** The same grid without the Total track, for whoever may not see prices. */
+const GRID_NO_TOTAL =
+  'grid grid-cols-[154px_minmax(0,1fr)_98px_114px_132px_216px] gap-x-3 items-center'
 
 const SORT_SELECT_CLASS =
   'h-[38px] cursor-pointer appearance-none rounded-lg border border-[#d3d3db] bg-white pl-[11px] pr-[30px] text-[12.5px] text-[#3d3d4a] transition-colors focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc] focus:outline-none'
@@ -352,6 +358,14 @@ export function PurchaseOrderList({
     enabled: !!linkedPoId,
   })
   const effectiveDetailsTarget = detailsTarget ?? (linkedPoId ? (linkedPoQuery.data ?? null) : null)
+  // A ?po= link the caller may not open (another branch's order) comes back
+  // empty; say so instead of the modal silently never appearing.
+  const linkedPoMissing = !!linkedPoId && linkedPoQuery.isSuccess && !linkedPoQuery.data
+  useEffect(() => {
+    if (!linkedPoMissing) return
+    const { title, body } = describeDocumentError('purchase_order_not_found', 'purchase order')
+    showToast({ title, description: body, status: 'warning' })
+  }, [linkedPoMissing])
   const closeDetailsTarget = (): void => {
     setDetailsTarget(null)
     if (!linkedPoId) return
@@ -381,6 +395,10 @@ export function PurchaseOrderList({
 
   const [overdueOnly, setOverdueOnly] = useState(false)
   const requestsSession = session && can(session, PROCUREMENT_PERMISSIONS.PR_READ) ? session : null
+  // PO prices (list Total, detail, print, PDF, view): roles that may see item cost
+  // (see canSeeSupplierPrices) only.
+  const showPrices = useSeesSupplierPrices()
+  const grid = showPrices ? GRID : GRID_NO_TOTAL
   /** The "Requests" pill — swaps the orders table for open purchase requests. */
   const [showRequests, setShowRequests] = useState(false)
   // A request converted from the Requests filter is a PO now: show it in
@@ -457,7 +475,10 @@ export function PurchaseOrderList({
     const docRes = await getPurchaseOrderDocument(po.id)
     if (!docRes.success || !docRes.data) return
     await downloadReactNodeAsPdf(
-      <PurchaseOrderSheet doc={docRes.data as PurchaseOrderPrintDocument} />,
+      <PurchaseOrderSheet
+        doc={docRes.data as PurchaseOrderPrintDocument}
+        showPrices={showPrices}
+      />,
       po.code
     )
   }
@@ -814,16 +835,18 @@ export function PurchaseOrderList({
             <div role="table" aria-label="Purchase orders" className="hidden min-[1080px]:block">
               <div
                 role="row"
-                className={`${GRID} ${STOCK_TABLE_HEAD} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px]`}
+                className={`${grid} ${STOCK_TABLE_HEAD} border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px]`}
               >
                 <span role="columnheader">PO code</span>
                 <span role="columnheader" className="pl-1.5">
                   Supplier
                 </span>
                 <span role="columnheader">Status</span>
-                <span role="columnheader" className="text-right">
-                  Total
-                </span>
+                {showPrices && (
+                  <span role="columnheader" className="text-right">
+                    Total
+                  </span>
+                )}
                 <span role="columnheader">Source</span>
                 <span role="columnheader">Receiving</span>
                 <span role="columnheader" className="text-right">
@@ -831,7 +854,12 @@ export function PurchaseOrderList({
                 </span>
               </div>
 
-              <RequestGridRows items={inlineRequests} actions={requests.actions} gridClass={GRID} />
+              <RequestGridRows
+                items={inlineRequests}
+                actions={requests.actions}
+                gridClass={grid}
+                showTotal={showPrices}
+              />
 
               {rows.map((po) => {
                 const late = daysLate(po)
@@ -841,7 +869,7 @@ export function PurchaseOrderList({
                     onClick={() => setDetailsTarget(po)}
                     className="cursor-pointer border-t border-[#f4f4f6] bg-white hover:bg-[#fcfcfd]"
                   >
-                    <div role="row" className={`${GRID} px-4 py-[11px]`}>
+                    <div role="row" className={`${grid} px-4 py-[11px]`}>
                       <div role="cell" className="flex min-w-0 flex-col gap-0.5">
                         <div className="flex min-w-0 items-center gap-1.5">
                           <span
@@ -877,9 +905,14 @@ export function PurchaseOrderList({
                         )}
                       </div>
 
-                      <span role="cell" className={`${MONO} text-right text-[13px] font-semibold`}>
-                        {fmtPeso(Number(po.totalAmount))}
-                      </span>
+                      {showPrices && (
+                        <span
+                          role="cell"
+                          className={`${MONO} text-right text-[13px] font-semibold`}
+                        >
+                          {fmtPeso(Number(po.totalAmount))}
+                        </span>
+                      )}
 
                       <span role="cell" className="flex min-w-0">
                         {po.fromPr ? (
@@ -915,53 +948,36 @@ export function PurchaseOrderList({
                 )
               })}
 
-              <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-4 py-[11px]">
-                <span className="text-[11.5px] text-ink-muted">
-                  {/* Requests alone can fill the table, so 0 orders is possible. */}
-                  {pagination.total === 0
-                    ? 'No orders yet'
-                    : `Showing ${(page - 1) * pagination.limit + 1}–${Math.min(page * pagination.limit, pagination.total)} of ${pagination.total} orders`}
-                  {inlineRequests.length > 0 &&
-                    ` · ${inlineRequests.length} open ${inlineRequests.length === 1 ? 'request' : 'requests'}`}
-                </span>
-                <div className="flex items-center gap-[10px]">
-                  <span className="text-[11.5px] text-ink-muted">Rows</span>
-                  <select
-                    value={limit}
-                    onChange={(e) => setLimit(Number(e.target.value))}
-                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[9px] py-1.5 text-[12px] text-[#3d3d4a]"
-                  >
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setPage(page - 1)}
-                      disabled={page <= 1}
-                      className="rounded-[7px] border border-[#e4e4e9] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] disabled:text-ink-faint"
-                    >
-                      Previous
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPage(page + 1)}
-                      disabled={page >= pagination.totalPages}
-                      className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:text-ink-faint"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <ListFooterPager
+                page={page}
+                pageCount={pagination.totalPages}
+                total={pagination.total}
+                limit={limit}
+                noun="orders"
+                onPageChange={setPage}
+                onLimitChange={setLimit}
+                summary={
+                  <>
+                    {/* Requests alone can fill the table, so 0 orders is possible. */}
+                    {pagination.total === 0
+                      ? 'No orders yet'
+                      : `Showing ${(page - 1) * pagination.limit + 1}–${Math.min(page * pagination.limit, pagination.total)} of ${pagination.total} orders`}
+                    {inlineRequests.length > 0 &&
+                      ` · ${inlineRequests.length} open ${inlineRequests.length === 1 ? 'request' : 'requests'}`}
+                  </>
+                }
+              />
             </div>
           )}
 
           {/* Narrow: cards */}
           {showTable && (
             <div className="flex flex-col gap-[10px] p-3 min-[1080px]:hidden">
-              <RequestCards items={inlineRequests} actions={requests.actions} />
+              <RequestCards
+                items={inlineRequests}
+                actions={requests.actions}
+                showTotal={showPrices}
+              />
               {rows.map((po) => {
                 const late = daysLate(po)
                 const { received, ordered, pct } = receiptTotals(po.lines)
@@ -997,9 +1013,11 @@ export function PurchaseOrderList({
                           </span>
                         )}
                       </div>
-                      <span className={`${MONO} ml-auto text-[14px] font-semibold`}>
-                        {fmtPeso(Number(po.totalAmount))}
-                      </span>
+                      {showPrices && (
+                        <span className={`${MONO} ml-auto text-[14px] font-semibold`}>
+                          {fmtPeso(Number(po.totalAmount))}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex flex-col gap-[5px]">
@@ -1069,22 +1087,22 @@ export function PurchaseOrderList({
           {showOrders && isLoading && (
             <div>
               <div
-                className={`${GRID} ${STOCK_TABLE_HEAD} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] min-[1080px]:grid`}
+                className={`${grid} ${STOCK_TABLE_HEAD} hidden border-b border-[#eeeef1] bg-[#fbfbfc] px-4 py-[9px] min-[1080px]:grid`}
               >
                 <span>PO code</span>
                 <span>Supplier</span>
                 <span>Status</span>
-                <span className="text-right">Total</span>
+                {showPrices && <span className="text-right">Total</span>}
                 <span>Source</span>
                 <span>Receiving</span>
                 <span className="text-right">Actions</span>
               </div>
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className={`${GRID} border-t border-[#f4f4f6] px-4 py-[14px]`}>
+                <div key={i} className={`${grid} border-t border-[#f4f4f6] px-4 py-[14px]`}>
                   <SkeletonBar />
                   <SkeletonBar />
                   <SkeletonBar wide />
-                  <SkeletonBar />
+                  {showPrices && <SkeletonBar />}
                   <SkeletonBar />
                   <SkeletonBar />
                   <SkeletonBar wide />
@@ -1240,6 +1258,7 @@ export function PurchaseOrderList({
         canReceive={canReceive}
         canClose={canClose}
         canEdit={canEdit}
+        showPrices={showPrices}
         isDownloading={
           effectiveDetailsTarget != null && downloadingId === effectiveDetailsTarget.id
         }
@@ -1281,7 +1300,11 @@ export function PurchaseOrderList({
       {requests.actions.modals}
 
       <PoReceiptsPanel po={receiptsTarget} onClose={() => setReceiptsTarget(null)} />
-      <PoViewPanel po={poViewTarget} onClose={() => setPoViewTarget(null)} />
+      <PoViewPanel
+        po={poViewTarget}
+        onClose={() => setPoViewTarget(null)}
+        showPrices={showPrices}
+      />
 
       {/* The receive screen stays open after posting to show the receipt it
           created (its RR number, what was posted, whether the PO is closed),

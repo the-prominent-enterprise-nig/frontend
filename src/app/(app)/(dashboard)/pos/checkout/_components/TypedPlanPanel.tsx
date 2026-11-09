@@ -37,6 +37,22 @@ const money = (n: number) =>
 const fieldClass =
   'w-32 rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-right text-[13px] outline-none focus:border-prominent-purple-400 focus:ring-2 focus:ring-prominent-purple-100'
 
+/** A money field: the same field with room in front for the peso sign. */
+const moneyFieldClass = fieldClass.replace('px-2', 'pl-6 pr-2')
+
+/** The peso sign in front of a money field (Nov UAT #28) — a number input
+ * can't hold it in its value. */
+function PesoPrefix() {
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-[13px] text-gray-500"
+    >
+      ₱
+    </span>
+  )
+}
+
 const linkClass =
   'text-xs font-medium text-prominent-purple-500 underline decoration-dotted underline-offset-2 hover:text-prominent-purple-700'
 
@@ -83,16 +99,19 @@ export default function TypedPlanPanel({
 
       <label className="flex items-center justify-between gap-3 text-xs text-gray-700">
         Down payment
-        <input
-          type="number"
-          min={0}
-          step="0.01"
-          inputMode="decimal"
-          aria-label="Typed down payment"
-          value={line.downPaymentInput ?? ''}
-          onChange={(e) => onPatch(lineIds, { downPaymentInput: e.target.value })}
-          className={fieldClass}
-        />
+        <span className="relative">
+          <PesoPrefix />
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            inputMode="decimal"
+            aria-label="Typed down payment"
+            value={line.downPaymentInput ?? ''}
+            onChange={(e) => onPatch(lineIds, { downPaymentInput: e.target.value })}
+            className={moneyFieldClass}
+          />
+        </span>
       </label>
       <label className="flex items-center justify-between gap-3 text-xs text-gray-700">
         Months
@@ -110,16 +129,19 @@ export default function TypedPlanPanel({
       </label>
       <label className="flex items-center justify-between gap-3 text-xs text-gray-700">
         Monthly installment
-        <input
-          type="number"
-          min={0}
-          step="0.01"
-          inputMode="decimal"
-          aria-label="Typed monthly installment"
-          value={line.manualMonthlyInput ?? ''}
-          onChange={(e) => onPatch(lineIds, { manualMonthlyInput: e.target.value })}
-          className={fieldClass}
-        />
+        <span className="relative">
+          <PesoPrefix />
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            inputMode="decimal"
+            aria-label="Typed monthly installment"
+            value={line.manualMonthlyInput ?? ''}
+            onChange={(e) => onPatch(lineIds, { manualMonthlyInput: e.target.value })}
+            className={moneyFieldClass}
+          />
+        </span>
       </label>
       <label className="flex items-center justify-between gap-3 text-xs text-gray-700">
         First due date

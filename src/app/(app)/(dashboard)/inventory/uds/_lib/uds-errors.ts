@@ -25,7 +25,7 @@ const UDS_ERROR_MESSAGES: Record<string, string> = {
   use_release_to_customer_to_close_a_customer_owned_uds:
     'This unit belongs to the customer — close it with Release to Customer, which issues the DR they sign for.',
   use_dispatch_to_provider_or_receive_from_provider_for_this_status:
-    'Use Send to Service Centre or Receive Back for this step.',
+    'Use DR to Service Center or Receive Back for this step.',
   uds_is_with_a_repair_provider_receive_it_back_first:
     'The service centre still has this unit — receive it back first.',
   uds_is_still_with_a_repair_provider_receive_it_back_first:

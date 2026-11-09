@@ -1,5 +1,6 @@
 'use client'
 
+import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { useCallback, useEffect, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -26,17 +27,19 @@ const PRIMARY_PILL_STATUSES: TransferStatus[] = [
   'in_transit',
   'received',
   'rejected',
+  // Always shown (NIG, 2026-11-09): branches withdraw caravan requests now,
+  // and a pill that only appears once something is in it reads as missing.
+  'cancelled',
 ]
 
 // Shown only when something is actually in them. They are real states the
 // backend can put a transfer in, so hiding them outright would make those
-// rows impossible to filter to — but showing four permanently-zero pills
-// would bury the five that matter.
+// rows impossible to filter to — but showing three permanently-zero pills
+// would bury the ones that matter.
 const SECONDARY_PILL_STATUSES: TransferStatus[] = [
   'pending_manager_approval',
   'pending_hq_approval',
   'partially_received',
-  'cancelled',
 ]
 
 function lineTotals(lines: TransferSummary['lines']): { total: number; received: number } {
@@ -205,6 +208,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
     resetFilters,
     page,
     setPage,
+    limit,
+    setLimit,
     selectedTransfer,
     setSelectedTransfer,
     transferDetail,
@@ -254,21 +259,29 @@ export default function TransferList({ session }: { session: SessionUser }) {
   // Only a warehouse branch's own staff act for its region's standalone
   // warehouse — a store branch is limited to itself (mirrors the backend's
   // resolveActorRegion).
+  // The Business Owner and the Branch Manager are exempt from the
+  // dispatcher-is-never-the-receiver rule (mirrors the backend's receive()).
+  const exemptFromDispatcherRule =
+    hasRole(session, 'Business Owner') || hasRole(session, 'Branch Manager')
   const ownBranch = branchOptions.find((b) => b.id === session.branchId)
   const currentUserRegion = ownBranch?.type === 'warehouse' ? (ownBranch.region ?? null) : null
-  const inScope = (warehouseBranchId: string | null | undefined, warehouseRegion?: string | null) =>
+  // A caravan the user's branch hosts counts as theirs (see TransferDetailModal).
+  const inScope = (wh: TransferSummary['toWarehouse'] | null | undefined): boolean =>
     !session.branchId ||
-    warehouseBranchId === session.branchId ||
-    (warehouseBranchId === null && warehouseRegion === currentUserRegion)
+    wh?.branchId === session.branchId ||
+    (wh?.branchId === null && wh?.region === currentUserRegion) ||
+    (!!wh?.branch?.hostBranch && wh.branch.hostBranch.id === session.branchId)
 
   // One action per row instead of a cluster of per-status buttons. The row
   // always offers something — it falls back to "View" — so the column never
   // renders an empty cell.
   function rowAction(tr: TransferSummary): { label: string; primary: boolean } {
-    const fromInScope = inScope(tr.fromWarehouse?.branchId, tr.fromWarehouse?.region)
-    const toInScope = inScope(tr.toWarehouse?.branchId, tr.toWarehouse?.region)
-    // The dispatcher is never the receiver (WH-01).
-    const canReceiveThis = canReceive && toInScope && tr.dispatchedById !== session.id
+    const fromInScope = inScope(tr.fromWarehouse)
+    const toInScope = inScope(tr.toWarehouse)
+    // The dispatcher is never the receiver (WH-01) — except the Business Owner
+    // and the Branch Manager.
+    const canReceiveThis =
+      canReceive && toInScope && (exemptFromDispatcherRule || tr.dispatchedById !== session.id)
 
     if (
       tr.status === 'pending_manager_approval' &&
@@ -303,6 +316,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
     itemLabel?: string
     quantity?: number
     pinnedLines?: { itemId: string; itemLabel?: string; serialNumberId: string }[]
+    toMain?: boolean
+    reason?: string
   } | null>(null)
 
   // Item 360's Stock tab "Request transfer" deep-links here with a source
@@ -327,11 +342,13 @@ export default function TransferList({ session }: { session: SessionUser }) {
   )
 
   useEffect(() => {
-    const stockDraft = consumeStockTransferDraft()
+    const stockDraft = consumeStockTransferDraft(session.id)
     if (stockDraft) {
       setCreateDraft({
         fromWarehouseId: stockDraft.fromWarehouseId,
         pinnedLines: stockDraft.pinnedLines,
+        toMain: stockDraft.toMain,
+        reason: stockDraft.reason,
       })
       setIsCreateOpen(true)
       return
@@ -763,37 +780,17 @@ export default function TransferList({ session }: { session: SessionUser }) {
             </div>
           )}
 
-          {/* Footer — always present alongside rows so the result count stays
-              visible even on a single page. */}
+          {/* Footer — the shared Stock Transactions pager. */}
           {!isLoading && transfers.length > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-[14px] border-t border-[#e4e4e9] bg-[#fbfbfc] px-[18px] py-[11px]">
-              <span className="text-[11.5px] text-[#3d3d4a]">
-                Showing {transfers.length} of {pagination.total} transfers
-              </span>
-              {pagination.totalPages > 1 && (
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setPage(Math.max(1, page - 1))}
-                    disabled={page <= 1}
-                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-[6px] text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:border-[#e4e4e9] disabled:text-ink-faint"
-                  >
-                    Previous
-                  </button>
-                  <span className="px-2 text-[12px] font-medium text-[#3d3d4a]">
-                    {page} / {pagination.totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                    disabled={page >= pagination.totalPages}
-                    className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-[6px] text-[12px] text-[#17171c] hover:border-[#a3a3b2] disabled:border-[#e4e4e9] disabled:text-ink-faint"
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
-            </div>
+            <ListFooterPager
+              page={page}
+              pageCount={pagination.totalPages}
+              total={pagination.total}
+              limit={limit}
+              noun="transfers"
+              onPageChange={setPage}
+              onLimitChange={setLimit}
+            />
           )}
         </div>
       </div>
@@ -841,6 +838,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         canManagerReject={canManagerReject}
         currentUserBranchId={session.branchId}
         currentUserId={session.id}
+        currentUserExemptFromDispatcherRule={exemptFromDispatcherRule}
         currentUserRegion={currentUserRegion}
         onAccept={acceptTransfer}
         onReject={rejectTransfer}

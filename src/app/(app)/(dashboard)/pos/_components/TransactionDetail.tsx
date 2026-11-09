@@ -948,6 +948,9 @@ function SaleAccountCards({
           {account && canSeeCommission && (
             <Field label="Commission" value={formatCurrency(account.commission ?? 0)} />
           )}
+          {account && canSeeCommission && (
+            <Field label="SMI" value={formatCurrency(account.smi ?? 0)} />
+          )}
         </CardGrid>
       )}
     </>

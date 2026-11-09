@@ -5,8 +5,7 @@ import { gotoReady, loginAs } from './utils'
 // One sidebar row per group, each with a tab strip in the POS top bar:
 //
 //   Sales Counter        Overview | Checkout | Reservations | Transactions | Parked Sales
-//   Product Catalog      Product Catalog | Price Lists (not a Sales Counter tab, and Price
-//                        Lists not under Operations & Admin, on purpose)
+//   Product Catalog      Product Catalog alone, view-only (not a Sales Counter tab, on purpose)
 //   Credit & Collections Collections | Credit Applications | Customers — the customer's
 //                        account, in the client's order (Customers kept in POS on purpose)
 //   Pricing & Promotion  Promotions → second row: Promo Codes | Gift Cards | Loyalty
@@ -15,7 +14,8 @@ import { gotoReady, loginAs } from './utils'
 //   Approvals & Reviews  Price Override Log | Unit Release Approvals | Refund Approvals |
 //                        Void Requests | Cancellations
 //   Reports              Daily Collection | Sales Reports | Sales Quotas
-//   Operations & Admin   Service Jobs | POS PIN | Settings
+//   Operations & Admin   Service Jobs | POS PIN | Price Lists (Head Office and Business
+//                        Owner only) | Settings
 //
 // The tab definitions and each page's permission live in pos/_shared/pos-hubs.ts.
 //
@@ -137,15 +137,15 @@ test.describe('POS sidebar — Business Owner', () => {
     await expect(row(page, 'Product Catalog')).toHaveClass(lit)
   })
 
-  test('Product Catalog and Price Lists share one strip', async ({ page }) => {
+  test('Product Catalog is one view-only page: no strip, no Edit', async ({ page }) => {
     await gotoReady(page, '/pos/catalog')
-    expect(await tabOrder(page)).toEqual(['Product Catalog', 'Price Lists'])
+    // A group of one tab draws no strip.
+    await expect(strip(page)).toHaveCount(0)
     // Stock is per branch, so the catalog keeps the shared switcher …
     await expect(page.getByTestId('pos-branch-switcher')).toBeVisible()
-
-    // … and Price Lists, scoped by their own branch filter, do not.
-    await clickTab(page, 'Price Lists', '/pos/catalog/price-lists')
-    await expect(page.getByTestId('pos-branch-switcher')).toHaveCount(0)
+    // … and nothing on a row edits the item (Price Lists left for Operations & Admin).
+    await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0)
+    await expect(row(page, 'Price Lists')).toHaveCount(0)
   })
 
   test('Pricing & Promotion: Promotions (with its three pages) and Price Maker', async ({
@@ -241,29 +241,34 @@ test.describe('POS sidebar — Business Owner', () => {
     await clickTab(page, 'Sales Reports', '/pos/reports')
   })
 
-  test('Price Lists keeps the strip, and the Product Catalog row, on its list and upload pages', async ({
+  test('Price Lists keeps the strip, and the Operations & Admin row, on its list and upload pages', async ({
     page,
   }) => {
     const lit = /bg-prominent-orange-200\/20/
 
-    await gotoReady(page, '/pos/catalog/price-lists')
+    await gotoReady(page, '/pos/price-lists')
     await expect(page.getByRole('heading', { name: 'Price Lists' })).toBeVisible({
       timeout: 10_000,
     })
-    await expectTabs(page, ['Product Catalog', 'Price Lists'])
-    await expect(row(page, 'Product Catalog')).toHaveClass(lit)
+    await expectTabs(page, ['Service Jobs', 'POS PIN', 'Price Lists', 'Settings'])
+    await expect(row(page, 'Operations & Admin')).toHaveClass(lit)
+    // Only the one row is lit: the old home, under /pos/catalog, is gone.
+    await expect(row(page, 'Product Catalog')).not.toHaveClass(lit)
 
-    await gotoReady(page, '/pos/catalog/price-lists/upload')
-    await expectTabs(page, ['Product Catalog', 'Price Lists'])
-    await expect(row(page, 'Product Catalog')).toHaveClass(lit)
+    await gotoReady(page, '/pos/price-lists/upload')
+    await expectTabs(page, ['Service Jobs', 'POS PIN', 'Price Lists', 'Settings'])
+    await expect(row(page, 'Operations & Admin')).toHaveClass(lit)
     await expect(page.getByTestId('pos-branch-switcher')).toHaveCount(0)
   })
 
-  test('Operations & Admin holds Service Jobs, POS PIN and Settings', async ({ page }) => {
+  test('Operations & Admin holds Service Jobs, POS PIN, Price Lists and Settings', async ({
+    page,
+  }) => {
     await gotoReady(page, '/pos/customers')
     await clickRow(page, 'Operations & Admin', '/pos/service-jobs')
-    expect(await tabOrder(page)).toEqual(['Service Jobs', 'POS PIN', 'Settings'])
+    expect(await tabOrder(page)).toEqual(['Service Jobs', 'POS PIN', 'Price Lists', 'Settings'])
 
+    await clickTab(page, 'Price Lists', '/pos/price-lists')
     await clickTab(page, 'POS PIN', '/pos/pin')
     // Settings keeps its own left rail; the strip sits above it.
     await clickTab(page, 'Settings', /\/pos\/settings\/general$/)
@@ -333,6 +338,27 @@ test.describe('POS sidebar — Cashier', () => {
     await expect(page).toHaveURL(/\/pos\/(service-jobs|pin)$/, NAVIGATED)
     // Settings is Business Owner / Branch Manager only.
     await expectTabs(page, ['POS PIN'], ['Settings'])
+  })
+})
+
+test.describe('POS sidebar — Branch Manager', () => {
+  // The real role boundary, so it opts out of the shared Business Owner state.
+  test.use({ storageState: { cookies: [], origins: [] } })
+  const MANAGER_EMAIL = process.env.E2E_MANAGER_EMAIL ?? 'technova.b1.manager@test.com'
+
+  test('Price Lists is Head Office only: no tab for a branch manager, and the route is refused', async ({
+    page,
+  }) => {
+    await loginAs(page, MANAGER_EMAIL, PASSWORD)
+    // Branch Manager's inventory wildcard reaches the permission; the branch does not.
+    await gotoReady(page, '/pos/admin')
+    await expect(page).toHaveURL(/\/pos\/(service-jobs|pin|settings\/general)$/, NAVIGATED)
+    await expectTabs(page, ['Settings'], ['Price Lists'])
+
+    await page.goto('/pos/price-lists', { waitUntil: 'domcontentloaded' })
+    await expect(page).toHaveURL(/\/403$/, NAVIGATED)
+    await page.goto('/pos/price-lists/upload', { waitUntil: 'domcontentloaded' })
+    await expect(page).toHaveURL(/\/403$/, NAVIGATED)
   })
 })
 

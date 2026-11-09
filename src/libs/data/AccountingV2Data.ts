@@ -1102,6 +1102,9 @@ export interface UpdateAcknowledgementReceiptInput {
   reason?: string
   amount?: number
   correctionReason?: string
+  /** Why the receipt is being changed. Required of the Business Owner
+   * (pos:new-receipts:edit); kept in the audit log. */
+  editReason?: string
   paymentDate?: string
   receiptType?: 'COLLECTION' | 'ACKNOWLEDGEMENT'
   method?: PaymentMethod
@@ -2265,6 +2268,10 @@ export interface BusinessExpense {
   branch?: { id: string; name: string } | null
   status: BusinessExpenseStatus
   journalEntryId?: string | null
+  /** Set on a RECORDED expense whose payee, accounts and amounts are frozen
+   * (it settled a special account); the text says why. Description, notes,
+   * voucher number and cost center stay editable. */
+  editLock?: string | null
 }
 /** Print-ready expense voucher — same envelope shape as APBillDocument.
  * Also backs the read-only detail view, so it carries record-only fields
@@ -2485,8 +2492,8 @@ export const Expenses = {
   agentSales: (agentId: string, params?: { search?: string; excludeExpenseId?: string }) =>
     api.get<ExpenseAgentSale[]>(`/expenses/lookups/agents/${agentId}/sales`, params as any),
   /** The sales a commission line can release — one agent's with `agentId`, any agent's without.
-   * With `kind: 'SMI'`, the sales an SMI line can be paid on: any completed sale, and
-   * `releasedOn` means already on another SMI line. */
+   * With `kind: 'SMI'`, the same list for an SMI line, except that `releasedOn` means
+   * already on another SMI line (a commission line on the sale doesn't count). */
   commissionSales: (params?: {
     agentId?: string
     search?: string
@@ -3073,9 +3080,23 @@ export const BankTransfers = {
     branchId?: string
   }) => api.get<FundTransfer[]>('/bank-accounts/transfers', params),
   get: (id: string) => api.get<FundTransfer>(`/bank-accounts/transfers/${id}`),
-  // Only these two fields are editable once posted; null clears a field.
-  update: (id: string, body: { clearingDate?: string | null; reference?: string | null }) =>
-    api.patch<FundTransfer>(`/bank-accounts/transfers/${id}`, body),
+  // Anyone who may transfer can change the clearing date and the reference once
+  // posted (null clears a field). The rest is the Business Owner's, with a reason:
+  // the journal entry is reversed and posted again.
+  update: (
+    id: string,
+    body: {
+      clearingDate?: string | null
+      reference?: string | null
+      date?: string
+      amount?: number
+      sourceBankAccountId?: string
+      destinationBankAccountId?: string
+      description?: string | null
+      branchId?: string | null
+      editReason?: string
+    }
+  ) => api.patch<FundTransfer>(`/bank-accounts/transfers/${id}`, body),
   getDocument: (id: string) => api.get<unknown>(`/bank-accounts/transfers/${id}/document`),
   // Scenario 72 — reverses the transfer's journal entry; the reason is required.
   void: (id: string, reason: string) =>

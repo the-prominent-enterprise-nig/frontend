@@ -19,6 +19,7 @@ export function emptyDrForm(): DrFormValues {
     giveawayRecipient: '',
     issueDate: todayIso(),
     warehouseId: '',
+    issuingHeadOffice: false,
     departmentId: '',
     udsId: '',
     udsLabel: '',
@@ -56,6 +57,8 @@ export function drToFormValues(dr: DrDetail): DrFormValues {
     giveawayRecipient: dr.giveawayRecipient ?? '',
     issueDate: day(dr.issueDate),
     warehouseId: dr.warehouseId,
+    // Filled in by the warehouse field once its list loads.
+    issuingHeadOffice: false,
     departmentId: dr.departmentId ?? '',
     udsId: dr.udsId ?? '',
     udsLabel: dr.uds?.code ?? '',

@@ -664,6 +664,9 @@ export async function itemLookup(
         requiresSecondarySerial: Boolean(item.requiresSecondarySerial),
         brand: (item.brand as { id: string; name: string } | null | undefined) ?? null,
         category: (item.category as { id: string; name: string } | null | undefined) ?? null,
+        // Docket #28 — a price override names the unit's Type; this mapping
+        // is a whitelist, so the field has to be listed here to reach checkout.
+        itemType: (item.itemType as { id: string; name: string } | null | undefined) ?? null,
         modelNumber: (item.modelNumber as string | null | undefined) ?? null,
       }
     })
@@ -1135,11 +1138,16 @@ export async function listCollectionsCustomers(
 }
 
 export async function getCustomerInstallmentSchedules(
-  customerId: string
+  customerId: string,
+  /** POS Collections only — also returns the customer's loaded (aging-sheet)
+   * accounts, each as a one-due plan, so they can be collected there. */
+  options: { withAgingAccounts?: boolean } = {}
 ): Promise<ApiResponse<InstallmentSchedule[]>> {
   try {
     const result = await api.get<InstallmentSchedule[]>(
-      `/pos/customers/${customerId}/installment-schedules`
+      `/pos/customers/${customerId}/installment-schedules${
+        options.withAgingAccounts ? '?withAgingAccounts=true' : ''
+      }`
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch installment schedules' }
