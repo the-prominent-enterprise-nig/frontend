@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { login } from '@/src/libs/auth/actions/login'
+import { clearClientSession } from '@/src/libs/auth/clear-client-session'
 import { LoginSchema, type LoginInput } from '@/src/schema/auth/login'
-import { getQueryClient } from '@/src/libs/query/get-query-client'
 import Link from 'next/link'
 import {
   AlertCircle,
@@ -56,7 +56,9 @@ export default function LoginPage() {
       // their buttons, their reason boxes, their branch's lists. The server still
       // enforces what the new account may do; this only stops the screen from
       // showing the old account's version of it.
-      getQueryClient().clear()
+      // clearClientSession also resets the persisted POS branch and pending-refund
+      // badge, not just the query cache.
+      clearClientSession()
       router.push(result.redirectTo ?? '/')
     } catch {
       setSubmitError('Unable to sign in. Please refresh and try again.')
