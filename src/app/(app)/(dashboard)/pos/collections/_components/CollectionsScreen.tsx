@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import {
   Search,
   AlertTriangle,
-  ArrowLeft,
   Banknote,
   CheckCircle2,
   ChevronDown,
@@ -515,17 +514,7 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
   return (
     <div className="min-h-full w-full bg-zinc-50 p-4 md:p-6 lg:p-8">
       <div className="w-full space-y-6">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="text-zinc-400 hover:text-zinc-600"
-            aria-label="Back"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <h1 className="text-xl font-bold text-prominent-purple-900">Collections</h1>
-        </div>
+        <h1 className="text-xl font-bold text-prominent-purple-900">Collections</h1>
 
         {!customer ? (
           <div className="space-y-3">
@@ -577,14 +566,15 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                     ))}
                   </ul>
                   {/* The aging upload has ~12,700 accounts, so the list stops at the
-                      most overdue (the backend caps it) — the filter reaches the rest. */}
+                      most overdue (the backend caps it, then sorts A–Z) — the filter
+                      reaches the rest. */}
                   {customers.length >= LONG_LIST_AT && (
                     <p
                       data-testid="collections-long-list-hint"
                       className="border-t border-zinc-100 px-5 py-3 text-center text-[12px] text-zinc-500"
                     >
-                      This list shows the most overdue first and stops here. Type a name or phone
-                      above to find anyone else.
+                      This list shows the most overdue accounts, A–Z, and stops here. Type a name or
+                      phone above to find anyone else.
                     </p>
                   )}
                 </>
