@@ -1,6 +1,6 @@
 'use client'
 
-import { MANILA_TZ } from '@/src/libs/format/manila-date'
+import { MANILA_TZ, formatManilaDate } from '@/src/libs/format/manila-date'
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useVoidRequests, useSubmitVoidRequest, useSessions } from '../_hooks/usePos'
@@ -37,8 +37,9 @@ import { useOwnerEdit } from '@/src/components/accounting/EditReasonSection'
 import { RECORDED_SALES_EDIT } from '@/src/libs/guards/explicit-only-permissions'
 import {
   AgentInput,
-  DocNoInput,
+  AmountInput,
   EditEntryBar,
+  InvoiceDateInput,
   useEditEntryForm,
   type EditEntryForm,
 } from './EditEntry'
@@ -111,17 +112,16 @@ export function TransactionDetail({
   const [activeTab, setActiveTab] = useState<'details' | 'void-requests'>('details')
   const [showRefund, setShowRefund] = useState(false)
   const isRefundable = tx.transactionType === 'sale' && tx.status === 'completed'
-  // Ticket #24 follow-up — "Edit entry" beside Refund, in the Transactions
-  // screen's view of a sale: the Business Owner or Sales Admin Clerk
-  // (pos:recorded-sales:edit) puts a sale's numbers and agent right, in place.
-  // No reason is asked; the audit log keeps what each field read before and
-  // after.
+  // Docket #49 — "Edit entry" beside Refund, in the Transactions screen's view
+  // of a sale: the Business Owner or Sales Admin Clerk (pos:recorded-sales:edit)
+  // changes the Invoice Date, Agent, Credit, Commission and SMI for the POS
+  // Sales Report only. No reason is asked; the audit log keeps what each field
+  // read before and after.
   const canEditEntry = useOwnerEdit(RECORDED_SALES_EDIT) && isFull && tx.transactionType === 'sale'
   const editEntry = useEditEntryForm(tx)
   const editing = canEditEntry && editEntry.editing
-  // Price Used and Credit are per-unit figures of an installment account, so
-  // only a sale that opened one has them — and only the full view has room.
-  const showUnitFigures = isFull && !!tx.accountSummary
+  // Price Used and Credit show on every sale type; only the full view has room.
+  const showUnitFigures = isFull
   // Escape closes the full view, as the × does — not while Edit entry or the
   // Refund pop-up is open (Cancel / their own close handle those).
   useEffect(() => {
@@ -133,12 +133,12 @@ export function TransactionDetail({
     return () => window.removeEventListener('keydown', onKey)
   }, [isFull, editing, showRefund, onClose])
   // Edit entry opens with the modal scrolled up to the first box to edit (the
-  // SI / DR No.), the cursor in it: Edit entry sits at the very bottom.
+  // Invoice Date), the cursor in it: Edit entry sits at the very bottom.
   const dialogRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!editing) return
     const first = dialogRef.current?.querySelector<HTMLInputElement>(
-      '[data-testid="edit-entry-doc-no"]'
+      '[data-testid="edit-entry-invoice-date"]'
     )
     first?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     first?.focus({ preventScroll: true })
@@ -301,7 +301,9 @@ export function TransactionDetail({
                   tx={tx}
                   customerName={customerName}
                   card={card}
-                  canSeeCommission={tx.accountSummary?.commission != null}
+                  canSeeCommission={
+                    tx.accountSummary?.commission != null || tx.saleCommission != null
+                  }
                   edit={editing ? editEntry : null}
                 />
               )}
@@ -397,7 +399,7 @@ export function TransactionDetail({
                             <td className="py-1.5 pl-2 text-right text-gray-600">
                               {tx.accountSummary?.lineCredits[l.id] != null
                                 ? formatCurrency(tx.accountSummary.lineCredits[l.id])
-                                : ''}
+                                : '—'}
                             </td>
                           )}
                         </tr>
@@ -1019,11 +1021,32 @@ function EditField({
   )
 }
 
-function Field({ label, value }: { label: string; value: React.ReactNode }): React.JSX.Element {
+function Field({
+  label,
+  value,
+  reportValue,
+}: {
+  label: string
+  value: React.ReactNode
+  /** Docket #49: what Edit entry changed this to, for the Sales Report only.
+   * Shows as a second figure under the recorded one. */
+  reportValue?: string | null
+}): React.JSX.Element {
   return (
     <div className="min-w-0">
       <p className="text-xs text-gray-500">{label}</p>
       <p className="mt-1 break-words text-base font-semibold text-gray-900">{value}</p>
+      {reportValue && (
+        <p
+          className="mt-1 flex flex-wrap items-center gap-2 text-base font-semibold text-gray-900"
+          data-testid="report-edit-note"
+        >
+          <span className="break-words">{reportValue}</span>
+          <span className="rounded-full bg-prominent-purple-50 px-2 py-0.5 text-[11px] font-semibold text-prominent-purple-700">
+            In Sales Report
+          </span>
+        </p>
+      )}
     </div>
   )
 }
@@ -1092,64 +1115,95 @@ function SaleAccountCards({
   customerName: string | null
   card: string
   canSeeCommission: boolean
-  /** Edit entry is open: the SI / DR No. and the agent are inputs, in place. */
+  /** Edit entry is open: the fields it changes are inputs, in place. */
   edit: EditEntryForm | null
 }): React.JSX.Element {
   const account = tx.accountSummary
   const priceUses = [...new Set((tx.lines ?? []).map((l) => l.priceUseName).filter(Boolean))]
   const agentName = account?.agentName ?? tx.sellingAgent?.name ?? null
+  // Every sale type gets the same cards (client, Nov 9: "only In-house
+  // installment has this format"); what an installment account alone has
+  // reads "—" on a cash, charge or TPF sale.
+  const money = (n: number | null | undefined): string => (n == null ? '—' : formatCurrency(n))
+  const commission = account ? account.commission : (tx.saleCommission?.commission ?? null)
+  const smi = account ? account.smi : (tx.saleCommission?.smi ?? null)
+  const edited = tx.reportEdit
+  const editedMoney = (n: number | null | undefined): string | null =>
+    n == null ? null : formatCurrency(n)
 
   return (
     <>
       <CardGrid title="Sale" card={card}>
+        <Field
+          label={tx.deliveryReceiptNumber ? 'Delivery Receipt No.' : 'Sales Invoice No.'}
+          value={saleDocNo(tx)}
+        />
+        <Field label="Customer" value={customerName ?? '—'} />
+        <Field label="Branch" value={tx.session?.terminal?.branch?.name ?? '—'} />
         {edit ? (
-          <EditField
-            label={tx.deliveryReceiptNumber ? 'Delivery Receipt No.' : 'Sales Invoice No.'}
-          >
-            <DocNoInput
-              form={edit}
-              label={tx.deliveryReceiptNumber ? 'Delivery Receipt No.' : 'Sales Invoice No.'}
-            />
+          <EditField label="Invoice Date">
+            <InvoiceDateInput form={edit} />
           </EditField>
         ) : (
           <Field
-            label={tx.deliveryReceiptNumber ? 'Delivery Receipt No.' : 'Sales Invoice No.'}
-            value={saleDocNo(tx)}
+            label="Invoice Date"
+            value={formatManilaDate(tx.occurredAt ?? tx.createdAt)}
+            reportValue={
+              edited?.invoiceDate ? formatManilaDate(`${edited.invoiceDate}T00:00:00.000Z`) : null
+            }
           />
         )}
-        <Field label="Customer" value={customerName ?? '—'} />
-        <Field label="Branch" value={tx.session?.terminal?.branch?.name ?? '—'} />
       </CardGrid>
 
-      {account && (
-        <CardGrid title="Account details" card={card}>
-          <Field label="LCP" value={formatCurrency(account.listedCashPrice)} />
-          <Field label="Downpayment" value={formatCurrency(account.downPayment)} />
-          <Field label="Terms" value={termsLabel(account.termMonths)} />
-          <Field label="Monthly installment" value={formatCurrency(account.monthlyInstallment)} />
-          <Field label="Rebate" value={formatCurrency(account.rebate)} />
-          <Field label="Price used" value={priceUses.length ? priceUses.join(', ') : '—'} />
-        </CardGrid>
-      )}
+      <CardGrid title="Account details" card={card}>
+        <Field label="LCP" value={money(account?.listedCashPrice)} />
+        <Field label="Downpayment" value={money(account?.downPayment)} />
+        <Field label="Terms" value={account ? termsLabel(account.termMonths) : '—'} />
+        <Field label="Monthly installment" value={money(account?.monthlyInstallment)} />
+        <Field label="Rebate" value={money(account?.rebate)} />
+        <Field label="Price used" value={priceUses.length ? priceUses.join(', ') : '—'} />
+      </CardGrid>
 
-      {(account || agentName || edit) && (
-        <CardGrid title={account ? 'Agent and credit' : 'Agent'} card={card}>
-          {edit ? (
-            <EditField label="Agent">
-              <AgentInput form={edit} />
+      <CardGrid title="Agent and credit" card={card}>
+        {edit ? (
+          <EditField label="Agent">
+            <AgentInput form={edit} />
+          </EditField>
+        ) : (
+          <Field label="Agent" value={agentName ?? '—'} reportValue={edited?.agentName} />
+        )}
+        {edit ? (
+          <EditField label="Credit">
+            <AmountInput form={edit} field="credit" />
+          </EditField>
+        ) : (
+          <Field
+            label="Credit"
+            value={money(account?.amountFinanced)}
+            reportValue={editedMoney(edited?.credit)}
+          />
+        )}
+        {canSeeCommission &&
+          (edit ? (
+            <EditField label="Commission">
+              <AmountInput form={edit} field="commission" />
             </EditField>
           ) : (
-            <Field label="Agent" value={agentName ?? '—'} />
-          )}
-          {account && <Field label="Credit" value={formatCurrency(account.amountFinanced)} />}
-          {account && canSeeCommission && (
-            <Field label="Commission" value={formatCurrency(account.commission ?? 0)} />
-          )}
-          {account && canSeeCommission && (
-            <Field label="SMI" value={formatCurrency(account.smi ?? 0)} />
-          )}
-        </CardGrid>
-      )}
+            <Field
+              label="Commission"
+              value={money(commission ?? 0)}
+              reportValue={editedMoney(edited?.commission)}
+            />
+          ))}
+        {canSeeCommission &&
+          (edit ? (
+            <EditField label="SMI">
+              <AmountInput form={edit} field="smi" />
+            </EditField>
+          ) : (
+            <Field label="SMI" value={money(smi ?? 0)} reportValue={editedMoney(edited?.smi)} />
+          ))}
+      </CardGrid>
     </>
   )
 }

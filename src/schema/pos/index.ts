@@ -465,6 +465,23 @@ export interface PosTransaction {
    * printed beside the receipt. Null for a sale that opened no account
    * (cash, charge, partner financing). */
   accountSummary?: PosSaleAccountSummary | null
+  /** Set by GET /pos/transactions/:id for a sale with no installment account
+   * (cash, charge, TPF): its recorded commission and SMI, read the same way
+   * as the account summary's. Null when the viewer may not read agents. */
+  saleCommission?: { commission: number; smi: number } | null
+  /** Docket #49: what Edit entry changed for the POS Sales Report. Null when
+   * nothing has been; a null field inside is not edited. */
+  reportEdit?: PosSaleReportEdit | null
+}
+
+export interface PosSaleReportEdit {
+  agentId: string | null
+  agentName: string | null
+  credit: number | null
+  commission: number | null
+  smi: number | null
+  /** 'YYYY-MM-DD'. */
+  invoiceDate: string | null
 }
 
 /** Decimals arrive as numbers here — the backend rounds them for display. */

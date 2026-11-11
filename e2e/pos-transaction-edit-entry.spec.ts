@@ -1,13 +1,12 @@
 import { test, expect, type Page } from '@playwright/test'
 import { gotoReady, fillStable, loginAs } from './utils'
 
-// Ticket #24 follow-up (client comment, Nov 9): the mockup of a transaction
-// page has "Edit entry" beside Refund, and "it is not editable". The Business
-// Owner clicks Edit entry and the sale's own fields turn into inputs where
-// they are in the transaction modal (NIG's mockup) — the SI / DR No. and
-// the agent — with Save below. A payment's CR # is not editable (it is also
-// on the collection receipt). The Business Owner and the Sales Admin Clerk only (the server
-// test pos-edit-recorded-sale covers the clerk); branch staff don't see it.
+// Docket #49: the Business Owner and the Sales Admin Clerk (the server test
+// pos-edit-recorded-sale covers the clerk) click Edit entry on a sale, and its
+// Invoice Date, Agent, Credit, Commission and SMI turn into inputs where they
+// are in the transaction modal, with Save below. A saved edit only changes the
+// POS Sales Report: the sale keeps what it recorded, and the modal notes the
+// edit under the field. Branch staff don't see the button.
 //
 // Setup goes through the API: a cash sale at Bago with an agent and a cash
 // payment carrying a CR #.
@@ -130,70 +129,91 @@ async function pickAgent(page: Page, name: string): Promise<void> {
   await page.getByTestId('searchable-select-option').filter({ hasText: name }).first().click()
 }
 
-test('the owner edits the SI No. and agent in place in the transaction modal and saves; the CR # is not editable', async ({
+const openEdit = async (page: Page, id: string): Promise<void> => {
+  await gotoReady(page, `/pos/transactions/${id}`)
+  await page.getByRole('button', { name: 'Edit entry' }).click({ timeout: 15_000 })
+}
+
+const box = (page: Page, name: string) => page.getByLabel(name, { exact: true })
+
+test('the owner changes the five fields in place; only the Sales Report figures change', async ({
   page,
 }) => {
   const stamp = Date.now()
   const { id, si, firstAgent, secondAgent } = await saleWithAgentAndPayment(page, stamp)
 
   await gotoReady(page, `/pos/transactions/${id}`)
-  await expect(page.getByText(firstAgent.name).first()).toBeVisible({ timeout: 15_000 })
-  // Beside Refund, as in the mockup.
+  const modal = page.getByTestId('transaction-modal')
+  await expect(modal.getByText(firstAgent.name).first()).toBeVisible({ timeout: 15_000 })
+  // The Invoice Date shows on the transaction.
+  await expect(modal.getByText('Invoice Date', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Refund' })).toBeVisible()
   await page.getByRole('button', { name: 'Edit entry' }).click()
 
-  // In place in the transaction modal — no second pop-up — with Save below.
-  await expect(page.getByTestId('transaction-modal').getByTestId('edit-entry-bar')).toBeVisible()
-  await expect(page.getByTestId('transaction-modal')).toHaveCount(1)
-  await expect(page.getByRole('button', { name: 'Refund' })).toHaveCount(0)
-  const docNo = page.getByLabel('Sales Invoice No.', { exact: true })
-  await expect(docNo).toHaveValue(si)
+  // In place in the modal, no second pop-up, starting at the Invoice Date.
+  await expect(modal.getByTestId('edit-entry-bar')).toContainText(
+    'These changes only show in the POS Sales Report.'
+  )
+  await expect(page.getByTestId('edit-entry-invoice-date')).toBeFocused()
 
-  await fillStable(docNo, `${si}-FIXED`)
-  await pickAgent(page, secondAgent.name)
-  // The CR # stays as text: no box for it.
+  // The SI / DR No. and the CR # stay as text.
+  await expect(box(page, 'Sales Invoice No.')).toHaveCount(0)
   await expect(page.getByLabel(/^Reference no\./)).toHaveCount(0)
-  await expect(page.getByText(`Reference # CR-${stamp}`)).toBeVisible()
 
+  await box(page, 'Invoice Date').fill('2026-10-05')
+  await pickAgent(page, secondAgent.name)
+  await fillStable(box(page, 'Credit'), '27,450')
+  await fillStable(box(page, 'Commission'), '653.57')
+  await fillStable(box(page, 'SMI'), '150')
   await page.getByRole('button', { name: 'Save changes' }).click()
   await expect(page.getByText('Entry updated')).toBeVisible({ timeout: 15_000 })
 
-  // Back to reading: the new values show, and Refund / Edit entry are back.
+  // The modal still reads as recorded, with each edit noted under its field.
   await expect(page.getByTestId('edit-entry-bar')).toHaveCount(0)
-  await expect(page.getByRole('heading', { level: 2 })).toHaveText(`${si}-FIXED`)
-  await expect(page.getByText(secondAgent.name).first()).toBeVisible()
+  await expect(modal.getByRole('heading', { level: 2 })).toHaveText(si)
   await expect(page.getByText(`Reference # CR-${stamp}`)).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Edit entry' })).toBeVisible()
+  await expect(modal.getByText(firstAgent.name).first()).toBeVisible()
+  const notes = modal.getByTestId('report-edit-note')
+  await expect(notes).toHaveCount(5)
+  await expect(notes.filter({ hasText: secondAgent.name })).toHaveCount(1)
+  await expect(notes.filter({ hasText: '27,450.00' })).toHaveCount(1)
+  await expect(notes.filter({ hasText: '10/5/2026' })).toHaveCount(1)
 
-  // Saved on the server, and the list finds the sale by its new number.
+  // On the server: the sale as recorded, the edits apart.
   const detail = await (await page.request.get(`/api/pos/transactions/${id}`)).json()
-  expect(detail.salesInvoiceNumber).toBe(`${si}-FIXED`)
-  expect(detail.sellingAgent?.id).toBe(secondAgent.id)
+  expect(detail.salesInvoiceNumber).toBe(si)
+  expect(detail.sellingAgent?.id).toBe(firstAgent.id)
   expect(detail.payments[0].referenceNumber).toBe(`CR-${stamp}`)
-  await gotoReady(page, '/pos/transactions')
-  await fillStable(page.getByPlaceholder('Search…'), `${si}-FIXED`)
-  await expect(page.locator('tbody tr', { hasText: `${si}-FIXED` })).toBeVisible({
-    timeout: 15_000,
+  expect(detail.reportEdit).toMatchObject({
+    agentId: secondAgent.id,
+    credit: 27450,
+    commission: 653.57,
+    smi: 150,
+    invoiceDate: '2026-10-05',
   })
+
+  // Edit entry opens again on what the report now shows.
+  await page.getByRole('button', { name: 'Edit entry' }).click()
+  await expect(box(page, 'Credit')).toHaveValue('27450')
+  await expect(box(page, 'Invoice Date')).toHaveValue('2026-10-05')
+  await expect(box(page, 'Agent')).toHaveValue(secondAgent.name)
 })
 
 test('Cancel leaves the sale as it was (edge)', async ({ page }) => {
   const stamp = Date.now()
-  const { id, si } = await saleWithAgentAndPayment(page, stamp)
+  const { id } = await saleWithAgentAndPayment(page, stamp)
 
-  await gotoReady(page, `/pos/transactions/${id}`)
-  await page.getByRole('button', { name: 'Edit entry' }).click({ timeout: 15_000 })
-  await fillStable(page.getByLabel('Sales Invoice No.', { exact: true }), 'SHOULD-NOT-SAVE')
+  await openEdit(page, id)
+  await fillStable(box(page, 'Credit'), '999')
   await page.getByRole('button', { name: 'Cancel' }).click()
 
   await expect(page.getByTestId('edit-entry-bar')).toHaveCount(0)
-  await expect(page.getByRole('heading', { level: 2 })).toHaveText(si)
   const detail = await (await page.request.get(`/api/pos/transactions/${id}`)).json()
-  expect(detail.salesInvoiceNumber).toBe(si)
+  expect(detail.reportEdit).toBeNull()
 
-  // Opening it again starts from the sale as recorded, not the discarded text.
+  // Opening it again starts over, not from the discarded text.
   await page.getByRole('button', { name: 'Edit entry' }).click()
-  await expect(page.getByLabel('Sales Invoice No.', { exact: true })).toHaveValue(si)
+  await expect(box(page, 'Credit')).toHaveValue('')
 })
 
 test('saving with nothing changed says so instead of writing an empty edit (edge)', async ({
@@ -202,13 +222,15 @@ test('saving with nothing changed says so instead of writing an empty edit (edge
   const stamp = Date.now()
   const { id } = await saleWithAgentAndPayment(page, stamp)
 
-  await gotoReady(page, `/pos/transactions/${id}`)
-  await page.getByRole('button', { name: 'Edit entry' }).click({ timeout: 15_000 })
+  await openEdit(page, id)
   await page.getByRole('button', { name: 'Save changes' }).click()
   await expect(page.getByTestId('edit-entry-error')).toContainText('Nothing has been changed yet.')
 })
 
-test('a cashier and a branch manager see Refund but no Edit entry', async ({ browser, page }) => {
+test('a cashier and a branch manager see no Edit entry and are refused', async ({
+  browser,
+  page,
+}) => {
   const stamp = Date.now()
   const { id } = await saleWithAgentAndPayment(page, stamp)
 
@@ -224,7 +246,7 @@ test('a cashier and a branch manager see Refund but no Edit entry', async ({ bro
     await expect(other.getByRole('button', { name: 'Edit entry' })).toHaveCount(0)
     // And the server refuses them too.
     const res = await other.request.patch(`/api/pos/transactions/${id}/recorded`, {
-      data: { documentNumber: 'X' },
+      data: { credit: 1 },
     })
     expect(res.status(), email).toBe(403)
     await context.close()
@@ -233,50 +255,32 @@ test('a cashier and a branch manager see Refund but no Edit entry', async ({ bro
 
 // ── More edge cases ──────────────────────────────────────────────────────
 
-test('a Delivery Receipt sale is edited as a DR: the box is labelled Delivery Receipt No.', async ({
-  page,
-}) => {
-  const stamp = Date.now()
-  const { id, si } = await saleWithAgentAndPayment(page, stamp, { dr: true })
-
-  await gotoReady(page, `/pos/transactions/${id}`)
-  await page.getByRole('button', { name: 'Edit entry' }).click({ timeout: 15_000 })
-  const docNo = page.getByLabel('Delivery Receipt No.', { exact: true })
-  await expect(docNo).toHaveValue(si)
-  await expect(page.getByLabel('Sales Invoice No.', { exact: true })).toHaveCount(0)
-  await fillStable(docNo, `${si}-DR`)
-  await page.getByRole('button', { name: 'Save changes' }).click()
-  await expect(page.getByText('Entry updated')).toBeVisible({ timeout: 15_000 })
-
-  const detail = await (await page.request.get(`/api/pos/transactions/${id}`)).json()
-  expect(detail.deliveryReceiptNumber).toBe(`${si}-DR`)
-  expect(detail.salesInvoiceNumber).toBe(`${si}-DR`)
-})
-
-test('a blank SI No. is refused before anything is sent (edge)', async ({ page }) => {
-  const stamp = Date.now()
-  const { id, si } = await saleWithAgentAndPayment(page, stamp)
-
-  await gotoReady(page, `/pos/transactions/${id}`)
-  await page.getByRole('button', { name: 'Edit entry' }).click({ timeout: 15_000 })
-  await page.getByLabel('Sales Invoice No.', { exact: true }).fill('   ')
-  await page.getByRole('button', { name: 'Save changes' }).click()
-  await expect(page.getByTestId('edit-entry-error')).toContainText("can't be blank")
-  const detail = await (await page.request.get(`/api/pos/transactions/${id}`)).json()
-  expect(detail.salesInvoiceNumber).toBe(si)
-})
-
-test('the agent can be taken off the sale with "No agent" (edge)', async ({ page }) => {
+test('an amount that is not one is refused before anything is sent (edge)', async ({ page }) => {
   const stamp = Date.now()
   const { id } = await saleWithAgentAndPayment(page, stamp)
 
-  await gotoReady(page, `/pos/transactions/${id}`)
-  await page.getByRole('button', { name: 'Edit entry' }).click({ timeout: 15_000 })
-  await pickAgent(page, 'No agent')
+  await openEdit(page, id)
+  await fillStable(box(page, 'Credit'), 'abc')
   await page.getByRole('button', { name: 'Save changes' }).click()
-  await expect(page.getByText('Entry updated')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId('edit-entry-error')).toContainText('Credit must be an amount')
   const detail = await (await page.request.get(`/api/pos/transactions/${id}`)).json()
-  expect(detail.sellingAgent ?? null).toBeNull()
+  expect(detail.reportEdit).toBeNull()
+})
+
+test('emptying a box takes that edit back off (edge)', async ({ page }) => {
+  const stamp = Date.now()
+  const { id } = await saleWithAgentAndPayment(page, stamp)
+  const modal = page.getByTestId('transaction-modal')
+
+  await openEdit(page, id)
+  await fillStable(box(page, 'Credit'), '500')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(modal.getByTestId('report-edit-note')).toHaveCount(1, { timeout: 15_000 })
+
+  await page.getByRole('button', { name: 'Edit entry' }).click()
+  await box(page, 'Credit').fill('')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(modal.getByTestId('report-edit-note')).toHaveCount(0, { timeout: 15_000 })
 })
 
 test('a refund has no Edit entry (edge)', async ({ page }) => {
@@ -289,40 +293,4 @@ test('a refund has no Edit entry (edge)', async ({ page }) => {
   await gotoReady(page, `/pos/transactions/${refund.id}`)
   await expect(page.getByRole('heading', { level: 2 })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('button', { name: 'Edit entry' })).toHaveCount(0)
-})
-
-test('a number another sale already has is refused, and the boxes stay open to fix it (edge)', async ({
-  page,
-}) => {
-  const stamp = Date.now()
-  const { id, si } = await saleWithAgentAndPayment(page, stamp)
-  // Another sale's Sales Invoice No. (an SI, not a DR: those are checked apart).
-  const body = await (
-    await page.request.get('/api/pos/transactions', {
-      params: { transactionType: 'sale', limit: '50' },
-    })
-  ).json()
-  const other = (
-    (body.data ?? body) as {
-      id: string
-      salesInvoiceNumber: string | null
-      deliveryReceiptNumber: string | null
-    }[]
-  ).find((t) => t.id !== id && t.salesInvoiceNumber && !t.deliveryReceiptNumber)
-  test.skip(!other, 'no other sale with an SI No. on this database')
-
-  await gotoReady(page, `/pos/transactions/${id}`)
-  await page.getByRole('button', { name: 'Edit entry' }).click({ timeout: 15_000 })
-  await fillStable(
-    page.getByLabel('Sales Invoice No.', { exact: true }),
-    other!.salesInvoiceNumber!
-  )
-  await page.getByRole('button', { name: 'Save changes' }).click()
-  await expect(page.getByTestId('edit-entry-error')).toContainText(
-    'Another sale already has Sales Invoice No.',
-    { timeout: 15_000 }
-  )
-  await expect(page.getByTestId('edit-entry-bar')).toBeVisible()
-  const detail = await (await page.request.get(`/api/pos/transactions/${id}`)).json()
-  expect(detail.salesInvoiceNumber).toBe(si)
 })
