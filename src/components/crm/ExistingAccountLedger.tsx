@@ -13,7 +13,12 @@ import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { printCustomerLedgerDocument } from '@/src/libs/print/printInventoryDocument'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
-import { LEDGER_ACTION, LEDGER_CARD, LedgerNotePill } from '@/src/components/crm/LedgerParts'
+import {
+  LEDGER_ACTION,
+  LEDGER_CARD,
+  LedgerEventBanners,
+  LedgerNotePill,
+} from '@/src/components/crm/LedgerParts'
 import type {
   ExistingLedgerSummary,
   InstallmentLedger,
@@ -176,6 +181,8 @@ export default function ExistingAccountLedger({
           )}
         </div>
       </header>
+
+      <LedgerEventBanners rows={ledger.rows} />
 
       <MonthsRunning existing={existing} matured={matured} />
 

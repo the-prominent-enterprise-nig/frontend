@@ -25,6 +25,7 @@ import {
   LEDGER_ACTION,
   LedgerCard,
   LedgerFields,
+  LedgerEventBanners,
   LedgerHero,
   LedgerTable,
 } from '@/src/components/crm/LedgerParts'
@@ -211,6 +212,8 @@ export function InstallmentLedgerBody({
           { label: 'Total Rebates', value: fmtMoney(ledger.account.totalRebates) },
         ]}
       />
+
+      <LedgerEventBanners rows={ledger.rows} />
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <LedgerCard title="Sale" icon={Receipt}>

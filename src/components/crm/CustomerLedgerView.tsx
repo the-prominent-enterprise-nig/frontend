@@ -14,6 +14,7 @@ import CustomerCommissionHistory from '@/src/components/crm/CustomerCommissionHi
 import {
   LEDGER_ACTION,
   LedgerCard,
+  LedgerEventBanners,
   LedgerHero,
   LedgerTable,
 } from '@/src/components/crm/LedgerParts'
@@ -332,6 +333,10 @@ export default function CustomerLedgerView({
                 { label: 'Outstanding', value: fmtMoney(ledger.totals.outstanding), accent: true },
               ]}
             />
+
+            {/* Only on one picked transaction — on "All transactions" a
+                banner would sit over every purchase, not the one it is about. */}
+            {transactionId && <LedgerEventBanners rows={ledger.rows} />}
 
             {SHOW_TAX_INFO && customer && (
               <section className="mb-3 overflow-hidden rounded-xl border border-gray-200 bg-white">

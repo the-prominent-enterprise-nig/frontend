@@ -6,8 +6,8 @@ import { LEDGER_NOTE_LABELS } from '@/src/libs/format/ledgerNote'
 import type { InstallmentLedgerRow, LedgerNote } from '@/src/schema/crm/types'
 
 const NOTE_STYLES: Record<LedgerNote, string> = {
-  repair: 'bg-sky-50 text-sky-700 ring-sky-200',
-  return: 'bg-rose-50 text-rose-700 ring-rose-200',
+  repair: 'bg-yellow-50 text-yellow-800 ring-yellow-200',
+  return: 'bg-blue-50 text-blue-700 ring-blue-200',
   repossess: 'bg-red-50 text-red-700 ring-red-200',
   cm: 'bg-teal-50 text-teal-700 ring-teal-200',
 }
@@ -229,4 +229,72 @@ export function LedgerTable({
       </table>
     </div>
   )
+}
+
+const BANNER_STYLES = {
+  repossess: 'border-red-200 bg-red-50 text-red-800',
+  return: 'border-blue-200 bg-blue-50 text-blue-900',
+} as const
+
+/** One banner per repossessed or returned unit, read off the ledger's own
+ * rows — the Repossess / Return row and the CM rows that follow it on the
+ * same RR — so it can never say something the table doesn't. */
+export function LedgerEventBanners({ rows }: { rows: InstallmentLedgerRow[] }): ReactNode {
+  const banners = rows.flatMap((row) =>
+    row.note === 'repossess' || row.note === 'return'
+      ? [
+          {
+            key: `${row.note}-${row.ref}-${row.date}`,
+            note: row.note,
+            text: bannerText(row, rows),
+          },
+        ]
+      : []
+  )
+  if (banners.length === 0) return null
+  return (
+    <div className="mt-3 space-y-2">
+      {banners.map((b) => (
+        <div
+          key={b.key}
+          role="status"
+          data-testid={`ledger-banner-${b.note}`}
+          className={`rounded-2xl border px-5 py-3 text-[13px] leading-relaxed ${BANNER_STYLES[b.note]}`}
+        >
+          {b.text}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** What the banner says for one Repossess / Return row. */
+function bannerText(row: InstallmentLedgerRow, rows: InstallmentLedgerRow[]): string {
+  const when = `${fmtDate(row.date)} (${row.ref})`
+  if (row.note === 'return') {
+    const units = row.description.replace(/^Unit returned( · )?/, '')
+    return `Unit returned on ${when}${units ? ` · ${units}` : ''}.`
+  }
+  const memos = rows.filter((r) => r.note === 'cm' && r.ref === row.ref)
+  const outstanding = rows[rows.length - 1]?.outstanding ?? 0
+  const credited = memos.map((m) => `${memoName(m.description)} of ${fmtMoney(m.credit)}`)
+  const memoSentence = credited.length
+    ? ` The ${joinAnd(credited)} ${credited.length === 1 ? 'was' : 'were'} credited through ${
+        credited.length === 1 ? 'a credit memo' : `${credited.length} credit memos`
+      } when the RR was encoded.`
+    : ''
+  const closing = ` Outstanding is now ${fmtMoney(outstanding)}, so billing and penalties have stopped.`
+  return `Unit repossessed on ${when}.${memoSentence}${closing}`
+}
+
+/** "Repo cost · auto-posted from RR-…" → "repo cost". */
+function memoName(description: string): string {
+  const name = description.split(' · ')[0]
+  return name.startsWith('ID') ? 'installment difference' : name.toLowerCase()
+}
+
+function joinAnd(parts: string[]): string {
+  return parts.length <= 1
+    ? (parts[0] ?? '')
+    : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
 }
