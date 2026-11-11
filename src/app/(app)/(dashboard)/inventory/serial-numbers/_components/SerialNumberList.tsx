@@ -36,7 +36,7 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { formatAge, formatShortDate } from '@/src/libs/format/date'
-import { originLabel, originRef } from '@/src/libs/format/serial-provenance'
+import { originDate, originLabel, originRef } from '@/src/libs/format/serial-provenance'
 import { DestinationCell, LocationNote, ServiceCenterLocation } from './SerialWhereaboutsCells'
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { locationLabel } from '@/src/libs/format/locationLabel'
@@ -773,9 +773,7 @@ export default function SerialNumberList({
                                 {originRef(serial) ?? '—'}
                               </div>
                               <div className="text-[12.5px] text-ink-muted">
-                                {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
-                                  ? formatShortDate(serial.goodsReceiptLine.goodsReceipt.receivedAt)
-                                  : '—'}
+                                {originDate(serial) ? formatShortDate(originDate(serial)!) : '—'}
                               </div>
                             </td>
                             <td className="px-4 py-[11px] text-[13.5px] text-[#4b4b5a] hidden sm:table-cell">
@@ -800,14 +798,12 @@ export default function SerialNumberList({
                                         {serial.goodsReceiptLine.goodsReceipt.code}
                                       </Link>
                                     ) : (
-                                      '—'
+                                      (serial.returnOrigin?.receivingReportNumber ?? '—')
                                     )}
                                   </div>
                                   <div className="text-[12.5px] text-ink-muted">
-                                    {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
-                                      ? formatShortDate(
-                                          serial.goodsReceiptLine.goodsReceipt.receivedAt
-                                        )
+                                    {originDate(serial)
+                                      ? formatShortDate(originDate(serial)!)
                                       : '—'}
                                   </div>
                                 </>
