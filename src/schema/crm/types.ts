@@ -588,12 +588,14 @@ export interface InstallmentLedgerRow {
   /** What the entry came from, called out on the ledger: a repair (a unit
    * taken in for repair) or a return (a unit handed back, on its customer
    * RR), a repossession (₱0, on its RR), or one of the credit memos that
-   * repossession closes the account with ('cm'). Omitted on every other row. */
+   * repossession or return closes the account with ('cm'), or a bill or
+   * penalty not charged while the unit is in repair ('paused'). Omitted on
+   * every other row. */
   note?: LedgerNote
 }
 
 /** See InstallmentLedgerRow.note. */
-export type LedgerNote = 'repair' | 'return' | 'repossess' | 'cm'
+export type LedgerNote = 'repair' | 'return' | 'repossess' | 'cm' | 'paused'
 
 /** Docket NIG #38 — what the "Existing customer" ledger (an account loaded
  * from the aging sheet, or a POS plan — Docket #44, one layout for every

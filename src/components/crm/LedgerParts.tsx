@@ -5,11 +5,14 @@ import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import { LEDGER_NOTE_LABELS } from '@/src/libs/format/ledgerNote'
 import type { InstallmentLedgerRow, LedgerNote } from '@/src/schema/crm/types'
 
+// Same recipe as the Sale / Bill / Penalty / Payment tags beside it
+// (ExistingAccountLedger's PILL): a pale fill, no outline.
 const NOTE_STYLES: Record<LedgerNote, string> = {
-  repair: 'bg-yellow-50 text-yellow-800 ring-yellow-200',
-  return: 'bg-blue-50 text-blue-700 ring-blue-200',
-  repossess: 'bg-red-50 text-red-700 ring-red-200',
-  cm: 'bg-teal-50 text-teal-700 ring-teal-200',
+  repair: 'bg-prominent-purple-100 text-prominent-purple-700',
+  return: 'bg-indigo-50 text-indigo-700',
+  paused: 'bg-gray-100 text-ink-muted',
+  repossess: 'bg-red-50 text-red-700',
+  cm: 'bg-teal-50 text-teal-700',
 }
 
 /** The Repair / Return note beside a ledger row's description. */
@@ -18,7 +21,7 @@ export function LedgerNotePill({ note }: { note?: LedgerNote }): ReactNode {
   return (
     <span
       data-testid={`ledger-note-${note}`}
-      className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${NOTE_STYLES[note]}`}
+      className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${NOTE_STYLES[note]}`}
     >
       {LEDGER_NOTE_LABELS[note]}
     </span>
@@ -184,9 +187,9 @@ export function LedgerTable({
                 {row.instLabel ?? (row.inst > 0 ? row.inst : '—')}
               </td>
               <td className="px-3 py-1.5 font-medium text-prominent-purple-900">
-                <span className="inline-flex flex-wrap items-center gap-2">
-                  <span>{row.description}</span>
+                <span className="flex items-start gap-2">
                   <LedgerNotePill note={row.note} />
+                  <span className="min-w-0">{row.description}</span>
                 </span>
               </td>
               {schemeColumn && (
@@ -233,7 +236,7 @@ export function LedgerTable({
 
 const BANNER_STYLES = {
   repossess: 'border-red-200 bg-red-50 text-red-800',
-  return: 'border-blue-200 bg-blue-50 text-blue-900',
+  return: 'border-indigo-200 bg-indigo-50 text-indigo-900',
 } as const
 
 /** One banner per repossessed or returned unit, read off the ledger's own
@@ -271,11 +274,8 @@ export function LedgerEventBanners({ rows }: { rows: InstallmentLedgerRow[] }): 
 /** What the banner says for one Repossess / Return row. */
 function bannerText(row: InstallmentLedgerRow, rows: InstallmentLedgerRow[]): string {
   const when = `${fmtDate(row.date)} (${row.ref})`
-  if (row.note === 'return') {
-    const units = row.description.replace(/^Unit returned( · )?/, '')
-    return `Unit returned on ${when}${units ? ` · ${units}` : ''}.`
-  }
   const memos = rows.filter((r) => r.note === 'cm' && r.ref === row.ref)
+  if (row.note === 'return') return returnBannerText(row, memos, when)
   const outstanding = rows[rows.length - 1]?.outstanding ?? 0
   const credited = memos.map((m) => `${memoName(m.description)} of ${fmtMoney(m.credit)}`)
   const memoSentence = credited.length
@@ -297,4 +297,49 @@ function joinAnd(parts: string[]): string {
   return parts.length <= 1
     ? (parts[0] ?? '')
     : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
+}
+
+const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five']
+const countWord = (n: number): string => COUNT_WORDS[n] ?? String(n)
+
+/** The return banner — the client's SALES RETURN mockup wording, full or
+ * partial (the row says "(1 of 20) · … · account stays active"). */
+function returnBannerText(
+  row: InstallmentLedgerRow,
+  memos: InstallmentLedgerRow[],
+  when: string
+): string {
+  const partial = row.description.match(
+    /^Unit returned \((\d+) of (\d+)\) · (.*) · account stays active$/
+  )
+  const units = partial ? partial[3] : row.description.replace(/^Unit returned( · )?/, '')
+  if (memos.length === 0) return `Unit returned on ${when}${units ? ` · ${units}` : ''}.`
+  const after = memos[memos.length - 1].outstanding
+  const memoCount = `${countWord(memos.length)} credit memo${memos.length === 1 ? '' : 's'}`
+  if (partial) {
+    const [returned, total] = [Number(partial[1]), Number(partial[2])]
+    const kept = total - returned
+    return `${countWord(returned)} unit${returned === 1 ? '' : 's'} (${units}) ${
+      returned === 1 ? 'was' : 'were'
+    } returned on ${when}. The account stays active and the other ${kept} unit${
+      kept === 1 ? '' : 's'
+    } keep billing. ${memoCount} for ${returned === 1 ? 'that unit' : 'those units'} ${
+      memos.length === 1 ? 'was' : 'were'
+    } posted automatically, so outstanding drops from ${fmtMoney(row.outstanding)} to ${fmtMoney(
+      after
+    )}.`
+  }
+  const names = memos.map((m) => returnMemoName(m.description))
+  return `Unit returned on ${when}. ${memoCount} ${
+    memos.length === 1 ? 'was' : 'were'
+  } posted automatically when the RR was encoded: ${joinAnd(names)}. Outstanding is now ${fmtMoney(
+    after
+  )}, so billing and penalties have stopped.`
+}
+
+/** "Sales return, input tax · auto-posted …" → "sales return for input tax". */
+function returnMemoName(description: string): string {
+  const name = description.split(' · ')[0]
+  if (name.startsWith('ID')) return 'the ID balance'
+  return name.replace(/^Sales return, /, 'sales return for ')
 }

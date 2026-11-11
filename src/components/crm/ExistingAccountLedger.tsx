@@ -555,16 +555,20 @@ function LedgerRows({
           {row.instLabel ?? (row.inst > 0 ? row.inst : '—')}
         </td>
         <td className="px-3 py-1.5">
-          <span className="inline-flex flex-wrap items-center gap-2">
+          {/* No wrap: the pill stays on the left and a long description wraps
+              beside it, rather than dropping under the pill. */}
+          <span className="flex items-start gap-2">
+            <LedgerNotePill note={row.note} />
             {kind && (
-              <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${kind.style}`}>
+              <span
+                className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${kind.style}`}
+              >
                 {kind.label}
               </span>
             )}
-            <span className="font-medium text-prominent-purple-900">
+            <span className="min-w-0 font-medium text-prominent-purple-900">
               {isPenaltyRow(row) ? 'Penalty' : row.description}
             </span>
-            <LedgerNotePill note={row.note} />
           </span>
         </td>
         <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-800">

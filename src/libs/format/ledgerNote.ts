@@ -6,6 +6,7 @@ export const LEDGER_NOTE_LABELS: Record<LedgerNote, string> = {
   return: 'Return',
   repossess: 'Repossess',
   cm: 'CM',
+  paused: 'Paused',
 }
 
 /** The note as the printed ledger writes it after the description —
