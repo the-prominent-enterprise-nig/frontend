@@ -71,6 +71,7 @@ const EMPTY_DEFAULTS: CreateSupplierFormValues = {
   status: undefined,
   notes: undefined,
   type: 'SUPPLIER',
+  tier: 'MINOR',
   isServiceCenter: false,
   businessType: undefined,
   alphanumericTaxCode: undefined,
@@ -105,6 +106,7 @@ function toFormValues(supplier: SupplierDetail): CreateSupplierFormValues {
     status: supplier.status,
     notes: supplier.notes ?? undefined,
     type: supplier.type,
+    tier: supplier.tier ?? 'MINOR',
     isServiceCenter: supplier.isServiceCenter ?? false,
     businessType: supplier.businessType ?? undefined,
     alphanumericTaxCode: supplier.alphanumericTaxCode ?? undefined,
@@ -290,6 +292,63 @@ export function SupplierFormModal({
                   />
                   {errors.name && <p className={errorClass}>{errors.name.message}</p>}
                 </div>
+
+                {/* Major suppliers sell us stock and go through PO → Receiving → Supplier
+                    Invoice; a Minor one (rent, electricity, water, fuel…) is paid straight
+                    from Expenses, which then drops Item / SI / Qty / Unit Price for it. */}
+                <fieldset className="flex min-w-0 flex-col gap-2 md:col-span-2">
+                  <legend className={labelClass}>Major or Minor supplier</legend>
+                  <Controller
+                    name="tier"
+                    control={control}
+                    render={({ field }) => (
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        {(
+                          [
+                            {
+                              value: 'MINOR',
+                              title: 'Minor supplier',
+                              body: 'Paid straight from Expenses: rent, electricity, water, fuel and similar. No Supplier Invoice needed.',
+                            },
+                            {
+                              value: 'MAJOR',
+                              title: 'Major supplier',
+                              body: 'Stock and goods suppliers. Goes through Purchase Order, Receiving and Supplier Invoice.',
+                            },
+                          ] as const
+                        ).map((opt) => {
+                          const on = (field.value ?? 'MINOR') === opt.value
+                          return (
+                            <label
+                              key={opt.value}
+                              className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 ${
+                                on
+                                  ? 'border-prominent-purple-500 bg-prominent-purple-50'
+                                  : 'border-[#d3d3db] bg-white'
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name="supplier-tier"
+                                value={opt.value}
+                                checked={on}
+                                onChange={() => field.onChange(opt.value)}
+                                onBlur={field.onBlur}
+                                className="mt-0.5 h-4 w-4 accent-prominent-purple-700"
+                              />
+                              <span className="flex flex-col gap-0.5">
+                                <span className="text-[13px] font-semibold text-prominent-purple-900">
+                                  {opt.title}
+                                </span>
+                                <span className={hintClass}>{opt.body}</span>
+                              </span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    )}
+                  />
+                </fieldset>
 
                 <div className="flex flex-col gap-1.5">
                   <label className={labelClass} htmlFor="supplier-legal">
