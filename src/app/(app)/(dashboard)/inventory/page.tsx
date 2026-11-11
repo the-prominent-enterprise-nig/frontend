@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useUIShell } from '@/src/stores/ui-shell.store'
@@ -50,6 +50,12 @@ function fmtNum(n: number) {
   return n.toLocaleString('en-PH')
 }
 
+/** Exact pesos to the centavo — for a hovered figure, where ₱26.6M is too rough. */
+function fmtPeso(n: number): string {
+  const v = Number.isFinite(n) ? n : 0
+  return `₱${v.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
 /** Exact units with thousands separators — counts are read, not estimated. */
 function fmtUnits(n: number): string {
   const v = Number.isFinite(n) ? n : 0
@@ -83,13 +89,19 @@ const COLORS = [
 
 function DonutChart({
   segments,
+  formatValue,
   size = 148,
   stroke = 22,
 }: {
   segments: { label: string; value: number; color: string }[]
+  /** How a hovered segment's value reads in the ring's centre. */
+  formatValue: (n: number) => string
   size?: number
   stroke?: number
 }) {
+  // The segment under the pointer (a slice or its legend row) shows its
+  // exact figure in the centre of the ring.
+  const [hovered, setHovered] = useState<number | null>(null)
   const total = useMemo(() => segments.reduce((s, x) => s + x.value, 0), [segments])
   const r = (size - stroke) / 2
   const C = 2 * Math.PI * r
@@ -112,35 +124,60 @@ function DonutChart({
     )
   }
 
+  const active = hovered != null ? arcs[hovered] : null
+  const dim = (i: number): string =>
+    hovered != null && hovered !== i ? 'opacity-35' : 'opacity-100'
+
   return (
-    <div className="flex items-center gap-5">
-      <svg width={size} height={size} className="shrink-0 -rotate-90">
-        <circle cx={cx} cy={cx} r={r} fill="none" stroke="#f1f5f9" strokeWidth={stroke} />
-        {arcs.map((arc, i) =>
-          arc.len > 0.5 ? (
-            <circle
-              key={i}
-              cx={cx}
-              cy={cx}
-              r={r}
-              fill="none"
-              stroke={arc.color}
-              strokeWidth={stroke}
-              strokeDasharray={`${arc.len} ${C}`}
-              strokeDashoffset={arc.offset}
-              style={{ transition: 'stroke-dasharray 0.7s ease-out' }}
-            />
-          ) : null
+    <div className="flex items-center gap-5" onMouseLeave={() => setHovered(null)}>
+      <div className="relative shrink-0" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="-rotate-90">
+          <circle cx={cx} cy={cx} r={r} fill="none" stroke="#f1f5f9" strokeWidth={stroke} />
+          {arcs.map((arc, i) =>
+            arc.len > 0.5 ? (
+              <circle
+                key={i}
+                cx={cx}
+                cy={cx}
+                r={r}
+                fill="none"
+                stroke={arc.color}
+                strokeWidth={hovered === i ? stroke + 4 : stroke}
+                strokeDasharray={`${arc.len} ${C}`}
+                strokeDashoffset={arc.offset}
+                onMouseEnter={() => setHovered(i)}
+                className={`cursor-pointer transition-opacity ${dim(i)}`}
+                style={{ transition: 'stroke-dasharray 0.7s ease-out, stroke-width 0.15s' }}
+              />
+            ) : null
+          )}
+        </svg>
+        {active && (
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-7 text-center">
+            <span className="w-full truncate text-[10px] text-ink-muted">{active.label}</span>
+            <span className="text-xs font-semibold text-gray-900 tabular-nums">
+              {formatValue(active.value)}
+            </span>
+          </div>
         )}
-      </svg>
+      </div>
       <div className="min-w-0 flex-1 space-y-2">
         {arcs.map((arc, i) => (
-          <div key={i} className="flex items-center gap-2 min-w-0">
+          <div
+            key={i}
+            onMouseEnter={() => setHovered(i)}
+            className={`flex cursor-default items-center gap-2 min-w-0 transition-opacity ${dim(i)}`}
+          >
             <div
               className="h-2.5 w-2.5 shrink-0 rounded-sm"
               style={{ backgroundColor: arc.color }}
             />
             <span className="text-xs text-gray-600 truncate flex-1">{arc.label}</span>
+            {hovered === i && (
+              <span className="text-xs text-ink-muted tabular-nums shrink-0">
+                {formatValue(arc.value)}
+              </span>
+            )}
             <span className="text-xs font-semibold text-gray-900 tabular-nums shrink-0">
               {(arc.pct * 100).toFixed(0)}%
             </span>
@@ -270,15 +307,19 @@ export default function InventoryPage() {
   // The backend scopes every figure to the caller's branch (custodians);
   // Head Office has no branch and sees all of them.
   // Valuation is quantity x cost; a role "without item cost" (Branch Custodian)
-  // gets the same card in on-hand units instead of pesos.
-  // Amounts stay with Head Office: a branch user (branchId set) gets units even
-  // when their role holds valuation (Branch Manager, Stock Controller).
-  const showValue = !me || (!me.branchId && can(me, P.REPORTS_VALUATION))
+  // gets the same card in on-hand units instead of pesos — unless it holds the
+  // dashboard-only summary (custodians). A Branch Manager's or custodian's
+  // branch view shows their own branch's total amount (scoped server-side).
+  const showValue = !me || canAny(me, [P.REPORTS_VALUATION, P.REPORTS_VALUATION_SUMMARY])
   // Turnover also unlocks the Aging report (which carries cost), so roles
   // without item cost don't hold it — the classification bars hide for them.
   const showClassification = !me || can(me, P.REPORTS_TURNOVER)
   const canOpen = (perms: InventoryPermission[]): boolean => !me || canAny(me, perms)
   const scopeLabel = me ? (me.branchId ? (me.branchName ?? 'My branch') : 'All branches') : null
+  // Stock by Warehouse compares locations, so it's head office's: a branch or
+  // warehouse account has one warehouse, which would be a single full bar
+  // repeating the category card's total.
+  const showWarehouseCard = !!me && !me.branchId
 
   const load = useCallback(async () => {
     // The sixteen reads (index order is documented in the action) run in parallel on the server:
@@ -641,7 +682,10 @@ export default function InventoryPage() {
                   </div>
                 </div>
               ) : (
-                <DonutChart segments={showValue ? s.valuationByCategory : s.unitsByCategory} />
+                <DonutChart
+                  segments={showValue ? s.valuationByCategory : s.unitsByCategory}
+                  formatValue={showValue ? fmtPeso : fmtUnits}
+                />
               )}
             </div>
 
@@ -745,10 +789,10 @@ export default function InventoryPage() {
           <div className="mb-3 flex items-center gap-2">
             <Clock className="h-4 w-4 text-amber-500" />
             <h2 className="text-base font-semibold text-gray-900">
-              Stock Aging &amp; Distribution
+              {showWarehouseCard ? 'Stock Aging & Distribution' : 'Stock Aging'}
             </h2>
           </div>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className={`grid grid-cols-1 gap-4 ${showWarehouseCard ? 'lg:grid-cols-2' : ''}`}>
             <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
               <div className="mb-4">
                 <h2 className="text-sm font-semibold text-gray-900">Inventory Aging Analysis</h2>
@@ -769,39 +813,46 @@ export default function InventoryPage() {
               )}
             </div>
 
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-sm font-semibold text-gray-900">
-                    {showValue ? 'Stock Value by Warehouse' : 'Stock by Warehouse'}
-                  </h2>
-                  <p className="text-xs text-gray-400">
-                    {showValue
-                      ? 'Valuation distribution across locations'
-                      : 'Units on hand across locations'}
-                  </p>
+            {showWarehouseCard && (
+              <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-sm font-semibold text-gray-900">
+                      {showValue ? 'Stock Value by Warehouse' : 'Stock by Warehouse'}
+                    </h2>
+                    <p className="text-xs text-gray-400">
+                      {showValue
+                        ? 'Valuation distribution across locations'
+                        : 'Units on hand across locations'}
+                    </p>
+                  </div>
+                  {/* Every location's on-hand stock, filterable by location — the
+                      nearest full view of this card (the Warehouses list was
+                      set-up only, with no stock on it). */}
+                  {canOpen([P.STOCKS_READ, P.RECEIVE_READ]) && (
+                    <Link
+                      href="/inventory/stock?tab=balance"
+                      className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
+                    >
+                      All <ChevronRight className="h-3 w-3" />
+                    </Link>
+                  )}
                 </div>
-                <Link
-                  href="/inventory/warehouses"
-                  className="flex items-center gap-0.5 text-xs text-violet-600 hover:text-violet-700"
-                >
-                  All <ChevronRight className="h-3 w-3" />
-                </Link>
+                {loading ? (
+                  <div className="space-y-3">
+                    {[...Array(4)].map((_, i) => (
+                      <Sk key={i} className="h-8 w-full" />
+                    ))}
+                  </div>
+                ) : (showValue ? s.valuationByWarehouse : s.unitsByWarehouse).length === 0 ? (
+                  <div className="flex h-20 items-center justify-center text-xs text-gray-400">
+                    No warehouse data
+                  </div>
+                ) : (
+                  <HBarChart items={showValue ? s.valuationByWarehouse : s.unitsByWarehouse} />
+                )}
               </div>
-              {loading ? (
-                <div className="space-y-3">
-                  {[...Array(4)].map((_, i) => (
-                    <Sk key={i} className="h-8 w-full" />
-                  ))}
-                </div>
-              ) : (showValue ? s.valuationByWarehouse : s.unitsByWarehouse).length === 0 ? (
-                <div className="flex h-20 items-center justify-center text-xs text-gray-400">
-                  No warehouse data
-                </div>
-              ) : (
-                <HBarChart items={showValue ? s.valuationByWarehouse : s.unitsByWarehouse} />
-              )}
-            </div>
+            )}
           </div>
         </div>
 

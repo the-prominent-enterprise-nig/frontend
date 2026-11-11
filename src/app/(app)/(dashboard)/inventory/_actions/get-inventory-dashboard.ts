@@ -1,8 +1,10 @@
 'use server'
 
 import { getSessionOrNull } from '@/src/libs/auth/actions'
+import { canAny } from '@/src/libs/guards/permission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
-import { getValuationReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-valuation-report'
+import { getValuationSummary } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-valuation-summary'
 import { getTurnoverReport } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-turnover-report'
 import { getAgingUnitCounts } from '@/src/app/(app)/(dashboard)/inventory/reports/_actions/get-aging-unit-counts'
 import { getTransfers } from '@/src/app/(app)/(dashboard)/inventory/transfers/_actions/get-transfers'
@@ -37,13 +39,21 @@ export type InventoryDashboardRead = { success?: boolean; data?: unknown } | nul
  * entry of the `allSettled` it replaces — so one failing card leaves the rest.
  */
 export async function getInventoryDashboard(): Promise<InventoryDashboardRead[]> {
-  // Amounts stay with Head Office: a branch user's dashboard never fetches
-  // valuation, so no peso figure reaches their browser (the page shows units).
+  // Amounts go to roles holding valuation or its dashboard-only summary
+  // (custodians): Head Office sees every branch, a Branch Manager or custodian
+  // only their own (the backend scopes it to the caller's branch). Only the
+  // totals are fetched, never per-item cost; anyone else never fetches them,
+  // so no peso figure reaches their browser (the page shows units).
   const session = await getSessionOrNull()
-  const headOffice = !session?.branchId
+  const showValue =
+    !!session &&
+    canAny(session, [
+      INVENTORY_PERMISSIONS.REPORTS_VALUATION,
+      INVENTORY_PERMISSIONS.REPORTS_VALUATION_SUMMARY,
+    ])
   const reads: Promise<InventoryDashboardRead>[] = [
     getItems({ limit: 1 }), // 0
-    headOffice ? getValuationReport({ limit: 1 }) : Promise.resolve(null), // 1 — only the pre-aggregated `summary` is used, not `data`
+    showValue ? getValuationSummary() : Promise.resolve(null), // 1 — totals by category / warehouse only
     getTurnoverReport({ periodDays: 90 }), // 2
     getTransfers({ limit: 20 }), // 3
     getStockoutAlerts({ days: 30 }), // 4
