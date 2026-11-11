@@ -184,14 +184,15 @@ test.describe('Scenario 84 Part 5 — a negative Tot. Amt. Due is red', () => {
         if (ledger?.rows?.length) {
           ledger.rows[ledger.rows.length - 1].due = -620
           if (ledger.account) ledger.account.totalDue = -620
+          // Docket NIG #44 — the card draws the Existing layout's own figure.
+          if (ledger.existing) ledger.existing.totalDue = -620
         }
         await route.fulfill({ response, json: body })
       }
     )
     await gotoReady(page, `/crm/customers/${plan!.customerId}/installments/${plan!.id}`)
-    const value = page
-      .getByText('Tot. Amt. Due', { exact: true })
-      .locator('xpath=following-sibling::p')
+    // The card's amount: its label, the amount, then the MI-due line.
+    const value = page.getByTestId('total-amt-due').locator('p').nth(1)
     await expect(value).toHaveText('-₱620.00', { timeout: 15_000 })
     await expect(value).toHaveClass(/text-red-600/)
   })

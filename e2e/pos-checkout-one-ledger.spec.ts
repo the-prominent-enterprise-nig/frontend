@@ -113,8 +113,12 @@ test.describe('POS checkout — one ledger for several items', () => {
     const accounts = ((await accountsRes.json()).data ?? []) as { id: string }[]
     expect(accounts).toHaveLength(1)
 
-    // The ledger lists BOTH items it carries, not just the first.
+    // The ledger lists BOTH items it carries, not just the first — one Unit box
+    // each, on the same "Existing customer" layout every account reads in
+    // (Docket NIG #44), which a POS plan has no cut-off marker in.
     await gotoReady(page, `/crm/customers/${customer.id}/installments/${accounts[0].id}`)
-    await expect(page.getByTestId('ledger-item')).toHaveCount(2, { timeout: 30_000 })
+    await expect(page.getByTestId('existing-ledger')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('ledger-unit')).toHaveCount(2)
+    await expect(page.getByTestId('cutoff-marker')).toHaveCount(0)
   })
 })

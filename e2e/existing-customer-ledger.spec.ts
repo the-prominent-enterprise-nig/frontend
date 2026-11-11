@@ -257,7 +257,7 @@ test('a matured account: all installments billed at once, nothing further to bil
   await expect(ledger).toContainText('Installments in arrears')
 })
 
-test('the Transaction picker sits beside the back link and a POS plan keeps the paper-form ledger', async ({
+test('the Transaction picker sits beside the back link and the all-transactions view stays the multi-purchase summary', async ({
   page,
 }) => {
   const a = await accountOf(page, '1')
