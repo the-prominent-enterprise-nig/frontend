@@ -8,6 +8,8 @@ import type { InstallmentLedgerRow, LedgerNote } from '@/src/schema/crm/types'
 const NOTE_STYLES: Record<LedgerNote, string> = {
   repair: 'bg-sky-50 text-sky-700 ring-sky-200',
   return: 'bg-rose-50 text-rose-700 ring-rose-200',
+  repossess: 'bg-red-50 text-red-700 ring-red-200',
+  cm: 'bg-teal-50 text-teal-700 ring-teal-200',
 }
 
 /** The Repair / Return note beside a ledger row's description. */

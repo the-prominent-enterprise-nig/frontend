@@ -4,10 +4,13 @@ import type { LedgerNote } from '@/src/schema/crm/types'
 export const LEDGER_NOTE_LABELS: Record<LedgerNote, string> = {
   repair: 'Repair',
   return: 'Return',
+  repossess: 'Repossess',
+  cm: 'CM',
 }
 
 /** The note as the printed ledger writes it after the description —
- * " (Repair)" / " (Return)", or nothing. */
+ * " (Repair)", " (Return)", " (Repossess)",
+ * " (CM)", or nothing. */
 export function ledgerNoteSuffix(note?: LedgerNote): string {
   return note ? ` (${LEDGER_NOTE_LABELS[note]})` : ''
 }

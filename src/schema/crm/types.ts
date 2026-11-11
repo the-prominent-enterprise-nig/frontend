@@ -587,12 +587,13 @@ export interface InstallmentLedgerRow {
   scheme?: string
   /** What the entry came from, called out on the ledger: a repair (a unit
    * taken in for repair) or a return (a unit handed back, on its customer
-   * RR). Both are ₱0 rows. Omitted on every other row. */
+   * RR), a repossession (₱0, on its RR), or one of the credit memos that
+   * repossession closes the account with ('cm'). Omitted on every other row. */
   note?: LedgerNote
 }
 
 /** See InstallmentLedgerRow.note. */
-export type LedgerNote = 'repair' | 'return'
+export type LedgerNote = 'repair' | 'return' | 'repossess' | 'cm'
 
 /** Docket NIG #38 — what the "Existing customer" ledger (an account loaded
  * from the aging sheet, or a POS plan — Docket #44, one layout for every
@@ -720,6 +721,9 @@ export interface CustomerLedger {
      * still deducted from outstanding — the customer owes nothing on a TPF
      * purchase, the receivable is the partner's. */
     totalFinanced: number
+    /** A repossession's credit memos — kept out of Total Paid. Optional for a
+     * backend without it. */
+    totalCreditMemos?: number
     outstanding: number
     /** Oct 29 UAT CL-03 — what is demandable now across these plans (the Due
      * column's rule as at today). Optional for a backend without it. */
