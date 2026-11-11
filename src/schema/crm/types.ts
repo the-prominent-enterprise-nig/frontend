@@ -585,7 +585,14 @@ export interface InstallmentLedgerRow {
    * (WIP, SSC, …), or "Price Override" when its price was manually overridden.
    * Omitted everywhere else (and by a backend that predates it). */
   scheme?: string
+  /** What the entry came from, called out on the ledger: a repair (a unit
+   * taken in for repair) or a return (a unit handed back, on its customer
+   * RR). Both are ₱0 rows. Omitted on every other row. */
+  note?: LedgerNote
 }
+
+/** See InstallmentLedgerRow.note. */
+export type LedgerNote = 'repair' | 'return'
 
 /** Docket NIG #38 — what the "Existing customer" ledger (an account loaded
  * from the aging sheet, or a POS plan — Docket #44, one layout for every

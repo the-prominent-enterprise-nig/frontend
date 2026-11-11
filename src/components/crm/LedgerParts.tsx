@@ -2,7 +2,26 @@
 
 import type { ElementType, ReactNode } from 'react'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
-import type { InstallmentLedgerRow } from '@/src/schema/crm/types'
+import { LEDGER_NOTE_LABELS } from '@/src/libs/format/ledgerNote'
+import type { InstallmentLedgerRow, LedgerNote } from '@/src/schema/crm/types'
+
+const NOTE_STYLES: Record<LedgerNote, string> = {
+  repair: 'bg-sky-50 text-sky-700 ring-sky-200',
+  return: 'bg-rose-50 text-rose-700 ring-rose-200',
+}
+
+/** The Repair / Return note beside a ledger row's description. */
+export function LedgerNotePill({ note }: { note?: LedgerNote }): ReactNode {
+  if (!note) return null
+  return (
+    <span
+      data-testid={`ledger-note-${note}`}
+      className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${NOTE_STYLES[note]}`}
+    >
+      {LEDGER_NOTE_LABELS[note]}
+    </span>
+  )
+}
 
 // The pieces both customer-ledger views are drawn from — the single plan's
 // paper-form ledger (InstallmentLedgerBody) and the whole-customer one
@@ -163,7 +182,10 @@ export function LedgerTable({
                 {row.instLabel ?? (row.inst > 0 ? row.inst : '—')}
               </td>
               <td className="px-3 py-1.5 font-medium text-prominent-purple-900">
-                {row.description}
+                <span className="inline-flex flex-wrap items-center gap-2">
+                  <span>{row.description}</span>
+                  <LedgerNotePill note={row.note} />
+                </span>
               </td>
               {schemeColumn && (
                 <td className="whitespace-nowrap px-3 py-1.5 text-gray-800">{row.scheme ?? ''}</td>
