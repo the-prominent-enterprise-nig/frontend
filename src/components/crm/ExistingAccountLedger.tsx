@@ -18,6 +18,7 @@ import {
   LEDGER_CARD,
   LedgerEventBanners,
   LedgerNotePill,
+  LedgerRef,
 } from '@/src/components/crm/LedgerParts'
 import type {
   ExistingLedgerSummary,
@@ -549,7 +550,7 @@ function LedgerRows({
       >
         <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">{fmtDate(row.date)}</td>
         <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px] text-gray-600">
-          {row.ref || '—'}
+          <LedgerRef value={row.ref} link={row.refLink} fallback="—" />
         </td>
         <td className="whitespace-nowrap px-3 py-1.5 text-gray-600">
           {row.instLabel ?? (row.inst > 0 ? row.inst : '—')}

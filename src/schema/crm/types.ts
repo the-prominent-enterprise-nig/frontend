@@ -592,10 +592,19 @@ export interface InstallmentLedgerRow {
    * penalty not charged while the unit is in repair ('paused'). Omitted on
    * every other row. */
   note?: LedgerNote
+  /** The document behind `ref`, so the Ref opens it in a new tab — set only
+   * where the app has a page for it. Omitted: the Ref is plain text. */
+  refLink?: LedgerRefLink
 }
 
 /** See InstallmentLedgerRow.note. */
 export type LedgerNote = 'repair' | 'return' | 'repossess' | 'cm' | 'paused'
+
+/** See InstallmentLedgerRow.refLink. */
+export interface LedgerRefLink {
+  kind: 'sale' | 'invoice' | 'customerReturn' | 'goodsReceipt' | 'deliveryReceipt'
+  id: string
+}
 
 /** Docket NIG #38 — what the "Existing customer" ledger (an account loaded
  * from the aging sheet, or a POS plan — Docket #44, one layout for every
@@ -708,7 +717,7 @@ export interface CustomerLedger {
   // What was bought, per purchase — shown above the ledger table (like the
   // paper form's own Brand/Type/Model/Serial box), one entry per Sale-type
   // row rather than folded into that row's description text.
-  items: { date: string; ref: string; itemLabel: string }[]
+  items: { date: string; ref: string; itemLabel: string; refLink?: LedgerRefLink }[]
   /** Every purchase this ledger can be narrowed to — the picker's options.
    * Always the full list, even when the rows themselves are narrowed to one
    * of them, so the picker can switch between purchases. */

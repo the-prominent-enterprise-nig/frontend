@@ -2,8 +2,10 @@
 
 import type { ElementType, ReactNode } from 'react'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
+import { useMe } from '@/src/hooks/useMe'
 import { LEDGER_NOTE_LABELS } from '@/src/libs/format/ledgerNote'
-import type { InstallmentLedgerRow, LedgerNote } from '@/src/schema/crm/types'
+import { ledgerRefHref } from '@/src/libs/format/ledgerRef'
+import type { InstallmentLedgerRow, LedgerNote, LedgerRefLink } from '@/src/schema/crm/types'
 
 // Same recipe as the Sale / Bill / Penalty / Payment tags beside it
 // (ExistingAccountLedger's PILL): a pale fill, no outline.
@@ -13,6 +15,34 @@ const NOTE_STYLES: Record<LedgerNote, string> = {
   paused: 'bg-gray-100 text-ink-muted',
   repossess: 'bg-red-50 text-red-700',
   cm: 'bg-teal-50 text-teal-700',
+}
+
+/** A ledger row's Ref — a link that opens its document in a new tab when the
+ * server says which one and this user may open it, plain text otherwise. */
+export function LedgerRef({
+  value,
+  link,
+  fallback = '',
+}: {
+  value: string
+  link?: LedgerRefLink
+  fallback?: string
+}): ReactNode {
+  const { data: me } = useMe()
+  const href = value && link ? ledgerRefHref(link, me ?? null) : null
+  if (!href) return value || fallback
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Open in a new tab"
+      data-testid="ledger-ref-link"
+      className="text-prominent-purple-700 underline-offset-2 hover:underline"
+    >
+      {value}
+    </a>
+  )
 }
 
 /** The Repair / Return note beside a ledger row's description. */
@@ -181,7 +211,7 @@ export function LedgerTable({
             <tr key={i} className="hover:bg-gray-50">
               <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">{fmtDate(row.date)}</td>
               <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px] text-gray-600">
-                {row.ref}
+                <LedgerRef value={row.ref} link={row.refLink} />
               </td>
               <td className="whitespace-nowrap px-3 py-1.5 text-right text-gray-600">
                 {row.instLabel ?? (row.inst > 0 ? row.inst : '—')}

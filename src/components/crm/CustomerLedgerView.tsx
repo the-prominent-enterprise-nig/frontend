@@ -16,6 +16,7 @@ import {
   LedgerCard,
   LedgerEventBanners,
   LedgerHero,
+  LedgerRef,
   LedgerTable,
 } from '@/src/components/crm/LedgerParts'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
@@ -451,7 +452,7 @@ export default function CustomerLedgerView({
                     >
                       <span className="w-32 shrink-0 text-gray-600">{fmtDate(item.date)}</span>
                       <span className="w-48 shrink-0 font-mono text-[13px] text-gray-600">
-                        {item.ref}
+                        <LedgerRef value={item.ref} link={item.refLink} />
                       </span>
                       <span className="min-w-0 flex-1 font-medium text-prominent-purple-900">
                         {item.itemLabel}
