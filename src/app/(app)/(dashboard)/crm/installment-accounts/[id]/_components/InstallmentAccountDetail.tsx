@@ -156,6 +156,7 @@ function peso(amount: number | string): string {
 export default function InstallmentAccountDetail({
   id,
   canEdit,
+  canRequest,
   canEarlyPayoff,
   canCollectAtPos,
   canRecordReceipt,
@@ -169,6 +170,8 @@ export default function InstallmentAccountDetail({
 }: {
   id: string
   canEdit: boolean
+  /** File a graduation or DAM escalation request (a create, not an edit). */
+  canRequest: boolean
   canEarlyPayoff: boolean
   /** Record payment for a POS-sale plan — it opens POS Collections. */
   canCollectAtPos: boolean
@@ -849,7 +852,7 @@ export default function InstallmentAccountDetail({
 
             {account.category !== 'C' &&
               !pendingGraduation &&
-              canEdit &&
+              canRequest &&
               account.status === 'active' && (
                 <div className="mt-4">
                   <button
@@ -895,21 +898,24 @@ export default function InstallmentAccountDetail({
               </div>
             )}
 
-            {!account.inDam && !pendingDamEscalation && canEdit && account.status === 'active' && (
-              <div className="mt-3">
-                <button
-                  onClick={handleRequestDamEscalation}
-                  disabled={requestingDamEscalation}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  <AlertOctagon className="h-4 w-4" />
-                  {requestingDamEscalation ? 'Requesting…' : 'Request DAM escalation'}
-                </button>
-                {damEscalationError && (
-                  <p className="mt-2 text-[12px] text-red-600">{damEscalationError}</p>
-                )}
-              </div>
-            )}
+            {!account.inDam &&
+              !pendingDamEscalation &&
+              canRequest &&
+              account.status === 'active' && (
+                <div className="mt-3">
+                  <button
+                    onClick={handleRequestDamEscalation}
+                    disabled={requestingDamEscalation}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <AlertOctagon className="h-4 w-4" />
+                    {requestingDamEscalation ? 'Requesting…' : 'Request DAM escalation'}
+                  </button>
+                  {damEscalationError && (
+                    <p className="mt-2 text-[12px] text-red-600">{damEscalationError}</p>
+                  )}
+                </div>
+              )}
 
             {pendingDamEscalation && (
               <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
