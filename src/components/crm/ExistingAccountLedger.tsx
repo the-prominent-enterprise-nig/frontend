@@ -7,9 +7,12 @@ import { useMe } from '@/src/hooks/useMe'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import { MANILA_TZ } from '@/src/libs/format/manila-date'
+import { ledgerScheme } from '@/src/libs/format/ledgerScheme'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { printCustomerLedgerDocument } from '@/src/libs/print/printInventoryDocument'
+import { XDealBadge } from '@/src/components/pos/XDealBadge'
 import { LEDGER_ACTION, LEDGER_CARD } from '@/src/components/crm/LedgerParts'
 import type {
   ExistingLedgerSummary,
@@ -23,6 +26,13 @@ import type {
 // the page is layout only: the header with its actions, the months-running
 // band, Account info and Totals beside each other, and the ledger with the
 // beginning-balance cut-off marked in it.
+//
+// Docket NIG #44 — the same page for EVERY account, whoever is looking (branch
+// manager, cashier, business owner): a POS plan used to keep the paper-form
+// layout, so two customers read as two different designs. A POS plan has no
+// beginning-balance cut-off (`existing.hasCutoff` false), so it drops the cut-off
+// marker and note and is otherwise this very page. It brings its own Record
+// payment route (POS Collections), its X-Deal tags and one Unit box per item.
 //
 // Left off the mockup on purpose: the "Active" badge (an account being active
 // is not worth a badge — only a closed/settled state is shown) and the
@@ -67,28 +77,51 @@ export default function ExistingAccountLedger({
   const searchParams = useSearchParams()
 
   const { account } = ledger
-  const status = NON_ACTIVE_STATUS[account.status]
-  const matured = existing.billed >= existing.term
+  // A closed X-Deal was settled by its memo, not by payments — the memo is the
+  // ledger's own credit row, so its number comes from there.
+  const xDealMemoRef =
+    account.isXDeal && account.status === 'closed'
+      ? (ledger.rows.find((r) => r.description === 'X-Deal credit memo')?.ref ?? null)
+      : null
+  const status = xDealMemoRef
+    ? {
+        label: `Settled — X-Deal credit memo ${xDealMemoRef}`,
+        style: NON_ACTIVE_STATUS.closed.style,
+      }
+    : NON_ACTIVE_STATUS[account.status]
+  const hasBilling = existing.hasBilling !== false
+  const matured = hasBilling && existing.billed >= existing.term
+  const scheme = ledgerScheme(ledger)
 
-  // Record payment goes where the payment is posted: AR New Receipt, with this
-  // account's one invoice picked (same as the account page does for a loaded
-  // account), and back here afterwards.
+  // Record payment goes where the payment is posted — the same split the
+  // account page makes, each behind its own screen's permission so the button
+  // never leads to a 403. A POS-sale plan is collected in POS Collections; an
+  // account with no schedule (loaded from the sheet) at AR New Receipt, with
+  // its one invoice picked, and back here afterwards.
   const here = `${pathname}${searchParams.toString() ? `?${searchParams}` : ''}`
-  const paymentHref = account.arInvoiceId
-    ? `/accounting/ar-invoices/receipts/new?${new URLSearchParams({
+  const paymentHref = account.installmentScheduleId
+    ? `/pos/collections?${new URLSearchParams({
         customerId: account.customerId,
         customerName: account.customer?.name ?? '',
-        invoiceId: account.arInvoiceId,
-        returnTo: here,
+        scheduleId: account.installmentScheduleId,
       })}`
-    : null
+    : account.arInvoiceId
+      ? `/accounting/ar-invoices/receipts/new?${new URLSearchParams({
+          customerId: account.customerId,
+          customerName: account.customer?.name ?? '',
+          invoiceId: account.arInvoiceId,
+          returnTo: here,
+        })}`
+      : null
   const canRecordPayment =
     account.status === 'active' &&
     !!paymentHref &&
     !!me &&
     hasPermission(me, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_RECORD_PAYMENT) &&
-    hasPermission(me, ACCOUNTING_PERMISSIONS.AR_INVOICES_READ) &&
-    hasPermission(me, ACCOUNTING_PERMISSIONS.AR_INVOICES_PAY)
+    (account.installmentScheduleId
+      ? hasPermission(me, POS_PERMISSIONS.COLLECTIONS_MANAGE)
+      : hasPermission(me, ACCOUNTING_PERMISSIONS.AR_INVOICES_READ) &&
+        hasPermission(me, ACCOUNTING_PERMISSIONS.AR_INVOICES_PAY))
   const canEdit =
     showAccountLink && !!me && hasPermission(me, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_UPDATE)
 
@@ -110,6 +143,7 @@ export default function ExistingAccountLedger({
                 {status.label}
               </span>
             )}
+            {account.isXDeal && <XDealBadge reference={account.xDealReference} />}
           </div>
           <p className="mt-1 text-[13px] text-gray-600">
             SI <span className="font-mono">{ledger.saleReference ?? '—'}</span>
@@ -146,7 +180,13 @@ export default function ExistingAccountLedger({
       <MonthsRunning existing={existing} matured={matured} />
 
       <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <AccountInfo ledger={ledger} existing={existing} matured={matured} />
+        <AccountInfo
+          ledger={ledger}
+          existing={existing}
+          matured={matured}
+          scheme={scheme}
+          showCommission={canViewCommission && !!account.installmentScheduleId}
+        />
         <Totals existing={existing} />
       </div>
 
@@ -166,48 +206,62 @@ function MonthsRunning({
   matured: boolean
 }) {
   const { term, billed, billedAtCutoff } = existing
+  const hasCutoff = existing.hasCutoff !== false
+  const hasBilling = existing.hasBilling !== false
   const arrears = existing.installmentsWithBalance
+  // Dark for what was billed at the cut-off. With no cut-off every month billed
+  // is one the plan itself billed, so there is no lighter "since" shade.
+  const darkSegments = hasCutoff ? billedAtCutoff : billed
   return (
     <section
       className={`${LEDGER_CARD} mt-3 flex flex-wrap items-center gap-x-10 gap-y-3 px-5 py-3`}
     >
       <div className="shrink-0">
-        <p className="text-[12px] text-gray-600">Balance as of (beginning balance upload)</p>
+        <p className="text-[12px] text-gray-600">
+          {hasCutoff ? 'Balance as of (beginning balance upload)' : 'Balance as of'}
+        </p>
         <p className="mt-0.5 text-[15px] font-semibold text-prominent-purple-900">
           {fmtDate(existing.asOf)}
         </p>
       </div>
-      <div className="min-w-[16rem] flex-1">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 text-[12px] text-gray-600">
-          <span>Months running</span>
-          <span data-testid="months-running-text">
-            <strong className="font-semibold text-prominent-purple-900">
-              {billed} of {term}
-            </strong>
-            {matured
-              ? ` · fully billed${arrears > 0 ? ` · ${arrears} installment${arrears === 1 ? '' : 's'} in arrears` : ''}`
-              : ` · ${term - billed} remaining · ${billedAtCutoff} were running at the ${shortDate(existing.asOf)} cut-off`}
-          </span>
+      {/* An account with no contract to lay out has no billing history to count
+          months from — the figure would be a made-up "0 of N" — so only the
+          balance date shows. */}
+      {hasBilling && (
+        <div className="min-w-[16rem] flex-1">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 text-[12px] text-gray-600">
+            <span>Months running</span>
+            <span data-testid="months-running-text">
+              <strong className="font-semibold text-prominent-purple-900">
+                {billed} of {term}
+              </strong>
+              {matured
+                ? ` · fully billed${arrears > 0 ? ` · ${arrears} installment${arrears === 1 ? '' : 's'} in arrears` : ''}`
+                : hasCutoff
+                  ? ` · ${term - billed} remaining · ${billedAtCutoff} were running at the ${shortDate(existing.asOf)} cut-off`
+                  : ` · ${term - billed} remaining`}
+            </span>
+          </div>
+          <div
+            className="mt-1.5 flex gap-1"
+            role="img"
+            aria-label={`${billed} of ${term} months running`}
+          >
+            {Array.from({ length: term }, (_, i) => (
+              <span
+                key={i}
+                className={`h-2 flex-1 rounded-full ${
+                  i < darkSegments
+                    ? 'bg-prominent-purple-700'
+                    : i < billed
+                      ? 'bg-prominent-purple-300'
+                      : 'bg-gray-200'
+                }`}
+              />
+            ))}
+          </div>
         </div>
-        <div
-          className="mt-1.5 flex gap-1"
-          role="img"
-          aria-label={`${billed} of ${term} months running`}
-        >
-          {Array.from({ length: term }, (_, i) => (
-            <span
-              key={i}
-              className={`h-2 flex-1 rounded-full ${
-                i < billedAtCutoff
-                  ? 'bg-prominent-purple-700'
-                  : i < billed
-                    ? 'bg-prominent-purple-300'
-                    : 'bg-gray-200'
-              }`}
-            />
-          ))}
-        </div>
-      </div>
+      )}
     </section>
   )
 }
@@ -253,14 +307,29 @@ function AccountInfo({
   ledger,
   existing,
   matured,
+  scheme,
+  showCommission,
 }: {
   ledger: InstallmentLedger
   existing: ExistingLedgerSummary
   matured: boolean
+  /** The Price Use the sale went under, or '—' when it has none. */
+  scheme: string
+  /** What an agent earns is agent data: shown only to a viewer who can read
+   * agents, and only on a POS sale — the one an agent sold. */
+  showCommission: boolean
 }) {
   const { account } = ledger
   const c = existing.contract
-  const hasUnit = !!(c.unitDescription || c.unitType)
+  const hasBilling = existing.hasBilling !== false
+  // One Unit box per item a POS sale carries; a loaded account has the one
+  // its sheet names.
+  const units =
+    c.units && c.units.length > 0
+      ? c.units
+      : c.unitDescription || c.unitType
+        ? [{ description: c.unitDescription, type: c.unitType, serialNumber: null }]
+        : []
   return (
     <Card title="Account info" className="lg:col-span-2">
       <div className="grid grid-cols-1 gap-x-10 gap-y-4 sm:grid-cols-2">
@@ -269,18 +338,46 @@ function AccountInfo({
             <Row label="Invoice no." value={ledger.saleReference ?? '—'} />
             <Row label="SI date" value={fmtDate(ledger.saleDate)} />
             <Row label="FMI" value={fmtDate(ledger.firstInstallmentDate)} />
-            {hasUnit && (
-              <div className="mt-2 rounded-lg bg-gray-50 px-3 py-2" data-testid="ledger-unit">
+            {/* The Price Use (WIP, SSC, …) or "Price Override" — shown only
+                where the sale has one, which a loaded account does not. */}
+            {scheme !== '—' && <Row label="Scheme" value={scheme} />}
+            {units.map((unit, i) => (
+              <div
+                key={i}
+                className="mt-2 rounded-lg bg-gray-50 px-3 py-2"
+                data-testid="ledger-unit"
+              >
                 <p className="text-[11px] text-gray-500">Unit</p>
                 <p className="text-[13px] font-semibold text-prominent-purple-900">
-                  {c.unitDescription ?? '—'}
+                  {unit.description ?? '—'}
                 </p>
-                {c.unitType && <p className="text-[12px] text-gray-600">{c.unitType}</p>}
+                {unit.type && <p className="text-[12px] text-gray-600">{unit.type}</p>}
+                {unit.serialNumber && (
+                  <p className="text-[12px] text-gray-600">
+                    Serial <span className="font-mono">{unit.serialNumber}</span>
+                  </p>
+                )}
               </div>
-            )}
+            ))}
           </Group>
           <Group title="Assignment">
             <Row label="Agent" value={c.agent ?? '—'} />
+            {showCommission && (
+              <>
+                <Row
+                  label="Sales Commission"
+                  value={
+                    Number(account.salesCommission ?? 0)
+                      ? fmtMoney(account.salesCommission ?? 0)
+                      : '—'
+                  }
+                />
+                <Row
+                  label="SMI"
+                  value={Number(account.salesSmi ?? 0) ? fmtMoney(account.salesSmi ?? 0) : '—'}
+                />
+              </>
+            )}
             <Row label="Collector" value={account.collector?.name ?? '—'} />
             <Row label="Collector code" value={account.collector?.stubNumber ?? '—'} />
           </Group>
@@ -295,11 +392,11 @@ function AccountInfo({
             <Row label="DP balance" value={fmtMoney(c.dpBalance)} />
             <Row label="MI (monthly installment)" value={fmtMoney(existing.monthlyInstallment)} />
             <Row label="Rebate" value={fmtMoney(c.rebate)} />
-            <Row label="Term" value={`${existing.term} months`} />
-            <Row label="Months running" value={existing.billed} />
+            <Row label="Term" value={existing.term > 0 ? `${existing.term} months` : '—'} />
+            <Row label="Months running" value={hasBilling ? existing.billed : '—'} />
             <Row
               label={matured ? 'Installments in arrears' : 'Installments with balance'}
-              value={existing.installmentsWithBalance}
+              value={hasBilling ? existing.installmentsWithBalance : '—'}
             />
           </Group>
           <Group title="Financing (cont.)">
@@ -316,6 +413,8 @@ function AccountInfo({
 function Totals({ existing }: { existing: ExistingLedgerSummary }) {
   const c = existing.contract
   const penalty = existing.penalty
+  // The part still owing — what Total amt due leaves out (or has inside it).
+  const penaltyOwing = existing.penaltyBalance ?? penalty
   return (
     <Card title="Totals">
       <div
@@ -332,9 +431,9 @@ function Totals({ existing }: { existing: ExistingLedgerSummary }) {
         </p>
         <p className="text-[11px] text-gray-600">
           {existing.penaltyInDue
-            ? `MI due ${fmtMoney(existing.miDue)} + penalty ${fmtMoney(penalty)}`
-            : penalty > 0
-              ? `MI due ${fmtMoney(existing.miDue)} · excl. penalty ${fmtMoney(penalty)}`
+            ? `MI due ${fmtMoney(existing.miDue)} + penalty ${fmtMoney(penaltyOwing)}`
+            : penaltyOwing > 0
+              ? `MI due ${fmtMoney(existing.miDue)} · excl. penalty ${fmtMoney(penaltyOwing)}`
               : `MI due ${fmtMoney(existing.miDue)}`}
         </p>
       </div>
@@ -350,7 +449,7 @@ function Totals({ existing }: { existing: ExistingLedgerSummary }) {
       <dl className="mt-3 space-y-1">
         <Row label="Total payments" value={fmtMoney(existing.totalPayments)} />
         <Row label="Total penalty" value={fmtMoney(penalty)} />
-        <Row label="Penalty balance" value={fmtMoney(penalty)} />
+        <Row label="Penalty balance" value={fmtMoney(penaltyOwing)} />
         <Row label="Total rebates" value={fmtMoney(existing.totalRebates)} />
         <Row label="Total billings" value={fmtMoney(existing.totalBilling)} />
         <Row label="Required DP" value={fmtMoney(c.downPayment)} />
@@ -397,10 +496,12 @@ function LedgerRows({
   existing: ExistingLedgerSummary
   matured: boolean
 }) {
+  // A POS plan has no beginning-balance cut-off, so nothing to mark.
+  const hasCutoff = existing.hasCutoff !== false
   const cutoff = new Date(existing.asOf).getTime()
   // The cut-off sits before the first row dated after it (or at the foot).
   const firstAfter = rows.findIndex((r) => new Date(r.date).getTime() > cutoff)
-  const markerAt = firstAfter === -1 ? rows.length : firstAfter
+  const markerAt = !hasCutoff ? -1 : firstAfter === -1 ? rows.length : firstAfter
 
   // A display-only row (a Bill, the Billing lump, the penalty memo) is shown
   // but never added in — its amount is already in the Sale row.
@@ -481,7 +582,7 @@ function LedgerRows({
       </tr>
     )
   })
-  if (markerAt === rows.length) body.push(marker)
+  if (hasCutoff && markerAt === rows.length) body.push(marker)
 
   return (
     <Card title="Ledger" className="mt-3">

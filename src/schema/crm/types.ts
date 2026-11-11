@@ -588,12 +588,22 @@ export interface InstallmentLedgerRow {
 }
 
 /** Docket NIG #38 — what the "Existing customer" ledger (an account loaded
- * from the aging sheet) draws beside its rows. Worked out by the server from
- * the same rows, so no figure here can disagree with the table. Absent on a
- * POS plan's ledger, which keeps the paper-form layout. */
+ * from the aging sheet, or a POS plan — Docket #44, one layout for every
+ * account) draws beside its rows. Worked out by the server from the same rows,
+ * so no figure here can disagree with the table. */
 export interface ExistingLedgerSummary {
-  /** The beginning-balance cut-off (the end of that Manila day). */
+  /** The beginning-balance cut-off (the end of that Manila day) — or, on a POS
+   * plan with no cut-off (`hasCutoff` false), simply now. */
   asOf: string
+  /** False on a POS plan, whose balance is live from the sale: no cut-off
+   * marker in the ledger and no "were running at the cut-off" note. Absent
+   * (an older backend) reads as true. */
+  hasCutoff?: boolean
+  /** False on an account with no contract to lay out (hand-entered, or loaded
+   * with no FMI date): there is no billing history to count months from, so the
+   * page shows "—" for months running rather than a made-up 0 of N. Absent reads
+   * as true. */
+  hasBilling?: boolean
   term: number
   monthlyInstallment: number
   /** Installments billed at the cut-off — the sheet's MOS RUN. */
@@ -606,8 +616,12 @@ export interface ExistingLedgerSummary {
   installmentsWithBalance: number
   /** Due, less any penalty counted inside it. */
   miDue: number
-  /** The sheet's late penalty. */
+  /** The sheet's late penalty — or, on a POS plan, everything charged plus
+   * what is pending. */
   penalty: number
+  /** The part of `penalty` still owing. Absent: the same as `penalty` (a
+   * loaded account's sheet carries one running figure). */
+  penaltyBalance?: number
   /** Whether that penalty is counted inside Due and Outstanding. */
   penaltyInDue: boolean
   totalDue: number
@@ -626,6 +640,9 @@ export interface ExistingLedgerSummary {
     rebate: number
     unitDescription: string | null
     unitType: string | null
+    /** One entry per item a POS sale carries, each drawn as its own Unit box.
+     * Absent on a loaded account, which has the one unit above. */
+    units?: { description: string | null; type: string | null; serialNumber: string | null }[]
     agent: string | null
     address: string | null
   }
@@ -637,7 +654,10 @@ export interface InstallmentLedger {
   saleDate: string | null
   firstInstallmentDate: string | null
   rows: InstallmentLedgerRow[]
-  /** Present only for an account loaded from the aging sheet. */
+  /** Present whenever the account's installments can be laid out — an account
+   * loaded from the aging sheet, a POS plan, and (with `hasBilling` false) an
+   * account with no contract to lay out — Docket #44. Absent only on a backend
+   * older than that, which keeps the paper-form layout. */
   existing?: ExistingLedgerSummary
 }
 
