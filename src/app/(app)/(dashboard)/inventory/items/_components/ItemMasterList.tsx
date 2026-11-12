@@ -1,16 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, RefreshCw, Search, X, Layers, ImagePlus } from 'lucide-react'
+import { Search, X, Package } from 'lucide-react'
 import { useItemMaster } from '../_hooks/useItemMaster'
-import CreateItemModal from './CreateItemModal'
 import EditItemModal from './EditItemModal'
 import ItemMasterTable from './ItemMasterTable'
 import ItemApprovalActionModal from './ItemApprovalActionModal'
 import ItemRejectModal from './ItemRejectModal'
-import CreateBundleModal from '../../bundles/_components/CreateBundleModal'
 import BundleDetailModal from '../../bundles/_components/BundleDetailModal'
-import BulkImageImportModal from './BulkImageImportModal'
 import type { ItemSummary, UpdateItemFormValues } from '@/src/schema/inventory/items'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -18,10 +15,49 @@ import type { SessionUser } from '@/src/libs/guards/permission'
 import CategorySelect from '@/src/components/ui/CategorySelect'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { displayClassificationLabel } from '@/src/libs/format/text'
-import { useItemStockStatus } from '../_hooks/useItemStockStatus'
+import {
+  ListFooterPager,
+  STOCK_LEDGER_PAGE_SIZES,
+} from '@/src/components/inventory/ListFooterPager'
+import { CONTROL_CHROME, PLEX } from '@/src/libs/design/plex'
+import {
+  EmptyState,
+  ListHeader,
+  ListSearch,
+  LoadError,
+  PAGE_INNER,
+  PAGE_SHELL,
+  TableCard,
+} from '../../master-data/_components/masterDataChrome'
+
+const LIFECYCLE_OPTIONS = [
+  { value: 'active', label: 'Active' },
+  { value: 'discontinued', label: 'Discontinued' },
+  { value: 'archived', label: 'Archived' },
+]
+
+const REGION_OPTIONS = [
+  { value: 'panay', label: 'Panay (in stock)' },
+  { value: 'negros', label: 'Negros (in stock)' },
+]
+
+const APPROVAL_OPTIONS = [
+  { value: 'draft', label: 'Draft' },
+  { value: 'pending_accounting_confirmation', label: 'Pending Accounting' },
+  { value: 'pending_approval', label: 'Pending Approval' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'rejected', label: 'Rejected' },
+]
+
+const SORT_OPTIONS = [
+  { value: 'createdAt:desc', label: 'Newest first' },
+  { value: 'createdAt:asc', label: 'Oldest first' },
+  { value: 'name:asc', label: 'Name A→Z' },
+  { value: 'name:desc', label: 'Name Z→A' },
+  { value: 'sku:asc', label: 'SKU A→Z' },
+]
 
 export default function ItemMasterList({ session }: { session: SessionUser }) {
-  const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_CREATE)
   const canUpdate = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_UPDATE)
   const canDelete = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_DELETE)
   const canManageLifecycle = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_MANAGE_LIFECYCLE)
@@ -68,23 +104,18 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     setPage,
     limit,
     setLimit,
-    createItem,
-    isCreating,
     updateItem,
     isUpdating,
     updateItemAttributes,
     isUpdatingAttributes,
     updateLifecycle,
     deleteItem,
-    refetch,
     selectedBundleItem,
     setSelectedBundleItem,
     bundleComponents,
     bundleAvailableQty,
     isLoadingComponents,
     itemOptions,
-    createBundle,
-    isCreatingBundle,
     addBundleComponent,
     isAddingBundleComponent,
     removeBundleComponent,
@@ -100,11 +131,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     rejectItem,
     isRejectingItem,
   } = useItemMaster()
-  const stockByItem = useItemStockStatus(items)
 
-  const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [isBundleCreateOpen, setIsBundleCreateOpen] = useState(false)
-  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<ItemSummary | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ItemSummary | null>(null)
   // Scenario 16 — Item Master Governance
@@ -123,278 +150,162 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     setDeleteTarget(null)
   }
 
+  const filtered = !!(
+    search ||
+    lifecycle ||
+    approvalStatus ||
+    primaryCategoryId ||
+    typeId ||
+    region
+  )
+  const showClear = filtered || sortBy !== 'name' || sortOrder !== 'asc'
+
   return (
-    <div className="w-full min-h-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
-      <div className="mx-auto max-w-7xl space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Item Master</h1>
-            <p className="mt-1 text-sm text-zinc-500">
-              Create and manage product records across the system.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-            {canCreateBundle && (
-              <button
-                type="button"
-                onClick={() => setIsBundleCreateOpen(true)}
-                className="flex items-center gap-2 rounded-lg border border-prominent-purple-300 bg-white px-4 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-              >
-                <Layers className="h-4 w-4" />
-                New Bundle
-              </button>
-            )}
-            {canUpdate && (
-              <button
-                type="button"
-                onClick={() => setIsBulkImportOpen(true)}
-                className="flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
-              >
-                <ImagePlus className="h-4 w-4" />
-                <span className="hidden sm:inline">Bulk Import Images</span>
-                <span className="sm:hidden">Images</span>
-              </button>
-            )}
-            {canCreate && (
-              <button
-                type="button"
-                onClick={() => setIsCreateOpen(true)}
-                className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
-              >
-                <Plus className="h-4 w-4" />
-                Add Item
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="flex flex-col gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, brand, model, type, category or serial number…"
-              className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-8 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
-                aria-label="Clear search"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <select
-              value={lifecycle ?? ''}
-              onChange={(e) => setLifecycle((e.target.value || undefined) as typeof lifecycle)}
-              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-            >
-              <option value="">All Statuses</option>
-              <option value="active">Active</option>
-              <option value="discontinued">Discontinued</option>
-              <option value="archived">Archived</option>
-            </select>
-            {/* Scenario 56 — Operations: items with units on hand there. */}
-            <select
-              value={region ?? ''}
-              onChange={(e) => setRegion((e.target.value || undefined) as typeof region)}
-              aria-label="Operations"
-              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-            >
-              <option value="">All Operations</option>
-              <option value="panay">Panay (in stock)</option>
-              <option value="negros">Negros (in stock)</option>
-            </select>
-            {(canSubmitReview || canConfirmAccounting || canApproveItem) && (
-              <select
-                value={approvalStatus ?? ''}
-                onChange={(e) =>
-                  setApprovalStatus((e.target.value || undefined) as typeof approvalStatus)
-                }
-                className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-              >
-                <option value="">All Approval Statuses</option>
-                <option value="draft">Draft</option>
-                <option value="pending_accounting_confirmation">Pending Accounting</option>
-                <option value="pending_approval">Pending Approval</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            )}
-            {/* Type / Category = the sheet's TYPE / GROUP / SUBGROUP:
-                Type is the item type, Category/Subgroup the category tree. */}
-            <SearchableSelect
-              className="min-w-[170px]"
-              value={typeId ?? ''}
-              onChange={(v) => setTypeId(v || undefined)}
-              placeholder="All Types"
-              ariaLabel="Type"
-              clearable
-              options={typeOptions.map((t) => ({
-                value: t.id,
-                label: displayClassificationLabel(t.name) ?? t.name,
-              }))}
-            />
-            {categories.length > 0 && (
-              <CategorySelect
-                value={primaryCategoryId}
-                onChange={setPrimaryCategoryId}
-                options={categories}
-                placeholder="All Categories"
-                aria-label="Category or subgroup"
-                className="min-w-[180px]"
-              />
-            )}
-            <select
-              value={`${sortBy}:${sortOrder}`}
-              onChange={(e) => {
-                const [field, order] = e.target.value.split(':') as [
-                  typeof sortBy,
-                  typeof sortOrder,
-                ]
-                setSortBy(field)
-                setSortOrder(order)
-              }}
-              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-            >
-              <option value="createdAt:desc">Newest first</option>
-              <option value="createdAt:asc">Oldest first</option>
-              <option value="name:asc">Name A→Z</option>
-              <option value="name:desc">Name Z→A</option>
-              <option value="sku:asc">SKU A→Z</option>
-              <option value="costPrice:asc">Cost ↑</option>
-              <option value="costPrice:desc">Cost ↓</option>
-              <option value="sellingPrice:asc">Price ↑</option>
-              <option value="sellingPrice:desc">Price ↓</option>
-            </select>
-            {(search ||
-              lifecycle ||
-              approvalStatus ||
-              primaryCategoryId ||
-              typeId ||
-              region ||
-              sortBy !== 'name' ||
-              sortOrder !== 'asc') && (
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-100"
-              >
-                <X className="h-4 w-4" />
-                Clear
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Error */}
-        {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-            <p className="text-sm font-medium text-red-800">Failed to load items</p>
-            <p className="mt-1 text-xs text-red-600">Please try refreshing the page.</p>
-          </div>
-        )}
-
-        {/* Table */}
-        <ItemMasterTable
-          items={items}
-          isLoading={isLoading}
-          isFetching={isFetching}
-          canUpdate={canUpdate}
-          canDelete={canDelete}
-          canManageLifecycle={canManageLifecycle}
-          onEdit={(item) => setEditTarget(item)}
-          onDelete={handleDelete}
-          onLifecycleChange={(id, lc) => updateLifecycle(id, lc)}
-          onViewBundle={(item) => setSelectedBundleItem(item)}
-          canSubmitReview={canSubmitReview}
-          canConfirmAccounting={canConfirmAccounting}
-          canApproveItem={canApproveItem}
-          isSubmittingReview={isSubmitting}
-          onSubmitReview={(item) => submitItem(item.id)}
-          onConfirmAccounting={(item) => setConfirmingAccountingItem(item)}
-          onRejectAccounting={(item) => setRejectingAccountingItem(item)}
-          onApproveItem={(item) => setApprovingItem(item)}
-          onRejectItem={(item) => setRejectingItem(item)}
-          stockByItem={stockByItem}
+    <div className={`${PAGE_SHELL} ${PLEX}`}>
+      <div className={PAGE_INNER}>
+        <ListHeader
+          title="Item Master"
+          description="Create and manage product records across the system."
         />
 
-        {/* Pagination */}
-        {pagination.total > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-zinc-500">
-            <div className="flex items-center gap-3">
-              <span>
-                Showing {(page - 1) * pagination.limit + 1}–
-                {Math.min(page * pagination.limit, pagination.total)} of {pagination.total} items
-              </span>
-              <label className="flex items-center gap-1.5">
-                <span className="text-zinc-400">Per page</span>
-                <select
-                  value={limit}
-                  onChange={(e) => setLimit(Number(e.target.value))}
-                  className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-sm outline-none focus:border-prominent-purple-500"
-                >
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
-              </label>
-            </div>
-            {pagination.totalPages > 1 && (
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.max(1, page - 1))}
-                  disabled={page <= 1}
-                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-                >
-                  Previous
-                </button>
-                <span className="px-3 py-1.5 font-medium text-zinc-700">
-                  {page} / {pagination.totalPages}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                  disabled={page >= pagination.totalPages}
-                  className="rounded-lg px-3 py-1.5 hover:bg-zinc-100 disabled:opacity-40"
-                >
-                  Next
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <ListSearch
+            value={search}
+            onChange={setSearch}
+            placeholder="Search by name, brand, model, type, category or serial number…"
+          />
+          <SearchableSelect
+            className="min-w-[150px]"
+            value={lifecycle ?? ''}
+            onChange={(v) => setLifecycle((v || undefined) as typeof lifecycle)}
+            placeholder="All Statuses"
+            ariaLabel="Status"
+            chrome={CONTROL_CHROME}
+            clearable
+            options={LIFECYCLE_OPTIONS}
+          />
+          {/* Scenario 56 — Operations: items with units on hand there. */}
+          <SearchableSelect
+            className="min-w-[170px]"
+            value={region ?? ''}
+            onChange={(v) => setRegion((v || undefined) as typeof region)}
+            placeholder="All Operations"
+            ariaLabel="Operations"
+            chrome={CONTROL_CHROME}
+            clearable
+            options={REGION_OPTIONS}
+          />
+          {(canSubmitReview || canConfirmAccounting || canApproveItem) && (
+            <SearchableSelect
+              className="min-w-[190px]"
+              value={approvalStatus ?? ''}
+              onChange={(v) => setApprovalStatus((v || undefined) as typeof approvalStatus)}
+              placeholder="All Approval Statuses"
+              ariaLabel="Approval status"
+              chrome={CONTROL_CHROME}
+              clearable
+              options={APPROVAL_OPTIONS}
+            />
+          )}
+          {/* Type / Category = the sheet's TYPE / GROUP / SUBGROUP:
+              Type is the item type, Category/Subgroup the category tree. */}
+          <SearchableSelect
+            className="min-w-[170px]"
+            value={typeId ?? ''}
+            onChange={(v) => setTypeId(v || undefined)}
+            placeholder="All Types"
+            ariaLabel="Type"
+            chrome={CONTROL_CHROME}
+            clearable
+            options={typeOptions.map((t) => ({
+              value: t.id,
+              label: displayClassificationLabel(t.name) ?? t.name,
+            }))}
+          />
+          {categories.length > 0 && (
+            <CategorySelect
+              value={primaryCategoryId}
+              onChange={setPrimaryCategoryId}
+              options={categories}
+              placeholder="All Categories"
+              aria-label="Category or subgroup"
+              className="min-w-[180px]"
+            />
+          )}
+          <SearchableSelect
+            className="min-w-[160px]"
+            value={`${sortBy}:${sortOrder}`}
+            onChange={(v) => {
+              if (!v) return
+              const [field, order] = v.split(':') as [typeof sortBy, typeof sortOrder]
+              setSortBy(field)
+              setSortOrder(order)
+            }}
+            ariaLabel="Sort by"
+            chrome={CONTROL_CHROME}
+            options={SORT_OPTIONS}
+          />
+          {showClear && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-[13px] text-ink-muted hover:bg-[#f0e9fc] hover:text-[#5b21b6]"
+            >
+              <X className="h-4 w-4" />
+              Clear
+            </button>
+          )}
+        </div>
 
-      {/* Create Modal */}
-      <CreateItemModal
-        isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        onSubmit={(data) => createItem(data)}
-        isSubmitting={isCreating}
-        categories={categories}
-        uomOptions={uomOptions}
-        brandOptions={brandOptions}
-        typeOptions={typeOptions}
-      />
+        {error && <LoadError message="Failed to load items — try refreshing the page." />}
+
+        <TableCard fetching={isFetching && !isLoading}>
+          {isLoading ? (
+            <div className="p-8 text-center text-sm text-ink-muted">Loading items…</div>
+          ) : items.length === 0 ? (
+            <EmptyState
+              icon={filtered ? <Search className="h-8 w-8" /> : <Package className="h-10 w-10" />}
+              title={filtered ? 'No items match' : 'No items yet'}
+              hint={filtered ? undefined : 'Add items from the Add Item tab.'}
+            />
+          ) : (
+            <>
+              <ItemMasterTable
+                items={items}
+                canUpdate={canUpdate}
+                canDelete={canDelete}
+                canManageLifecycle={canManageLifecycle}
+                onEdit={(item) => setEditTarget(item)}
+                onDelete={handleDelete}
+                onLifecycleChange={(id, lc) => updateLifecycle(id, lc)}
+                onViewBundle={(item) => setSelectedBundleItem(item)}
+                canSubmitReview={canSubmitReview}
+                canConfirmAccounting={canConfirmAccounting}
+                canApproveItem={canApproveItem}
+                isSubmittingReview={isSubmitting}
+                onSubmitReview={(item) => submitItem(item.id)}
+                onConfirmAccounting={(item) => setConfirmingAccountingItem(item)}
+                onRejectAccounting={(item) => setRejectingAccountingItem(item)}
+                onApproveItem={(item) => setApprovingItem(item)}
+                onRejectItem={(item) => setRejectingItem(item)}
+              />
+              <ListFooterPager
+                page={page}
+                pageCount={pagination.totalPages}
+                total={pagination.total}
+                limit={limit}
+                noun="items"
+                onPageChange={setPage}
+                onLimitChange={(n) => {
+                  setLimit(n)
+                  setPage(1)
+                }}
+                pageSizes={STOCK_LEDGER_PAGE_SIZES}
+              />
+            </>
+          )}
+        </TableCard>
+      </div>
 
       {/* Edit Modal */}
       <EditItemModal
@@ -412,17 +323,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         typeOptions={typeOptions}
       />
 
-      {/* Bundle Create Modal */}
-      <CreateBundleModal
-        isOpen={isBundleCreateOpen}
-        onClose={() => setIsBundleCreateOpen(false)}
-        onSubmit={createBundle}
-        isSubmitting={isCreatingBundle}
-        itemOptions={itemOptions}
-        categoryOptions={categories}
-        uomOptions={uomOptions}
-      />
-
       {/* Bundle Detail Modal */}
       <BundleDetailModal
         isOpen={!!selectedBundleItem}
@@ -437,13 +337,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         removingComponentId={removingComponentId}
         canEdit={canCreateBundle}
         onClose={() => setSelectedBundleItem(null)}
-      />
-
-      {/* Bulk Image Import Modal */}
-      <BulkImageImportModal
-        isOpen={isBulkImportOpen}
-        onClose={() => setIsBulkImportOpen(false)}
-        items={itemOptions}
       />
 
       {/* Scenario 16 — Item Master Governance modals */}

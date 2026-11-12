@@ -1,4 +1,4 @@
-import { can, type SessionUser } from '@/src/libs/guards/permission'
+import { can, isHeadOffice, type SessionUser } from '@/src/libs/guards/permission'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
@@ -27,9 +27,11 @@ export function getProcurementHubPermissions(session: SessionUser): ProcurementH
     canReadOrders: can(session, PROCUREMENT_PERMISSIONS.PO_READ),
     canReadRequests: can(session, PROCUREMENT_PERMISSIONS.PR_READ),
     // The "+ New Purchase" button always drafts a Purchase Request now.
+    // Purchasing is Head Office's job — branch users never start one.
     canCreate:
-      can(session, PROCUREMENT_PERMISSIONS.PR_CREATE) ||
-      can(session, PROCUREMENT_PERMISSIONS.WILDCARD),
+      isHeadOffice(session) &&
+      (can(session, PROCUREMENT_PERMISSIONS.PR_CREATE) ||
+        can(session, PROCUREMENT_PERMISSIONS.WILDCARD)),
     canApprove:
       can(session, PROCUREMENT_PERMISSIONS.PO_APPROVE) ||
       can(session, PROCUREMENT_PERMISSIONS.WILDCARD),

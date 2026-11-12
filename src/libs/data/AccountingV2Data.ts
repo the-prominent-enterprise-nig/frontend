@@ -2656,6 +2656,8 @@ export interface BankReconciliationLine {
   date: string
   reference?: string | null
   checked: boolean
+  /** Docket #61 — the day a ticked line cleared; null while unticked and on lines ticked before it existed. */
+  clearedDate?: string | null
 }
 export interface BankReconciliation {
   id: string
@@ -3205,13 +3207,8 @@ export const UnidentifiedBankCredits = {
       '/bank-accounts/unidentified-bank-credits',
       status ? { status } : undefined
     ),
-  record: (body: {
-    bankAccountId: string
-    amount: number
-    creditDate: string
-    bankRef?: string
-    voucherControlNo: string
-  }) => api.post<UnidentifiedBankCredit>('/bank-accounts/unidentified-bank-credits', body),
+  record: (body: { bankAccountId: string; amount: number; creditDate: string; bankRef?: string }) =>
+    api.post<UnidentifiedBankCredit>('/bank-accounts/unidentified-bank-credits', body),
   reclassify: (id: string, body: { targetType: ClearingSettlementType; tpfProviderId?: string }) =>
     api.post<UnidentifiedBankCredit>(
       `/bank-accounts/unidentified-bank-credits/${id}/reclassify`,

@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { X, PackagePlus, ArrowLeftRight, ChevronLeft } from 'lucide-react'
+import { X, PackagePlus, ArrowLeftRight, ChevronLeft, Pencil } from 'lucide-react'
+import Tooltip from '@/src/components/ui/Tooltip'
+import { isItemLockedForReview } from '@/src/libs/inventory/item-edit'
 import { useMe } from '@/src/hooks/useMe'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -73,12 +75,14 @@ function Item360Content({
   locations,
   region,
   onClose,
+  onEdit,
 }: {
   itemId: string
   context: DrawerContext
   locations?: string[]
   region?: 'panay' | 'negros'
   onClose: () => void
+  onEdit?: () => void
 }) {
   const { pushPanel } = useUIShell()
   const [activeTab, setActiveTab] = useState<Tab>(DEFAULT_TAB[context])
@@ -172,6 +176,13 @@ function Item360Content({
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {/* Catalog actions — Item Master rows open here, so Edit lives here too */}
+        {itemData && context === 'catalog' && onEdit && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <EditItemButton locked={isItemLockedForReview(itemData)} onEdit={onEdit} />
+          </div>
+        )}
 
         {/* Quick actions — operational, so Stock-context only */}
         {itemData && context === 'stock' && (
@@ -322,6 +333,13 @@ export default function Item360Drawer() {
             locations={locations}
             region={itemPanel?.region}
             onClose={popPanel}
+            onEdit={
+              itemPanel?.onEdit &&
+              (() => {
+                popPanel()
+                itemPanel.onEdit?.()
+              })
+            }
           />
         ) : (
           <div className="flex flex-1 items-center justify-center">
@@ -331,6 +349,30 @@ export default function Item360Drawer() {
       </div>
     </>,
     document.body
+  )
+}
+
+/** "Edit item" — hands off to Item Master's full-content Edit form. Items
+ * mid-review are locked by the backend, so it's disabled there. */
+function EditItemButton({
+  locked,
+  onEdit,
+}: {
+  locked: boolean
+  onEdit: () => void
+}): React.JSX.Element {
+  return (
+    <Tooltip label={locked ? 'Locked while in review' : 'Edit model, description, brand…'}>
+      <button
+        type="button"
+        disabled={locked}
+        onClick={onEdit}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 py-1.5 text-[12px] font-medium text-[#3d3d4a] hover:border-[#a3a3b2] disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <Pencil className="h-3.5 w-3.5" />
+        Edit item
+      </button>
+    </Tooltip>
   )
 }
 

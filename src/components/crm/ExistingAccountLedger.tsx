@@ -10,6 +10,7 @@ import { MANILA_TZ } from '@/src/libs/format/manila-date'
 import { ledgerScheme } from '@/src/libs/format/ledgerScheme'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
 import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
+import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { printCustomerLedgerDocument } from '@/src/libs/print/printInventoryDocument'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
@@ -128,8 +129,12 @@ export default function ExistingAccountLedger({
       ? hasPermission(me, POS_PERMISSIONS.COLLECTIONS_MANAGE)
       : hasPermission(me, ACCOUNTING_PERMISSIONS.AR_INVOICES_READ) &&
         hasPermission(me, ACCOUNTING_PERMISSIONS.AR_INVOICES_PAY))
-  const canEdit =
-    showAccountLink && !!me && hasPermission(me, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_UPDATE)
+  // Editing an installment account is the Business Owner's alone (an
+  // explicit-only permission — a CRM wildcard never grants it), so it is read
+  // with can(), the check the edit page and the server apply. hasPermission()
+  // has no such rule: a Cashier's or Branch Manager's `crm:*:*` passed it, and
+  // the Edit button showed on a page that then refused them (Docket NIG #44, QA).
+  const canEdit = showAccountLink && !!me && can(me, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_UPDATE)
 
   return (
     <div data-testid="existing-ledger">

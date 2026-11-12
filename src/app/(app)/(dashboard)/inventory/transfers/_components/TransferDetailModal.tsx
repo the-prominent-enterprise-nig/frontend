@@ -95,6 +95,14 @@ const PRE_DISPATCH_STATUSES: string[] = [
   'draft',
 ]
 
+// Nothing to hand to the warehouse: the request is dead (rejected/cancelled),
+// or its lines are still being renegotiated (a pending substitution).
+const UNPRINTABLE_STATUSES: readonly string[] = [
+  'rejected',
+  'cancelled',
+  'pending_substitution_confirmation',
+]
+
 function LineSerial({
   line,
 }: {
@@ -2966,7 +2974,10 @@ export default function TransferDetailModal({
                   Cancel
                 </button>
               )}
-              {(status === 'in_transit' || isReceivedStatus) && (
+              {/* Printable from the moment it's requested: before dispatch it
+                  prints as the Stock Request picking sheet the custodian
+                  hands to warehouse staff, after it as the Stock Transfer. */}
+              {!UNPRINTABLE_STATUSES.includes(status) && (
                 <button
                   type="button"
                   onClick={async () => {

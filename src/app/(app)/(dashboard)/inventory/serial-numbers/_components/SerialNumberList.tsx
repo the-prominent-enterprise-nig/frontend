@@ -226,6 +226,9 @@ export default function SerialNumberList({
     setInlineSerial((prev) => (prev?.id === serial.id ? null : serial))
   const canManage = hasPermission(session, INVENTORY_PERMISSIONS.SERIAL_MANAGE)
   const canTransfer = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_CREATE)
+  // Stock Transfer dispatches the ticked units at once for whoever can
+  // dispatch; anyone else still raises a request.
+  const canDispatch = hasPermission(session, INVENTORY_PERMISSIONS.TRANSFERS_DISPATCH)
   const canManageCaravan = hasPermission(session, INVENTORY_PERMISSIONS.CARAVAN_MANAGE)
   // Unit cost is for Business Owner / Accountant, as on receiving.
   const canViewCost = hasPermission(session, INVENTORY_PERMISSIONS.RECEIVE_COST_VIEW)
@@ -384,7 +387,10 @@ export default function SerialNumberList({
     const pinnedLines = selection.selected.flatMap((s) =>
       s.item ? [{ serialNumberId: s.id, itemId: s.item.id, itemLabel: s.item.name }] : []
     )
-    saveStockTransferDraft({ fromWarehouseId: source.id, pinnedLines }, session.id)
+    saveStockTransferDraft(
+      { fromWarehouseId: source.id, pinnedLines, dispatchNow: canDispatch },
+      session.id
+    )
     router.push('/inventory/stock-transaction?tab=transfers')
   }
   const { consignToCaravan, isConsigning } = useConsignToCaravan(selection.clear)

@@ -27,6 +27,7 @@ const DR_ERROR_MESSAGES: Record<string, string> = {
   occasion_required: 'Pick the raffle occasion.',
   customer_required: 'Pick the customer from CRM.',
   supplier_required: 'Pick the supplier.',
+  head_office_approval_required: 'Only Head Office can approve or reject a DR with a debit memo.',
   delivery_receipt_not_pending:
     'This DR is no longer waiting for approval — someone already decided it.',
   delivery_receipt_cannot_void:

@@ -35,6 +35,7 @@ import {
   caravanFormValues,
   type CaravanFieldsForm,
 } from './CaravanDestinationFields'
+import { DispatchDeliveryFields } from './DispatchDeliveryFields'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { getCrossBranchStock } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
@@ -86,6 +87,10 @@ type Props = {
     // branch lock would be.
     toMain?: boolean
     reason?: string
+    // Set by General Stockbook's "Stock Transfer": whoever holds the ticked
+    // units sends them now — the form becomes a dispatch (source fixed,
+    // destination open, delivery details) instead of a request.
+    dispatchNow?: boolean
   } | null
   // Scenario 60 — a caravan can be created inline as the destination. It is
   // created first; its warehouse then becomes the transfer's toWarehouseId.
@@ -177,6 +182,13 @@ const inputClass =
 // change every render regardless of whether the lines actually changed.
 const EMPTY_LINES: CreateTransferFormValues['lines'] = []
 const labelClass = 'mb-1.5 block text-[12px] font-medium text-[#3d3d4a]'
+const EMPTY_DELIVERY: NonNullable<CreateTransferFormValues['delivery']> = {
+  driverName: '',
+  driverPhone: '',
+  vehiclePlate: '',
+  carrierName: '',
+  notes: '',
+}
 
 type LineRowProps = {
   control: Control<CreateTransferFormValues>
@@ -390,6 +402,12 @@ export default function CreateTransferModal({
 }: Props) {
   const today = manilaToday()
   const isEditing = !!editing
+  const isDispatchMode = !isEditing && !!initialDraft?.dispatchNow
+  // Units already chosen where they sit (stockbook ticks, a repair ticket):
+  // the source is fixed to that location and the destination is open, both
+  // when dispatching and when requesting. Locking To to the user's own branch
+  // here emptied From whenever the units were at that same branch.
+  const sendsChosenUnits = !isEditing && !!initialDraft?.pinnedLines?.length
   const isPage = variant === 'page'
   const editingCaravan = isCaravanBranch(editing?.toWarehouse?.branch)
     ? (editing?.toWarehouse?.branch ?? null)
@@ -427,6 +445,7 @@ export default function CreateTransferModal({
     reset,
     watch,
     setValue,
+    getValues,
     formState: { errors, isSubmitted },
   } = useForm<CreateTransferFormValues>({
     resolver: zodResolver(CreateTransferFormSchema),
@@ -454,11 +473,21 @@ export default function CreateTransferModal({
   // theirs to choose. A Warehouse Custodian's destination is never locked. A
   // saved request keeps its route, so editing never flips it.
   const sendsDirect = !isEditing && canSkipApproval && !!watch('skipDestinationApproval')
+  // A repair unit dispatched by whoever holds it starts on Main, but the
+  // sender may pick another destination.
   const lockedWarehouse =
-    mainWarehouse ??
-    (!canPickAnyDestination && !sendsDirect && ownWarehouseId ? ownBranchWarehouses[0] : undefined)
+    (sendsChosenUnits ? undefined : mainWarehouse) ??
+    (!canPickAnyDestination && !sendsDirect && !sendsChosenUnits && ownWarehouseId
+      ? ownBranchWarehouses[0]
+      : undefined)
   const lockedToWarehouseId = lockedWarehouse?.id
-  const lockedFromWarehouseId = sendsDirect ? ownWarehouseId : undefined
+  // A stockbook dispatch leaves from where the ticked units sit.
+  const lockedFromWarehouseId = sendsChosenUnits
+    ? initialDraft?.fromWarehouseId
+    : sendsDirect
+      ? ownWarehouseId
+      : undefined
+  const lockedFromWarehouse = warehouses.find((wh) => wh.id === lockedFromWarehouseId)
 
   // Live check (not gated behind a submit attempt) so the error and disabled
   // Save button appear the instant an invalid date is picked, not only after
@@ -502,6 +531,7 @@ export default function CreateTransferModal({
               expectedArrival: '',
               reason: initialDraft?.reason ?? '',
               destinationType: initialDraft?.toWarehouseId ? 'caravan' : 'branch',
+              delivery: initialDraft?.dispatchNow ? EMPTY_DELIVERY : undefined,
               lines: initialDraft?.pinnedLines?.length
                 ? initialDraft.pinnedLines.map((pin) => ({
                     itemId: pin.itemId,
@@ -548,6 +578,14 @@ export default function CreateTransferModal({
   // Skipped while editing (an existing request already has a destination)
   // and for a caravan destination (the caravan is the destination instead).
   const destinationIsCaravan = watch('destinationType') === 'caravan'
+  // Dispatching a repair unit: Main is only the starting destination, filled
+  // in once the warehouses have loaded and only while To is still empty.
+  const suggestedMainId = sendsChosenUnits ? mainWarehouse?.id : undefined
+  useEffect(() => {
+    if (isOpen && suggestedMainId && !getValues('toWarehouseId')) {
+      setValue('toWarehouseId', suggestedMainId, { shouldValidate: true })
+    }
+  }, [isOpen, suggestedMainId, getValues, setValue])
   useEffect(() => {
     if (isOpen && !isEditing && !destinationIsCaravan && lockedToWarehouseId) {
       setValue('toWarehouseId', lockedToWarehouseId, { shouldValidate: true })
@@ -585,7 +623,7 @@ export default function CreateTransferModal({
   // destination is the user's own side, keeps to the caravans their branch
   // hosts.
   const caravanScope = caravanScopeBranchId(warehouses, currentUserBranchId)
-  const destinationOpen = canPickAnyDestination || sendsDirect
+  const destinationOpen = canPickAnyDestination || sendsDirect || sendsChosenUnits
   const runningCaravans = warehouses.filter(
     (wh) =>
       isCaravanBranch(wh.branch) &&
@@ -595,10 +633,9 @@ export default function CreateTransferModal({
   const branchDestinations = [
     // A Warehouse Custodian, head office and anyone sending directly can send
     // to any branch; anyone else with a branch only requests to their own.
-    ...(currentUserBranchId && !canPickAnyDestination && !sendsDirect
-      ? ownBranchWarehouses
-      : warehouses
-    ).filter((wh) => !isCaravanBranch(wh.branch)),
+    ...(currentUserBranchId && !destinationOpen ? ownBranchWarehouses : warehouses).filter(
+      (wh) => !isCaravanBranch(wh.branch)
+    ),
     ...runningCaravans,
   ].filter((wh) => wh.id !== fromId)
 
@@ -716,12 +753,16 @@ export default function CreateTransferModal({
             <h2 className="text-[19px] font-semibold tracking-[-0.01em] text-[#17171c]">
               {isEditing
                 ? `Edit Request ${editing?.transferNumber ?? ''}`.trim()
-                : 'New Stock Request'}
+                : isDispatchMode
+                  ? 'New Stock Dispatch'
+                  : 'New Stock Request'}
             </h2>
             <p className="mt-1 text-[13px] text-[#4b4b5a]">
               {isEditing
                 ? 'Saving resubmits this request for approval from the start — any sign-off it already has is cleared.'
-                : 'Submitted as a request — routed to the source branch, or to head office first if approval is required.'}
+                : isDispatchMode
+                  ? 'Sent straight away — the units go In Transit as soon as you dispatch. No request or approval.'
+                  : 'Submitted as a request — routed to the source branch, or to head office first if approval is required.'}
             </p>
           </div>
           {!isPage && (
@@ -749,9 +790,9 @@ export default function CreateTransferModal({
               <div className="rounded-xl border border-[#e4e4e9] bg-white">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-[18px] py-[13px]">
                   <span className="text-[13.5px] font-semibold text-[#17171c]">
-                    Request details
+                    {isDispatchMode ? 'Transfer details' : 'Request details'}
                   </span>
-                  {canCreateCaravan && !isEditing && !mainWarehouse && (
+                  {canCreateCaravan && !isEditing && !mainWarehouse && !isDispatchMode && (
                     <label className="flex cursor-pointer items-center gap-2 text-[12px] text-[#3d3d4a]">
                       <input
                         type="checkbox"
@@ -798,12 +839,16 @@ export default function CreateTransferModal({
                                 onChange={field.onChange}
                                 disabled
                                 chrome={CONTROL_CHROME}
-                                options={[
-                                  {
-                                    value: lockedFromWarehouseId,
-                                    label: branchLabel(ownBranchWarehouses[0]),
-                                  },
-                                ]}
+                                options={
+                                  lockedFromWarehouse
+                                    ? [
+                                        {
+                                          value: lockedFromWarehouse.id,
+                                          label: branchLabel(lockedFromWarehouse),
+                                        },
+                                      ]
+                                    : []
+                                }
                               />
                             ) : (
                               <SearchableSelect
@@ -827,11 +872,13 @@ export default function CreateTransferModal({
                           }
                         />
                         <p className="mt-1 text-[11px] text-[#4b4b5a]">
-                          {lockedFromWarehouseId
-                            ? 'Direct sends always leave from your own branch.'
-                            : isCaravanBranch(fromWarehouse?.branch)
-                              ? `Caravan stock, recorded under ${fromWarehouse?.branch?.hostBranch?.name ?? 'its host branch'}.`
-                              : 'Stock leaves here.'}
+                          {sendsChosenUnits
+                            ? 'Where the chosen units are now.'
+                            : lockedFromWarehouseId
+                              ? 'Direct sends always leave from your own branch.'
+                              : isCaravanBranch(fromWarehouse?.branch)
+                                ? `Caravan stock, recorded under ${fromWarehouse?.branch?.hostBranch?.name ?? 'its host branch'}.`
+                                : 'Stock leaves here.'}
                         </p>
                         {errors.fromWarehouseId && (
                           <p className="mt-1 text-[11.5px] text-[#b42318]">
@@ -908,7 +955,9 @@ export default function CreateTransferModal({
                               {isCaravanDestination
                                 ? ''
                                 : mainWarehouse
-                                  ? 'Repair units go to Main for assessment.'
+                                  ? sendsChosenUnits
+                                    ? 'Repair units normally go to Main for assessment.'
+                                    : 'Repair units go to Main for assessment.'
                                   : lockedToWarehouseId
                                     ? 'Requests are always routed to your own branch.'
                                     : 'Stock arrives here.'}
@@ -995,7 +1044,7 @@ export default function CreateTransferModal({
                       Stock Request flow. Both paths stay available; this only
                       changes whether the destination branch's manager has to
                       approve first. */}
-                  {canSkipApproval && (
+                  {canSkipApproval && !sendsChosenUnits && (
                     <div className="rounded-lg border border-[#e4e4e9] bg-[#faf9fb] px-3 py-2.5">
                       <label className="flex items-start gap-2 text-[13px] text-[#3d3d4a]">
                         <Controller
@@ -1041,18 +1090,27 @@ export default function CreateTransferModal({
               </div>
             </div>
 
+            {isDispatchMode && (
+              <DispatchDeliveryFields control={control} errors={errors.delivery} />
+            )}
+
             {/* Items */}
             <div className="rounded-xl border border-[#e4e4e9] bg-white">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-[18px] py-[13px]">
                 <div className="flex items-center gap-2.5">
                   <span className="text-[13.5px] font-semibold text-[#17171c]">
-                    Items to request <span className="text-[#b42318]">*</span>
+                    {isDispatchMode ? 'Units to dispatch' : 'Items to request'}{' '}
+                    <span className="text-[#b42318]">*</span>
                   </span>
                   <span className={`${MONO} text-[11px] text-[#4b4b5a]`}>
                     {fields.length} {fields.length === 1 ? 'line' : 'lines'} · {totalUnits} units
                   </span>
                 </div>
-                <div className="w-full sm:w-[520px] sm:max-w-[55%] sm:flex-1">
+                {/* A dispatch carries exactly the units ticked in the
+                    stockbook — each line names its serial. */}
+                <div
+                  className={`w-full sm:w-[520px] sm:max-w-[55%] sm:flex-1 ${isDispatchMode ? 'hidden' : ''}`}
+                >
                   <ItemSearchCombobox
                     key={addItemKey}
                     value=""
@@ -1169,10 +1227,14 @@ export default function CreateTransferModal({
                 : isSubmitting
                   ? isEditing
                     ? 'Saving…'
-                    : 'Submitting…'
+                    : isDispatchMode
+                      ? 'Dispatching…'
+                      : 'Submitting…'
                   : isEditing
                     ? 'Save & Resubmit'
-                    : 'Submit Request'}
+                    : isDispatchMode
+                      ? 'Dispatch'
+                      : 'Submit Request'}
             </button>
           </div>
         </div>

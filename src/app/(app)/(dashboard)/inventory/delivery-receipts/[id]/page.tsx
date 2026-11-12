@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { requirePermission } from '@/src/libs/guards/require-permission'
-import { can, canAny } from '@/src/libs/guards/permission'
+import { can, canAny, isHeadOffice } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { getDeliveryReceipt } from '../_actions/get-delivery-receipt'
 import { drToFormValues } from '../_lib/dr-form-values'
@@ -13,6 +13,7 @@ import { DrProceedToPos } from '../_components/DrProceedToPos'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { isRepairPurpose } from '@/src/schema/inventory/delivery-receipts'
 import { INVENTORY_DEBIT_MEMO_ACCESS } from '@/src/libs/guards/shared-ownership'
+import { DR_PURPOSE_CONFIG } from '@/src/libs/inventory/delivery-receipt-purposes'
 
 export const metadata = { title: 'Delivery Receipt' }
 
@@ -35,9 +36,12 @@ export default async function Page({
   if (dr.status === 'draft' && can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_UPDATE)) {
     return <DrForm draft={{ id: dr.id, drNumber: dr.drNumber, values: drToFormValues(dr) }} />
   }
+  // A DR with a debit memo is Head Office's to decide; the backend refuses
+  // a branch approver too.
   const canDecide =
     dr.status === 'pending_approval' &&
-    can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_APPROVE)
+    can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_APPROVE) &&
+    (!DR_PURPOSE_CONFIG[dr.purpose].headOfficeApproval || isHeadOffice(session))
   const canVoid =
     (dr.status === 'approved' || dr.status === 'posted') &&
     // A repair DR has already moved its ticket; there is no undoing that. A

@@ -1,7 +1,24 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, RefreshCw, AlertCircle, Tags } from 'lucide-react'
+import { RefreshCw, Tags } from 'lucide-react'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { CONTROL_CHROME, PLEX } from '@/src/libs/design/plex'
+import {
+  EmptyState,
+  ListHeader,
+  LoadError,
+  PAGE_INNER,
+  PAGE_SHELL,
+  PRIMARY_BUTTON,
+  TABLE_HEAD_ROW,
+  TableCard,
+} from '../../master-data/_components/masterDataChrome'
+
+const STATUS_OPTIONS = [
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+]
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { useCategoryManager } from '../_hooks/useCategoryManager'
@@ -64,85 +81,65 @@ export default function CategoryManager({ session }: { session: SessionUser | nu
     setDeleteConfirmText('')
   }
 
+  const addButton = canCreate && (
+    <button type="button" onClick={() => setShowCreateModal(true)} className={PRIMARY_BUTTON}>
+      + Add Category
+    </button>
+  )
+
   return (
-    <div className="mx-auto w-full max-w-[1560px] p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Category Management</h1>
-          <p className="text-sm text-zinc-500">
-            Organize items into a nested hierarchy for easy navigation and reporting.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <select
+    <div className={`${PAGE_SHELL} ${PLEX}`}>
+      <div className={PAGE_INNER}>
+        <ListHeader
+          title="Category Management"
+          description="Organize items into a nested hierarchy for easy navigation and reporting."
+          actions={addButton || undefined}
+        />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchableSelect
+            className="min-w-[170px]"
             value={statusFilter ?? ''}
-            onChange={(e) =>
-              setStatusFilter((e.target.value || undefined) as 'active' | 'inactive' | undefined)
-            }
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">All statuses</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-
-          {canCreate && (
-            <button
-              type="button"
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
-            >
-              <Plus className="h-4 w-4" />
-              Add Category
-            </button>
-          )}
+            onChange={(v) => setStatusFilter((v || undefined) as 'active' | 'inactive' | undefined)}
+            placeholder="All statuses"
+            ariaLabel="Status"
+            chrome={CONTROL_CHROME}
+            clearable
+            options={STATUS_OPTIONS}
+          />
         </div>
-      </div>
 
-      <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
-        <div className="border-b border-zinc-100 px-4 py-3">
-          <div className="flex items-center gap-2 text-sm text-zinc-500">
-            <Tags className="h-4 w-4" />
+        {error && <LoadError message="Failed to load categories — try refreshing the page." />}
+
+        <TableCard fetching={isFetching && !isLoading}>
+          <div className={`flex items-center gap-2 px-4 py-2.5 ${TABLE_HEAD_ROW}`}>
+            <Tags className="h-3.5 w-3.5" />
             <span>Category hierarchy</span>
-            {isFetching && !isLoading && (
-              <RefreshCw className="h-3.5 w-3.5 animate-spin text-zinc-400" />
-            )}
+            {isFetching && !isLoading && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
           </div>
-        </div>
-
-        <div className="px-2 py-2">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12 text-zinc-400">
-              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-              Loading categories…
-            </div>
-          ) : error ? (
-            <div className="flex items-center gap-2 px-4 py-8 text-sm text-red-600">
-              <AlertCircle className="h-4 w-4" />
-              Failed to load categories. Please try again.
-            </div>
-          ) : tree.length === 0 ? (
-            <div className="py-12 text-center">
-              <Tags className="mx-auto mb-3 h-8 w-8 text-zinc-300" />
-              <p className="text-sm font-medium text-zinc-500">No categories yet</p>
-              {canCreate && (
-                <p className="mt-1 text-xs text-zinc-400">
-                  Click "Add Category" to create your first one.
-                </p>
-              )}
-            </div>
-          ) : (
-            <CategoryTree
-              nodes={tree}
-              canCreate={canCreate}
-              canUpdate={canUpdate}
-              canDelete={canDelete}
-              onAddChild={handleAddChild}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
+            <div className="p-8 text-center text-sm text-ink-muted">Loading categories…</div>
+          ) : error ? null : tree.length === 0 ? (
+            <EmptyState
+              icon={<Tags className="h-10 w-10" />}
+              title="No categories yet"
+              hint={canCreate ? 'Add your first category to start organizing items.' : undefined}
+              action={addButton || undefined}
             />
+          ) : (
+            <div className="px-2 py-1">
+              <CategoryTree
+                nodes={tree}
+                canCreate={canCreate}
+                canUpdate={canUpdate}
+                canDelete={canDelete}
+                onAddChild={handleAddChild}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+              />
+            </div>
           )}
-        </div>
+        </TableCard>
       </div>
 
       {/* Create modal */}

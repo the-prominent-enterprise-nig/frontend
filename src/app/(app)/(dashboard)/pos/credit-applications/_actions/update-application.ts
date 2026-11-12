@@ -70,6 +70,9 @@ export async function updateCreditApplication(
     // Form-only figures behind the down-payment check — not API fields.
     resolvedItemTotal: undefined,
     downPaymentFixed: undefined,
+    // Docket #48 — lets a business applicant's ₱0 down pass the check above;
+    // the server reads the applicant's real type itself.
+    applicantCustomerType: undefined,
   }
 
   const result = await api.patch<CreditApplication>(`/credit/applications/${id}`, payload)

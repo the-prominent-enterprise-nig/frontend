@@ -5,6 +5,9 @@ import { useForm, Controller, useWatch } from 'react-hook-form'
 import { useQuery } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Images } from 'lucide-react'
+import { CONTROL_CHROME, MONO, PLEX } from '@/src/libs/design/plex'
+import { errorClass, inputClass, labelClass } from './itemFormChrome'
+import { CategorySubgroupFields } from './item-create-fields'
 import ItemImageGallery from './ItemImageGallery'
 import {
   UpdateItemFormSchema,
@@ -14,7 +17,7 @@ import {
   ClassificationOption,
 } from '@/src/schema/inventory/items'
 import type { ApiResponse } from '@/src/libs/api/client'
-import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/CategorySelect'
+import type { CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import { getAttributes } from '../../attributes/_actions/get-attributes'
@@ -80,8 +83,8 @@ export default function EditItemModal({
   useEffect(() => {
     if (!isOpen) return
     getAccountOptions().then((res) => {
-      const data = res.data as any
-      setAccounts((data?.items ?? data ?? []) as Account[])
+      const data = res.data as { items?: Account[] } | Account[] | undefined
+      setAccounts(Array.isArray(data) ? data : (data?.items ?? []))
     })
   }, [isOpen])
 
@@ -102,6 +105,7 @@ export default function EditItemModal({
       primaryCategoryId: '',
       baseUnitId: '',
       costPrice: undefined,
+      sellingPrice: undefined,
       costingMethod: 'weighted_average',
       isBatchTracked: false,
       isSerialTracked: false,
@@ -118,7 +122,7 @@ export default function EditItemModal({
       weightKg: undefined,
       warrantyPeriodDays: undefined,
       brandId: undefined,
-      typeId: undefined,
+      typeId: '',
       modelNumber: '',
     },
   })
@@ -132,6 +136,7 @@ export default function EditItemModal({
         primaryCategoryId: item.primaryCategory?.id ?? undefined,
         baseUnitId: item.baseUnit?.id ?? undefined,
         costPrice: item.costPrice != null ? Number(item.costPrice) : undefined,
+        sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : undefined,
         costingMethod: 'weighted_average',
         isBatchTracked: item.isBatchTracked ?? false,
         isSerialTracked: item.isSerialTracked ?? false,
@@ -149,7 +154,7 @@ export default function EditItemModal({
         warrantyPeriodDays:
           item.warrantyPeriodDays != null ? Number(item.warrantyPeriodDays) : undefined,
         brandId: item.brand?.id ?? undefined,
-        typeId: item.type?.id ?? undefined,
+        typeId: item.type?.id ?? '',
         modelNumber: item.modelNumber ?? '',
       })
     } else if (!isOpen) {
@@ -269,319 +274,345 @@ export default function EditItemModal({
     errors.sku,
     errors.baseUnitId,
     errors.primaryCategoryId,
+    errors.typeId,
+    errors.brandId,
+    errors.modelNumber,
   ].filter(Boolean).length
 
-  const pricingErrors = [errors.costPrice].filter(Boolean).length
+  const pricingErrors = [errors.costPrice, errors.sellingPrice].filter(Boolean).length
   const hasSubmitErrors = submitCount > 0 && Object.keys(errors).length > 0
+  const isSaving = isSubmitting || isAttributeSubmitting
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
-        {/* Header */}
-        <div className="sticky top-0 z-10 border-b border-zinc-200 bg-white">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div>
-              <h2 className="text-lg font-semibold text-zinc-900">Edit Item</h2>
-              <p className="mt-0.5 text-sm text-zinc-500">
-                Update the fields below — required fields are marked *
-              </p>
-            </div>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Edit Item"
+      // Full-content page, same shell as Add New Item: fills the area beside
+      // the sidebar (positioned against <main>), so it widens when the
+      // sidebar is collapsed and the sidebar stays usable.
+      className={`absolute inset-0 z-50 flex flex-col bg-[#f2f2f3] ${PLEX}`}
+    >
+      {/* Header */}
+      <div className="shrink-0 border-b border-[#e4e4e9] bg-white px-6 py-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className={`${MONO} mb-1 text-[10.5px] uppercase tracking-[0.08em] text-ink-subtle`}>
+              Inventory &rsaquo; Item Master &rsaquo; Edit item
+            </p>
+            <h2 className="text-[19px] font-semibold tracking-[-0.01em] text-[#17171c]">
+              Edit Item
+            </h2>
+            <p className="mt-1 truncate text-[13px] text-[#4b4b5a]">
+              {item.name} <span className={`${MONO} text-ink-muted`}>· {item.sku}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleRequestClose}
+            aria-label="Close"
+            className="rounded-lg p-2 text-[#4b4b5a] hover:bg-[#f1f1f4]"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
+      {confirmingClose && (
+        <div className="flex shrink-0 items-center justify-between border-b border-[#f5dcb0] bg-[#fdf3e2] px-6 py-3">
+          <p className="text-[13px] text-[#8a4b06]">You have unsaved changes. Discard them?</p>
+          <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={handleRequestClose}
-              className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100"
+              onClick={() => setConfirmingClose(false)}
+              className="text-[13px] font-medium text-[#4b4b5a] hover:text-[#17171c]"
             >
-              <X className="h-5 w-5" />
+              Keep editing
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmDiscard}
+              className="text-[13px] font-medium text-[#b42318] hover:text-[#8f1c14]"
+            >
+              Discard
             </button>
           </div>
-          {confirmingClose && (
-            <div className="flex items-center justify-between border-t border-amber-200 bg-amber-50 px-6 py-3">
-              <p className="text-sm text-amber-800">You have unsaved changes. Discard them?</p>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setConfirmingClose(false)}
-                  className="text-sm font-medium text-zinc-700 hover:text-zinc-900"
-                >
-                  Keep editing
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmDiscard}
-                  className="text-sm font-medium text-red-600 hover:text-red-800"
-                >
-                  Discard
-                </button>
-              </div>
-            </div>
-          )}
         </div>
+      )}
 
-        {/* Form */}
-        <form onSubmit={handleSubmit(handleFormSubmit)} noValidate>
-          {/* Basic Info */}
-          <FormSection
-            title="Basic Info"
-            defaultOpen={true}
-            errorCount={basicInfoErrors}
-            forceOpen={hasSubmitErrors && basicInfoErrors > 0}
-          >
-            {/* Item Name */}
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Item Name <span className="text-red-500">*</span>
-              </label>
-              <Controller
-                name="name"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    type="text"
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  />
-                )}
-              />
-              {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name.message}</p>}
-            </div>
+      {/* Form */}
+      <form
+        onSubmit={handleSubmit(handleFormSubmit)}
+        noValidate
+        className="flex flex-1 flex-col overflow-hidden"
+      >
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          <div className="mx-auto flex max-w-[1400px] flex-col gap-4">
+            {/* Basic Info — same fields, order and rules as Add New Item */}
+            <FormSection
+              variant="card"
+              title="Basic Info"
+              defaultOpen={true}
+              errorCount={basicInfoErrors}
+              forceOpen={hasSubmitErrors && basicInfoErrors > 0}
+            >
+              {/* Item Name */}
+              <div className="sm:col-span-2">
+                <label className={labelClass}>
+                  Item Name <span className="text-[#b42318]">*</span>
+                </label>
+                <Controller
+                  name="name"
+                  control={control}
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      value={field.value ?? ''}
+                      type="text"
+                      placeholder="e.g. Kolin Airconditioner KFM36E0W"
+                      className={inputClass}
+                    />
+                  )}
+                />
+                {errors.name && <p className={errorClass}>{errors.name.message}</p>}
+              </div>
 
-            {/* SKU */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                SKU <span className="text-red-500">*</span>
-              </label>
-              <Controller
-                name="sku"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    type="text"
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm uppercase outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                    onChange={(e) => field.onChange(e.target.value.toUpperCase())}
-                  />
-                )}
-              />
-              {errors.sku && <p className="mt-1 text-xs text-red-600">{errors.sku.message}</p>}
-            </div>
+              {/* SKU */}
+              <div>
+                <label className={labelClass}>
+                  SKU <span className="text-[#b42318]">*</span>
+                </label>
+                <Controller
+                  name="sku"
+                  control={control}
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      value={field.value ?? ''}
+                      type="text"
+                      placeholder="e.g. ITEM-0001"
+                      className={`${inputClass} uppercase`}
+                      onChange={(e) => field.onChange(e.target.value.toUpperCase())}
+                    />
+                  )}
+                />
+                {errors.sku && <p className={errorClass}>{errors.sku.message}</p>}
+              </div>
 
-            {/* Unit of Measure */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Unit of Measure <span className="text-red-500">*</span>
-              </label>
-              <Controller
-                name="baseUnitId"
-                control={control}
-                render={({ field }) => (
-                  <SearchableSelect
-                    portal
-                    value={field.value ?? ''}
-                    onChange={field.onChange}
-                    options={uomOptions.map((uom) => ({
-                      value: uom.id,
-                      label: `${uom.code} – ${uom.name}`,
-                    }))}
-                    placeholder="Select unit…"
-                    loading={uomOptions.length === 0}
-                    loadingLabel="Loading units…"
-                  />
-                )}
-              />
-              {errors.baseUnitId && (
-                <p className="mt-1 text-xs text-red-600">{errors.baseUnitId.message}</p>
-              )}
-            </div>
+              {/* Unit of Measure */}
+              <div>
+                <label className={labelClass}>
+                  Unit of Measure <span className="text-[#b42318]">*</span>
+                </label>
+                <Controller
+                  name="baseUnitId"
+                  control={control}
+                  render={({ field }) => (
+                    <SearchableSelect
+                      chrome={CONTROL_CHROME}
+                      portal
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      options={uomOptions.map((uom) => ({
+                        value: uom.id,
+                        label: `${uom.code} – ${uom.name}`,
+                      }))}
+                      placeholder="Select unit…"
+                      loading={uomOptions.length === 0}
+                      loadingLabel="Loading units…"
+                    />
+                  )}
+                />
+                {errors.baseUnitId && <p className={errorClass}>{errors.baseUnitId.message}</p>}
+              </div>
 
-            {/* Category — the category tree (the sheet's GROUP / SUBGROUP) */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Category<span className="text-red-500">*</span>
-              </label>
+              {/* Type */}
+              <div>
+                <label className={labelClass}>
+                  Type <span className="text-[#b42318]">*</span>
+                </label>
+                <Controller
+                  name="typeId"
+                  control={control}
+                  render={({ field }) => (
+                    <SearchableSelect
+                      chrome={CONTROL_CHROME}
+                      portal
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      options={typeOptions.map((t) => ({
+                        value: t.id,
+                        label: formatClassificationLabel(t.name),
+                      }))}
+                      placeholder="Select type…"
+                      loading={typeOptions.length === 0}
+                      loadingLabel="Loading types…"
+                    />
+                  )}
+                />
+                {errors.typeId && <p className={errorClass}>{errors.typeId.message}</p>}
+              </div>
+
+              {/* Category + Subgroup — Item Master's two columns. */}
               <Controller
                 name="primaryCategoryId"
                 control={control}
                 render={({ field }) => (
-                  <CategorySelect
-                    value={field.value}
+                  <CategorySubgroupFields
+                    value={field.value ?? ''}
                     onChange={field.onChange}
-                    options={categories}
-                    placeholder="Select category or subgroup…"
+                    categories={categories}
+                    error={errors.primaryCategoryId?.message}
                   />
                 )}
               />
-              {errors.primaryCategoryId && (
-                <p className="mt-1 text-xs text-red-600">{errors.primaryCategoryId.message}</p>
-              )}
-            </div>
 
-            {/* empty second column for the Category row */}
-            <div className="hidden sm:block" />
+              {/* Brand */}
+              <div>
+                <label className={labelClass}>
+                  Brand {!isServiceValue && <span className="text-[#b42318]">*</span>}
+                </label>
+                <Controller
+                  name="brandId"
+                  control={control}
+                  render={({ field }) => (
+                    <SearchableSelect
+                      chrome={CONTROL_CHROME}
+                      portal
+                      value={field.value ?? ''}
+                      onChange={(value) => field.onChange(value || undefined)}
+                      options={brandOptions.map((b) => ({ value: b.id, label: b.name }))}
+                      placeholder="Select brand…"
+                      clearable
+                    />
+                  )}
+                />
+                {errors.brandId && <p className={errorClass}>{errors.brandId.message}</p>}
+              </div>
 
-            {/* Description */}
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Description</label>
-              <Controller
-                name="description"
-                control={control}
-                render={({ field }) => (
-                  <textarea
-                    {...field}
-                    value={field.value ?? ''}
-                    rows={3}
-                    className="w-full resize-none rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  />
-                )}
-              />
-            </div>
+              {/* Model Number — shares a row with Brand. */}
+              <div>
+                <label className={labelClass}>
+                  Model Number {!isServiceValue && <span className="text-[#b42318]">*</span>}
+                </label>
+                <Controller
+                  name="modelNumber"
+                  control={control}
+                  render={({ field }) => (
+                    <input
+                      {...field}
+                      value={field.value ?? ''}
+                      type="text"
+                      placeholder="e.g. KFM36E0W"
+                      className={inputClass}
+                    />
+                  )}
+                />
+                {errors.modelNumber && <p className={errorClass}>{errors.modelNumber.message}</p>}
+              </div>
 
-            {/* Brand */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Brand</label>
-              <Controller
-                name="brandId"
-                control={control}
-                render={({ field }) => (
-                  <SearchableSelect
-                    portal
-                    value={field.value ?? ''}
-                    onChange={(value) => field.onChange(value || undefined)}
-                    options={brandOptions.map((b) => ({ value: b.id, label: b.name }))}
-                    placeholder="Select brand…"
-                    clearable
-                  />
-                )}
-              />
-            </div>
+              {/* Description */}
+              <div className="sm:col-span-2">
+                <label className={labelClass}>Description</label>
+                <Controller
+                  name="description"
+                  control={control}
+                  render={({ field }) => (
+                    <textarea
+                      {...field}
+                      value={field.value ?? ''}
+                      rows={3}
+                      placeholder="Optional item description…"
+                      className={`${inputClass} resize-none`}
+                    />
+                  )}
+                />
+              </div>
+            </FormSection>
 
-            {/* Type — the client sheet's TYPE */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Type</label>
-              <Controller
-                name="typeId"
-                control={control}
-                render={({ field }) => (
-                  <SearchableSelect
-                    portal
-                    value={field.value ?? ''}
-                    onChange={(value) => field.onChange(value || undefined)}
-                    options={typeOptions.map((t) => ({
-                      value: t.id,
-                      label: formatClassificationLabel(t.name),
-                    }))}
-                    placeholder="Select type…"
-                    clearable
-                  />
-                )}
-              />
-            </div>
-
-            {/* Model Number */}
-            <div className="sm:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Model Number</label>
-              <Controller
-                name="modelNumber"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    {...field}
-                    type="text"
-                    placeholder="e.g. KFM36E0W"
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  />
-                )}
-              />
-            </div>
-          </FormSection>
-
-          {/* Pricing */}
-          <FormSection
-            title="Pricing"
-            defaultOpen={true}
-            errorCount={pricingErrors}
-            forceOpen={hasSubmitErrors && pricingErrors > 0}
-          >
-            {/* Cost Price */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Cost Price (₱) <span className="text-red-500">*</span>
-              </label>
-              <Controller
-                name="costPrice"
-                control={control}
-                render={({ field }) => (
-                  <NumericInput
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    fieldRef={field.ref}
-                    placeholder="0.00"
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  />
-                )}
-              />
-              {errors.costPrice && (
-                <p className="mt-1 text-xs text-red-600">{errors.costPrice.message}</p>
-              )}
-            </div>
-          </FormSection>
-
-          {/* Tracking */}
-          <FormSection title="Tracking" defaultOpen={true}>
-            <div className="sm:col-span-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {/* Pricing */}
+            <FormSection
+              variant="card"
+              title="Pricing"
+              defaultOpen={true}
+              errorCount={pricingErrors}
+              forceOpen={hasSubmitErrors && pricingErrors > 0}
+            >
               {(
                 [
-                  { name: 'isBatchTracked', label: 'Batch Tracking' },
-                  { name: 'isSerialTracked', label: 'Serial Tracking' },
-                  { name: 'requiresSecondarySerial', label: 'Dual Serial (Indoor + Outdoor)' },
-                  { name: 'isExpiryTracked', label: 'Expiry Tracking' },
-                  { name: 'isBundle', label: 'Bundle Item' },
-                  { name: 'isService', label: 'Service Item (no stock/serial tracking)' },
+                  { name: 'costPrice', label: 'Cost Price (₱)' },
+                  { name: 'sellingPrice', label: 'Selling Price (₱)' },
                 ] as const
-              ).map(({ name, label }) => {
-                const isDisabled =
-                  isServiceValue &&
-                  (TRACKING_FIELDS_DISABLED_BY_SERVICE as readonly string[]).includes(name)
-                return (
+              ).map(({ name, label }) => (
+                <div key={name}>
+                  <label className={labelClass}>{label}</label>
                   <Controller
-                    key={name}
                     name={name}
                     control={control}
                     render={({ field }) => (
-                      <label
-                        className={`flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 ${
-                          isDisabled
-                            ? 'cursor-not-allowed opacity-50'
-                            : 'cursor-pointer hover:bg-zinc-50'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={field.value}
-                          disabled={isDisabled}
-                          onChange={(e) => field.onChange(e.target.checked)}
-                          className="accent-prominent-purple-600"
-                        />
-                        {label}
-                      </label>
+                      <NumericInput
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        fieldRef={field.ref}
+                        placeholder="0.00"
+                        className={inputClass}
+                      />
                     )}
                   />
-                )
-              })}
-            </div>
-          </FormSection>
+                  {errors[name] && <p className={errorClass}>{errors[name]?.message}</p>}
+                </div>
+              ))}
+            </FormSection>
 
-          {/* Physical & Tags */}
-          <FormSection title="Physical & Tags" defaultOpen={true}>
-            {/* Physical Dimensions */}
-            <div className="sm:col-span-2">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">
-                Physical Dimensions
-              </p>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {DIMENSION_FIELDS.map(({ name, label, step }) => (
+            {/* Tracking — the same four options Add New Item offers */}
+            <FormSection variant="card" title="Tracking" defaultOpen={true}>
+              <div className="sm:col-span-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {(
+                  [
+                    { name: 'isSerialTracked', label: 'Serial Tracking' },
+                    { name: 'requiresSecondarySerial', label: 'Dual Serial (Indoor + Outdoor)' },
+                    { name: 'isBundle', label: 'Bundle Item' },
+                    { name: 'isService', label: 'Service Item (no stock/serial tracking)' },
+                  ] as const
+                ).map(({ name, label }) => {
+                  const isDisabled =
+                    isServiceValue &&
+                    (TRACKING_FIELDS_DISABLED_BY_SERVICE as readonly string[]).includes(name)
+                  return (
+                    <Controller
+                      key={name}
+                      name={name}
+                      control={control}
+                      render={({ field }) => (
+                        <label
+                          className={`flex items-center gap-2 rounded-lg border border-[#e4e4e9] px-3 py-2 text-[13px] text-[#3d3d4a] ${
+                            isDisabled
+                              ? 'cursor-not-allowed opacity-50'
+                              : 'cursor-pointer hover:bg-[#fbfbfc]'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={field.value}
+                            disabled={isDisabled}
+                            onChange={(e) => field.onChange(e.target.checked)}
+                            className="accent-[#5b21b6]"
+                          />
+                          {label}
+                        </label>
+                      )}
+                    />
+                  )
+                })}
+              </div>
+            </FormSection>
+
+            {/* Physical & Tags */}
+            <FormSection variant="card" title="Physical & Tags" defaultOpen={false}>
+              <div className="sm:col-span-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {DIMENSION_FIELDS.map(({ name, label }) => (
                   <div key={name}>
-                    <label className="mb-1 block text-sm font-medium text-zinc-700">{label}</label>
+                    <label className={labelClass}>{label}</label>
                     <Controller
                       name={name}
                       control={control}
@@ -591,217 +622,229 @@ export default function EditItemModal({
                           onChange={field.onChange}
                           onBlur={field.onBlur}
                           fieldRef={field.ref}
-                          className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                          className={inputClass}
                         />
                       )}
                     />
                   </div>
                 ))}
               </div>
-            </div>
 
-            {/* Warranty */}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">
-                Warranty (days)
-              </label>
-              <Controller
-                name="warrantyPeriodDays"
-                control={control}
-                render={({ field }) => (
-                  <NumericInput
-                    value={field.value}
-                    onChange={field.onChange}
-                    onBlur={field.onBlur}
-                    fieldRef={field.ref}
-                    integer
-                    placeholder="e.g. 365"
-                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
-                  />
-                )}
-              />
-            </div>
-
-            {/* empty second column for Warranty row */}
-            <div className="hidden sm:block" />
-
-            {/* Tags */}
-            <div className="sm:col-span-2">
-              <p className="mb-2 text-sm font-medium text-zinc-700">Tags</p>
-              <div className="flex flex-wrap gap-3">
-                {ALL_TAGS.map(({ value, label }) => (
-                  <label key={value} className="flex items-center gap-2 text-sm text-zinc-700">
-                    <input
-                      type="checkbox"
-                      checked={selectedTags.includes(value)}
-                      onChange={(e) => {
-                        setSelectedTags((prev) =>
-                          e.target.checked ? [...prev, value] : prev.filter((t) => t !== value)
-                        )
-                      }}
-                      className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-500"
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </div>
-          </FormSection>
-
-          {/* Images */}
-          <FormSection title="Images" defaultOpen={true}>
-            <div className="sm:col-span-2">
-              <div className="mb-2 flex items-center gap-2">
-                <Images className="h-4 w-4 text-zinc-400" />
-                <span className="text-sm font-medium text-zinc-700">Item Images</span>
-              </div>
-              <ItemImageGallery itemId={item.id} />
-            </div>
-          </FormSection>
-
-          {/* Custom Attributes — only rendered when attrDefs are present */}
-          {attrDefs.length > 0 && (
-            <FormSection title="Custom Attributes" defaultOpen={true}>
-              {attrDefs.map((def) => (
-                <div key={def.id}>
-                  <label className="mb-1 block text-sm font-medium text-zinc-700">
-                    {def.displayName}
-                    {def.isRequired && <span className="ml-1 text-red-500">*</span>}
-                  </label>
-                  {def.dataType === 'boolean' ? (
-                    <input
-                      type="checkbox"
-                      checked={attrValues[def.attributeKey] === 'true'}
-                      onChange={(e) =>
-                        setAttrValues((prev) => ({
-                          ...prev,
-                          [def.attributeKey]: String(e.target.checked),
-                        }))
-                      }
-                      className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-500"
-                    />
-                  ) : def.dataType === 'dropdown' && def.options?.length ? (
-                    <SearchableSelect
-                      portal
-                      value={attrValues[def.attributeKey] ?? ''}
-                      onChange={(value) =>
-                        setAttrValues((prev) => ({ ...prev, [def.attributeKey]: value }))
-                      }
-                      options={def.options.map((opt) => ({ value: opt, label: opt }))}
-                      placeholder="Select…"
-                      clearable={!def.isRequired}
-                    />
-                  ) : def.dataType === 'multi_select' && def.options?.length ? (
-                    <div className="space-y-1">
-                      {def.options.map((opt) => {
-                        const selected = (attrValues[def.attributeKey] ?? '')
-                          .split(',')
-                          .filter(Boolean)
-                        const checked = selected.includes(opt)
-                        return (
-                          <label
-                            key={opt}
-                            className="flex items-center gap-2 text-sm text-zinc-700"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={(e) => {
-                                const next = e.target.checked
-                                  ? [...selected, opt]
-                                  : selected.filter((v) => v !== opt)
-                                setAttrValues((prev) => ({
-                                  ...prev,
-                                  [def.attributeKey]: next.join(','),
-                                }))
-                              }}
-                              className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-700 focus:ring-prominent-purple-500"
-                            />
-                            {opt}
-                          </label>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <input
-                      type={
-                        def.dataType === 'number'
-                          ? 'number'
-                          : def.dataType === 'date'
-                            ? 'date'
-                            : 'text'
-                      }
-                      value={attrValues[def.attributeKey] ?? def.defaultValue ?? ''}
-                      placeholder={def.defaultValue ?? ''}
-                      onChange={(e) =>
-                        setAttrValues((prev) => ({ ...prev, [def.attributeKey]: e.target.value }))
-                      }
-                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+              <div>
+                <label className={labelClass}>Warranty (days)</label>
+                <Controller
+                  name="warrantyPeriodDays"
+                  control={control}
+                  render={({ field }) => (
+                    <NumericInput
+                      value={field.value}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      fieldRef={field.ref}
+                      integer
+                      placeholder="e.g. 365"
+                      className={inputClass}
                     />
                   )}
-                </div>
-              ))}
-            </FormSection>
-          )}
-
-          {/* ACC-21: Accounting overrides (optional) — outside sections, inside form */}
-          <div className="px-6 pb-4 pt-2">
-            <details className="rounded-lg border border-zinc-200 bg-zinc-50/40">
-              <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">
-                Accounting (optional)
-                <span className="ml-2 text-xs font-normal text-zinc-500">
-                  — override default revenue/COGS/inventory accounts
-                </span>
-              </summary>
-              <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2">
-                <AccountField
-                  label="Revenue Account"
-                  name="revenueAccountId"
-                  control={control}
-                  accounts={accounts}
-                  filter="REVENUE"
-                />
-                <AccountField
-                  label="COGS Account"
-                  name="cogsAccountId"
-                  control={control}
-                  accounts={accounts}
-                  filter="EXPENSE"
-                />
-                <AccountField
-                  label="Inventory Account"
-                  name="inventoryAccountId"
-                  control={control}
-                  accounts={accounts}
-                  filter="ASSET"
                 />
               </div>
-            </details>
-          </div>
 
-          {/* Footer */}
-          <div className="flex items-center justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+              <div className="sm:col-span-2">
+                <p className={labelClass}>Tags</p>
+                <div className="flex flex-wrap gap-3">
+                  {ALL_TAGS.map(({ value, label }) => (
+                    <label
+                      key={value}
+                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#e4e4e9] px-3 py-2 text-[13px] text-[#3d3d4a] hover:bg-[#fbfbfc]"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedTags.includes(value)}
+                        onChange={(e) => {
+                          setSelectedTags((prev) =>
+                            e.target.checked ? [...prev, value] : prev.filter((t) => t !== value)
+                          )
+                        }}
+                        className="accent-[#5b21b6]"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </FormSection>
+
+            {/* Images */}
+            <FormSection variant="card" title="Images" defaultOpen={true}>
+              <div className="sm:col-span-2">
+                <div className="mb-2 flex items-center gap-2">
+                  <Images className="h-4 w-4 text-ink-faint" />
+                  <span className="text-[12px] font-medium text-[#3d3d4a]">Item Images</span>
+                </div>
+                <ItemImageGallery itemId={item.id} />
+              </div>
+            </FormSection>
+
+            {/* Custom Attributes — only rendered when attrDefs are present */}
+            {attrDefs.length > 0 && (
+              <FormSection variant="card" title="Custom Attributes" defaultOpen={true}>
+                {attrDefs.map((def) => (
+                  <div key={def.id}>
+                    <label className={labelClass}>
+                      {def.displayName}
+                      {def.isRequired && <span className="ml-1 text-[#b42318]">*</span>}
+                    </label>
+                    <AttributeInput
+                      def={def}
+                      value={attrValues[def.attributeKey]}
+                      onChange={(v) =>
+                        setAttrValues((prev) => ({ ...prev, [def.attributeKey]: v }))
+                      }
+                    />
+                  </div>
+                ))}
+              </FormSection>
+            )}
+
+            {/* ACC-21: Accounting overrides (optional) */}
+            <FormSection variant="card" title="Accounting (optional)" defaultOpen={false}>
+              <p className="sm:col-span-2 -mt-1 text-[12px] text-[#4b4b5a]">
+                Override the default revenue / COGS / inventory accounts for this item.
+              </p>
+              <AccountField
+                label="Revenue Account"
+                name="revenueAccountId"
+                control={control}
+                accounts={accounts}
+                filter="REVENUE"
+              />
+              <AccountField
+                label="COGS Account"
+                name="cogsAccountId"
+                control={control}
+                accounts={accounts}
+                filter="EXPENSE"
+              />
+              <AccountField
+                label="Inventory Account"
+                name="inventoryAccountId"
+                control={control}
+                accounts={accounts}
+                filter="ASSET"
+              />
+            </FormSection>
+          </div>
+        </div>
+
+        {/* Sticky footer — same bar as Add New Item */}
+        <div className="flex shrink-0 items-center justify-between gap-4 border-t border-[#e4e4e9] bg-white px-6 py-3.5">
+          <span className="hidden text-[12px] text-[#4b4b5a] sm:block">
+            Required fields are marked <span className="text-[#b42318]">*</span>
+          </span>
+          <div className="ml-auto flex items-center gap-3">
             <button
               type="button"
               onClick={handleRequestClose}
-              disabled={isSubmitting || isAttributeSubmitting}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+              disabled={isSaving}
+              className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#4b4b5a] hover:bg-[#f1f1f4] disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || isAttributeSubmitting}
-              className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-60"
+              disabled={isSaving}
+              className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4a189b] disabled:opacity-60"
             >
-              {(isSubmitting || isAttributeSubmitting) && (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              )}
-              {isSubmitting || isAttributeSubmitting ? 'Saving…' : 'Save Changes'}
+              {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isSaving ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
-        </form>
-      </div>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+const CHECKBOX = 'h-4 w-4 accent-[#5b21b6]'
+
+/** One custom attribute's input, by its data type. */
+function AttributeInput({
+  def,
+  value,
+  onChange,
+}: {
+  def: AttributeDefinition
+  value: string | undefined
+  onChange: (value: string) => void
+}): React.JSX.Element {
+  if (def.dataType === 'boolean') {
+    return (
+      <input
+        type="checkbox"
+        checked={value === 'true'}
+        onChange={(e) => onChange(String(e.target.checked))}
+        className={CHECKBOX}
+      />
+    )
+  }
+  if (def.dataType === 'dropdown' && def.options?.length) {
+    return (
+      <SearchableSelect
+        chrome={CONTROL_CHROME}
+        portal
+        value={value ?? ''}
+        onChange={onChange}
+        options={def.options.map((opt) => ({ value: opt, label: opt }))}
+        placeholder="Select…"
+        clearable={!def.isRequired}
+      />
+    )
+  }
+  if (def.dataType === 'multi_select' && def.options?.length) {
+    return <MultiSelectInput options={def.options} value={value} onChange={onChange} />
+  }
+  const type = def.dataType === 'number' ? 'number' : def.dataType === 'date' ? 'date' : 'text'
+  return (
+    <input
+      type={type}
+      value={value ?? def.defaultValue ?? ''}
+      placeholder={def.defaultValue ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+      className={inputClass}
+    />
+  )
+}
+
+/** A multi-select attribute, stored comma-joined. */
+function MultiSelectInput({
+  options,
+  value,
+  onChange,
+}: {
+  options: string[]
+  value: string | undefined
+  onChange: (value: string) => void
+}): React.JSX.Element {
+  const selected = (value ?? '').split(',').filter(Boolean)
+  return (
+    <div className="space-y-1">
+      {options.map((opt) => (
+        <label key={opt} className="flex items-center gap-2 text-[13px] text-[#3d3d4a]">
+          <input
+            type="checkbox"
+            checked={selected.includes(opt)}
+            onChange={(e) =>
+              onChange(
+                (e.target.checked ? [...selected, opt] : selected.filter((v) => v !== opt)).join(
+                  ','
+                )
+              )
+            }
+            className={CHECKBOX}
+          />
+          {opt}
+        </label>
+      ))}
     </div>
   )
 }

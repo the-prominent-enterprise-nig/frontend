@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Plus, RefreshCw, Search, Shapes, Pencil, Trash2 } from 'lucide-react'
+import { RefreshCw, Search, Shapes, Pencil, Trash2 } from 'lucide-react'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
@@ -12,7 +12,22 @@ import type {
   ItemClassificationFormValues,
 } from '@/src/schema/inventory/classification'
 import { formatClassificationLabel } from '@/src/libs/format/text'
-import TablePagination from '@/src/components/common/TablePagination'
+import Tooltip from '@/src/components/ui/Tooltip'
+import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
+import { PLEX } from '@/src/libs/design/plex'
+import {
+  DANGER_ICON_BUTTON,
+  EmptyState,
+  ICON_BUTTON,
+  ListHeader,
+  ListSearch,
+  LoadError,
+  PAGE_INNER,
+  PAGE_SHELL,
+  PRIMARY_BUTTON,
+  TABLE_HEAD_ROW,
+  TableCard,
+} from '../../master-data/_components/masterDataChrome'
 
 const PAGE_SIZE = 20
 
@@ -78,140 +93,120 @@ export default function TypesPageView({ session }: { session: SessionUser }) {
     setDeleteTarget(null)
   }
 
-  return (
-    <div className="w-full min-h-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
-      <div className="mx-auto max-w-[1560px] space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Types</h1>
-            <p className="mt-1 text-sm text-zinc-500">
-              Manage the item types used to classify inventory items.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-            {canManage && (
-              <button
-                type="button"
-                onClick={openCreate}
-                className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
-              >
-                <Plus className="h-4 w-4" />
-                New Type
-              </button>
-            )}
-          </div>
-        </div>
+  const searching = !!search.trim()
+  const addButton = canManage && (
+    <button type="button" onClick={openCreate} className={PRIMARY_BUTTON}>
+      + New Type
+    </button>
+  )
 
-        {/* Search */}
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-          <input
-            type="search"
+  return (
+    <div className={`${PAGE_SHELL} ${PLEX}`}>
+      <div className={PAGE_INNER}>
+        <ListHeader
+          title="Types"
+          description="Manage the item types used to classify inventory items."
+          actions={
+            <>
+              <Tooltip label="Refresh">
+                <button
+                  type="button"
+                  onClick={() => refetch()}
+                  disabled={isFetching}
+                  aria-label="Refresh"
+                  className={`${ICON_BUTTON} disabled:opacity-50`}
+                >
+                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                </button>
+              </Tooltip>
+              {addButton}
+            </>
+          }
+        />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <ListSearch
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value)
+            onChange={(value) => {
+              setSearch(value)
               setPage(1)
             }}
             placeholder="Search types…"
-            className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
           />
         </div>
 
-        {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-            <p className="text-sm font-medium text-red-800">Failed to load types</p>
-          </div>
-        )}
+        {error && <LoadError message="Failed to load types — try refreshing the page." />}
 
-        {/* Table */}
-        <div
-          className={`overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-opacity ${isFetching ? 'opacity-60' : ''}`}
-        >
+        <TableCard fetching={isFetching && !isLoading}>
           {isLoading ? (
-            <div className="p-8 text-center text-sm text-zinc-400">Loading types…</div>
+            <div className="p-8 text-center text-sm text-ink-muted">Loading types…</div>
           ) : filteredTypes.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16">
-              <Shapes className="mb-3 h-10 w-10 text-zinc-300" />
-              <p className="text-sm font-medium text-zinc-500">
-                {types.length === 0 ? 'No types yet' : 'No types match your search'}
-              </p>
-              {canManage && types.length === 0 && (
-                <p className="mt-1 text-xs text-zinc-400">Add a type to start classifying items.</p>
-              )}
-            </div>
+            <EmptyState
+              icon={searching ? <Search className="h-8 w-8" /> : <Shapes className="h-10 w-10" />}
+              title={searching ? 'No types match' : 'No types yet'}
+              hint={searching || !canManage ? undefined : 'Add a type to start classifying items.'}
+              action={!searching ? addButton || undefined : undefined}
+            />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-200 bg-zinc-50">
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Name
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Description
-                    </th>
-                    {canManage && <th className="px-4 py-3" />}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {pagedTypes.map((type) => (
-                    <tr key={type.id} className="hover:bg-zinc-50">
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-zinc-900">
-                          {formatClassificationLabel(type.name)}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3 text-zinc-500">{type.description ?? '—'}</td>
-                      {canManage && (
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              type="button"
-                              onClick={() => openEdit(type)}
-                              className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-prominent-purple-700"
-                              title="Edit type"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeleteTarget(type)}
-                              className="rounded p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-600"
-                              title="Delete type"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
-                      )}
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[560px] text-left text-[13px]">
+                  <thead className={TABLE_HEAD_ROW}>
+                    <tr>
+                      <th className="px-4 py-2.5">Name</th>
+                      <th className="px-4 py-2.5">Description</th>
+                      {canManage && <th className="w-24 px-4 py-2.5" aria-label="Actions" />}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="px-4 pb-3">
-                <TablePagination
-                  page={currentPage}
-                  pageCount={pageCount}
-                  onPageChange={setPage}
-                  pageStart={(currentPage - 1) * PAGE_SIZE}
-                  pageSize={pagedTypes.length}
-                  totalItems={filteredTypes.length}
-                  noun="type"
-                />
+                  </thead>
+                  <tbody className="divide-y divide-[#eeeef1]">
+                    {pagedTypes.map((type) => (
+                      <tr key={type.id} className="hover:bg-[#fbfbfc]">
+                        <td className="px-4 py-3 font-medium text-[#1d1d26]">
+                          {formatClassificationLabel(type.name)}
+                        </td>
+                        <td className="px-4 py-3 text-[#3d3d4a]">{type.description ?? '—'}</td>
+                        {canManage && (
+                          <td className="px-4 py-2 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Tooltip label="Edit type" align="end">
+                                <button
+                                  type="button"
+                                  onClick={() => openEdit(type)}
+                                  aria-label={`Edit ${formatClassificationLabel(type.name)}`}
+                                  className={ICON_BUTTON}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                              </Tooltip>
+                              <Tooltip label="Delete type" align="end">
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteTarget(type)}
+                                  aria-label={`Delete ${formatClassificationLabel(type.name)}`}
+                                  className={DANGER_ICON_BUTTON}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </Tooltip>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </div>
+              <ListFooterPager
+                page={currentPage}
+                pageCount={pageCount}
+                total={filteredTypes.length}
+                limit={PAGE_SIZE}
+                noun="types"
+                onPageChange={setPage}
+              />
+            </>
           )}
-        </div>
+        </TableCard>
       </div>
 
       <TypeModal

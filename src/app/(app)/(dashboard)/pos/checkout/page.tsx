@@ -1114,6 +1114,9 @@ export default function CheckoutPage() {
   // application's own items, and selected once those lines exist.
   const [arrivingCreditApplication, setArrivingCreditApplication] = useState<{
     id: string
+    /** Printed number, for the "loading its items" banner. Absent when the
+     *  arrival came from a handoff written before it was carried. */
+    applicationNumber?: string
     stage: 'fetching' | 'adding'
     expectedLines?: number
     /** The Price Use the application was approved under. Every new cart line
@@ -1656,7 +1659,11 @@ export default function CheckoutPage() {
           arrivalSelectRef.current = handoff.creditApplicationId
           setPaymentMode('installment')
         } else {
-          setArrivingCreditApplication({ id: handoff.creditApplicationId, stage: 'fetching' })
+          setArrivingCreditApplication({
+            id: handoff.creditApplicationId,
+            applicationNumber: handoff.creditApplicationNumber,
+            stage: 'fetching',
+          })
         }
       }
       // Scenario 72 Part 6 — same shape as a credit application arrival: no
@@ -2827,6 +2834,11 @@ export default function CheckoutPage() {
   const [customerApplications, setCustomerApplications] = useState<
     { id: string; applicationNumber: string; requestedAmount: number; itemNames: string[] }[] | null
   >([])
+  // True while the lookup above is in flight. The list sits at [] meanwhile,
+  // which on its own read as "No approved credit application on file" — on a
+  // slow till the cashier believed it, and keyed the cart by hand while the
+  // application they had just come from was still loading.
+  const [customerApplicationsLoading, setCustomerApplicationsLoading] = useState(false)
   const customerApplicationsRequestRef = useRef(0)
   const selectedCustomerId = selectedCustomer?.id ?? null
   // Nov UAT — rows the cashier dismissed (×) from the customer card, for this
@@ -2842,9 +2854,11 @@ export default function CheckoutPage() {
     const requestId = ++customerApplicationsRequestRef.current
     if (!selectedCustomerId) {
       setCustomerApplications([])
+      setCustomerApplicationsLoading(false)
       return
     }
     setCustomerApplications([])
+    setCustomerApplicationsLoading(true)
     getCreditApplications({
       checkoutEligible: true,
       applicantCustomerId: selectedCustomerId,
@@ -2853,6 +2867,7 @@ export default function CheckoutPage() {
     })
       .then((res) => {
         if (requestId !== customerApplicationsRequestRef.current) return
+        setCustomerApplicationsLoading(false)
         if (!res.success) {
           setCustomerApplications(null)
           return
@@ -2878,7 +2893,9 @@ export default function CheckoutPage() {
         )
       })
       .catch(() => {
-        if (requestId === customerApplicationsRequestRef.current) setCustomerApplications(null)
+        if (requestId !== customerApplicationsRequestRef.current) return
+        setCustomerApplicationsLoading(false)
+        setCustomerApplications(null)
       })
   }, [selectedCustomerId, creditAppsRefreshNonce])
 
@@ -2904,7 +2921,11 @@ export default function CheckoutPage() {
     // The guard is per application; a second fill of the same one (the cart was
     // cleared, or replaced) must be allowed to build again.
     arrivalBuiltRef.current = null
-    setArrivingCreditApplication({ id: application.id, stage: 'fetching' })
+    setArrivingCreditApplication({
+      id: application.id,
+      applicationNumber: application.applicationNumber,
+      stage: 'fetching',
+    })
   }
 
   // Scenario 71 — with the override ticked, every application of this customer that
@@ -3491,6 +3512,7 @@ export default function CheckoutPage() {
         found.forEach((item) => addToCart(item))
         setArrivingCreditApplication({
           id: arrivingCreditApplication.id,
+          applicationNumber: arrivingCreditApplication.applicationNumber,
           stage: 'adding',
           expectedLines: found.length,
           priceUseTypeId: approvedPriceUseTypeId,
@@ -6450,8 +6472,36 @@ export default function CheckoutPage() {
             )}
           </div>
 
+          {/* Building the cart from a credit application ("Continue to sale",
+              or "Fill cart" on the customer card). On a slow till this takes
+              long enough that an empty cart looked like the click had done
+              nothing, and the cashier keyed the cart by hand — which the
+              arrival then added the application's items on top of. Said out
+              loud, and the catalogue holds still until it is done. */}
+          {arrivingCreditApplication && (
+            <div
+              className="shrink-0 flex items-start gap-2 border-b border-purple-100 bg-purple-50 px-4 py-2.5"
+              role="status"
+              data-testid="arriving-credit-application"
+            >
+              <Loader2 size={14} className="mt-0.5 shrink-0 animate-spin text-purple-600" />
+              <div>
+                <p className="text-xs font-medium text-purple-800">
+                  Loading items from{' '}
+                  {arrivingCreditApplication.applicationNumber ?? 'the credit application'}…
+                </p>
+                <p className="text-[11px] text-purple-700">
+                  The cart fills in by itself. No need to add anything.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Catalog grid */}
-          <div className="flex-1 overflow-y-auto bg-gray-50/60 p-3">
+          <div
+            className={`flex-1 overflow-y-auto bg-gray-50/60 p-3 ${arrivingCreditApplication ? 'pointer-events-none opacity-50' : ''}`}
+            aria-busy={!!arrivingCreditApplication}
+          >
             {catalogLoading ? (
               <div className="grid grid-cols-[repeat(auto-fill,minmax(130px,1fr))] gap-2">
                 {Array.from({ length: 12 }).map((_, i) => (
@@ -6503,8 +6553,8 @@ export default function CheckoutPage() {
             )}
           </div>
 
-          {/* Empty cart hint */}
-          {cart.length === 0 && !catalogLoading && (
+          {/* Empty cart hint — not while the cart is being built for them */}
+          {cart.length === 0 && !catalogLoading && !arrivingCreditApplication && (
             <div className="shrink-0 border-t border-gray-100 px-4 py-3 text-center">
               <p className="text-xs text-gray-400">Click an item above to add it to the cart</p>
             </div>
@@ -6726,7 +6776,15 @@ export default function CheckoutPage() {
                         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-prominent-purple-700">
                           Approved credit applications
                         </p>
-                        {customerApplications === null ? (
+                        {customerApplicationsLoading ? (
+                          <p
+                            className="flex items-center gap-1.5 text-xs text-gray-600"
+                            data-testid="customer-credit-applications-loading"
+                          >
+                            <Loader2 size={12} className="animate-spin" />
+                            Checking credit applications…
+                          </p>
+                        ) : customerApplications === null ? (
                           <p className="text-xs text-gray-600">
                             Couldn&apos;t check credit applications.
                           </p>

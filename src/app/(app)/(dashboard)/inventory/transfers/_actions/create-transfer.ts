@@ -30,6 +30,7 @@ export async function createTransfer(
   const data = { ...parsed.data }
   delete data.destinationType
   delete data.newCaravan
+  delete data.delivery
   const result = await api.post<{ id: string; transferNumber?: string }>('/inventory/transfers', {
     ...data,
     expectedArrival: data.expectedArrival || undefined,

@@ -212,6 +212,9 @@ export default function CreditApplicationDetail({
       // wants its yyyy-mm-dd.
       firstDueDate: application.firstDueDate ? application.firstDueDate.slice(0, 10) : '',
       ppdRebate: application.ppdRebate != null ? String(application.ppdRebate) : '',
+      // Docket #48 — form-only: a business applicant may take a ₱0 down
+      // payment without an override. Not editable here, never sent on save.
+      applicantCustomerType: application.applicantCustomer?.customerType ?? '',
     })
   }, [isEditOpen, application, resetEditForm])
 
@@ -231,6 +234,9 @@ export default function CreditApplicationDetail({
       priceUseTypeId: data.priceUseTypeId || undefined,
       financingTermId: data.financingTermId || undefined,
       downPayment: data.downPayment || undefined,
+      // applicantCustomerType (seeded above) goes along: the action re-runs
+      // the ₱0 down check (Docket #48) and drops it before the API call — the
+      // applicant's type is the customer's, not the application's.
     })
     if (result.success) {
       setIsEditOpen(false)
@@ -325,6 +331,7 @@ export default function CreditApplicationDetail({
   const hasOpenSession = openSessions.length > 0
 
   const sellableApplicationId = application.id
+  const sellableApplicationNumber = application.applicationNumber
   const sellableCustomerId = application.applicantCustomerId
   const sellableItemIds = application.items
     .filter((i) => i.status === 'approved')
@@ -367,6 +374,7 @@ export default function CreditApplicationDetail({
       ...(keepStashed && !stashedCartMatches ? { lines: undefined } : {}),
       customerId: sellableCustomerId,
       creditApplicationId: sellableApplicationId,
+      creditApplicationNumber: sellableApplicationNumber,
       // Named only when there is exactly one session it could mean. With
       // several open, picking one would be guessing which till the seller is
       // standing at; checkout asks instead.

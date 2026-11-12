@@ -1,4 +1,7 @@
-import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import {
+  ACCOUNTING_PERMISSIONS,
+  RECEIVING_REPORT_ACCESS,
+} from '@/src/libs/guards/accounting-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { canNavigateAny, type SessionUser } from '@/src/libs/guards/permission'
 import { DRIVER_ACCESS, SUPPLIER_ACCESS } from '@/src/libs/guards/shared-ownership'
@@ -226,7 +229,9 @@ export const PAYABLES_HUB: Hub = {
       id: 'receiving-reports',
       label: 'Receiving Reports',
       href: '/accounting/receiving-reports',
-      permissions: [ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ],
+      // Payables' own read opens it too: an AP clerk matches a supplier bill
+      // to the receipt here without holding the financial reports.
+      permissions: RECEIVING_REPORT_ACCESS,
     },
     {
       // Moved over from Inventory's Master Data, the way Customers sits beside

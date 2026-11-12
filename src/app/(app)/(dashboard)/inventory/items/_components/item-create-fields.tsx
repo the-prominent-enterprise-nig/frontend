@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Controller, useWatch, type Control, type UseFormSetValue } from 'react-hook-form'
+import { useWatch, type Control, type UseFormSetValue } from 'react-hook-form'
 import { useQuery } from '@tanstack/react-query'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import type { CategorySelectOption } from '@/src/components/ui/CategorySelect'
@@ -38,70 +38,82 @@ function toCategoryTree(options: CategorySelectOption[]): CategoryTree {
 
 const toSelect = (o: { id: string; name: string }): SelectOption => ({ value: o.id, label: o.name })
 
+/** The root a stored primaryCategoryId belongs to: itself when it is a
+ * Category, its parent when it is a Subgroup. */
+function rootOf(tree: CategoryTree, id: string): string {
+  if (tree.children.has(id)) return id
+  for (const [rootId, kids] of tree.children) {
+    if (kids.some((k) => k.id === id)) return rootId
+  }
+  return ''
+}
+
 /**
  * Category and Subgroup as two pickers, matching Item Master's columns. The
  * item is filed under the Subgroup (primaryCategoryId); a Category with no
- * subgroups files it under the Category itself.
+ * subgroups files it under the Category itself. An existing item's value
+ * (Edit Item) opens with its Category already picked.
  */
 export function CategorySubgroupFields({
-  control,
+  value,
+  onChange,
   categories,
   error,
   onCategoryNameChange,
 }: {
-  control: Control<CreateItemFormValues>
+  value: string
+  onChange: (id: string) => void
   categories: CategorySelectOption[]
   error?: string
-  onCategoryNameChange: (name: string) => void
+  onCategoryNameChange?: (name: string) => void
 }): React.ReactElement {
   const tree = useMemo(() => toCategoryTree(categories), [categories])
-  const [rootId, setRootId] = useState('')
+  const [pickedRootId, setRootId] = useState('')
+  // Until a Category is picked here, follow the stored value's own root — an
+  // existing item (Edit Item) opens with its Category already selected.
+  const rootId = pickedRootId || rootOf(tree, value)
   const subgroups = tree.children.get(rootId) ?? []
 
+  function pickRoot(id: string): void {
+    setRootId(id)
+    onCategoryNameChange?.(tree.roots.find((r) => r.id === id)?.name ?? '')
+    onChange((tree.children.get(id) ?? []).length ? '' : id)
+  }
+
   return (
-    <Controller
-      name="primaryCategoryId"
-      control={control}
-      render={({ field }) => (
-        <>
-          <div>
-            <label className={labelClass}>
-              Category <span className="text-[#b42318]">*</span>
-            </label>
-            <SearchableSelect
-              chrome={CONTROL_CHROME}
-              portal
-              value={rootId}
-              onChange={(id) => {
-                setRootId(id)
-                onCategoryNameChange(tree.roots.find((r) => r.id === id)?.name ?? '')
-                field.onChange((tree.children.get(id) ?? []).length ? '' : id)
-              }}
-              options={tree.roots.map(toSelect)}
-              placeholder="Select category…"
-              loading={categories.length === 0}
-              loadingLabel="Loading categories…"
-            />
-            {error && !rootId && <p className={errorClass}>{error}</p>}
-          </div>
-          <div>
-            <label className={labelClass}>
-              Subgroup {subgroups.length > 0 && <span className="text-[#b42318]">*</span>}
-            </label>
-            <SearchableSelect
-              chrome={CONTROL_CHROME}
-              portal
-              value={field.value === rootId ? '' : (field.value ?? '')}
-              onChange={field.onChange}
-              options={subgroups.map(toSelect)}
-              disabled={subgroups.length === 0}
-              placeholder={rootId && subgroups.length === 0 ? 'No subgroups' : 'Select subgroup…'}
-            />
-            {error && rootId && <p className={errorClass}>Subgroup is required</p>}
-          </div>
-        </>
-      )}
-    />
+    <>
+      <div>
+        <label className={labelClass}>
+          Category <span className="text-[#b42318]">*</span>
+        </label>
+        <SearchableSelect
+          chrome={CONTROL_CHROME}
+          portal
+          value={rootId}
+          onChange={pickRoot}
+          options={tree.roots.map(toSelect)}
+          placeholder="Select category…"
+          loading={categories.length === 0}
+          loadingLabel="Loading categories…"
+        />
+        {error && !rootId && <p className={errorClass}>{error}</p>}
+      </div>
+      <div>
+        <label className={labelClass}>
+          Subgroup {subgroups.length > 0 && <span className="text-[#b42318]">*</span>}
+        </label>
+        <SearchableSelect
+          chrome={CONTROL_CHROME}
+          portal
+          value={value === rootId ? '' : value}
+          onChange={onChange}
+          options={subgroups.map(toSelect)}
+          disabled={subgroups.length === 0}
+          placeholder={rootId && subgroups.length === 0 ? 'No subgroups' : 'Select subgroup…'}
+        />
+        {error && rootId && <p className={errorClass}>Subgroup is required</p>}
+      </div>
+    </>
   )
 }
 

@@ -17,7 +17,8 @@ function revalidate(id: string): void {
   revalidatePath(`/inventory/delivery-receipts/${id}`)
 }
 
-/** Branch Manager (or Business Owner) sign-off on a submitted DR. */
+/** Sign-off on a submitted DR — Head Office for a memo DR (the backend
+ * enforces it), otherwise the Branch Manager. */
 export async function approveDeliveryReceipt(id: string): Promise<ApiResponse<{ id: string }>> {
   if (!(await canDecide())) {
     return { success: false, error: 'Forbidden', message: 'You cannot approve delivery receipts' }
