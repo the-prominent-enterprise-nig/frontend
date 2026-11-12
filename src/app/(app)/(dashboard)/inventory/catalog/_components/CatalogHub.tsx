@@ -17,16 +17,18 @@ import type { SessionUser } from '@/src/libs/guards/permission'
 
 // Serial Numbers moved to Stock (StockHub) — it's operational data (physical
 // units on hand), not a product definition like the rest of this hub's tabs.
-// Order: Brands, Types, Categories (the client sheet's BRAND / TYPE /
-// GROUP), then the other onboarding lists, then Barcodes. Items is hidden for now — it moves to POS. Its component and route
-// are untouched; set hidden to false to show it again.
+// Order: Items first (the hub opens on it), then Brands, Types, Categories
+// (the client sheet's BRAND / TYPE / GROUP), the other onboarding lists, then
+// Barcodes. Items is back:
+// it's the only place an existing item can be found and edited (NIG asked
+// where to fix an item's model, description or brand).
 const TABS: (NavTab & { hidden?: boolean })[] = [
+  { id: 'items', label: 'Items' },
   { id: 'brands', label: 'Brands' },
   { id: 'types', label: 'Types' },
   { id: 'categories', label: 'Categories' },
   { id: 'attributes', label: 'Attributes' },
   { id: 'units', label: 'Units of Measure' },
-  { id: 'items', label: 'Items', hidden: true },
   { id: 'barcodes', label: 'Barcodes' },
 ]
 

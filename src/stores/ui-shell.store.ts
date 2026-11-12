@@ -20,6 +20,10 @@ export type Item360Panel = {
   // Falls back to 'stock' when omitted so pre-existing call sites keep
   // their current (operational) tab set until updated.
   context?: 'catalog' | 'stock'
+  // Item Master passes its own Edit action so the drawer's "Edit item" can
+  // close the drawer and open the full-content Edit form behind it. Omitted
+  // (and the button hidden) when the viewer can't edit items.
+  onEdit?: () => void
   // Scenario 50 — the location filter that was active on the list this
   // drawer was opened from, as branch:/warehouse: tokens (see
   // libs/inventory/location-tokens). The drawer scopes its Stock and Serials

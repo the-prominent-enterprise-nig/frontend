@@ -6,6 +6,8 @@ import { ChevronRight } from 'lucide-react'
 import { Controller } from 'react-hook-form'
 import type { ItemTagLabel } from '@/src/schema/inventory/items'
 import type { Account } from '@/src/libs/data/AccountingData'
+import { CONTROL_CHROME } from '@/src/libs/design/plex'
+import { labelClass } from './itemFormChrome'
 
 export const ALL_TAGS: { value: ItemTagLabel; label: string }[] = [
   { value: 'best_seller', label: 'Best Seller' },
@@ -184,12 +186,13 @@ export function AccountField({
     : accounts
   return (
     <div>
-      <label className="mb-1 block text-sm font-medium text-zinc-700">{label}</label>
+      <label className={labelClass}>{label}</label>
       <Controller
         name={name}
         control={control}
         render={({ field }) => (
           <SearchableSelect
+            chrome={CONTROL_CHROME}
             portal
             value={field.value != null ? String(field.value) : ''}
             onChange={field.onChange}

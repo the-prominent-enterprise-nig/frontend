@@ -21,7 +21,13 @@ export const PAGE_INNER = 'mx-auto max-w-[1560px] space-y-5'
 export const PRIMARY_BUTTON =
   'inline-flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-4 py-[9px] text-[13px] font-medium text-white hover:bg-[#4a189b] disabled:opacity-60'
 
+export const SECONDARY_BUTTON =
+  'inline-flex items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-4 py-[9px] text-[13px] font-medium text-[#3d3d4a] hover:border-[#a3a3b2] hover:text-[#5b21b6] disabled:opacity-60'
+
 export const ICON_BUTTON = 'rounded-md p-1.5 text-ink-faint hover:bg-[#f0e9fc] hover:text-[#5b21b6]'
+
+export const DANGER_ICON_BUTTON =
+  'rounded-md p-1.5 text-ink-faint hover:bg-[#fdeceb] hover:text-[#b42318]'
 
 export const TABLE_HEAD_ROW = `border-b border-[#eeeef1] bg-[#fbfbfc] ${STOCK_TABLE_HEAD}`
 
