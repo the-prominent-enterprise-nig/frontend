@@ -9,7 +9,7 @@ import { createSupplier } from '../_actions/create-supplier'
 import { updateSupplier } from '../_actions/update-supplier'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
-import type { SessionUser } from '@/src/libs/guards/permission'
+import { isHeadOffice, type SessionUser } from '@/src/libs/guards/permission'
 import { showToast } from '@/src/components/ui/toast'
 import { PLEX } from '@/src/libs/design/plex'
 import type { CreateSupplierFormValues, SupplierDetail } from '@/src/schema/inventory/suppliers'
@@ -32,8 +32,9 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
   const canUpdate = SUPPLIER_ACCESS.UPDATE.some((p) => hasPermission(session, p))
   // Procurement gates its "+ New Purchase" on PR_CREATE, because creating
   // there drafts a purchase request rather than a live PO. The shortcut from
-  // here lands on that same form, so it answers to the same permission.
-  const canBuy = hasPermission(session, PROCUREMENT_PERMISSIONS.PR_CREATE)
+  // here lands on that same form, so it answers to the same permission —
+  // and, like there, only Head Office purchases.
+  const canBuy = isHeadOffice(session) && hasPermission(session, PROCUREMENT_PERMISSIONS.PR_CREATE)
 
   const queryClient = useQueryClient()
   const {

@@ -238,6 +238,8 @@ export default function UdsList({ session }: { session: SessionUser }) {
   const router = useRouter()
   const canCreateDr = can(session, INVENTORY_PERMISSIONS.DELIVERY_RECEIPTS_CREATE)
   const canCreateTransfer = can(session, INVENTORY_PERMISSIONS.TRANSFERS_CREATE)
+  // Whoever can dispatch sends the unit straight away; anyone else requests.
+  const canDispatchTransfer = can(session, INVENTORY_PERMISSIONS.TRANSFERS_DISPATCH)
   const canCreateRr = can(session, INVENTORY_PERMISSIONS.RECEIVE_CREATE)
 
   // Built once from the setters above; the table itself is state-independent.
@@ -281,6 +283,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
               })),
               toMain: true,
               reason: `Repair — ${uds.code} to Main for assessment`,
+              dispatchNow: canDispatchTransfer,
             },
             session.id
           )
@@ -293,7 +296,7 @@ export default function UdsList({ session }: { session: SessionUser }) {
         viewDr: (id) => router.push(`/inventory/delivery-receipts/${id}`),
         canCreateDr,
       }),
-    [router, canCreateDr, canCreateTransfer, canCreateRr, session.id]
+    [router, canCreateDr, canCreateTransfer, canDispatchTransfer, canCreateRr, session.id]
   )
 
   const hasFilters = !!statusFilter || !!reasonFilter || !!warehouseFilter || !!providerFilter

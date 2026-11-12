@@ -559,6 +559,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
 
     createTransfer: creation.createTransfer,
     isCreating: creation.isCreating,
+    createAndDispatch: creation.createAndDispatch,
+    isDispatchingNow: creation.isDispatchingNow,
 
     updateTransfer: (id: string, data: CreateTransferFormValues) =>
       updateMutation.mutateAsync({ id, data }),

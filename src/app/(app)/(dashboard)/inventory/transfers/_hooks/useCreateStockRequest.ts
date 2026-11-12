@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { showToast } from '@/src/components/ui/toast'
 import { createTransfer } from '../_actions/create-transfer'
+import { createAndDispatchTransfer } from '../_actions/create-and-dispatch-transfer'
 import { createCaravan } from '../_actions/create-caravan'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getBranches, type BranchLookup } from '../_actions/get-branches'
@@ -22,6 +23,11 @@ type CreateStockRequest = {
     data: CreateTransferFormValues
   ) => Promise<ApiResponse<{ id: string; transferNumber?: string }>>
   isCreating: boolean
+  /** General Stockbook's Stock Transfer — created and dispatched at once. */
+  createAndDispatch: (
+    data: CreateTransferFormValues
+  ) => Promise<ApiResponse<{ id: string; transferNumber?: string }>>
+  isDispatchingNow: boolean
   createCaravan: (data: NewCaravanFormValues) => Promise<ApiResponse<{ warehouseId: string }>>
   isCreatingCaravan: boolean
 }
@@ -77,6 +83,21 @@ export function useCreateStockRequest(): CreateStockRequest {
     },
   })
 
+  const dispatchNowMutation = useMutation({
+    mutationFn: (data: CreateTransferFormValues) => createAndDispatchTransfer(data),
+    onSuccess: (result) => {
+      showToast({
+        title: result.success ? 'Transfer dispatched' : 'Failed to dispatch transfer',
+        description: result.message,
+        status: result.success ? 'success' : 'error',
+      })
+      // Even a failed dispatch may have saved the transfer as Accepted.
+      queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
+    },
+  })
+
   // Scenario 60 Part 2 — a caravan created inline from New Stock Transfer.
   // Refreshes the warehouse list so the new caravan is pickable at once,
   // including when the transfer after it fails and the user retries.
@@ -100,6 +121,8 @@ export function useCreateStockRequest(): CreateStockRequest {
     branchOptions: branchesQuery.data?.data?.data ?? [],
     createTransfer: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
+    createAndDispatch: dispatchNowMutation.mutateAsync,
+    isDispatchingNow: dispatchNowMutation.isPending,
     createCaravan: createCaravanMutation.mutateAsync,
     isCreatingCaravan: createCaravanMutation.isPending,
   }

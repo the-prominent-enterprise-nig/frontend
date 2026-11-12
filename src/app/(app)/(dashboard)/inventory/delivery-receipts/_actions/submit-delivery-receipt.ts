@@ -8,8 +8,8 @@ import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { DrStatus } from '@/src/schema/inventory/delivery-receipts'
 import { drFailure } from '../_lib/dr-errors'
 
-/** A memo purpose posts on submit (status posted); the rest wait for the
- * Branch Manager (pending_approval). */
+/** A repair purpose posts on submit (status posted); the rest wait for
+ * approval (pending_approval) — Head Office's for a DR with a debit memo. */
 export async function submitDeliveryReceipt(
   id: string
 ): Promise<ApiResponse<{ id: string; status: DrStatus }>> {
