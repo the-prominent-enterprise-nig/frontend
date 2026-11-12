@@ -183,7 +183,14 @@ export const SerialNumberSummarySchema = z.object({
   // NIG #10 — on a repair/return or repossession receipt, who the unit came
   // back from and the invoice it was sold on: the unit's origin.
   returnOrigin: z
-    .object({ customerName: z.string().nullable(), reference: z.string().nullable() })
+    .object({
+      customerName: z.string().nullable(),
+      reference: z.string().nullable(),
+      /** Set for a customer return, which has no RR receipt to date it by. */
+      date: z.string().nullable().optional(),
+      /** The RRC # a customer return was received on — it has no RR record. */
+      receivingReportNumber: z.string().nullable().optional(),
+    })
     .nullable()
     .optional(),
   // Scenario 08 (Caravan) Part 1 — set when this unit is physically at a

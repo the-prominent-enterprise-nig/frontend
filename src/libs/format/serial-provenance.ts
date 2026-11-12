@@ -5,7 +5,8 @@ import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
  * the customer it came back from on a repair/return or repossession. */
 export function originLabel(serial: SerialNumberSummary): string {
   const receipt = serial.goodsReceiptLine?.goodsReceipt
-  if (!receipt) return '—'
+  // A customer return came back on an RRC, with no RR receipt line behind it.
+  if (!receipt) return serial.returnOrigin?.customerName ?? '—'
   if (receipt.supplier?.name) return receipt.supplier.name
   if (receipt.stockTransferId) return 'WHSE'
   return serial.returnOrigin?.customerName ?? '—'
@@ -23,6 +24,12 @@ export function originRef(serial: SerialNumberSummary): string | null {
 
 /** Where a sold unit went: its buyer, the sale's reference and date. Null
  * for a unit still on hand, which is wherever it is stored. */
+/** When the unit arrived from its origin: the RR's date, or the date a
+ * customer returned it. */
+export function originDate(serial: SerialNumberSummary): string | null {
+  return serial.goodsReceiptLine?.goodsReceipt?.receivedAt ?? serial.returnOrigin?.date ?? null
+}
+
 export function soldDestination(
   serial: SerialNumberSummary
 ): { name: string; ref: string | null; date: string | null } | null {

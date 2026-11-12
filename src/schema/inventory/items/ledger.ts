@@ -21,6 +21,10 @@ export const ItemLedgerEntrySchema = z.object({
   referenceCode: z.string().nullable().optional(),
   reasonCode: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+  /** The unit that moved — set on a repossession, repair and repair intake. */
+  serialNumber: z.string().nullable().optional(),
+  /** Why a reasoned RR came in: `repossession`, `repair_return` or `other`. */
+  receiptReason: z.string().nullable().optional(),
   // Not a stock movement — a warehouse-less entry merged in from the item's
   // field-edit change log, distinguished by transactionType: 'field_edit'.
   warehouse: WarehouseRefSchema.nullable().optional(),
