@@ -11,36 +11,80 @@ import {
 } from '../_actions/pos-actions'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { showToast } from '@/src/components/ui/toast'
+import { manilaDateOf } from '@/src/libs/format/manila-date'
 
-/** Ticket #24 follow-up — "Edit entry" on a recorded sale (the client's
- * mockup puts it beside Refund; their comment: "it is not editable"). Clicking
- * it turns the sale's SI / DR No. and agent into inputs where they sit in the
- * transaction modal, with Save below. A payment's CR # is not editable: it is
- * also on the down payment's collection receipt.
- * The Business Owner and the Sales Admin Clerk; each change is kept in the audit log with what it
- * read before and after. What is posted to the books, stock or an installment account (prices,
- * items, terms, the customer, the date) is not editable: Refund or a void
- * request puts those right. */
+/** Docket #49 — "Edit entry" on a recorded sale. Clicking it turns the Invoice
+ * Date, Agent, Credit, Commission and SMI into inputs where they sit in the
+ * transaction modal, with Save below. The Business Owner and the Sales Admin
+ * Clerk.
+ *
+ * A saved edit only changes the POS Sales Report: the sale, its installment
+ * account, commission, expenses and journal entries stay as recorded. Each
+ * change is kept in the audit log with what it read before and after. */
 
 interface FormValues {
-  docNo: string
   agentId: string
+  credit: string
+  commission: string
+  smi: string
+  invoiceDate: string
 }
 
-const valuesOf = (tx: PosTransaction): FormValues => ({
-  docNo: tx.salesInvoiceNumber ?? '',
-  agentId: tx.sellingAgent?.id ?? '',
-})
+type AmountField = 'credit' | 'commission' | 'smi'
+
+const AMOUNT_LABELS: Record<AmountField, string> = {
+  credit: 'Credit',
+  commission: 'Commission',
+  smi: 'SMI',
+}
+
+const AMOUNT_FIELDS = Object.keys(AMOUNT_LABELS) as AmountField[]
+
+const amountText = (n: number | null | undefined): string => (n == null ? '' : String(n))
+
+/** The boxes open on what the Sales Report shows now: an earlier edit, or
+ * else what the sale recorded. */
+const valuesOf = (tx: PosTransaction): FormValues => {
+  const edit = tx.reportEdit
+  const account = tx.accountSummary
+  return {
+    agentId: edit?.agentId ?? tx.sellingAgent?.id ?? '',
+    credit: amountText(edit?.credit ?? account?.amountFinanced),
+    commission: amountText(
+      edit?.commission ?? (account ? account.commission : tx.saleCommission?.commission)
+    ),
+    smi: amountText(edit?.smi ?? (account ? account.smi : tx.saleCommission?.smi)),
+    invoiceDate: edit?.invoiceDate ?? manilaDateOf(tx.occurredAt ?? tx.createdAt),
+  }
+}
 
 /** The server's message without its machine code ("nothing_changed: …"). */
 const readable = (error: string): string => error.replace(/^[a-z_]+:\s*/, '')
 
-/** Only what differs from the sale as recorded; null when nothing does. */
+const cleanAmount = (text: string): string => text.trim().replace(/,/g, '')
+
+/** The first amount that isn't one, as a message; null when all are fine. */
+function amountError(form: FormValues): string | null {
+  for (const field of AMOUNT_FIELDS) {
+    const text = cleanAmount(form[field])
+    if (text && !/^\d+(\.\d{1,2})?$/.test(text)) {
+      return `${AMOUNT_LABELS[field]} must be an amount, like 1250.50.`
+    }
+  }
+  return null
+}
+
+/** Only what differs from when the boxes opened; null when nothing does. A
+ * box left empty takes that edit back off. */
 function changesOf(tx: PosTransaction, form: FormValues): EditRecordedSaleInput | null {
+  const opened = valuesOf(tx)
   const changes: EditRecordedSaleInput = {}
-  if (form.docNo.trim() !== (tx.salesInvoiceNumber ?? ''))
-    changes.documentNumber = form.docNo.trim()
-  if (form.agentId !== (tx.sellingAgent?.id ?? '')) changes.sellingAgentId = form.agentId || null
+  if (form.agentId !== opened.agentId) changes.sellingAgentId = form.agentId || null
+  for (const field of AMOUNT_FIELDS) {
+    const text = cleanAmount(form[field])
+    if (text !== opened[field]) changes[field] = text ? Number(text) : null
+  }
+  if (form.invoiceDate !== opened.invoiceDate) changes.invoiceDate = form.invoiceDate || null
   return Object.keys(changes).length > 0 ? changes : null
 }
 
@@ -62,14 +106,19 @@ export function useEditEntryForm(tx: PosTransaction) {
     staleTime: 5 * 60 * 1000,
     enabled: editing,
   })
-  const agentOptions = [
-    { value: '', label: 'No agent' },
-    // The sale's own agent stays pickable even if no longer active.
-    ...(tx.sellingAgent && !agents.data?.data?.some((a) => a.id === tx.sellingAgent!.id)
-      ? [{ value: tx.sellingAgent.id, label: tx.sellingAgent.name }]
-      : []),
-    ...(agents.data?.data ?? []).map((a) => ({ value: a.id, label: a.name })),
-  ]
+  const active = agents.data?.data ?? []
+  const inactive = [
+    // The sale's own agent, and one picked earlier, stay pickable even if no
+    // longer active.
+    tx.sellingAgent,
+    tx.reportEdit?.agentId
+      ? { id: tx.reportEdit.agentId, name: tx.reportEdit.agentName ?? '' }
+      : null,
+  ].filter((a, i, all): a is { id: string; name: string } => {
+    if (!a || active.some((b) => b.id === a.id)) return false
+    return all.findIndex((b) => b?.id === a.id) === i
+  })
+  const agentOptions = [...inactive, ...active].map((a) => ({ value: a.id, label: a.name }))
 
   const start = (): void => {
     setValues(valuesOf(tx))
@@ -82,20 +131,19 @@ export function useEditEntryForm(tx: PosTransaction) {
   }
 
   const save = async (): Promise<void> => {
+    const invalid = amountError(values)
+    if (invalid) return setError(invalid)
     const changes = changesOf(tx, values)
     if (!changes) return setError('Nothing has been changed yet.')
-    if (changes.documentNumber === '') {
-      return setError(
-        `The ${tx.deliveryReceiptNumber ? 'Delivery Receipt' : 'Sales Invoice'} No. can't be blank.`
-      )
-    }
     setError(null)
     setSaving(true)
     const res = await editRecordedSale(tx.id, changes)
     setSaving(false)
     if (!res.success || !res.data) return setError(readable(res.error ?? 'Failed to save.'))
     queryClient.setQueryData(['pos-transaction', tx.id], res)
-    void queryClient.invalidateQueries({ queryKey: ['pos-transactions'] })
+    void queryClient.invalidateQueries({
+      predicate: (query) => String(query.queryKey[0]).startsWith('pos-sales-report'),
+    })
     showToast({ title: 'Entry updated', status: 'success' })
     setEditing(false)
   }
@@ -108,8 +156,9 @@ export function useEditEntryForm(tx: PosTransaction) {
     saving,
     error,
     values,
-    setDocNo: (docNo: string) => setValues((v) => ({ ...v, docNo })),
     setAgentId: (agentId: string) => setValues((v) => ({ ...v, agentId })),
+    setAmount: (field: AmountField, text: string) => setValues((v) => ({ ...v, [field]: text })),
+    setInvoiceDate: (invoiceDate: string) => setValues((v) => ({ ...v, invoiceDate })),
     agentOptions,
     agentsLoading: agents.isLoading,
   }
@@ -118,16 +167,29 @@ export function useEditEntryForm(tx: PosTransaction) {
 export const editInputClass =
   'w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-normal text-gray-900 focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500'
 
-/** The SI / DR No. as an input, in the Sale card. */
-export function DocNoInput({ form, label }: { form: EditEntryForm; label: string }) {
+/** The Invoice Date as an input, in the Sale card. */
+export function InvoiceDateInput({ form }: { form: EditEntryForm }) {
   return (
     <input
-      aria-label={label}
-      data-testid="edit-entry-doc-no"
+      type="date"
+      aria-label="Invoice Date"
+      data-testid="edit-entry-invoice-date"
       className={editInputClass}
-      value={form.values.docNo}
-      maxLength={100}
-      onChange={(e) => form.setDocNo(e.target.value)}
+      value={form.values.invoiceDate}
+      onChange={(e) => form.setInvoiceDate(e.target.value)}
+    />
+  )
+}
+
+/** Credit, Commission or SMI as an input, in the Agent and credit card. */
+export function AmountInput({ form, field }: { form: EditEntryForm; field: AmountField }) {
+  return (
+    <input
+      inputMode="decimal"
+      aria-label={AMOUNT_LABELS[field]}
+      className={editInputClass}
+      value={form.values[field]}
+      onChange={(e) => form.setAmount(field, e.target.value)}
     />
   )
 }
@@ -139,7 +201,7 @@ export function AgentInput({ form }: { form: EditEntryForm }) {
       value={form.values.agentId}
       onChange={form.setAgentId}
       options={form.agentOptions}
-      placeholder="No agent"
+      placeholder="Select an agent"
       loading={form.agentsLoading}
       ariaLabel="Agent"
       // The transaction modal scrolls; float the list over it rather than be clipped.
@@ -152,7 +214,7 @@ export function AgentInput({ form }: { form: EditEntryForm }) {
 export function EditEntryBar({ form, card }: { form: EditEntryForm; card: string }) {
   return (
     <div className={`${card} space-y-3`} data-testid="edit-entry-bar">
-      <p className="text-xs text-gray-500">Only the SI / DR No. and agent can be changed.</p>
+      <p className="text-xs text-gray-500">These changes only show in the POS Sales Report.</p>
       {form.error && (
         <p role="alert" data-testid="edit-entry-error" className="text-sm text-red-600">
           {form.error}
