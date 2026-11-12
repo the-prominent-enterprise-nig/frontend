@@ -117,7 +117,7 @@ export default function SupplierList({
                         {supplier.name}
                       </span>
                       <span className={`${MONO} mt-1 block text-[10.5px] text-[#4b4b5a]`}>
-                        {supplier.code}
+                        {supplier.code} · {supplier.tier === 'MAJOR' ? 'Major' : 'Minor'}
                       </span>
                       <span className="mt-0.5 block truncate text-[10.5px] text-[#4b4b5a]">
                         {rowMeta(supplier)}
