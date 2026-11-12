@@ -53,7 +53,27 @@ const VALID_TABS: Tab[] = [
 const TODAY = manilaToday()
 const YEAR_START = `${TODAY.slice(0, 4)}-01-01`
 
-export default function ReportsHub() {
+/**
+ * The tabs whose figures the server narrows to a branch user's own branch.
+ * AP Aging, Customer Statement and Reconciliation are not on it: AP bills have
+ * no branch, a customer's statement is the customer's, and the reconciliation
+ * checks tie out the whole ledger.
+ */
+const BRANCH_NARROWED_TABS: Tab[] = [
+  'trial-balance',
+  'pnl',
+  'balance-sheet',
+  'cash-flow',
+  'grni',
+  'cost-center',
+  'expenses',
+  'bi',
+]
+
+type OwnBranch = { id: string; name: string }
+
+/** `ownBranch` is the signed-in user's branch, or null for head office. */
+export default function ReportsHub({ ownBranch = null }: { ownBranch?: OwnBranch | null }) {
   const searchParams = useSearchParams()
   const initTab = VALID_TABS.includes(searchParams.get('tab') as Tab)
     ? (searchParams.get('tab') as Tab)
@@ -69,7 +89,8 @@ export default function ReportsHub() {
   const [customerId, setCustomerId] = useState(searchParams.get('customerId') ?? '')
   // P&L branch scoping (SCEN-14 Closing Gap 2) — empty means all branches
   const [branches, setBranches] = useState<BranchDetail[]>([])
-  const [branchId, setBranchId] = useState(searchParams.get('branchId') ?? '')
+  // A branch user is fixed to their own branch; head office picks one or all.
+  const [branchId, setBranchId] = useState(ownBranch?.id ?? searchParams.get('branchId') ?? '')
   // P&L internal-vs-net view (SCEN-14 Closing Gap 3)
   const [pnlView, setPnlView] = useState<'internal' | 'net'>(
     searchParams.get('view') === 'internal' ? 'internal' : 'net'
@@ -123,11 +144,12 @@ export default function ReportsHub() {
     )
   }, [tab, customers.length])
 
-  // Branch list is only needed for the P&L branch scope picker
+  // Branch list is only needed for the P&L branch scope picker — which a branch
+  // user doesn't get, so they never load it.
   useEffect(() => {
-    if ((tab !== 'pnl' && tab !== 'expenses') || branches.length) return
+    if (ownBranch || (tab !== 'pnl' && tab !== 'expenses') || branches.length) return
     getBranches().then((r) => setBranches(r.success && r.data ? r.data : []))
-  }, [tab, branches.length])
+  }, [ownBranch, tab, branches.length])
 
   const needsDateRange = ['pnl', 'cash-flow', 'cost-center', 'expenses'].includes(tab)
   const needsAsOf = ['trial-balance', 'balance-sheet', 'ap-aging'].includes(tab)
@@ -143,6 +165,9 @@ export default function ReportsHub() {
       <h2 className="text-2xl font-bold text-gray-900 mb-1">Reports</h2>
       <p className="text-sm text-gray-500 mb-4">
         Financial reports based on posted journal entries.
+        {ownBranch && BRANCH_NARROWED_TABS.includes(tab) && (
+          <span className="text-gray-700"> Showing {ownBranch.name} only.</span>
+        )}
       </p>
 
       <div className="flex flex-wrap gap-1 border-b border-gray-200 mb-4">
@@ -208,7 +233,18 @@ export default function ReportsHub() {
             </div>
           </>
         )}
-        {needsBranch && (
+        {needsBranch && ownBranch && (
+          <div>
+            <span className="block text-xs text-gray-600 mb-1">Branch</span>
+            <div
+              aria-label="Branch"
+              className="px-3 py-2 text-sm border border-gray-200 rounded-lg min-w-48 bg-gray-50 text-gray-700"
+            >
+              {ownBranch.name}
+            </div>
+          </div>
+        )}
+        {needsBranch && !ownBranch && (
           <div>
             <label className="block text-xs text-gray-600 mb-1">Branch</label>
             <select
@@ -298,7 +334,14 @@ export default function ReportsHub() {
         ) : tab === 'trial-balance' ? (
           <TrialBalanceView data={data} />
         ) : tab === 'pnl' ? (
-          <PnLView data={data} branchName={branches.find((b) => b.id === data.branchId)?.name} />
+          <PnLView
+            data={data}
+            branchName={
+              ownBranch?.id === data.branchId
+                ? ownBranch?.name
+                : branches.find((b) => b.id === data.branchId)?.name
+            }
+          />
         ) : tab === 'balance-sheet' ? (
           <BalanceSheetView data={data} />
         ) : tab === 'cash-flow' ? (
