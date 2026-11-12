@@ -52,6 +52,13 @@ function fmtDoc(v: string | null | undefined): string {
     : '—'
 }
 
+/** A payment's reference, or null when there is none worth showing — blank, or
+ *  just "N/A" (Docket #51: that tells the Accountant nothing). */
+function shownReference(ref: string | null | undefined): string | null {
+  const r = ref?.trim()
+  return r && !/^n\/a$/i.test(r) ? r : null
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
@@ -269,20 +276,23 @@ export default function ExpenseDetail({ id }: { id: string }) {
           </p>
         ) : (
           <ul className="divide-y divide-gray-100">
-            {e.payments.map((p, i) => (
-              <li key={i} className="flex items-center justify-between gap-3 py-2.5 text-[13px]">
-                <div>
-                  <span className="text-gray-800">
-                    {changeReturned ? 'Cash received' : p.paymentMethod.replace(/_/g, ' ')}
+            {e.payments.map((p, i) => {
+              const reference = shownReference(p.reference)
+              return (
+                <li key={i} className="flex items-center justify-between gap-3 py-2.5 text-[13px]">
+                  <div>
+                    <span className="text-gray-800">
+                      {changeReturned ? 'Cash received' : p.paymentMethod.replace(/_/g, ' ')}
+                    </span>
+                    {p.bankAccount && <span className="text-gray-500"> · {p.bankAccount}</span>}
+                    {reference && <span className="text-gray-500"> · {reference}</span>}
+                  </div>
+                  <span className="shrink-0 font-semibold tabular-nums text-gray-900">
+                    {fmtMoney(p.amount)}
                   </span>
-                  {p.bankAccount && <span className="text-gray-500"> · {p.bankAccount}</span>}
-                  {p.reference && <span className="text-gray-500"> · {p.reference}</span>}
-                </div>
-                <span className="shrink-0 font-semibold tabular-nums text-gray-900">
-                  {fmtMoney(p.amount)}
-                </span>
-              </li>
-            ))}
+                </li>
+              )
+            })}
           </ul>
         )}
         {e.journalEntryId && (
