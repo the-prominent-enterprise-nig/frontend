@@ -42,6 +42,9 @@ export type CheckoutHandoff<TLine = unknown> = {
    * the till, where price, tax and UoM are resolved, rather than guessed on
    * the page that happens to hold the application. */
   creditApplicationId?: string
+  /** The application's printed number, for the "loading its items" banner
+   * checkout shows while it builds the cart. Display only. */
+  creditApplicationNumber?: string
   /** Scenario 72 Part 6 — an approved "sales invoice to follow" Delivery
    * Receipt. Carried instead of lines: the cart is built at the till from
    * the DR's own lines and the units it holds. */
