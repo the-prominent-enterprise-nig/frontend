@@ -212,6 +212,9 @@ export default function CreditApplicationDetail({
       // wants its yyyy-mm-dd.
       firstDueDate: application.firstDueDate ? application.firstDueDate.slice(0, 10) : '',
       ppdRebate: application.ppdRebate != null ? String(application.ppdRebate) : '',
+      // Docket #48 — form-only: a business applicant may take a ₱0 down
+      // payment without an override. Not editable here, never sent on save.
+      applicantCustomerType: application.applicantCustomer?.customerType ?? '',
     })
   }, [isEditOpen, application, resetEditForm])
 
@@ -231,6 +234,9 @@ export default function CreditApplicationDetail({
       priceUseTypeId: data.priceUseTypeId || undefined,
       financingTermId: data.financingTermId || undefined,
       downPayment: data.downPayment || undefined,
+      // Form-only (seeded above for the ₱0 down rule); the applicant's type
+      // is the customer's, not the application's.
+      applicantCustomerType: undefined,
     })
     if (result.success) {
       setIsEditOpen(false)
