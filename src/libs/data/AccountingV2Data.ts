@@ -2656,6 +2656,8 @@ export interface BankReconciliationLine {
   date: string
   reference?: string | null
   checked: boolean
+  /** Docket #61 — the day a ticked line cleared; null while unticked and on lines ticked before it existed. */
+  clearedDate?: string | null
 }
 export interface BankReconciliation {
   id: string
