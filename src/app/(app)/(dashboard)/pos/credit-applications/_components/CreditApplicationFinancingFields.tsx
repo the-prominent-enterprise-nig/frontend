@@ -98,10 +98,20 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     | { itemId?: string; estimatedPrice?: number; priceOverridden?: boolean }[]
     | undefined
   // Nov UAT — an item priced by override at the till (one is enough, of any
-  // number). It is the only thing that lets the down payment be 0, and it frees
-  // the amount from the rate card's own figure: the price was negotiated, so
-  // the card no longer describes this sale. The server applies the same rule.
+  // number). It lets the down payment be 0, and it frees the amount from the
+  // rate card's own figure: the price was negotiated, so the card no longer
+  // describes this sale. The server applies the same rule.
   const anyOverridden = (items ?? []).some((i) => i?.priceOverridden === true)
+  // Docket #48 — a business applicant (private or government/institutional)
+  // gets the same without an override, as checkout already allows. Read from
+  // the form, which the create form fills from the applicant and the edit modal
+  // seeds from the stored applicant.
+  const applicantCustomerType = useWatch({
+    control,
+    name: 'applicantCustomerType' as Path<T>,
+  }) as string | undefined
+  const applicantIsBusiness = applicantCustomerType === 'business'
+  const zeroDownAllowed = anyOverridden || applicantIsBusiness
   const priceUseTypeId = useWatch({ control, name: 'priceUseTypeId' as Path<T> }) as
     | string
     | undefined
@@ -232,8 +242,9 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     resolvedItemsList.every((r) => isCardTerm(r, selectedTermMonths))
       ? Math.round(curatedDownPaymentSum * 100) / 100
       : null
-  // Not held to the card once an item's price was overridden (see above).
-  const fixedDownPayment = anyOverridden ? null : cardFixedDownPayment
+  // Not held to the card once an item's price was overridden, or for a
+  // business applicant (see above).
+  const fixedDownPayment = zeroDownAllowed ? null : cardFixedDownPayment
   // A single item is previewed from its own rate-card row. A bundle sends
   // every item's row and the server sums their monthly installments and PPD
   // rebates (FinancingTermsService.preview), the same all-or-nothing rule
@@ -321,7 +332,9 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
       void trigger('downPayment' as Path<T>)
     }, 400)
     return () => clearTimeout(timer)
-  }, [downPaymentInput, estimatedTotal, financingTermId, trigger])
+    // zeroDownAllowed: picking or retyping the applicant (Docket #48) changes
+    // whether 0 stands, so a stale "must be more than 0" clears, or appears.
+  }, [downPaymentInput, estimatedTotal, financingTermId, zeroDownAllowed, trigger])
 
   const [preview, setPreview] = useState<InstallmentPreview | null>(null)
   const [previewError, setPreviewError] = useState('')
@@ -348,11 +361,12 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     // Debounced — a keystroke-per-request preview would hammer the backend
     // on every digit typed into Down Payment.
     // The card's monthly was calculated from the card's own down payment. An
-    // overridden application may type another, and then the server prices it
-    // from the term's factor rate — so the preview does too, or it would quote
-    // a monthly that is not the one that gets stored.
+    // overridden application (or a business applicant's) may type another, and
+    // then the server prices it from the term's factor rate — so the preview
+    // does too, or it would quote a monthly that is not the one that gets
+    // stored.
     const offTheCard =
-      anyOverridden &&
+      zeroDownAllowed &&
       cardFixedDownPayment != null &&
       Math.abs(downPayment - cardFixedDownPayment) > 0.005
     const timer = setTimeout(() => {
@@ -386,7 +400,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
     downPaymentInput,
     soloPriceListItemId,
     bundlePriceListItemKey,
-    anyOverridden,
+    zeroDownAllowed,
     cardFixedDownPayment,
   ])
 
@@ -559,7 +573,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
                 placeholder={
                   fixedDownPayment != null
                     ? '0.00'
-                    : anyOverridden
+                    : zeroDownAllowed
                       ? 'Any amount, including 0'
                       : 'Any amount above 0'
                 }
@@ -571,10 +585,11 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
             <p className="mt-1 text-xs text-zinc-500">
               Set by the price list for this term — the monthly installment is calculated from it.
             </p>
-          ) : anyOverridden ? (
+          ) : zeroDownAllowed ? (
             <p className="mt-1 text-xs text-zinc-500" data-testid="down-payment-zero-allowed">
-              An item on this application has a price override, so the down payment can be as low as
-              0.
+              {anyOverridden
+                ? 'An item on this application has a price override, so the down payment can be as low as 0.'
+                : 'Business customer — down payment can be 0.'}
             </p>
           ) : (
             <p className="mt-1 text-xs text-zinc-500">

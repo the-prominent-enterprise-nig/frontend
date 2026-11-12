@@ -399,16 +399,21 @@ export function refineDownPayment(
     resolvedItemTotal?: number
     downPaymentFixed?: number
     items?: { priceOverridden?: boolean }[]
+    applicantCustomerType?: string
   },
   ctx: z.RefinementCtx
 ) {
   if (!data.financingTermId) return
 
   // Nov UAT — an item whose price was overridden at the till (one is enough,
-  // of any number) is the only thing that lets the down payment be 0. The
-  // price was negotiated, so the rate card's own figure no longer binds either:
-  // the amount is the cashier's to set, up to the item total.
-  const overridden = data.items?.some((i) => i?.priceOverridden === true) === true
+  // of any number) lets the down payment be 0. The price was negotiated, so
+  // the rate card's own figure no longer binds either: the amount is the
+  // cashier's to set, up to the item total. Docket #48 — a business applicant
+  // (private or government/institutional) gets the same without an override,
+  // as at checkout. The server applies both.
+  const zeroDownAllowed =
+    data.items?.some((i) => i?.priceOverridden === true) === true ||
+    data.applicantCustomerType === 'business'
 
   const raw = data.downPayment?.trim()
   if (!raw) {
@@ -427,8 +432,9 @@ export function refineDownPayment(
   }
 
   // The rate card's own figure for this term — not a minimum, the amount.
-  // (Not held to it once an item's price was overridden — see above.)
-  if (data.downPaymentFixed != null && !overridden) {
+  // (Not held to it once an item's price was overridden, or for a business
+  // applicant — see above.)
+  if (data.downPaymentFixed != null && !zeroDownAllowed) {
     if (Math.abs(downPayment - data.downPaymentFixed) > 0.005) {
       ctx.addIssue({
         code: 'custom',
@@ -440,14 +446,15 @@ export function refineDownPayment(
   }
 
   // A down payment is always collected; how small it is, is the approver's
-  // call. Never 0 — unless an item's price was overridden (above).
-  if (downPayment < 0 || (downPayment === 0 && !overridden)) {
+  // call. Never 0 — unless an item's price was overridden or the applicant is
+  // a business (above).
+  if (downPayment < 0 || (downPayment === 0 && !zeroDownAllowed)) {
     ctx.addIssue({
       code: 'custom',
       path: ['downPayment'],
-      message: overridden
+      message: zeroDownAllowed
         ? 'Down payment cannot be negative'
-        : 'Down payment must be more than 0 — it can only be 0 when an item has a price override',
+        : 'Down payment must be more than 0 — it can only be 0 when an item has a price override, or the applicant is a business customer',
     })
     return
   }
