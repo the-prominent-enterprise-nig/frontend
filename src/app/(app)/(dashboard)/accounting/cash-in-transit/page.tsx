@@ -1,8 +1,9 @@
 import { redirect } from 'next/navigation'
 import { Suspense } from 'react'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { can } from '@/src/libs/guards/permission'
+import { can, canNavigate } from '@/src/libs/guards/permission'
 import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { HubTabs } from '../_shared/HubTabs'
 import { CashInTransitList } from '../../pos/undeposited-funds/_components/CashInTransitList'
 
@@ -19,8 +20,19 @@ export const metadata = { title: 'Collected Funds History | NIG Central' }
  * them here and corrects a mistyped one (accounting:cash-in-transit:correct).
  * That keeps the Accountant an accounting-only role instead of handing them
  * POS permissions they have no other use for.
+ *
+ * Ticket #76 (client, 2026-11-12) — the Cashier and the Branch Manager see this
+ * screen in POS, so it is not repeated for them under Accounting. Their read
+ * comes with POS's Collections feature rather than a row of their own, which is
+ * what the tab strip counts (canNavigate), so the tab is already absent; the
+ * route is closed the same way and sends them to POS's screen, keeping a
+ * journal entry's ?deposit= link working.
  */
-export default async function AccountingCashInTransitPage() {
+export default async function AccountingCashInTransitPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ deposit?: string }>
+}) {
   const session = await getSessionOrNull()
 
   if (!session) {
@@ -29,6 +41,18 @@ export default async function AccountingCashInTransitPage() {
 
   if (!can(session, ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_READ)) {
     redirect('/403')
+  }
+
+  if (!canNavigate(session, ACCOUNTING_PERMISSIONS.CASH_IN_TRANSIT_READ)) {
+    if (!can(session, POS_PERMISSIONS.CASH_IN_TRANSIT_READ)) {
+      redirect('/403')
+    }
+    const { deposit } = await searchParams
+    redirect(
+      deposit
+        ? `/pos/undeposited-funds?deposit=${encodeURIComponent(deposit)}`
+        : '/pos/undeposited-funds'
+    )
   }
 
   // 2026-10-23 (client decision) — deposits are recorded by the Cashier from
