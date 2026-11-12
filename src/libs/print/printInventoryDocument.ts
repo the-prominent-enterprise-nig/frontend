@@ -539,6 +539,22 @@ function transferReceipts(
     .sort((a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime())
 }
 
+type TransferSheet = { title: string; noun: string; picking: boolean; signatures: string[] }
+
+const STOCK_TRANSFER_SHEET: TransferSheet = {
+  title: 'Stock Transfer',
+  noun: 'Transfer',
+  picking: false,
+  signatures: ['Dispatched by:', 'Received by:'],
+}
+
+const STOCK_REQUEST_SHEET: TransferSheet = {
+  title: 'Stock Request',
+  noun: 'Request',
+  picking: true,
+  signatures: ['Prepared by:', 'Checked by:'],
+}
+
 /**
  * Stock Transfer print — same typographic system as buildReceivingReportHtml()
  * and printPurchaseOrderDocument() (title left / logo right, three-column
@@ -572,6 +588,10 @@ export function buildStockTransferHtml(data: unknown): string {
     'pending_hq_approval',
     'draft',
   ].includes(String(transfer.status))
+  // Before dispatch the sheet is the warehouse's picking list: titled Stock
+  // Request, with SKUs and a blank Picked box per line for whoever prepares
+  // the stock, and prepare/check signatures instead of dispatch/receive.
+  const sheet = awaitingDispatch ? STOCK_REQUEST_SHEET : STOCK_TRANSFER_SHEET
   // Blank (—) until the transfer is received.
   const receipts = transferReceipts(transfer)
 
@@ -612,7 +632,7 @@ export function buildStockTransferHtml(data: unknown): string {
   let totalQty = 0
   const rows = lines
     .map((l, i) => {
-      const item = l.item as { name?: string; isSerialTracked?: boolean } | undefined
+      const item = l.item as { name?: string; sku?: string; isSerialTracked?: boolean } | undefined
       const serial = (l.serialNumber as Record<string, unknown> | null)?.serialNumber as
         | string
         | undefined
@@ -621,8 +641,10 @@ export function buildStockTransferHtml(data: unknown): string {
       return `<tr>
         <td class="num">${i + 1}</td>
         <td>${esc(item?.name) || '—'}${shortfallNote(l)}</td>
+        ${sheet.picking ? `<td class="mono">${esc(item?.sku) || '—'}</td>` : ''}
         ${hasSerialLine ? `<td class="mono">${serialCell(l, serial)}</td>` : ''}
         <td class="right">${qty}</td>
+        ${sheet.picking ? '<td class="pick"><span class="pick-box"></span></td>' : ''}
       </tr>`
     })
     .join('')
@@ -667,10 +689,12 @@ export function buildStockTransferHtml(data: unknown): string {
     .sig-block { flex: 1; }
     .sig-label { font-weight: 700; margin: 0 0 32px; }
     .sig-line { border-bottom: 1px solid #333; }
+    td.pick, th.pick { text-align: center; width: 56px; }
+    .pick-box { display: inline-block; width: 14px; height: 14px; border: 1px solid #333; }
     @media print { body { padding: 0; } button { display: none; } }
   </style></head><body>
     <div class="top">
-      <h1>Stock Transfer</h1>
+      <h1>${sheet.title}</h1>
       <img class="brand-logo" src="${window.location.origin}/nig-logo.png" alt="NIG logo" />
     </div>
 
@@ -683,14 +707,18 @@ export function buildStockTransferHtml(data: unknown): string {
         <p class="party-address">${esc(partyAddress(toWarehouse)) || '—'}</p>
       </div>
       <div class="meta">
-        <p class="meta-label">Transfer No.</p>
+        <p class="meta-label">${sheet.noun} No.</p>
         <p class="meta-value">${esc(doc.documentNumber)}</p>
-        <p class="meta-label">Transfer Date</p>
+        <p class="meta-label">${sheet.noun} Date</p>
         <p class="meta-value">${fmtDate(transfer.transferDate)}</p>
-        <p class="meta-label">RR No.</p>
+        ${
+          sheet.picking
+            ? ''
+            : `<p class="meta-label">RR No.</p>
         <p class="meta-value">${receipts.map((r) => esc(r.code)).join(', ') || '—'}</p>
         <p class="meta-label">RR Date</p>
-        <p class="meta-value">${receipts.map((r) => fmtDate(r.receivedAt)).join(', ') || '—'}</p>
+        <p class="meta-value">${receipts.map((r) => fmtDate(r.receivedAt)).join(', ') || '—'}</p>`
+        }
         ${transfer.reason ? `<p class="meta-label">Reason</p><p class="meta-value">${esc(transfer.reason)}</p>` : ''}
       </div>
       <div class="enterprise">
@@ -716,8 +744,10 @@ export function buildStockTransferHtml(data: unknown): string {
         <tr>
           <th class="num">#</th>
           <th>Item</th>
+          ${sheet.picking ? '<th>SKU</th>' : ''}
           ${hasSerialLine ? '<th>Serial No.</th>' : ''}
           <th class="right">Qty</th>
+          ${sheet.picking ? '<th class="pick">Picked</th>' : ''}
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -730,14 +760,12 @@ export function buildStockTransferHtml(data: unknown): string {
     </div>
 
     <div class="signatures">
-      <div class="sig-block">
-        <p class="sig-label">Dispatched by:</p>
-        <div class="sig-line"></div>
-      </div>
-      <div class="sig-block">
-        <p class="sig-label">Received by:</p>
-        <div class="sig-line"></div>
-      </div>
+      ${sheet.signatures
+        .map(
+          (label) =>
+            `<div class="sig-block"><p class="sig-label">${label}</p><div class="sig-line"></div></div>`
+        )
+        .join('')}
     </div>
 
     <button onclick="window.print()" style="margin:16px 0;padding:6px 16px;background:#6d28d9;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px">Print</button>

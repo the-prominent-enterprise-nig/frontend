@@ -1,18 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import {
-  Plus,
-  RefreshCw,
-  Search,
-  X,
-  QrCode,
-  Zap,
-  ChevronLeft,
-  ChevronRight,
-  Barcode,
-  Trash2,
-} from 'lucide-react'
+import { Plus, RefreshCw, Search, X, QrCode, Zap, Barcode, Trash2 } from 'lucide-react'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
@@ -21,6 +10,24 @@ import type { BarcodeType, CreateBarcodeFormValues } from '@/src/schema/inventor
 import { BARCODE_TYPES } from '@/src/schema/inventory/barcodes'
 import { useBarcodeManager } from '../_hooks/useBarcodeManager'
 import { displayClassificationLabel } from '@/src/libs/format/text'
+import Tooltip from '@/src/components/ui/Tooltip'
+import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
+import { MONO, PLEX } from '@/src/libs/design/plex'
+import {
+  EmptyState,
+  ICON_BUTTON,
+  ListHeader,
+  ListSearch,
+  PAGE_INNER,
+  PAGE_SHELL,
+  PRIMARY_BUTTON,
+  TABLE_HEAD_ROW,
+  TableCard,
+} from '../../master-data/_components/masterDataChrome'
+
+const CHECKBOX = 'h-4 w-4 rounded border-[#d3d3db] accent-[#5b21b6]'
+const ROW_BUTTON =
+  'inline-flex items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-2.5 py-1.5 text-[12px] font-medium text-[#3d3d4a] hover:border-[#a3a3b2] hover:text-[#5b21b6] disabled:opacity-50'
 
 const BARCODE_TYPE_LABELS: Record<BarcodeType, string> = {
   upc: 'UPC',
@@ -406,195 +413,159 @@ export default function BarcodesPageView({ session }: { session: SessionUser }) 
   const allSelected = items.length > 0 && selectedIds.size === items.length
 
   return (
-    <div className="w-full min-h-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
-      <div className="mx-auto max-w-7xl space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-[21px] font-semibold tracking-[-0.015em]">Barcode Management</h1>
-            <p className="mt-1 text-sm text-zinc-500">
-              Generate and manage barcodes assigned to inventory items.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-prominent-purple-700 hover:bg-prominent-purple-50 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-            {canManage && selectedIds.size > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowBulkModal(true)}
-                className="flex items-center gap-2 rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800"
-              >
-                <Zap className="h-4 w-4" />
-                Generate for {selectedIds.size} item{selectedIds.size !== 1 ? 's' : ''}
-              </button>
-            )}
-          </div>
-        </div>
+    <div className={`${PAGE_SHELL} ${PLEX}`}>
+      <div className={PAGE_INNER}>
+        <ListHeader
+          title="Barcode Management"
+          description="Generate and manage barcodes assigned to inventory items."
+          actions={
+            <>
+              <Tooltip label="Refresh">
+                <button
+                  type="button"
+                  onClick={() => refetch()}
+                  disabled={isFetching}
+                  aria-label="Refresh"
+                  className={`${ICON_BUTTON} disabled:opacity-50`}
+                >
+                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                </button>
+              </Tooltip>
+              {canManage && selectedIds.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowBulkModal(true)}
+                  className={PRIMARY_BUTTON}
+                >
+                  <Zap className="h-4 w-4" />
+                  Generate for {selectedIds.size} item{selectedIds.size !== 1 ? 's' : ''}
+                </button>
+              )}
+            </>
+          }
+        />
 
-        {/* Search */}
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-          <input
-            type="text"
+        <div className="flex flex-wrap items-center gap-2">
+          <ListSearch
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value)
+            onChange={(value) => {
+              setSearch(value)
               setPage(1)
             }}
             placeholder="Search items or SKU…"
-            className="w-full rounded-lg border border-zinc-200 bg-white py-2 pl-9 pr-4 text-sm shadow-sm focus:border-prominent-orange-400 focus:outline-none focus:ring-2 focus:ring-prominent-orange-200"
           />
-          {search && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearch('')
-                setPage(1)
-              }}
-              className="absolute right-3 top-1/2 -translate-y-1/2"
-            >
-              <X className="h-3.5 w-3.5 text-zinc-400" />
-            </button>
-          )}
         </div>
 
-        {/* Table */}
-        <div
-          className={`overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition-opacity ${isFetching ? 'opacity-60' : ''}`}
-        >
+        <TableCard fetching={isFetching && !isLoading}>
           {isLoading ? (
-            <div className="py-12 text-center text-sm text-zinc-400">Loading items…</div>
+            <div className="p-8 text-center text-sm text-ink-muted">Loading items…</div>
           ) : items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16">
-              <Barcode className="mb-3 h-10 w-10 text-zinc-300" />
-              <p className="text-sm font-medium text-zinc-500">No items found</p>
-            </div>
+            <EmptyState
+              icon={search ? <Search className="h-8 w-8" /> : <Barcode className="h-10 w-10" />}
+              title={search ? 'No items match' : 'No items yet'}
+            />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-200 bg-zinc-50">
-                    {canManage && (
-                      <th className="w-10 px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={allSelected}
-                          onChange={() => toggleSelectAll(items)}
-                          className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-600 focus:ring-prominent-purple-500"
-                        />
-                      </th>
-                    )}
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Item
-                    </th>
-                    <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 sm:table-cell">
-                      SKU
-                    </th>
-                    <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 md:table-cell">
-                      Category
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {items.map((item) => (
-                    <tr key={item.id} className="hover:bg-zinc-50">
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[13px]">
+                  <thead className={TABLE_HEAD_ROW}>
+                    <tr>
                       {canManage && (
-                        <td className="px-4 py-3">
+                        <th className="w-10 px-4 py-2.5">
                           <input
                             type="checkbox"
-                            checked={selectedIds.has(item.id)}
-                            onChange={() => toggleSelect(item.id)}
-                            className="h-4 w-4 rounded border-zinc-300 text-prominent-purple-600 focus:ring-prominent-purple-500"
+                            checked={allSelected}
+                            onChange={() => toggleSelectAll(items)}
+                            aria-label="Select all items"
+                            className={CHECKBOX}
                           />
-                        </td>
+                        </th>
                       )}
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-zinc-900">{item.name}</p>
-                        <p className="mt-0.5 font-mono text-xs text-zinc-400 sm:hidden">
-                          {item.sku}
-                        </p>
-                      </td>
-                      <td className="hidden px-4 py-3 sm:table-cell">
-                        <code className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-600">
-                          {item.sku}
-                        </code>
-                      </td>
-                      <td className="hidden px-4 py-3 text-zinc-500 md:table-cell">
-                        {displayClassificationLabel(item.primaryCategory?.name) ?? '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-2">
-                          {canManage && (
-                            <button
-                              type="button"
-                              onClick={() => handleQuickGenerate(item)}
-                              disabled={isGenerating && quickGenItem?.id === item.id}
-                              title="Quick-generate EAN-13 barcode"
-                              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-600 hover:border-prominent-purple-300 hover:bg-prominent-purple-50 hover:text-prominent-purple-700 disabled:opacity-50"
-                            >
-                              <Zap className="h-3.5 w-3.5" />
-                              <span className="hidden sm:inline">
-                                {isGenerating && quickGenItem?.id === item.id
-                                  ? 'Generating…'
-                                  : 'Quick EAN-13'}
-                              </span>
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => setSelectedItem(item)}
-                            className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-prominent-purple-800"
-                          >
-                            <QrCode className="h-3.5 w-3.5" />
-                            Manage
-                          </button>
-                        </div>
-                      </td>
+                      <th className="px-4 py-2.5">Item</th>
+                      <th className="hidden px-4 py-2.5 sm:table-cell">SKU</th>
+                      <th className="hidden px-4 py-2.5 md:table-cell">Category</th>
+                      <th className="px-4 py-2.5" aria-label="Actions" />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Pagination */}
-          {pagination.totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-zinc-100 px-4 py-3 text-sm text-zinc-500">
-              <span>
-                Page {page} of {pagination.totalPages} · {pagination.total} items
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.max(1, page - 1))}
-                  disabled={page <= 1}
-                  className="rounded-lg p-1.5 hover:bg-zinc-100 disabled:opacity-40"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.min(pagination.totalPages, page + 1))}
-                  disabled={page >= pagination.totalPages}
-                  className="rounded-lg p-1.5 hover:bg-zinc-100 disabled:opacity-40"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
+                  </thead>
+                  <tbody className="divide-y divide-[#eeeef1]">
+                    {items.map((item) => {
+                      const selected = selectedIds.has(item.id)
+                      const generating = isGenerating && quickGenItem?.id === item.id
+                      return (
+                        <tr
+                          key={item.id}
+                          className={selected ? 'bg-[#f6f2fd]' : 'hover:bg-[#fbfbfc]'}
+                        >
+                          {canManage && (
+                            <td className="px-4 py-3">
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                onChange={() => toggleSelect(item.id)}
+                                aria-label={`Select ${item.name}`}
+                                className={CHECKBOX}
+                              />
+                            </td>
+                          )}
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-[#1d1d26]">{item.name}</p>
+                            <p className={`mt-0.5 ${MONO} text-[12px] text-[#3f1490] sm:hidden`}>
+                              {item.sku}
+                            </p>
+                          </td>
+                          <td
+                            className={`hidden px-4 py-3 ${MONO} font-medium text-[#3f1490] sm:table-cell`}
+                          >
+                            {item.sku}
+                          </td>
+                          <td className="hidden px-4 py-3 text-[#3d3d4a] md:table-cell">
+                            {displayClassificationLabel(item.primaryCategory?.name) ?? '—'}
+                          </td>
+                          <td className="px-4 py-2">
+                            <div className="flex items-center justify-end gap-2">
+                              {canManage && (
+                                <Tooltip label="Quick-generate an EAN-13 barcode" align="end">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleQuickGenerate(item)}
+                                    disabled={generating}
+                                    aria-label="Quick-generate EAN-13 barcode"
+                                    className={ROW_BUTTON}
+                                  >
+                                    <Zap className="h-3.5 w-3.5" />
+                                    <span className="hidden sm:inline">
+                                      {generating ? 'Generating…' : 'Quick EAN-13'}
+                                    </span>
+                                  </button>
+                                </Tooltip>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setSelectedItem(item)}
+                                className={ROW_BUTTON}
+                              >
+                                <QrCode className="h-3.5 w-3.5" />
+                                Manage
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
-            </div>
+              <ListFooterPager
+                page={page}
+                pageCount={pagination.totalPages}
+                total={pagination.total}
+                limit={pagination.limit}
+                noun="items"
+                onPageChange={setPage}
+              />
+            </>
           )}
-        </div>
+        </TableCard>
       </div>
 
       {/* Manage Barcodes Modal */}

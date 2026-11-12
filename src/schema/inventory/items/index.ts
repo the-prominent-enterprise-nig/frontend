@@ -100,7 +100,7 @@ const CreateItemFormBaseSchema = z.object({
 /** Brand + Model are how Item Master and both ledgers name an item (Brand ·
  * Category · Model), so a stocked item needs both. Service items have neither. */
 function refineIdentity(
-  data: z.infer<typeof CreateItemFormBaseSchema>,
+  data: { isService: boolean; brandId?: string; modelNumber?: string },
   ctx: z.RefinementCtx
 ): void {
   if (data.isService) return
@@ -161,7 +161,7 @@ export const CreateItemFormSchema = CreateItemFormBaseSchema.superRefine((data, 
   }
 })
 
-export const UpdateItemFormSchema = z.object({
+const UpdateItemFormBaseSchema = z.object({
   name: z.string().min(1, 'Item name is required').max(120).optional(),
   sku: z
     .string()
@@ -190,9 +190,13 @@ export const UpdateItemFormSchema = z.object({
   weightKg: z.number().min(0).optional(),
   warrantyPeriodDays: z.number().int().min(0).optional(),
   brandId: z.string().optional(),
-  typeId: z.string().optional(),
+  // Same rules as Add Item: Type routes the item's GL lines and report row,
+  // and Brand + Model are how Item Master and the ledgers name it.
+  typeId: z.string({ message: 'Type is required' }).min(1, 'Type is required'),
   modelNumber: z.string().max(60).optional(),
 })
+
+export const UpdateItemFormSchema = UpdateItemFormBaseSchema.superRefine(refineIdentity)
 
 export const UpdateLifecycleFormSchema = z.object({
   lifecycle: ItemLifecycleSchema,

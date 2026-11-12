@@ -2,12 +2,12 @@
 
 import { Archive, CheckCircle2, Layers, PauseCircle, Pencil, Trash2 } from 'lucide-react'
 import type { ItemSummary } from '@/src/schema/inventory/items'
-import type { StockBalance } from '@/src/schema/inventory/goods-receiving'
-import { StockStatusBadge } from '@/src/components/inventory/StockStatusBadge'
-import { stockStatusOf } from '@/src/libs/inventory/stock-status'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
+import Tooltip from '@/src/components/ui/Tooltip'
+import { isItemLockedForReview } from '@/src/libs/inventory/item-edit'
+import { ICON_BUTTON, TABLE_HEAD_ROW } from '../../master-data/_components/masterDataChrome'
 
 // Type / Category = the sheet's TYPE / GROUP / SUBGROUP: Type is
 // the item type; Category/Subgroup is the category tree — primaryCategory is the Subgroup when it has a parent, else the Group.
@@ -26,10 +26,6 @@ function brandModelLabel(item: ItemSummary): string {
   const model = item.modelNumber ?? undefined
   if (brand && model) return `${brand} — ${model}`
   return brand ?? model ?? '—'
-}
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(value)
 }
 
 const LIFECYCLE_COLORS: Record<string, string> = {
@@ -93,8 +89,6 @@ function ApprovalStatusBadge({ item }: { item: ItemSummary }) {
 
 type Props = {
   items: ItemSummary[]
-  isLoading: boolean
-  isFetching: boolean
   canUpdate: boolean
   canDelete: boolean
   canManageLifecycle: boolean
@@ -112,35 +106,36 @@ type Props = {
   onRejectAccounting: (item: ItemSummary) => void
   onApproveItem: (item: ItemSummary) => void
   onRejectItem: (item: ItemSummary) => void
-  /** Scenario 56 — per-item stock roll-up; the Stock column is hidden when absent. */
-  stockByItem?: Map<string, StockBalance>
 }
 
-/** A service has no stock; an item with no balance row anywhere has never
- * been stocked, which reads as Out of Stock. */
-function ItemStockCell({
+/** Edit sits on the row itself rather than in the ⋯ menu so it can be found
+ * at a glance. Items mid-review are locked by the backend, so the button is
+ * disabled there and says why. */
+function EditItemButton({
   item,
-  balance,
+  onEdit,
 }: {
   item: ItemSummary
-  balance?: StockBalance
-}): React.ReactElement {
-  if (item.isService) return <span className="text-zinc-400">—</span>
-  if (!balance) return <StockStatusBadge status="out" size="sm" />
+  onEdit: (item: ItemSummary) => void
+}): React.JSX.Element {
+  const locked = isItemLockedForReview(item)
   return (
-    <StockStatusBadge
-      status={stockStatusOf(balance)}
-      inTransitQty={balance.inTransitQty}
-      size="sm"
-      stacked
-    />
+    <Tooltip label={locked ? 'Locked while in review' : 'Edit item'} align="end">
+      <button
+        type="button"
+        aria-label="Edit item"
+        disabled={locked}
+        onClick={() => onEdit(item)}
+        className={`${ICON_BUTTON} disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent`}
+      >
+        <Pencil className="h-4 w-4" />
+      </button>
+    </Tooltip>
   )
 }
 
 export default function ItemMasterTable({
   items,
-  isLoading,
-  isFetching,
   canUpdate,
   canDelete,
   canManageLifecycle,
@@ -157,7 +152,6 @@ export default function ItemMasterTable({
   onRejectAccounting,
   onApproveItem,
   onRejectItem,
-  stockByItem,
 }: Props) {
   const { pushPanel } = useUIShell()
   const showActionsColumn =
@@ -169,217 +163,158 @@ export default function ItemMasterTable({
     canApproveItem ||
     canManageLifecycle
 
-  if (isLoading) {
-    return (
-      <div className="rounded-xl border border-gray-200 bg-white">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div
-            key={i}
-            className="flex items-center gap-4 border-b border-zinc-100 px-6 py-4 last:border-0"
-          >
-            <div className="h-4 w-24 animate-pulse rounded bg-zinc-200" />
-            <div className="h-4 w-40 animate-pulse rounded bg-zinc-200" />
-            <div className="ml-auto h-4 w-16 animate-pulse rounded bg-zinc-200" />
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  if (items.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 bg-white py-16">
-        <p className="text-sm font-medium text-zinc-500">No items found</p>
-        <p className="mt-1 text-xs text-zinc-400">Create your first item to get started.</p>
-      </div>
-    )
-  }
-
   return (
-    <div
-      className={`overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-opacity ${isFetching ? 'opacity-60' : 'opacity-100'}`}
-    >
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-200 bg-zinc-50">
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Item
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Type
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Category
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Brand / Model
-              </th>
-              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                Price
-              </th>
-              {stockByItem && (
-                <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  Stock
-                </th>
-              )}
-              {showActionsColumn && (
-                <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  Actions
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100">
-            {items.map((item) => (
-              <tr
-                key={item.id}
-                className="cursor-pointer hover:bg-zinc-50"
-                onClick={() =>
-                  pushPanel({
-                    type: 'item360',
-                    itemId: item.id,
-                    itemName: item.name,
-                    context: 'catalog',
-                  })
-                }
-              >
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium text-zinc-900">{item.name}</span>
-                    {item.isBundle === true && (
-                      <span className="rounded-full bg-prominent-purple-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-prominent-purple-700">
-                        Bundle
-                      </span>
-                    )}
-                    {item.isService === true && (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                        Service
-                      </span>
-                    )}
-                    <ItemStateTag item={item} />
-                    {(item._count?.serialNumbers ?? 0) > 0 && (
-                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-600">
-                        {item._count?.serialNumbers} unit
-                        {item._count?.serialNumbers !== 1 ? 's' : ''}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-zinc-500">
-                  {displayClassificationLabel(item.type?.name) ?? '—'}
-                </td>
-                <td className="px-4 py-3 text-zinc-500">
-                  <div>{groupName(item) ?? '—'}</div>
-                  {subgroupName(item) && (
-                    <div className="text-xs text-ink-subtle">{subgroupName(item)}</div>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[720px] text-left text-[13px]">
+        <thead className={TABLE_HEAD_ROW}>
+          <tr>
+            <th className="px-4 py-2.5">Item</th>
+            <th className="px-4 py-2.5">Type</th>
+            <th className="px-4 py-2.5">Category</th>
+            <th className="px-4 py-2.5">Brand / Model</th>
+            {showActionsColumn && <th className="px-4 py-2.5" aria-label="Actions" />}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[#eeeef1]">
+          {items.map((item) => (
+            <tr
+              key={item.id}
+              className="cursor-pointer hover:bg-[#fbfbfc]"
+              onClick={() =>
+                pushPanel({
+                  type: 'item360',
+                  itemId: item.id,
+                  itemName: item.name,
+                  context: 'catalog',
+                  onEdit: canUpdate ? () => onEdit(item) : undefined,
+                })
+              }
+            >
+              <td className="px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium text-[#1d1d26]">{item.name}</span>
+                  {item.isBundle === true && (
+                    <span className="rounded-full bg-[#f0e9fc] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#5b21b6]">
+                      Bundle
+                    </span>
                   )}
-                </td>
-                <td className="px-4 py-3 text-zinc-500">{brandModelLabel(item)}</td>
-                <td className="px-4 py-3 text-right text-zinc-700">
-                  {item.sellingPrice != null ? formatCurrency(item.sellingPrice) : '—'}
-                </td>
-                {stockByItem && (
-                  <td className="px-4 py-3 text-center">
-                    <ItemStockCell item={item} balance={stockByItem.get(item.id)} />
-                  </td>
+                  {item.isService === true && (
+                    <span className="rounded-full bg-[#fdf3e3] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#8a5300]">
+                      Service
+                    </span>
+                  )}
+                  <ItemStateTag item={item} />
+                  {(item._count?.serialNumbers ?? 0) > 0 && (
+                    <span className="rounded-full bg-[#f1f1f4] px-2 py-0.5 text-[10px] font-semibold tabular-nums text-[#3d3d4a]">
+                      {item._count?.serialNumbers} unit
+                      {item._count?.serialNumbers !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+              </td>
+              <td className="px-4 py-3 text-[#3d3d4a]">
+                {displayClassificationLabel(item.type?.name) ?? '—'}
+              </td>
+              <td className="px-4 py-3 text-[#3d3d4a]">
+                <div>{groupName(item) ?? '—'}</div>
+                {subgroupName(item) && (
+                  <div className="text-xs text-ink-subtle">{subgroupName(item)}</div>
                 )}
-                {showActionsColumn && (
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-1">
-                      {item.approvalStatus === 'draft' && canSubmitReview && (
-                        <button
-                          type="button"
-                          onClick={() => onSubmitReview(item)}
-                          disabled={isSubmittingReview}
-                          className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                        >
-                          Submit
-                        </button>
-                      )}
-                      {item.approvalStatus === 'pending_accounting_confirmation' &&
-                        canConfirmAccounting && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => onConfirmAccounting(item)}
-                              className="rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700"
-                            >
-                              Confirm
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onRejectAccounting(item)}
-                              className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700"
-                            >
-                              Reject
-                            </button>
-                          </>
-                        )}
-                      {item.approvalStatus === 'pending_approval' && canApproveItem && (
+              </td>
+              <td className="px-4 py-3 text-[#3d3d4a]">{brandModelLabel(item)}</td>
+              {showActionsColumn && (
+                <td className="px-4 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-end gap-1">
+                    {item.approvalStatus === 'draft' && canSubmitReview && (
+                      <button
+                        type="button"
+                        onClick={() => onSubmitReview(item)}
+                        disabled={isSubmittingReview}
+                        className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        Submit
+                      </button>
+                    )}
+                    {item.approvalStatus === 'pending_accounting_confirmation' &&
+                      canConfirmAccounting && (
                         <>
                           <button
                             type="button"
-                            onClick={() => onApproveItem(item)}
+                            onClick={() => onConfirmAccounting(item)}
                             className="rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700"
                           >
-                            Approve
+                            Confirm
                           </button>
                           <button
                             type="button"
-                            onClick={() => onRejectItem(item)}
+                            onClick={() => onRejectAccounting(item)}
                             className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700"
                           >
                             Reject
                           </button>
                         </>
                       )}
-                      <RowActionsMenu
-                        items={[
-                          ...(item.isBundle === true && onViewBundle
-                            ? [
-                                {
-                                  label: 'Components',
-                                  icon: Layers,
-                                  onClick: () => onViewBundle(item),
-                                },
-                              ]
-                            : []),
-                          ...(canUpdate
-                            ? [{ label: 'Edit', icon: Pencil, onClick: () => onEdit(item) }]
-                            : []),
-                          // Lifecycle is a post-approval concept (Scenario 16),
-                          // so only offered once the item is approved.
-                          ...(canManageLifecycle &&
-                          (!item.approvalStatus || item.approvalStatus === 'approved')
-                            ? LIFECYCLE_ACTIONS.filter(
-                                (a) => a.lifecycle !== (item.lifecycle ?? 'active')
-                              ).map((a) => ({
-                                label: a.label,
-                                icon: a.icon,
-                                onClick: () => onLifecycleChange(item.id, a.lifecycle),
-                              }))
-                            : []),
-                          ...(canDelete
-                            ? [
-                                {
-                                  label: 'Delete',
-                                  icon: Trash2,
-                                  onClick: () => onDelete(item),
-                                  variant: 'danger' as const,
-                                },
-                              ]
-                            : []),
-                        ]}
-                      />
-                    </div>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                    {item.approvalStatus === 'pending_approval' && canApproveItem && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onApproveItem(item)}
+                          className="rounded-md bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onRejectItem(item)}
+                          className="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700"
+                        >
+                          Reject
+                        </button>
+                      </>
+                    )}
+                    {canUpdate && <EditItemButton item={item} onEdit={onEdit} />}
+                    <RowActionsMenu
+                      items={[
+                        ...(item.isBundle === true && onViewBundle
+                          ? [
+                              {
+                                label: 'Components',
+                                icon: Layers,
+                                onClick: () => onViewBundle(item),
+                              },
+                            ]
+                          : []),
+                        // Lifecycle is a post-approval concept (Scenario 16),
+                        // so only offered once the item is approved.
+                        ...(canManageLifecycle &&
+                        (!item.approvalStatus || item.approvalStatus === 'approved')
+                          ? LIFECYCLE_ACTIONS.filter(
+                              (a) => a.lifecycle !== (item.lifecycle ?? 'active')
+                            ).map((a) => ({
+                              label: a.label,
+                              icon: a.icon,
+                              onClick: () => onLifecycleChange(item.id, a.lifecycle),
+                            }))
+                          : []),
+                        ...(canDelete
+                          ? [
+                              {
+                                label: 'Delete',
+                                icon: Trash2,
+                                onClick: () => onDelete(item),
+                                variant: 'danger' as const,
+                              },
+                            ]
+                          : []),
+                      ]}
+                    />
+                  </div>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

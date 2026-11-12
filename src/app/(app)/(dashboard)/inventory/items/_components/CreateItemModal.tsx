@@ -448,6 +448,29 @@ export default function CreateItemModal({
                 {errors.baseUnitId && <p className={errorClass}>{errors.baseUnitId.message}</p>}
               </div>
 
+              {/* Brand */}
+              <div>
+                <label className={labelClass}>
+                  Brand {!isServiceValue && <span className="text-[#b42318]">*</span>}
+                </label>
+                <Controller
+                  name="brandId"
+                  control={control}
+                  render={({ field }) => (
+                    <SearchableSelect
+                      chrome={CONTROL_CHROME}
+                      portal
+                      value={field.value ?? ''}
+                      onChange={(value) => field.onChange(value || undefined)}
+                      options={brandOptions.map((b) => ({ value: b.id, label: b.name }))}
+                      placeholder="Select brand…"
+                      clearable
+                    />
+                  )}
+                />
+                {errors.brandId && <p className={errorClass}>{errors.brandId.message}</p>}
+              </div>
+
               {/* Type — required: it routes the item's GL
                 lines and its report row (Appliances, Furniture, IT…). */}
               <div>
@@ -474,37 +497,21 @@ export default function CreateItemModal({
               </div>
 
               {/* Category + Subgroup — Item Master's two columns. */}
-              <CategorySubgroupFields
+              <Controller
+                name="primaryCategoryId"
                 control={control}
-                categories={categories}
-                error={errors.primaryCategoryId?.message}
-                onCategoryNameChange={setCategoryName}
+                render={({ field }) => (
+                  <CategorySubgroupFields
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    categories={categories}
+                    error={errors.primaryCategoryId?.message}
+                    onCategoryNameChange={setCategoryName}
+                  />
+                )}
               />
 
-              {/* Brand */}
-              <div>
-                <label className={labelClass}>
-                  Brand {!isServiceValue && <span className="text-[#b42318]">*</span>}
-                </label>
-                <Controller
-                  name="brandId"
-                  control={control}
-                  render={({ field }) => (
-                    <SearchableSelect
-                      chrome={CONTROL_CHROME}
-                      portal
-                      value={field.value ?? ''}
-                      onChange={(value) => field.onChange(value || undefined)}
-                      options={brandOptions.map((b) => ({ value: b.id, label: b.name }))}
-                      placeholder="Select brand…"
-                      clearable
-                    />
-                  )}
-                />
-                {errors.brandId && <p className={errorClass}>{errors.brandId.message}</p>}
-              </div>
-
-              {/* Model Number — shares a row with Brand. */}
+              {/* Model Number */}
               <div>
                 <label className={labelClass}>
                   Model Number {!isServiceValue && <span className="text-[#b42318]">*</span>}
