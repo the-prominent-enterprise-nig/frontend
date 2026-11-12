@@ -66,6 +66,9 @@ export const SalesLineSchema = z.object({
   priceUseName: z.string(),
   agentName: z.string(),
   commission: z.number(),
+  /** Null unless Edit entry set one on the sale. */
+  credit: z.number().nullish(),
+  smi: z.number().nullish(),
   isRefund: z.boolean(),
 })
 

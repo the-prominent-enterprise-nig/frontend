@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { useEffect } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   InventoryTabNav,
@@ -14,9 +13,7 @@ import UomList from '../../uom/_components/UomList'
 import BarcodesPageView from '../../barcodes/_components/BarcodesPageView'
 import { BrandsPageView } from '../../brands/_components'
 import { TypesPageView } from '../../types/_components'
-import { AddItemModal } from '../../items/_components/AddItemModal'
-import { can, type SessionUser } from '@/src/libs/guards/permission'
-import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import type { SessionUser } from '@/src/libs/guards/permission'
 
 // Serial Numbers moved to Stock (StockHub) — it's operational data (physical
 // units on hand), not a product definition like the rest of this hub's tabs.
@@ -38,8 +35,6 @@ export function CatalogHub({ session }: { session: SessionUser }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const visible = TABS.filter((t) => !t.hidden)
-  const canAddItem = can(session, INVENTORY_PERMISSIONS.ITEMS_CREATE)
-  const [addItemOpen, setAddItemOpen] = useState(false)
   const defaultTab = visible[0].id
   const requested = searchParams.get('tab') ?? defaultTab
   const tab = visible.some((t) => t.id === requested) ? requested : defaultTab
@@ -52,22 +47,8 @@ export function CatalogHub({ session }: { session: SessionUser }) {
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50">
-      <InventoryTabNav
-        tabs={visible}
-        // Adding an item is Item Master's job, whichever list is open (WH-03).
-        actions={
-          canAddItem && (
-            <button
-              type="button"
-              onClick={() => setAddItemOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-[#4a189b]"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add Item
-            </button>
-          )
-        }
-      />
+      {/* Add Item moved to Master Data → Add Item tab. */}
+      <InventoryTabNav tabs={visible} />
       {tab === 'types' ? (
         <TypesPageView session={session} />
       ) : tab === 'attributes' ? (
@@ -83,9 +64,6 @@ export function CatalogHub({ session }: { session: SessionUser }) {
       ) : (
         <BrandsPageView session={session} />
       )}
-      {/* Rendered here, not beside its button: the modal fills its nearest
-          positioned ancestor, which inside the sticky tab strip is the strip. */}
-      {canAddItem && <AddItemModal open={addItemOpen} onClose={() => setAddItemOpen(false)} />}
     </div>
   )
 }

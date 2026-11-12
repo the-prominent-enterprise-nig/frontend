@@ -1775,9 +1775,13 @@ export async function searchUsers(
 
 /** Ticket #24 follow-up — "Edit entry" on a recorded sale (Business Owner
  * only). Send only what changes. */
+/** Docket #49: for the POS Sales Report only. Null takes an edit back off. */
 export interface EditRecordedSaleInput {
-  documentNumber?: string
   sellingAgentId?: string | null
+  credit?: number | null
+  commission?: number | null
+  smi?: number | null
+  invoiceDate?: string | null
 }
 
 export async function editRecordedSale(

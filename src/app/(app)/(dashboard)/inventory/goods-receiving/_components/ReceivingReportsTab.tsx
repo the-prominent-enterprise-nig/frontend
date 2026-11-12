@@ -411,9 +411,13 @@ export default function ReceivingReportsTab({
   // still enforces the rule that matters — a branch location is only accepted
   // when the receipt is linked to a PO raised for that branch
   // (stock.service.ts) — but the picker no longer hides the branches outright.
+  // allBranches: without it a branch user (Branch Custodian) gets only their
+  // own branch's location — and a direct delivery can't go there, so the
+  // Location list came up empty. The backend still decides where a receipt
+  // may land (stock.service.ts receiveStock).
   const destinationWarehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-lookup'],
-    queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
+    queryKey: ['inventory-warehouses-lookup', 'all-branches'],
+    queryFn: () => getWarehouses({ limit: 200, status: 'active', allBranches: true }),
     staleTime: STALE.LOOKUP,
     enabled: isCreateOpen,
   })

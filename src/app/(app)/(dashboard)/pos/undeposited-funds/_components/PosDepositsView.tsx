@@ -550,6 +550,8 @@ function SlipList({
                 <td className="px-3 py-2">
                   {l.turnoverToBranch ? (
                     <TurnoverLineLabel line={l} />
+                  ) : l.unidentifiedCredit ? (
+                    `${l.bankAccount?.name ?? 'Bank'} · Unidentified credit matched`
                   ) : (
                     (l.bankAccount?.name ?? '—')
                   )}

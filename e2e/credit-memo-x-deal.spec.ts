@@ -352,7 +352,11 @@ test.describe.serial('Credit Memos — X-Deal offset (Scenario 67)', () => {
 
     const account = await installmentAccountOf(page.request, fx.xDeal.customerId)
     await gotoReady(page, `/crm/customers/${fx.xDeal.customerId}/installments/${account.id}`)
-    await expect(page.getByTestId('ledger-status')).toHaveText('Active', { timeout: 15_000 })
+    // Reopened: the ledger no longer says it was settled by a memo. (The page
+    // never badges an account "Active" — only a closed or settled state is
+    // worth one, Docket NIG #38/#44.)
+    await expect(page.getByTestId('existing-ledger')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('ledger-status')).toHaveCount(0)
   })
 
   test('XP-F04: an X-Deal arrives with its own memo — not offered on X-Deal offset, which says memos are automatic', async ({

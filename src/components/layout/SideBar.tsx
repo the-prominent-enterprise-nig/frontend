@@ -186,13 +186,15 @@ function hubNavItem(hub: Hub, label: string, icon: LucideIcon): NavItem {
     // put Books or Expenses in the sidebar of a role with no Accounting.
     requiredPermission: hub.tabs.some((tab) => tab.permissions.length === 0)
       ? undefined
-      : hub.tabs
+      : [...hub.tabs, ...(hub.offTabs ?? [])]
           .flatMap((tab) => tab.permissions)
           .filter((permission) => permission.startsWith('accounting:')),
     requiresModuleAccess: hub.tabs.some((tab) => tab.permissions.length === 0)
       ? 'accounting'
       : undefined,
-    activePrefixes: hub.tabs.map((tab) => tab.href),
+    // Off-tab routes (Drivers, Vehicles) keep the item lit though the strip has
+    // no tab for them.
+    activePrefixes: [...hub.tabs, ...(hub.offTabs ?? [])].map((tab) => tab.href),
   }
 }
 
@@ -264,6 +266,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Layers,
         requiredPermission: [
           INVENTORY_PERMISSIONS.WAREHOUSES_READ,
+          INVENTORY_PERMISSIONS.ITEMS_CREATE,
           INVENTORY_PERMISSIONS.COSTING_READ,
           INVENTORY_PERMISSIONS.COSTING_CONFIGURE,
           INVENTORY_PERMISSIONS.WILDCARD,

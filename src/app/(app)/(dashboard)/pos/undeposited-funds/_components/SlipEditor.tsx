@@ -3,7 +3,12 @@
 import { manilaToday } from '@/src/libs/format/manila-date'
 import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
-import { type BankAccountOption } from '@/src/libs/data/AccountingV2Data'
+import {
+  type BankAccountOption,
+  fmtDate,
+  fmtMoney,
+  UnidentifiedBankCredits,
+} from '@/src/libs/data/AccountingV2Data'
 import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import Tooltip from '@/src/components/ui/Tooltip'
@@ -37,6 +42,57 @@ export interface Slip {
   /** The posted deposit this slip belongs to, when a correction spans a
    * session's several deposits. Absent on a slip added in the editor. */
   depositId?: string
+  /** The Unidentified Bank Credit this slip matches, when Bank account is
+   * 2-01-042 — see UNIDENTIFIED_BANK. Its amount and reference fill the
+   * slip; the amount must stay the credit's full amount. */
+  credit?: SlipCredit
+}
+
+/** An Unidentified Bank Credit as a slip shows it. */
+export interface SlipCredit {
+  id: string
+  amount: number
+  bankRef: string | null
+  /** `YYYY-MM-DD` */
+  creditDate: string
+  bankName: string
+}
+
+/** Bank account's pick for "the money is already in the bank, recorded on Bank
+ * Reconciliation as an Unidentified Bank Credit". Not a bank id: the slip then
+ * names which credit, and takes that credit's bank. */
+export const UNIDENTIFIED_BANK = 'unidentified-bank-credits'
+const UNIDENTIFIED_LABEL = 'Unidentified Bank Credits — 2-01-042'
+
+/** True when the slip matches an Unidentified Bank Credit. */
+export const isCreditSlip = (slip: Slip): boolean => slip.bankAccountId === UNIDENTIFIED_BANK
+
+/** A credit's dropdown label: where, how much, its reference and its date. */
+function creditLabel(c: SlipCredit): string {
+  return [c.bankName, fmtMoney(c.amount), c.bankRef || 'No reference', fmtDate(c.creditDate)].join(
+    ' · '
+  )
+}
+
+/** A Bank account pick, back in the slip's fields: picking 2-01-042 or
+ * leaving it clears the credit and the figures it filled. */
+function bankPatch(slip: Slip, value: string): Partial<Slip> {
+  if (isCreditSlip(slip) === (value === UNIDENTIFIED_BANK)) return { bankAccountId: value }
+  return slip.credit
+    ? { bankAccountId: value, credit: undefined, amount: '', reference: '' }
+    : { bankAccountId: value }
+}
+
+/** A credit pick: the slip takes its amount and reference. The date stays
+ * the slip's own — the day the credit is identified, not the day it reached
+ * the bank, which Bank Reconciliation already booked. */
+function creditPatch(credit: SlipCredit | undefined): Partial<Slip> {
+  if (!credit) return { credit: undefined, amount: '', reference: '' }
+  return {
+    credit,
+    amount: String(credit.amount),
+    reference: credit.bankRef ?? '',
+  }
 }
 
 /** The slips' own numbers, joined — the deposit's reference, capped at the
@@ -56,6 +112,7 @@ function SlipRow({
   label,
   bankOptions,
   clearsOptions,
+  credits,
   onChange,
   onRemove,
   removeDisabled = false,
@@ -66,15 +123,93 @@ function SlipRow({
   bankOptions: Option[]
   /** Everything a slip can empty, grouped by its GL account. */
   clearsOptions: Option[]
+  /** The Unidentified Bank Credits this slip may match. */
+  credits: SlipCredit[]
   onChange: (patch: Partial<Slip>) => void
   onRemove: () => void
   removeDisabled?: boolean
 }): React.JSX.Element {
+  // Filled from the credit, so not typed: the bank already has these figures.
+  const auto = isCreditSlip(slip)
+  return (
+    <div className="space-y-2">
+      <SlipFields
+        slip={slip}
+        label={label}
+        bankOptions={bankOptions}
+        clearsOptions={clearsOptions}
+        auto={auto}
+        onChange={onChange}
+        onRemove={onRemove}
+        removeDisabled={removeDisabled}
+      />
+      {auto && <CreditPicker slip={slip} label={label} credits={credits} onChange={onChange} />}
+    </div>
+  )
+}
+
+/** Which Unidentified Bank Credit a 2-01-042 slip matches. */
+function CreditPicker({
+  slip,
+  label,
+  credits,
+  onChange,
+}: {
+  slip: Slip
+  label: string
+  credits: SlipCredit[]
+  onChange: (patch: Partial<Slip>) => void
+}): React.JSX.Element {
+  return (
+    <div className="sm:pl-0">
+      <SearchableSelect
+        value={slip.credit?.id ?? ''}
+        onChange={(id) => onChange(creditPatch(credits.find((c) => c.id === id)))}
+        options={credits.map((c) => ({ value: c.id, label: creditLabel(c) }))}
+        placeholder={
+          credits.length
+            ? 'Which unidentified credit…'
+            : 'No unmatched credits on Bank Reconciliation'
+        }
+        ariaLabel={`${label} unidentified credit`}
+        clearable
+        portal
+      />
+    </div>
+  )
+}
+
+/** Classes for a field the credit fills. */
+const AUTO_FIELD = 'bg-gray-50 text-ink-muted'
+
+/** The slip's own row of fields. */
+function SlipFields({
+  slip,
+  label,
+  bankOptions,
+  clearsOptions,
+  auto,
+  onChange,
+  onRemove,
+  removeDisabled,
+}: {
+  slip: Slip
+  label: string
+  bankOptions: Option[]
+  clearsOptions: Option[]
+  /** The reference comes from a credit. */
+  auto: boolean
+  onChange: (patch: Partial<Slip>) => void
+  onRemove: () => void
+  removeDisabled: boolean
+}): React.JSX.Element {
+  // A credit with no reference of its own leaves the field to be typed.
+  const refAuto = auto && !!slip.credit?.bankRef
   return (
     <div className={`grid grid-cols-1 gap-2 ${SLIP_COLUMNS}`}>
       <SearchableSelect
         value={slip.bankAccountId}
-        onChange={(value) => onChange({ bankAccountId: value })}
+        onChange={(value) => onChange(bankPatch(slip, value))}
         options={bankOptions}
         placeholder="Bank account…"
         clearable
@@ -99,11 +234,12 @@ function SlipRow({
       <input
         value={slip.reference}
         onChange={(e) => onChange({ reference: e.target.value })}
-        placeholder="Reference number *"
+        placeholder={refAuto ? 'Reference (auto)' : 'Reference number *'}
         aria-label={`${label} reference`}
         required
+        readOnly={refAuto}
         maxLength={100}
-        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+        className={`w-full rounded-lg border border-gray-200 px-3 py-2 text-sm ${refAuto ? AUTO_FIELD : ''}`}
       />
       <input
         type="date"
@@ -256,6 +392,13 @@ export function slipsProblem(slips: Slip[]): string | null {
       !s.reference.trim() ||
       (!s.clearsAccountId && !s.clearsBankAccountId)
   )
+  if (slips.some((s) => isCreditSlip(s) && !s.credit)) {
+    return 'Pick which Unidentified Bank Credit the 2-01-042 slip matches.'
+  }
+  const short = slips.find((s) => s.credit && round2(slipAmount(s)) !== round2(s.credit.amount))
+  if (short?.credit) {
+    return `The Unidentified Bank Credit slip must be ${fmtMoney(short.credit.amount)}, the credit's full amount — a credit is matched whole.`
+  }
   if (incomplete) {
     return 'Every slip needs a bank account, an amount, a Deposit from account, a reference number and a date — remove any empty slip.'
   }
@@ -267,7 +410,9 @@ export function slipsProblem(slips: Slip[]): string | null {
 /** The slips as the API takes them. */
 export function toLineInputs(slips: Slip[]): PosDepositLineInput[] {
   return slips.map((s) => ({
-    bankAccountId: s.bankAccountId,
+    // A credit slip takes the credit's own bank on the server.
+    bankAccountId: isCreditSlip(s) ? undefined : s.bankAccountId,
+    unidentifiedCreditId: isCreditSlip(s) ? s.credit?.id : undefined,
     amount: slipAmount(s),
     clearsAccountId: clearsAccountOf(s),
     clearsBankAccountId: s.clearsBankAccountId || undefined,
@@ -298,7 +443,16 @@ export function slipsFromLines(
 ): Slip[] {
   // Scenario 83 — a cash turnover is not a bank slip; see turnoversFromLines.
   return lines.filter(isBankLine).map((l) => ({
-    bankAccountId: l.bankAccount?.id ?? '',
+    bankAccountId: l.unidentifiedCredit ? UNIDENTIFIED_BANK : (l.bankAccount?.id ?? ''),
+    credit: l.unidentifiedCredit
+      ? {
+          id: l.unidentifiedCredit.id,
+          amount: Number(l.unidentifiedCredit.amount),
+          bankRef: l.unidentifiedCredit.bankRef,
+          creditDate: l.unidentifiedCredit.creditDate.slice(0, 10),
+          bankName: l.bankAccount?.name ?? 'Bank',
+        }
+      : undefined,
     amount: String(Number(l.amount)),
     clearsAccountId: l.clearsAccount?.id ?? '',
     clearsBankAccountId: l.clearsBankAccount?.id ?? (l.clearsAccount ? '' : cashFundId),
@@ -332,10 +486,14 @@ export function SlipEditor({
     staleTime: 5 * 60_000,
   })
   const clearingOptions = clearingAccountOptions(chart.data?.data)
-  const bankOptions = accounts.map((a) => ({
-    value: a.id,
-    label: a.accountNumber ? `${a.name} — ${a.accountNumber}` : a.name,
-  }))
+  const unmatched = useUnmatchedCredits(accounts)
+  const bankOptions: Option[] = [
+    ...accounts.map((a) => ({
+      value: a.id,
+      label: a.accountNumber ? `${a.name} — ${a.accountNumber}` : a.name,
+    })),
+    { value: UNIDENTIFIED_BANK, label: UNIDENTIFIED_LABEL },
+  ]
   const setSlip = (i: number, patch: Partial<Slip>): void =>
     onChange(slips.map((s, n) => (n === i ? { ...s, ...patch } : s)))
 
@@ -360,6 +518,7 @@ export function SlipEditor({
             label={`slip ${i + 1}`}
             bankOptions={bankOptions}
             clearsOptions={[...fundOptions(accounts, slip.bankAccountId), ...clearingOptions]}
+            credits={creditsFor(slip, slips, unmatched)}
             onChange={(patch) => setSlip(i, patch)}
             onRemove={() => onChange(slips.filter((_, n) => n !== i))}
             removeDisabled={slips.length === 1}
@@ -368,4 +527,29 @@ export function SlipEditor({
       </div>
     </div>
   )
+}
+
+/** The Unidentified Bank Credits still waiting on Bank Reconciliation. */
+function useUnmatchedCredits(accounts: BankAccountOption[]): SlipCredit[] {
+  const query = useQuery({
+    queryKey: ['deposit-unmatched-credits'],
+    queryFn: () => UnidentifiedBankCredits.list('unmatched'),
+    staleTime: 60_000,
+  })
+  const bankName = (id: string): string => accounts.find((a) => a.id === id)?.name ?? 'Bank'
+  return (query.data?.data ?? []).map((c) => ({
+    id: c.id,
+    amount: Number(c.amount),
+    bankRef: c.bankRef ?? null,
+    creditDate: c.creditDate.slice(0, 10),
+    bankName: c.bankAccount?.name ?? bankName(c.bankAccountId),
+  }))
+}
+
+/** What one slip may match: the unmatched credits no other slip has taken,
+ * and its own — already matched, when a posted deposit is corrected. */
+function creditsFor(slip: Slip, slips: Slip[], unmatched: SlipCredit[]): SlipCredit[] {
+  const taken = new Set(slips.filter((s) => s !== slip).map((s) => s.credit?.id))
+  const free = unmatched.filter((c) => !taken.has(c.id))
+  return slip.credit && !free.some((c) => c.id === slip.credit?.id) ? [slip.credit, ...free] : free
 }

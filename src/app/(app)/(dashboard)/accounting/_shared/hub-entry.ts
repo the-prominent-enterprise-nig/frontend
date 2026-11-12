@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
-import { visibleHubTabs, type Hub } from './hubs'
+import { visibleHubOffTabs, visibleHubTabs, type Hub } from './hubs'
 
 /**
  * What a hub's entry route does: send the caller to the first tab they can
@@ -12,7 +12,7 @@ export async function redirectToFirstHubTab(hub: Hub): Promise<never> {
 
   if (!session) redirect('/login')
 
-  const [first] = visibleHubTabs(hub, session)
+  const [first] = [...visibleHubTabs(hub, session), ...visibleHubOffTabs(hub, session)]
   if (!first) redirect('/403')
 
   redirect(first.href)

@@ -25,6 +25,7 @@ import {
   LEDGER_ACTION,
   LedgerCard,
   LedgerFields,
+  LedgerEventBanners,
   LedgerHero,
   LedgerTable,
 } from '@/src/components/crm/LedgerParts'
@@ -134,8 +135,11 @@ export function InstallmentLedgerBody({
       ? (ledger.rows.find((r) => r.description === 'X-Deal credit memo')?.ref ?? null)
       : null
 
-  // Docket NIG #38 — an account carried over from the aging sheet reads as the
-  // client's "Existing customer" ledger, not the paper-form layout below.
+  // Docket NIG #38 / #44 — every account (a POS plan, one carried over from the
+  // aging sheet, a hand-entered one) reads as the client's "Existing customer"
+  // ledger, for every role. The paper-form layout below is only the fallback for
+  // a ledger that arrives without the summary: a plan whose schedule row is
+  // missing, or a backend older than #44.
   if (ledger.existing) {
     return (
       <ExistingAccountLedger
@@ -208,6 +212,8 @@ export function InstallmentLedgerBody({
           { label: 'Total Rebates', value: fmtMoney(ledger.account.totalRebates) },
         ]}
       />
+
+      <LedgerEventBanners rows={ledger.rows} />
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <LedgerCard title="Sale" icon={Receipt}>

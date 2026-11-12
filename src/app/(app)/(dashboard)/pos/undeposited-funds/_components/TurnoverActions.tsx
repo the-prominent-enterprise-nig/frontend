@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { fmtMoney } from '@/src/libs/data/AccountingV2Data'
 import { ConfirmDialog } from '@/src/components/ui/Modal'
 import { showToast } from '@/src/components/ui/toast'
+import { hasPrivilegedRole, type SessionUser } from '@/src/libs/guards/permission'
 import {
   acknowledgePosTurnover,
   correctPosTurnover,
@@ -42,8 +43,9 @@ export function usePendingIncoming(branchId: string | null): {
 export type Action = 'acknowledge' | 'reject'
 
 /** What this user may do with a turnover, and why not when they may not.
- * Mirrors the backend: never whoever recorded it (maker-checker), and only a
- * user at the receiving branch acknowledges — Head Office may reject. */
+ * Mirrors the backend: never whoever recorded it (maker-checker); a user at
+ * the receiving branch or the Business Owner acknowledges — Head Office may
+ * reject. */
 export interface Allowed {
   acknowledge: boolean
   reject: boolean
@@ -53,15 +55,16 @@ export interface Allowed {
 export function allowedActions(
   t: PosTurnover,
   canManage: boolean,
-  me: { id: string; branchId?: string | null } | undefined
+  me: SessionUser | undefined
 ): Allowed {
   if (!canManage || !me) return { acknowledge: false, reject: false, note: null }
   if (t.posDeposit.createdById === me.id) {
     return { acknowledge: false, reject: false, note: null }
   }
   const atReceiver = me.branchId === t.turnoverToBranch.id
+  const owner = me.isSuperAdmin === true || hasPrivilegedRole(me)
   return {
-    acknowledge: atReceiver,
+    acknowledge: atReceiver || owner,
     // The backend only lets the receiving branch, or Head Office, reject.
     reject: atReceiver || !me.branchId,
     // The row's status already says it is awaiting acknowledgment.

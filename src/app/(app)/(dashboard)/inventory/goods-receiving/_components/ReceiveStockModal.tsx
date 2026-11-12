@@ -324,6 +324,17 @@ export default function ReceiveStockModal({
     enabled: isOpen && repairIntake,
   })
   const locationWarehouses = repairIntake ? (allLocationsQuery.data?.data?.data ?? []) : warehouses
+
+  // A direct delivery (no PO, no reason) only offers the real warehouses (see
+  // RrDeliveryPanel), so a branch location picked earlier — before a PO was
+  // unlinked or a reason cleared — is dropped rather than refused on post.
+  const directDelivery = !linkedPo && !watched.reason
+  useEffect(() => {
+    if (!directDelivery || !watched.warehouseId) return
+    const picked = locationWarehouses.find((w) => w.id === watched.warehouseId)
+    if (picked?.branchId || picked?.branch) setValue('warehouseId', '', { shouldValidate: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [directDelivery, watched.warehouseId])
   const serviceCentersQuery = useQuery({
     queryKey: ['service-centers-holding-units'],
     queryFn: () => getServiceCenters(),

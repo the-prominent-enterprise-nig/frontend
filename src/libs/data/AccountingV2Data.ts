@@ -1928,12 +1928,18 @@ export interface APBillSupplierOption {
   id: string
   code: string
   name: string
+  /** Minor suppliers are paid straight from Expenses with no invoice. */
+  tier?: 'MAJOR' | 'MINOR'
 }
 export const APBillSuppliers = {
   list: () =>
+    // The whole active list, Minor suppliers included (about 4,100 of them at
+    // go-live), because the picker filters in the browser: a cap of 200 would
+    // silently drop every supplier but the newest. A type-to-search lookup is
+    // the right fix before this list grows further.
     api.get<{ data: APBillSupplierOption[]; total: number }>('/suppliers', {
       status: 'active',
-      limit: 200,
+      limit: 5000,
     }),
 }
 
@@ -2228,7 +2234,7 @@ export interface BusinessExpense {
   payeeType?: PayeeType | null
   otherCategory?: OtherCategory | null
   supplierId?: string | null
-  supplier?: { id: string; name: string } | null
+  supplier?: { id: string; name: string; tier?: 'MAJOR' | 'MINOR' } | null
   /** SUPPLIER-only — the disbursement voucher number. */
   voucherNumber?: string | null
   /** The fund the entry is drawn from. Its voucherPrefix series issues the voucher number. */

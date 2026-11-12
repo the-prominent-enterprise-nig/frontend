@@ -14,7 +14,15 @@ export default async function ReportsPage() {
       <Suspense
         fallback={<div className="p-6 text-sm text-gray-400 animate-pulse">Loading reports…</div>}
       >
-        <ReportsHub />
+        {/* A branch-assigned user's reports are their branch's. The server
+            enforces it; the hub shows it instead of an "All Branches" picker. */}
+        <ReportsHub
+          ownBranch={
+            session?.branchId
+              ? { id: session.branchId, name: session.branchName ?? 'Your branch' }
+              : null
+          }
+        />
       </Suspense>
     </div>
   )

@@ -43,15 +43,8 @@ const HUBS: {
       { label: 'Recurring', path: '/accounting/expenses/recurring' },
       { label: 'Special Accounts', path: '/accounting/special-accounts' },
       { label: 'Employee Cash Loans', path: '/accounting/employee-cash-loans' },
-      // Moved from Inventory's Master Data. Still gated on inventory:transfers:read,
-      // which the Accountant role does not hold.
-      { label: 'Drivers', path: '/accounting/drivers', accountant: false },
-      // The roster by plate, with each vehicle's recorded expenses read-only. Reads on
-      // inventory:transfers:read OR accounting:expense:read, so the Accountant sees it.
-      { label: 'Vehicles', path: '/accounting/vehicles' },
-      // The payments recorded on Electricity / Light Expense, read-only. Kept under
-      // accounting:expense:read, so the Accountant sees it.
-      { label: 'Electricity', path: '/accounting/electricity' },
+      // No Drivers, Vehicles or Electricity tabs (Docket #55): their amounts are read by
+      // clicking an entry on Recurring — see recurring-expense-amounts.spec.ts.
     ],
     formPath: '/accounting/expenses/new',
   },

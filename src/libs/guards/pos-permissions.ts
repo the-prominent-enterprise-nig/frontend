@@ -143,7 +143,7 @@ export const POS_PERMISSION_DESCRIPTIONS: Record<
     'Create acknowledgment receipts on New Receipts, and no other receipt type',
   'pos:new-receipts:edit': 'Edit a New Receipt, with a reason (Business Owner only)',
   'pos:recorded-sales:edit':
-    "Edit a recorded sale's SI / DR No., payment reference numbers and selling agent (Business Owner and Sales Admin Clerk)",
+    "Edit a recorded sale's agent, credit, commission, SMI and invoice date for the POS Sales Report (Business Owner and Sales Admin Clerk)",
   'pos:reservations:read': 'View reservations on POS',
   'pos:reservations:create': 'Reserve an item by SKU or model at POS',
   'pos:reservations:fulfil':

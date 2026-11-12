@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { UnitClassificationSchema } from '../reports'
 
 export const CostingMethodSchema = z.enum(['fifo', 'lifo', 'weighted_average'])
 export const ItemLifecycleSchema = z.enum(['active', 'discontinued', 'archived'])
@@ -92,9 +93,27 @@ const CreateItemFormBaseSchema = z.object({
   initialOrigin: z.string().optional(),
   initialPrice: z.number().min(0).optional(),
   initialSerialNumber: z.string().optional(),
+  // The unit's Classification on the General Stockbook (SerialNumber.receivedAs).
+  initialClassification: UnitClassificationSchema.optional(),
 })
 
+/** Brand + Model are how Item Master and both ledgers name an item (Brand ·
+ * Category · Model), so a stocked item needs both. Service items have neither. */
+function refineIdentity(
+  data: z.infer<typeof CreateItemFormBaseSchema>,
+  ctx: z.RefinementCtx
+): void {
+  if (data.isService) return
+  if (!data.brandId) {
+    ctx.addIssue({ code: 'custom', path: ['brandId'], message: 'Brand is required' })
+  }
+  if (!data.modelNumber?.trim()) {
+    ctx.addIssue({ code: 'custom', path: ['modelNumber'], message: 'Model number is required' })
+  }
+}
+
 export const CreateItemFormSchema = CreateItemFormBaseSchema.superRefine((data, ctx) => {
+  refineIdentity(data, ctx)
   const hasAnyInitialStockField = !!(
     data.initialWarehouseId ||
     data.initialDateIn ||

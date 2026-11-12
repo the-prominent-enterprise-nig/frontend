@@ -23,6 +23,9 @@ export default async function InstallmentAccountDetailPage({
     <InstallmentAccountDetail
       id={id}
       canEdit={can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_UPDATE)}
+      // Filing a graduation or DAM request creates one; it doesn't edit the
+      // account, so staff who can't edit can still ask.
+      canRequest={can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_CREATE)}
       canEarlyPayoff={can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_EARLY_PAYOFF)}
       // Record payment opens POS Collections (POS-sale plan) or AR New
       // Receipt (imported account), each with its own guard — so the button

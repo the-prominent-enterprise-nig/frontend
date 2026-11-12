@@ -47,6 +47,30 @@ function humanizeField(field: string): string {
     .trim()
 }
 
+/** A repossessed or repair unit came in on an RR like any purchase (or, for
+ * a repair taken in on a Return, as a zero-quantity custody row) — but the
+ * Stock Controller reads it as a Repossession or a Repair. */
+const REASONED: Record<string, { label: string; color: string }> = {
+  repossession: { label: 'Repossession', color: 'bg-[#fdf3e7] text-[#8a4b06]' },
+  repair_return: { label: 'Repair', color: 'bg-[#e8f1fb] text-[#1d4f8a]' },
+  repair_intake: { label: 'Repair Intake', color: 'bg-[#e8f1fb] text-[#1d4f8a]' },
+}
+
+function txMeta(entry: ItemLedgerEntry): { label: string; color: string } {
+  const type = entry.transactionType
+  const key =
+    type === 'receipt'
+      ? entry.receiptReason
+      : type === 'return' && entry.reasonCode === 'repair'
+        ? 'repair_intake'
+        : null
+  if (key && REASONED[key]) return REASONED[key]
+  return {
+    label: TX_LABELS[type] ?? type,
+    color: TX_COLORS[type] ?? 'bg-[#f1f1f4] text-[#4b4b5a]',
+  }
+}
+
 const TRANSACTION_TYPES = [
   { value: '', label: 'All Types' },
   { value: 'receipt', label: 'Goods Receipt' },
@@ -243,8 +267,7 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
 
             <div className="divide-y divide-[#f4f4f6]">
               {entries.map((entry) => {
-                const colorClass = TX_COLORS[entry.transactionType] ?? 'bg-[#f1f1f4] text-[#4b4b5a]'
-                const label = TX_LABELS[entry.transactionType] ?? entry.transactionType
+                const { label, color: colorClass } = txMeta(entry)
                 const isFieldEdit = entry.transactionType === 'field_edit'
                 const hasIn = entry.quantityIn > 0
                 const hasOut = entry.quantityOut > 0
@@ -307,6 +330,11 @@ export default function MovementsTab({ itemId, locations, region }: Props) {
                         </>
                       ) : (
                         (location ?? '—')
+                      )}
+                      {!isFieldEdit && entry.serialNumber && (
+                        <span className={`${MONO} ml-1.5 text-[11.5px] text-ink-muted`}>
+                          SN {entry.serialNumber}
+                        </span>
                       )}
                       {!isFieldEdit && entry.notes && (
                         <span className="ml-1.5 text-ink-subtle italic">{entry.notes}</span>

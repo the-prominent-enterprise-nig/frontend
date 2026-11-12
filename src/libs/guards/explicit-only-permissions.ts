@@ -15,15 +15,28 @@ export const RECORDED_ENTRIES_EDIT = 'accounting:recorded-entries:edit'
 /** Edit a New Receipt in POS. A reason is required with every edit. */
 export const NEW_RECEIPTS_EDIT = 'pos:new-receipts:edit'
 
-/** "Edit entry" on a recorded POS sale: its SI / DR No., payment reference
- * numbers and selling agent. Each change is kept in the audit log. Held by
- * the Business Owner and, named in its grants, the Sales Admin Clerk. */
+/** "Edit entry" on a recorded POS sale: its agent, credit, commission, SMI and
+ * invoice date, for the POS Sales Report only (Docket #49). */
 export const RECORDED_SALES_EDIT = 'pos:recorded-sales:edit'
+
+/** Editing, deleting or merging a customer record or its ledger (installment
+ * account) is the Business Owner's alone; every other role reads, creates and
+ * records payments. POS › Customers › Edit writes the same record. Mirrors the
+ * backend's CRM_OWNER_ONLY_EDITS. */
+export const CRM_OWNER_ONLY_EDITS: readonly string[] = [
+  'crm:customers:update',
+  'crm:customers:delete',
+  'crm:customers:merge',
+  'crm:installment-accounts:update',
+  'crm:installment-accounts:delete',
+  'pos:customers:update',
+]
 
 const EXPLICIT_ONLY: ReadonlySet<string> = new Set([
   RECORDED_ENTRIES_EDIT,
   NEW_RECEIPTS_EDIT,
   RECORDED_SALES_EDIT,
+  ...CRM_OWNER_ONLY_EDITS,
 ])
 
 export function isExplicitOnlyPermission(permission: string): boolean {
