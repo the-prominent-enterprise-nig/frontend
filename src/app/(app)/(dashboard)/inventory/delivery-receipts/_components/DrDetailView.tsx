@@ -148,7 +148,9 @@ function costLabel(dr: DrDetail): string {
 function statusLine(dr: DrDetail): string {
   switch (dr.status) {
     case 'pending_approval':
-      return 'Waiting for the Branch Manager. Nothing has moved yet.'
+      return DR_PURPOSE_CONFIG[dr.purpose].headOfficeApproval
+        ? 'Waiting for Head Office approval. Nothing has moved yet.'
+        : 'Waiting for the Branch Manager. Nothing has moved yet.'
     case 'approved':
       return DR_PURPOSE_CONFIG[dr.purpose].withDebitMemo
         ? 'Approved — the debit memo posts with the approval.'

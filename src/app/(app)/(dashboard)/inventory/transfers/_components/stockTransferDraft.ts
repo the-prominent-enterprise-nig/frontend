@@ -16,6 +16,8 @@ export type StockTransferDraft = {
   /** A repair ticket's trip: the destination is fixed to Main. */
   toMain?: boolean
   reason?: string
+  /** General Stockbook's own units: sent now as a dispatch, not requested. */
+  dispatchNow?: boolean
 }
 
 type StoredDraft = StockTransferDraft & { userId: string }
@@ -41,6 +43,7 @@ export function consumeStockTransferDraft(userId: string): StockTransferDraft | 
       pinnedLines,
       toMain,
       reason,
+      dispatchNow,
       userId: owner,
     } = parsed as Record<string, unknown>
     if (owner !== userId) return null
@@ -63,6 +66,7 @@ export function consumeStockTransferDraft(userId: string): StockTransferDraft | 
       pinnedLines: lines,
       toMain: toMain === true,
       reason: typeof reason === 'string' ? reason : undefined,
+      dispatchNow: dispatchNow === true,
     }
   } catch {
     return null

@@ -69,6 +69,17 @@ export const NewCaravanFormSchema = z
   })
 export type NewCaravanFormValues = z.infer<typeof NewCaravanFormSchema>
 
+// General Stockbook's Stock Transfer dispatches at once, so its form also
+// carries the delivery details the dispatch step would otherwise ask for.
+export const DispatchDeliverySchema = z.object({
+  driverName: z.string().max(150).optional(),
+  driverPhone: z.string().max(50).optional(),
+  vehiclePlate: z.string().trim().min(1, 'Vehicle plate number is required').max(50),
+  carrierName: z.string().max(150).optional(),
+  notes: z.string().max(500).optional(),
+})
+export type DispatchDeliveryValues = z.infer<typeof DispatchDeliverySchema>
+
 export const CreateTransferFormSchema = z
   .object({
     fromWarehouseId: z.string().min(1, 'Source warehouse is required'),
@@ -87,6 +98,8 @@ export const CreateTransferFormSchema = z
     // the checkbox is hidden from anyone who lacks it (see CreateTransferModal),
     // so a submit without the permission is a defensive-only path.
     skipDestinationApproval: z.boolean().optional(),
+    // Set only on a stockbook dispatch — see DispatchDeliverySchema.
+    delivery: DispatchDeliverySchema.optional(),
     lines: z.array(CreateTransferLineSchema).min(1, 'At least one item line is required'),
   })
   .refine((d) => d.fromWarehouseId !== d.toWarehouseId, {

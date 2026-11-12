@@ -226,6 +226,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
     updateCaravan,
     isUpdatingCaravan,
     isCreating,
+    createAndDispatch,
+    isDispatchingNow,
     approveHqTransfer,
     isApprovingHq,
     rejectHqTransfer,
@@ -317,6 +319,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
     pinnedLines?: { itemId: string; itemLabel?: string; serialNumberId: string }[]
     toMain?: boolean
     reason?: string
+    dispatchNow?: boolean
   } | null>(null)
 
   // Item 360's Stock tab "Request transfer" deep-links here with a source
@@ -348,6 +351,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         pinnedLines: stockDraft.pinnedLines,
         toMain: stockDraft.toMain,
         reason: stockDraft.reason,
+        dispatchNow: stockDraft.dispatchNow,
       })
       setIsCreateOpen(true)
       return
@@ -805,9 +809,15 @@ export default function TransferList({ session }: { session: SessionUser }) {
         // request either way, so which endpoint it goes to is the only thing
         // that changes. The modal itself stays unaware of the difference.
         onSubmit={
-          editingTransfer ? (data) => updateTransfer(editingTransfer.id, data) : createTransfer
+          editingTransfer
+            ? (data) => updateTransfer(editingTransfer.id, data)
+            : createDraft?.dispatchNow
+              ? createAndDispatch
+              : createTransfer
         }
-        isSubmitting={editingTransfer ? isUpdating : isCreating}
+        isSubmitting={
+          editingTransfer ? isUpdating : createDraft?.dispatchNow ? isDispatchingNow : isCreating
+        }
         editing={editingTransfer}
         onCreateCaravan={createCaravan}
         onUpdateCaravan={updateCaravan}
