@@ -71,21 +71,29 @@ export default function ReconciliationWorksheet({ id }: { id: string }) {
   const toggleLine = async (line: BankReconciliationLine) => {
     if (!rec || rec.reconciled) return
     const nextChecked = !line.checked
+    // Docket #61 — a tick is dated the day it is made (fmtDate reads it as a
+    // Manila day, the same one the server stamps); unticking clears it.
+    const patchLine =
+      (checked: boolean, clearedDate: string | null) => (cur: BankReconciliation) => {
+        const patch = (l: BankReconciliationLine) =>
+          l.id === line.id ? { ...l, checked, clearedDate } : l
+        return {
+          ...cur,
+          lines: cur.lines.map(patch),
+          pendingDeposits: (cur.pendingDeposits ?? []).map(patch),
+          pendingWithdrawals: (cur.pendingWithdrawals ?? []).map(patch),
+        }
+      }
     // Optimistic update — reverted below if the PATCH fails.
-    setRec({
-      ...rec,
-      lines: rec.lines.map((l) => (l.id === line.id ? { ...l, checked: nextChecked } : l)),
-      pendingDeposits: (rec.pendingDeposits ?? []).map((l) =>
-        l.id === line.id ? { ...l, checked: nextChecked } : l
-      ),
-      pendingWithdrawals: (rec.pendingWithdrawals ?? []).map((l) =>
-        l.id === line.id ? { ...l, checked: nextChecked } : l
-      ),
-    })
+    setRec(patchLine(nextChecked, nextChecked ? new Date().toISOString() : null)(rec))
     const res = await BankAccounts.toggleReconciliationLine(id, line.id, nextChecked)
     if (!res.success) {
       setError(res.message || res.error || 'Failed to update line')
       load()
+    } else if (res.data) {
+      // The server's own date wins over the optimistic one.
+      const saved = res.data
+      setRec((cur) => (cur ? patchLine(saved.checked, saved.clearedDate ?? null)(cur) : cur))
     }
   }
 
@@ -722,6 +730,7 @@ function LineSection({
           <thead className="bg-gray-50 text-xs uppercase text-gray-600">
             <tr>
               <th className="px-3 py-2 text-left w-16">Cleared</th>
+              <th className="px-3 py-2 text-left">Clearing Date</th>
               <th className="px-3 py-2 text-left">Date</th>
               <th className="px-3 py-2 text-left">Type</th>
               <th className="px-3 py-2 text-left">Reference</th>
@@ -731,7 +740,7 @@ function LineSection({
           <tbody className="divide-y divide-gray-100">
             {lines.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-3 py-8 text-center text-gray-400">
+                <td colSpan={6} className="px-3 py-8 text-center text-gray-400">
                   Nothing pending.
                 </td>
               </tr>
@@ -746,6 +755,9 @@ function LineSection({
                       onChange={() => onToggle(l)}
                       className="h-4 w-4 rounded border-gray-300"
                     />
+                  </td>
+                  <td className="px-3 py-2 text-xs">
+                    {l.checked && l.clearedDate ? fmtDate(l.clearedDate) : '—'}
                   </td>
                   <td className="px-3 py-2 text-xs">{fmtDate(l.date)}</td>
                   <td className="px-3 py-2 text-xs text-gray-500">{SOURCE_LABELS[l.sourceType]}</td>
