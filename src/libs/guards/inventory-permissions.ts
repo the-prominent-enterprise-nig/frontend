@@ -74,6 +74,8 @@ export const INVENTORY_PERMISSIONS = {
 
   // ── Reports ────────────────────────────────────────────────────────────────
   REPORTS_VALUATION: 'inventory:reports:valuation',
+  /** Total amounts only (dashboard, General Stockbook) — no per-item cost (custodians). */
+  REPORTS_VALUATION_SUMMARY: 'inventory:reports:valuation-summary',
   REPORTS_TURNOVER: 'inventory:reports:turnover',
 
   // ── Receive (Stock Controller) ─────────────────────────────────────────────
@@ -268,6 +270,8 @@ export const INVENTORY_PERMISSION_DESCRIPTIONS: Record<
   'inventory:bundles:read': 'View bundle / kit definitions',
   'inventory:bundles:create': 'Create and manage bundles',
   'inventory:reports:valuation': 'Generate stock valuation reports',
+  'inventory:reports:valuation-summary':
+    'See total stock amounts on the Inventory dashboard and General Stockbook, without per-item cost',
   'inventory:reports:turnover': 'View stock turnover and aging reports',
   'inventory:receive:read': 'View goods receiving records',
   'inventory:receive:create': 'Record goods received against a PO',

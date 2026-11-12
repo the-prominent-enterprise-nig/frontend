@@ -59,7 +59,9 @@ export function useSerialNumbers(
   // Scenario 60 Part 3 — opens straight onto one caravan (`?caravan=` deep
   // link), or onto the Caravan view with every caravan (`?caravan=all`).
   // `viewerBranchId` — the viewer's own branch; null/undefined is head office.
-  opts: { initialCaravanId?: string; viewerBranchId?: string | null } = {}
+  // `withAmount` — the metric band also shows each count's total amount
+  // (valuation or totals-only holders; the backend leaves it out for anyone else).
+  opts: { initialCaravanId?: string; viewerBranchId?: string | null; withAmount?: boolean } = {}
 ) {
   const queryClient = useQueryClient()
 
@@ -254,8 +256,8 @@ export function useSerialNumbers(
   ] as const
   const statusCountQueries = useQueries({
     queries: STATUS_COUNT_BUCKETS.map((status) => ({
-      queryKey: ['inventory-serial-status-count', status],
-      queryFn: () => getSerialNumbers({ status, limit: 1 }),
+      queryKey: ['inventory-serial-status-count', status, !!opts.withAmount],
+      queryFn: () => getSerialNumbers({ status, limit: 1, withAmount: opts.withAmount }),
       staleTime: 30 * 1000,
       enabled: !caravanView,
     })),
@@ -266,6 +268,26 @@ export function useSerialNumbers(
       return acc
     },
     {} as Record<(typeof STATUS_COUNT_BUCKETS)[number], number>
+  )
+  // Registered: every unit, whatever status is picked below — its own
+  // limit:1 request like the buckets, so clicking a status doesn't change it.
+  const registeredQuery = useQuery({
+    queryKey: ['inventory-serial-status-count', 'all', !!opts.withAmount],
+    queryFn: () => getSerialNumbers({ limit: 1, withAmount: opts.withAmount }),
+    staleTime: 30 * 1000,
+    enabled: !caravanView,
+  })
+  const registered = {
+    count: registeredQuery.data?.data?.total ?? 0,
+    amount: registeredQuery.data?.data?.totalAmount,
+  }
+  // Each bucket's total amount; undefined where the backend sent none.
+  const statusAmounts = STATUS_COUNT_BUCKETS.reduce(
+    (acc, status, i) => {
+      acc[status] = statusCountQueries[i]?.data?.data?.totalAmount
+      return acc
+    },
+    {} as Record<(typeof STATUS_COUNT_BUCKETS)[number], number | undefined>
   )
 
   const registerMutation = useMutation({
@@ -306,6 +328,9 @@ export function useSerialNumbers(
     serials,
     pagination,
     statusCounts,
+    statusAmounts,
+    /** Every unit's count and amount (the Registered cell), status aside. */
+    registered,
     isLoading: activeList.isLoading,
     isFetching: activeList.isFetching,
     error: activeList.error,

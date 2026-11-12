@@ -278,6 +278,9 @@ export const SerialNumberListResponseSchema = z
       total: z.number(),
       page: z.number(),
       limit: z.number(),
+      /** Summed unit cost of every matching unit — only with `withAmount`, and
+       * only for callers holding valuation or its totals-only summary. */
+      totalAmount: z.number().optional(),
     }),
   })
   .transform(({ data, meta }) => ({
@@ -285,6 +288,7 @@ export const SerialNumberListResponseSchema = z
     total: meta.total,
     page: meta.page,
     limit: meta.limit,
+    ...(meta.totalAmount != null && { totalAmount: meta.totalAmount }),
   }))
 
 // Scenario 60 — the Caravan tab's "By Item" rollup of the same rows its
