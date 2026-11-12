@@ -412,3 +412,11 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
 
 export type AccountingPermission =
   (typeof ACCOUNTING_PERMISSIONS)[keyof typeof ACCOUNTING_PERMISSIONS]
+
+/** Accounting's Receiving Reports (Payables hub): its financial-report
+ * permission, or Payables, where a supplier bill is matched to what was
+ * received (Finance Clerk - Payables, 2026-11-12). Holding either opens it. */
+export const RECEIVING_REPORT_ACCESS: string[] = [
+  ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
+  ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
+]

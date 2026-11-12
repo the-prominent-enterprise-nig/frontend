@@ -1,6 +1,6 @@
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { requirePermission } from '@/src/libs/guards/require-permission'
-import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import { RECEIVING_REPORT_ACCESS } from '@/src/libs/guards/accounting-permissions'
 import { CustomerReturnReceiptDetail } from '../../../../inventory/returns/_components/CustomerReturnReceiptDetail'
 
 export const metadata = { title: 'Receiving Report' }
@@ -13,7 +13,7 @@ export default async function Page({
   params: Promise<{ id: string }>
 }): Promise<React.JSX.Element> {
   const session = await getSessionOrNull()
-  requirePermission(session, ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ)
+  requirePermission(session, RECEIVING_REPORT_ACCESS)
   const { id } = await params
   return (
     <div className="min-h-screen bg-gray-50">
