@@ -13,7 +13,13 @@ import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { printCustomerLedgerDocument } from '@/src/libs/print/printInventoryDocument'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
-import { LEDGER_ACTION, LEDGER_CARD } from '@/src/components/crm/LedgerParts'
+import {
+  LEDGER_ACTION,
+  LEDGER_CARD,
+  LedgerEventBanners,
+  LedgerNotePill,
+  LedgerRef,
+} from '@/src/components/crm/LedgerParts'
 import type {
   ExistingLedgerSummary,
   InstallmentLedger,
@@ -176,6 +182,8 @@ export default function ExistingAccountLedger({
           )}
         </div>
       </header>
+
+      <LedgerEventBanners rows={ledger.rows} />
 
       <MonthsRunning existing={existing} matured={matured} />
 
@@ -542,19 +550,24 @@ function LedgerRows({
       >
         <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">{fmtDate(row.date)}</td>
         <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px] text-gray-600">
-          {row.ref || '—'}
+          <LedgerRef value={row.ref} link={row.refLink} fallback="—" />
         </td>
         <td className="whitespace-nowrap px-3 py-1.5 text-gray-600">
           {row.instLabel ?? (row.inst > 0 ? row.inst : '—')}
         </td>
         <td className="px-3 py-1.5">
-          <span className="inline-flex flex-wrap items-center gap-2">
+          {/* No wrap: the pill stays on the left and a long description wraps
+              beside it, rather than dropping under the pill. */}
+          <span className="flex items-start gap-2">
+            <LedgerNotePill note={row.note} />
             {kind && (
-              <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${kind.style}`}>
+              <span
+                className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${kind.style}`}
+              >
                 {kind.label}
               </span>
             )}
-            <span className="font-medium text-prominent-purple-900">
+            <span className="min-w-0 font-medium text-prominent-purple-900">
               {isPenaltyRow(row) ? 'Penalty' : row.description}
             </span>
           </span>

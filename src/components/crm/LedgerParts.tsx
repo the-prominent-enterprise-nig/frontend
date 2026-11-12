@@ -2,7 +2,61 @@
 
 import type { ElementType, ReactNode } from 'react'
 import { fmtDate, fmtMoney } from '@/src/libs/data/AccountingV2Data'
-import type { InstallmentLedgerRow } from '@/src/schema/crm/types'
+import { useMe } from '@/src/hooks/useMe'
+import { LEDGER_NOTE_LABELS } from '@/src/libs/format/ledgerNote'
+import { ledgerRefHref } from '@/src/libs/format/ledgerRef'
+import type { InstallmentLedgerRow, LedgerNote, LedgerRefLink } from '@/src/schema/crm/types'
+
+// Same recipe as the Sale / Bill / Penalty / Payment tags beside it
+// (ExistingAccountLedger's PILL): a pale fill, no outline.
+const NOTE_STYLES: Record<LedgerNote, string> = {
+  repair: 'bg-prominent-purple-100 text-prominent-purple-700',
+  return: 'bg-indigo-50 text-indigo-700',
+  paused: 'bg-gray-100 text-ink-muted',
+  repossess: 'bg-red-50 text-red-700',
+  cm: 'bg-teal-50 text-teal-700',
+}
+
+/** A ledger row's Ref — a link that opens its document in a new tab when the
+ * server says which one and this user may open it, plain text otherwise. */
+export function LedgerRef({
+  value,
+  link,
+  fallback = '',
+}: {
+  value: string
+  link?: LedgerRefLink
+  fallback?: string
+}): ReactNode {
+  const { data: me } = useMe()
+  const href = value && link ? ledgerRefHref(link, me ?? null) : null
+  if (!href) return value || fallback
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Open in a new tab"
+      data-testid="ledger-ref-link"
+      className="text-prominent-purple-700 underline-offset-2 hover:underline"
+    >
+      {value}
+    </a>
+  )
+}
+
+/** The Repair / Return note beside a ledger row's description. */
+export function LedgerNotePill({ note }: { note?: LedgerNote }): ReactNode {
+  if (!note) return null
+  return (
+    <span
+      data-testid={`ledger-note-${note}`}
+      className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${NOTE_STYLES[note]}`}
+    >
+      {LEDGER_NOTE_LABELS[note]}
+    </span>
+  )
+}
 
 // The pieces both customer-ledger views are drawn from — the single plan's
 // paper-form ledger (InstallmentLedgerBody) and the whole-customer one
@@ -157,13 +211,16 @@ export function LedgerTable({
             <tr key={i} className="hover:bg-gray-50">
               <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">{fmtDate(row.date)}</td>
               <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px] text-gray-600">
-                {row.ref}
+                <LedgerRef value={row.ref} link={row.refLink} />
               </td>
               <td className="whitespace-nowrap px-3 py-1.5 text-right text-gray-600">
                 {row.instLabel ?? (row.inst > 0 ? row.inst : '—')}
               </td>
               <td className="px-3 py-1.5 font-medium text-prominent-purple-900">
-                {row.description}
+                <span className="flex items-start gap-2">
+                  <LedgerNotePill note={row.note} />
+                  <span className="min-w-0">{row.description}</span>
+                </span>
               </td>
               {schemeColumn && (
                 <td className="whitespace-nowrap px-3 py-1.5 text-gray-800">{row.scheme ?? ''}</td>
@@ -205,4 +262,114 @@ export function LedgerTable({
       </table>
     </div>
   )
+}
+
+const BANNER_STYLES = {
+  repossess: 'border-red-200 bg-red-50 text-red-800',
+  return: 'border-indigo-200 bg-indigo-50 text-indigo-900',
+} as const
+
+/** One banner per repossessed or returned unit, read off the ledger's own
+ * rows — the Repossess / Return row and the CM rows that follow it on the
+ * same RR — so it can never say something the table doesn't. */
+export function LedgerEventBanners({ rows }: { rows: InstallmentLedgerRow[] }): ReactNode {
+  const banners = rows.flatMap((row) =>
+    row.note === 'repossess' || row.note === 'return'
+      ? [
+          {
+            key: `${row.note}-${row.ref}-${row.date}`,
+            note: row.note,
+            text: bannerText(row, rows),
+          },
+        ]
+      : []
+  )
+  if (banners.length === 0) return null
+  return (
+    <div className="mt-3 space-y-2">
+      {banners.map((b) => (
+        <div
+          key={b.key}
+          role="status"
+          data-testid={`ledger-banner-${b.note}`}
+          className={`rounded-2xl border px-5 py-3 text-[13px] leading-relaxed ${BANNER_STYLES[b.note]}`}
+        >
+          {b.text}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** What the banner says for one Repossess / Return row. */
+function bannerText(row: InstallmentLedgerRow, rows: InstallmentLedgerRow[]): string {
+  const when = `${fmtDate(row.date)} (${row.ref})`
+  const memos = rows.filter((r) => r.note === 'cm' && r.ref === row.ref)
+  if (row.note === 'return') return returnBannerText(row, memos, when)
+  const outstanding = rows[rows.length - 1]?.outstanding ?? 0
+  const credited = memos.map((m) => `${memoName(m.description)} of ${fmtMoney(m.credit)}`)
+  const memoSentence = credited.length
+    ? ` The ${joinAnd(credited)} ${credited.length === 1 ? 'was' : 'were'} credited through ${
+        credited.length === 1 ? 'a credit memo' : `${credited.length} credit memos`
+      } when the RR was encoded.`
+    : ''
+  const closing = ` Outstanding is now ${fmtMoney(outstanding)}, so billing and penalties have stopped.`
+  return `Unit repossessed on ${when}.${memoSentence}${closing}`
+}
+
+/** "Repo cost · auto-posted from RR-…" → "repo cost". */
+function memoName(description: string): string {
+  const name = description.split(' · ')[0]
+  return name.startsWith('ID') ? 'installment difference' : name.toLowerCase()
+}
+
+function joinAnd(parts: string[]): string {
+  return parts.length <= 1
+    ? (parts[0] ?? '')
+    : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
+}
+
+const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five']
+const countWord = (n: number): string => COUNT_WORDS[n] ?? String(n)
+
+/** The return banner — the client's SALES RETURN mockup wording, full or
+ * partial (the row says "(1 of 20) · … · account stays active"). */
+function returnBannerText(
+  row: InstallmentLedgerRow,
+  memos: InstallmentLedgerRow[],
+  when: string
+): string {
+  const partial = row.description.match(
+    /^Unit returned \((\d+) of (\d+)\) · (.*) · account stays active$/
+  )
+  const units = partial ? partial[3] : row.description.replace(/^Unit returned( · )?/, '')
+  if (memos.length === 0) return `Unit returned on ${when}${units ? ` · ${units}` : ''}.`
+  const after = memos[memos.length - 1].outstanding
+  const memoCount = `${countWord(memos.length)} credit memo${memos.length === 1 ? '' : 's'}`
+  if (partial) {
+    const [returned, total] = [Number(partial[1]), Number(partial[2])]
+    const kept = total - returned
+    return `${countWord(returned)} unit${returned === 1 ? '' : 's'} (${units}) ${
+      returned === 1 ? 'was' : 'were'
+    } returned on ${when}. The account stays active and the other ${kept} unit${
+      kept === 1 ? '' : 's'
+    } keep billing. ${memoCount} for ${returned === 1 ? 'that unit' : 'those units'} ${
+      memos.length === 1 ? 'was' : 'were'
+    } posted automatically, so outstanding drops from ${fmtMoney(row.outstanding)} to ${fmtMoney(
+      after
+    )}.`
+  }
+  const names = memos.map((m) => returnMemoName(m.description))
+  return `Unit returned on ${when}. ${memoCount} ${
+    memos.length === 1 ? 'was' : 'were'
+  } posted automatically when the RR was encoded: ${joinAnd(names)}. Outstanding is now ${fmtMoney(
+    after
+  )}, so billing and penalties have stopped.`
+}
+
+/** "Sales return, input tax · auto-posted …" → "sales return for input tax". */
+function returnMemoName(description: string): string {
+  const name = description.split(' · ')[0]
+  if (name.startsWith('ID')) return 'the ID balance'
+  return name.replace(/^Sales return, /, 'sales return for ')
 }
