@@ -321,6 +321,41 @@ test('ticking a later month also ticks every earlier unpaid month, as one paymen
   await expect(page.getByText('No dues selected')).toBeVisible()
 })
 
+test("Record payment on an account's CRM ledger opens Collections with only that account unfolded", async ({
+  page,
+}) => {
+  // The customer holds two accounts. Opened from the first one's ledger, the
+  // collector lands on Collections with that account open — the other folded to
+  // its header, still one click from open.
+  const found = await page.request.get(`/api/crm/installment-accounts?search=${SI_PREFIX}`)
+  const accounts: { id: string; customerId: string; accountNumber: string }[] =
+    (await found.json()).data ?? []
+  const first = accounts.find((a) => a.accountNumber.endsWith('-1'))
+  const second = accounts.find((a) => a.accountNumber.endsWith('-2'))
+  if (!first || !second) throw new Error('fixture accounts not found')
+
+  await gotoReady(page, `/crm/customers/${first.customerId}/ledger?transactionId=acct:${first.id}`)
+  const ledger = page.getByTestId('existing-ledger')
+  await expect(ledger).toBeVisible({ timeout: 60_000 })
+  await ledger.getByRole('link', { name: 'Record payment' }).click()
+
+  await expect(page).toHaveURL(/\/pos\/collections$/, { timeout: 30_000 })
+  const toggleOf = (id: string) => page.getByTestId(`plan-toggle-aging:${id}`)
+  await expect(toggleOf(first.id)).toHaveAttribute('aria-expanded', 'true', { timeout: 20_000 })
+  await expect(toggleOf(second.id)).toHaveAttribute('aria-expanded', 'false')
+  // The account opened from CRM shows its months, with its next month to pay
+  // already ticked; the folded one shows only how far along it is.
+  await expect(agingPlan(page, `${SI_PREFIX}-1`).getByRole('listitem')).toHaveCount(12)
+  await expect(agingPlan(page, `${SI_PREFIX}-1`).getByRole('checkbox').first()).toBeChecked()
+  await expect(toggleOf(second.id)).toContainText('7 of 12 paid')
+  await expect(page.getByRole('heading', { name: 'Collect Payment' })).toBeVisible()
+
+  // Folded is not hidden: one click opens the other account.
+  await toggleOf(second.id).click()
+  await expect(toggleOf(second.id)).toHaveAttribute('aria-expanded', 'true')
+  await expect(agingPlan(page, `${SI_PREFIX}-2`).getByRole('listitem')).toHaveCount(12)
+})
+
 test("another branch's manager reads the whole customer ledger, but is not offered the account to collect", async ({
   browser,
 }, testInfo) => {

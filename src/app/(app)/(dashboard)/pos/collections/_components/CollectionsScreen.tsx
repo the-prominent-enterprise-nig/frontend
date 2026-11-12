@@ -493,11 +493,12 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
   }
 
   // Deep link from an installment plan's due row (Customer360 / Installment
-  // Account Detail) — arrives as ?customerId&customerName&scheduleId. It
-  // pre-selects the customer and, once schedules load, checks that
-  // schedule's next open due and opens the pay modal on it, which is the
-  // "Pay Selected" equivalent of landing straight on that due. The query
-  // string is cleared right after so a refresh doesn't re-trigger it.
+  // Account Detail / the CRM ledger's Record payment) — arrives as
+  // ?customerId&customerName&scheduleId. It pre-selects the customer and, once
+  // schedules load, checks that schedule's next open due and opens the pay
+  // modal on it, which is the "Pay Selected" equivalent of landing straight on
+  // that due, and folds the customer's other plans. The query string is
+  // cleared right after so a refresh doesn't re-trigger it.
   useEffect(() => {
     if (deepLinkHandled.current) return
     const dlCustomerId = searchParams.get('customerId')
@@ -511,6 +512,19 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
   useEffect(() => {
     if (!pendingScheduleId || schedulesQuery.isLoading) return
     const match = schedules.find((s) => s.id === pendingScheduleId)
+    // Arriving from an account's page (CRM Record payment), only that account
+    // stays unfolded — the customer's other plans fold to their header, one
+    // click from open. A plan with nothing left to collect isn't listed here,
+    // so it can't be the one to keep open: then nothing is folded.
+    if (match?.lines.some((l) => !l.settledAt)) {
+      setCollapsedPlanIds(
+        new Set(
+          schedules
+            .filter((s) => s.id !== match.id && s.lines.some((l) => !l.settledAt))
+            .map((s) => s.id)
+        )
+      )
+    }
     const nextDue = match?.lines.filter(isEligibleForBulkPay)[0]
     if (match && nextDue) {
       setSelectedLineIds(toggleLineSelection(match.lines, nextDue, new Set()))

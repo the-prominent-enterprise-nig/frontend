@@ -357,14 +357,21 @@ export default function InstallmentAccountDetail({
   const canSettle = canEarlyPayoff && account.status === 'active'
   // Scenario 79 — Record payment goes where the payment is posted (receipt,
   // GL, dues), not the old CRM-only modal that only moved this account's
-  // stored figures. POS Collections only lists POS-sale plans, so an
-  // imported/hand-entered account (one AR invoice, no schedule) goes to AR
-  // New Receipt with that invoice picked instead.
-  const paymentHref = account.installmentScheduleId
+  // stored figures. It opens POS Collections on this account (the customer's
+  // other plans fold away there): a POS-sale plan under its schedule's id, an
+  // imported/hand-entered account (one AR invoice, no schedule) under
+  // `aging:<account id>`. Someone who can pay an AR invoice but not collect in
+  // POS still gets AR New Receipt for an imported account, with that invoice
+  // picked.
+  const collectionsScheduleId =
+    account.installmentScheduleId ?? (account.arInvoiceId ? `aging:${id}` : null)
+  const paymentAtPos =
+    !!collectionsScheduleId && (!!account.installmentScheduleId || canCollectAtPos)
+  const paymentHref = paymentAtPos
     ? `/pos/collections?${new URLSearchParams({
         customerId: account.customerId,
         customerName: account.customer.name,
-        scheduleId: account.installmentScheduleId,
+        scheduleId: collectionsScheduleId,
       })}`
     : account.arInvoiceId
       ? `/accounting/ar-invoices/receipts/new?${new URLSearchParams({
@@ -377,7 +384,7 @@ export default function InstallmentAccountDetail({
   const canPay =
     account.status === 'active' &&
     !!paymentHref &&
-    (account.installmentScheduleId ? canCollectAtPos : canRecordReceipt)
+    (paymentAtPos ? canCollectAtPos : canRecordReceipt)
   // The first payment still to come — the one the billing list points at.
   const nextBillLine = account.billingHistory.find(
     (b) => b.status !== 'PAID' && b.status !== 'CANCELLED'
