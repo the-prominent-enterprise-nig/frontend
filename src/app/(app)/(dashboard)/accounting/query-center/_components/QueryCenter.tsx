@@ -19,10 +19,12 @@ import {
   Plus,
   Rows3,
   Search,
+  SlidersHorizontal,
   Sparkles,
   X,
 } from 'lucide-react'
 import {
+  MULTI_DATASET_KEY,
   QueryCenter as QueryCenterApi,
   type DatasetQuery,
   type FilterOp,
@@ -30,7 +32,21 @@ import {
   type QueryDataset,
   type QueryFilter,
   type QueryResult,
+  type SavedReport,
+  type SummaryGroup,
+  type SummaryQuery,
+  type SummaryResult,
+  type SummarySort,
 } from '@/src/libs/data/QueryCenterData'
+import {
+  SaveReportControl,
+  SavedReportsList,
+  GroupByField,
+  groupFilters,
+  groupedQuery,
+  SummaryResults,
+} from './ReportBuilder'
+import CustomQuery from './CustomQuery'
 
 // Scenario 62 — the Data Query Center: pick a dataset (any table in any
 // module), choose columns, filter, sort, preview, export. Read-only by
@@ -38,12 +54,14 @@ import {
 // whitelisted column set, scoped to the owner's business. No modals: the
 // export preview replaces the results card in place.
 
-const PAGE_SIZE = 100
+export const PAGE_SIZE = 100
 const EXPORT_PREVIEW_ROWS = 10
 const EXPORT_MAX_ROWS = 100_000
 
 type ExportFormat = 'xlsx' | 'csv'
 type Sort = { column: string; dir: 'asc' | 'desc' } | null
+/** Rows: list matching rows. Summary: group them and total them. */
+type Mode = 'rows' | 'summary'
 
 /** The datasets people actually reach for, under the names they use. Shown
  * first in the browser and as the start screen's cards. */
@@ -85,7 +103,7 @@ const COMMON: { key: string; label: string; hint: string; columns: string[] }[] 
     hint: 'Customer invoices and balances',
     columns: [
       'invoiceNumber',
-      'customer.firstName',
+      'customer.name',
       'invoiceDate',
       'dueDate',
       'totalAmount',
@@ -205,7 +223,7 @@ const COMMON: { key: string; label: string; hint: string; columns: string[] }[] 
   },
 ]
 const COMMON_BY_KEY = new Map(COMMON.map((c) => [c.key, c]))
-const friendlyName = (d: QueryDataset) => COMMON_BY_KEY.get(d.key)?.label ?? d.label
+export const friendlyName = (d: QueryDataset): string => COMMON_BY_KEY.get(d.key)?.label ?? d.label
 
 const OPS: { op: FilterOp; label: string; types: QueryColumn['type'][]; noValue?: boolean }[] = [
   { op: 'eq', label: 'is', types: ['string', 'number', 'date', 'enum', 'boolean'] },
@@ -233,7 +251,7 @@ const isInternalId = (c: QueryColumn) => c.key === 'id' || !!c.isForeignKey
 
 /** The columns a dataset opens with: the curated set for a most-used one
  * (in that order), otherwise everything except internal ids. */
-function defaultColumns(d: QueryDataset): string[] {
+export function defaultColumns(d: QueryDataset): string[] {
   const available = new Set(d.columns.map((c) => c.key))
   const curated = COMMON_BY_KEY.get(d.key)?.columns.filter((k) => available.has(k))
   return curated?.length ? curated : d.columns.filter((c) => !isInternalId(c)).map((c) => c.key)
@@ -251,8 +269,8 @@ function formatCell(v: unknown, col: QueryColumn): string {
   return String(v)
 }
 
-const card = 'rounded-xl border border-gray-200 bg-white shadow-sm'
-const inputCls =
+export const card = 'rounded-xl border border-gray-200 bg-white shadow-sm'
+export const inputCls =
   'h-9 rounded-lg border border-gray-200 bg-white px-2.5 text-sm text-gray-800 focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-100'
 
 export default function QueryCenter() {
@@ -277,10 +295,29 @@ export default function QueryCenter() {
   const [preparing, setPreparing] = useState<ExportFormat | null>(null)
   const [exporting, setExporting] = useState<ExportFormat | null>(null)
 
+  // Group by (inside Rows): rows sharing a value combine into one line, with
+  // a count and the picked number columns added up. Runs as a summary.
+  const [groupBy, setGroupBy] = useState<SummaryGroup[]>([])
+  // A click on a grouped result's column header; otherwise "Sort by" applies.
+  const [summarySort, setSummarySort] = useState<SummarySort | null>(null)
+  const [summaryResult, setSummaryResult] = useState<SummaryResult | null>(null)
+  const [summaryLastRun, setSummaryLastRun] = useState('')
+
+  const [reports, setReports] = useState<SavedReport[]>([])
+  const [activeReport, setActiveReport] = useState<SavedReport | null>(null)
+  const [savingReport, setSavingReport] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  // "Custom query": the free-for-all entry — pick any dataset from one list,
+  // then build rows or a grouped summary on it.
+  const [custom, setCustom] = useState(false)
+
   useEffect(() => {
     QueryCenterApi.datasets().then((res) => {
       if (res.success && res.data) setDatasets(res.data)
       else setLoadError(res.message || res.error || 'Could not load datasets.')
+    })
+    QueryCenterApi.reports.list().then((res) => {
+      if (res.success && res.data) setReports(res.data)
     })
   }, [])
 
@@ -321,6 +358,37 @@ export default function QueryCenter() {
     )
   }
 
+  const mode: Mode = groupBy.length > 0 ? 'summary' : 'rows'
+  const groupReady = groupBy.every((g) => !!g.column)
+  const summaryQuery = (sortOverride?: SummarySort | null): SummaryQuery =>
+    groupedQuery(
+      dataset!,
+      { columns, filters: activeFilters, sort, groupBy },
+      sortOverride === undefined ? summarySort : sortOverride
+    )
+  const summarySignature = dataset && mode === 'summary' ? JSON.stringify(summaryQuery()) : ''
+  const summaryStale = !!summaryResult && summaryLastRun !== summarySignature
+
+  const runSummary = async (ds: QueryDataset | null = dataset, q?: SummaryQuery) => {
+    if (!ds) return
+    const sq = q ?? summaryQuery()
+    setRunning(true)
+    setError(null)
+    const res = await QueryCenterApi.summary(ds.key, sq)
+    setRunning(false)
+    if (!res.success || !res.data) {
+      setError(res.message || res.error || 'The summary failed.')
+      return
+    }
+    setSummaryResult(res.data)
+    setSummaryLastRun(JSON.stringify(sq))
+  }
+
+  const sortSummary = (next: SummarySort) => {
+    setSummarySort(next)
+    runSummary(dataset, summaryQuery(next))
+  }
+
   const pick = (d: QueryDataset) => {
     const defaults = defaultColumns(d)
     setDataset(d)
@@ -329,6 +397,11 @@ export default function QueryCenter() {
     setSort(d.defaultSort)
     setResult(null)
     setExportPreview(null)
+    setGroupBy([])
+    setSummarySort(null)
+    setSummaryResult(null)
+    setActiveReport(null)
+    setNotice(null)
     run(d, 0, {
       columns: defaults,
       filters: [],
@@ -337,8 +410,135 @@ export default function QueryCenter() {
     })
   }
 
+  const pickFromBrowser = (d: QueryDataset): void => {
+    setCustom(false)
+    pick(d)
+  }
+
+  const startCustom = (): void => {
+    setCustom(true)
+    setDataset(null)
+    setResult(null)
+    setSummaryResult(null)
+    setExportPreview(null)
+    setActiveReport(null)
+    setError(null)
+    setNotice(null)
+  }
+
+  // ─── Saved reports ──────────────────────────────────────────────────────
+  const currentDefinition = (): DatasetQuery => ({
+    columns,
+    filters: activeFilters,
+    sort: sort ?? undefined,
+    ...(groupBy.length ? { groupBy } : {}),
+  })
+
+  const openReport = (r: SavedReport) => {
+    if (r.kind === 'multi') {
+      setCustom(true)
+      setDataset(null)
+      setActiveReport(r)
+      setError(null)
+      setNotice(null)
+      return
+    }
+    const d = datasets.find((x) => x.key === r.datasetKey)
+    if (!d) {
+      setError(`"${r.name}" uses a dataset that isn't available here any more.`)
+      return
+    }
+    setCustom(false)
+    setDataset(d)
+    setFilters((r.definition as DatasetQuery | SummaryQuery).filters ?? [])
+    setExportPreview(null)
+    setActiveReport(r)
+    setNotice(null)
+    setResult(null)
+    setSummaryResult(null)
+    const def = r.definition as DatasetQuery & SummaryQuery
+    const cols = def.columns?.length ? def.columns : defaultColumns(d)
+    const groups = def.groupBy ?? []
+    const rowSort = r.kind === 'rows' ? (def.sort as Sort) : null
+    setColumns(cols)
+    setSort(rowSort)
+    setGroupBy(groups)
+    setSummarySort(null)
+    const filtersNow = def.filters ?? []
+    if (groups.length) {
+      runSummary(
+        d,
+        groupedQuery(d, { columns: cols, filters: filtersNow, sort: rowSort, groupBy: groups })
+      )
+      return
+    }
+    run(d, 0, {
+      columns: cols,
+      filters: filtersNow,
+      sort: rowSort ?? undefined,
+      limit: PAGE_SIZE,
+      offset: 0,
+    })
+  }
+
+  const saveReport = async (name: string) => {
+    if (!dataset) return
+    setSavingReport(true)
+    setError(null)
+    const res = await QueryCenterApi.reports.save({
+      name,
+      datasetKey: dataset.key,
+      kind: 'rows',
+      definition: currentDefinition(),
+    })
+    setSavingReport(false)
+    if (!res.success || !res.data) {
+      setError(res.message || res.error || 'Could not save the report.')
+      return
+    }
+    const saved = res.data
+    setReports((rs) => [...rs, saved].sort((a, b) => a.name.localeCompare(b.name)))
+    setActiveReport(saved)
+    setNotice(`Saved as “${saved.name}”.`)
+  }
+
+  const updateReport = async () => {
+    if (!activeReport) return
+    setSavingReport(true)
+    setError(null)
+    const res = await QueryCenterApi.reports.update(activeReport.id, {
+      definition: currentDefinition(),
+    })
+    setSavingReport(false)
+    if (!res.success || !res.data) {
+      setError(res.message || res.error || 'Could not update the report.')
+      return
+    }
+    const updated = res.data
+    setReports((rs) => rs.map((r) => (r.id === updated.id ? updated : r)))
+    setActiveReport(updated)
+    setNotice(`Updated “${updated.name}”.`)
+  }
+
+  const deleteReport = async (r: SavedReport) => {
+    // Confirmed on the page by SavedReportsList (no browser pop-up).
+    const res = await QueryCenterApi.reports.remove(r.id)
+    if (!res.success) {
+      setError(res.message || res.error || 'Could not delete the report.')
+      return
+    }
+    setReports((rs) => rs.filter((x) => x.id !== r.id))
+    if (activeReport?.id === r.id) setActiveReport(null)
+  }
+
   const openExportPreview = async (format: ExportFormat) => {
     if (!dataset) return
+    if (mode === 'summary') {
+      setExporting(format)
+      await QueryCenterApi.exportSummary(dataset.key, summaryQuery(), format)
+      setExporting(null)
+      return
+    }
     setPreparing(format)
     setError(null)
     const res = await QueryCenterApi.preview(dataset.key, {
@@ -369,8 +569,8 @@ export default function QueryCenter() {
           <Database className="h-6 w-6 text-purple-700" /> Data Query Center
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          Read-only raw data from every module. Pick a dataset, narrow it down, and export it to
-          Excel or CSV.
+          Read-only data from every module. Pick a dataset, narrow it down, list the rows or group
+          and total them, save it as a report, and export it to Excel or CSV.
         </p>
       </div>
 
@@ -378,20 +578,51 @@ export default function QueryCenter() {
         <DatasetBrowser
           datasets={datasets}
           loadError={loadError}
-          selected={dataset?.key ?? null}
-          onPick={pick}
+          selected={activeReport || custom ? null : (dataset?.key ?? null)}
+          onPick={pickFromBrowser}
+          customActive={custom}
+          onCustom={startCustom}
+          savedReports={
+            <SavedReportsList
+              reports={reports}
+              activeId={activeReport?.id ?? null}
+              datasetLabel={(key) => {
+                if (key === MULTI_DATASET_KEY) return 'Custom query'
+                const d = datasets.find((x) => x.key === key)
+                return d ? friendlyName(d) : key
+              }}
+              onOpen={openReport}
+              onDelete={deleteReport}
+            />
+          }
         />
 
         <main className="min-w-0 flex-1 space-y-4">
-          {!dataset ? (
-            <StartScreen datasets={datasets} onPick={pick} />
+          {custom ? (
+            datasets.length > 0 && (
+              <CustomQuery
+                key={activeReport?.id ?? 'new'}
+                datasets={datasets}
+                report={activeReport?.kind === 'multi' ? activeReport : null}
+                onSaved={(r, isNew) => {
+                  setReports((rs) =>
+                    (isNew ? [...rs, r] : rs.map((x) => (x.id === r.id ? r : x))).sort((a, b) =>
+                      a.name.localeCompare(b.name)
+                    )
+                  )
+                  if (isNew) setActiveReport(r)
+                }}
+              />
+            )
+          ) : !dataset ? (
+            <StartScreen datasets={datasets} onPick={pickFromBrowser} onCustom={startCustom} />
           ) : (
             <>
               <DatasetHeader
                 dataset={dataset}
-                total={result?.total ?? null}
-                preparing={preparing}
-                disabled={columns.length === 0}
+                total={mode === 'rows' ? (result?.total ?? null) : null}
+                preparing={preparing ?? (mode === 'summary' ? exporting : null)}
+                disabled={columns.length === 0 || !groupReady}
                 onExport={openExportPreview}
               />
 
@@ -404,9 +635,37 @@ export default function QueryCenter() {
                 sort={sort}
                 setSort={setSort}
                 running={running}
-                stale={stale}
-                onRun={() => run()}
+                stale={mode === 'rows' ? stale : summaryStale}
+                onRun={() => (mode === 'rows' ? run() : runSummary())}
+                canRun={columns.length > 0 && groupReady}
+                groupByField={
+                  <GroupByField
+                    dataset={dataset}
+                    groupBy={groupBy}
+                    setGroupBy={(g) => {
+                      setGroupBy(g)
+                      setSummarySort(null)
+                      setExportPreview(null)
+                    }}
+                  />
+                }
+                actions={
+                  <SaveReportControl
+                    activeName={
+                      activeReport && activeReport.kind !== 'multi' ? activeReport.name : null
+                    }
+                    saving={savingReport}
+                    onSave={saveReport}
+                    onUpdate={updateReport}
+                  />
+                }
               />
+
+              {notice && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                  {notice}
+                </div>
+              )}
 
               {error && (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -414,7 +673,23 @@ export default function QueryCenter() {
                 </div>
               )}
 
-              {exportPreview ? (
+              {mode === 'summary' ? (
+                summaryResult && (
+                  <SummaryResults
+                    result={summaryResult}
+                    sort={summaryQuery().sort ?? null}
+                    onSort={sortSummary}
+                    renderDetail={(row) => (
+                      <GroupRows
+                        dataset={dataset}
+                        query={{ columns, filters: activeFilters, sort }}
+                        groupFilter={groupFilters(dataset, summaryResult, row)}
+                      />
+                    )}
+                    dim={running || summaryStale}
+                  />
+                )
+              ) : exportPreview ? (
                 <ExportPreview
                   datasetLabel={friendlyName(dataset)}
                   preview={exportPreview}
@@ -451,11 +726,17 @@ function DatasetBrowser({
   loadError,
   selected,
   onPick,
+  savedReports,
+  customActive,
+  onCustom,
 }: {
   datasets: QueryDataset[]
   loadError: string | null
   selected: string | null
   onPick: (d: QueryDataset) => void
+  savedReports?: React.ReactNode
+  customActive: boolean
+  onCustom: () => void
 }) {
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState<Record<string, boolean>>({})
@@ -507,6 +788,7 @@ function DatasetBrowser({
       </div>
       <div className="flex-1 overflow-y-auto p-2">
         {loadError && <p className="p-2 text-xs text-red-600">{loadError}</p>}
+        {!term && savedReports}
 
         {common.length > 0 && (
           <div className="mb-2">
@@ -515,6 +797,20 @@ function DatasetBrowser({
             </div>
             {common.map((d) => item(d, friendlyName(d)))}
           </div>
+        )}
+
+        {!term && (
+          <button
+            onClick={onCustom}
+            className={`mb-2 flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm ${
+              customActive
+                ? 'bg-purple-100 font-medium text-purple-800'
+                : 'font-medium text-purple-700 hover:bg-purple-50'
+            }`}
+            title="Build your own query on any dataset"
+          >
+            <SlidersHorizontal className="h-4 w-4" /> Custom query
+          </button>
         )}
 
         <div className="px-2.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
@@ -557,9 +853,11 @@ function DatasetBrowser({
 function StartScreen({
   datasets,
   onPick,
+  onCustom,
 }: {
   datasets: QueryDataset[]
   onPick: (d: QueryDataset) => void
+  onCustom: () => void
 }) {
   const common = COMMON.map((c) => ({ c, d: datasets.find((d) => d.key === c.key) })).filter(
     (x): x is { c: (typeof COMMON)[number]; d: QueryDataset } => !!x.d
@@ -584,6 +882,18 @@ function StartScreen({
             <p className="mt-2 text-[11px] uppercase tracking-wide text-gray-400">{d.module}</p>
           </button>
         ))}
+        <button
+          onClick={onCustom}
+          className="group rounded-xl border border-dashed border-purple-300 p-4 text-left transition hover:bg-purple-50/50"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-purple-800">
+            <SlidersHorizontal className="h-4 w-4 text-purple-600" /> Custom query
+          </div>
+          <p className="mt-1 text-xs text-gray-500">
+            Any data, your own columns, filters, groups and totals
+          </p>
+          <p className="mt-2 text-[11px] uppercase tracking-wide text-gray-400">Free-for-all</p>
+        </button>
       </div>
     </div>
   )
@@ -659,7 +969,7 @@ function Section({
   )
 }
 
-function QueryBuilder({
+export function QueryBuilder({
   dataset,
   columns,
   setColumns,
@@ -670,6 +980,9 @@ function QueryBuilder({
   running,
   stale,
   onRun,
+  canRun,
+  groupByField,
+  actions,
 }: {
   dataset: QueryDataset
   columns: string[]
@@ -681,6 +994,9 @@ function QueryBuilder({
   running: boolean
   stale: boolean
   onRun: () => void
+  canRun: boolean
+  groupByField: React.ReactNode
+  actions: React.ReactNode
 }) {
   const queryable = dataset.columns.filter((c) => c.queryable)
   const colByKey = (key: string) => dataset.columns.find((c) => c.key === key)
@@ -769,6 +1085,8 @@ function QueryBuilder({
           </div>
         </Section>
 
+        {groupByField}
+
         <Section
           icon={
             sort?.dir === 'asc' ? (
@@ -817,6 +1135,7 @@ function QueryBuilder({
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-3 border-t border-gray-100 py-3">
+        <div className="mr-auto">{actions}</div>
         {stale && (
           <span className="rounded-md bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
             You changed the query — run it to update the results.
@@ -824,7 +1143,7 @@ function QueryBuilder({
         )}
         <button
           onClick={onRun}
-          disabled={running || columns.length === 0}
+          disabled={running || !canRun}
           className="inline-flex items-center gap-2 rounded-lg bg-purple-700 px-5 py-2 text-sm font-semibold text-white hover:bg-purple-800 disabled:opacity-50"
         >
           <Play className="h-4 w-4" /> {running ? 'Running…' : 'Run query'}
@@ -1045,7 +1364,7 @@ function DataTable({ result, dim }: { result: QueryResult; dim?: boolean }) {
   )
 }
 
-function Results({
+export function Results({
   result,
   offset,
   running,
@@ -1246,5 +1565,68 @@ function ExportPreview({
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * The rows behind one grouped line: the same columns, filters and sort as the
+ * query, narrowed to that line's group (see groupFilters), a page at a time.
+ */
+export function GroupRows({
+  dataset,
+  query,
+  groupFilter,
+}: {
+  dataset: QueryDataset
+  query: { columns: string[]; filters: QueryFilter[]; sort: Sort }
+  /** Null when the line can't be narrowed (an encrypted group column). */
+  groupFilter: QueryFilter[] | null
+}): React.JSX.Element {
+  const [result, setResult] = useState<QueryResult | null>(null)
+  const [offset, setOffset] = useState(0)
+  const [running, setRunning] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = async (nextOffset: number): Promise<void> => {
+    if (!groupFilter) return
+    setRunning(true)
+    const res = await QueryCenterApi.preview(dataset.key, {
+      columns: query.columns,
+      filters: [...query.filters, ...groupFilter],
+      sort: query.sort ?? undefined,
+      limit: PAGE_SIZE,
+      offset: nextOffset,
+    })
+    setRunning(false)
+    if (!res.success || !res.data) {
+      setError(res.message || res.error || 'Could not load the rows.')
+      return
+    }
+    setResult(res.data)
+    setOffset(nextOffset)
+  }
+
+  useEffect(() => {
+    void load(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  if (!groupFilter) {
+    return (
+      <p className="text-sm text-gray-500">
+        This line can’t be opened — its group column is stored encrypted.
+      </p>
+    )
+  }
+  if (error) return <p className="text-sm text-red-700">{error}</p>
+  if (!result) return <p className="text-sm text-gray-500">Loading the rows…</p>
+  return (
+    <Results
+      result={result}
+      offset={offset}
+      running={running}
+      stale={false}
+      onPage={(o) => void load(o)}
+    />
   )
 }
