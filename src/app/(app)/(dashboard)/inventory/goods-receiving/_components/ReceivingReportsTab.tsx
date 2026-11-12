@@ -380,8 +380,6 @@ export default function ReceivingReportsTab({
       ? { serviceCenterId, serialNumberIds: serials }
       : null
   }, [wantsNew, searchParams])
-  // Item 360's "Receive Stock" names the item, so its first line is filled.
-  const itemPresetId = wantsNew ? searchParams.get('item') : null
   const [autoOpened, setAutoOpened] = useState(false)
 
   useEffect(() => {
@@ -399,7 +397,7 @@ export default function ReceivingReportsTab({
     setIsCreateOpen(false)
     if (!wantsNew) return
     const next = new URLSearchParams(searchParams.toString())
-    ;['new', 'serviceCenter', 'serials', 'item'].forEach((key) => next.delete(key))
+    ;['new', 'serviceCenter', 'serials'].forEach((key) => next.delete(key))
     const qs = next.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }, [wantsNew, searchParams, router, pathname])
@@ -413,9 +411,13 @@ export default function ReceivingReportsTab({
   // still enforces the rule that matters — a branch location is only accepted
   // when the receipt is linked to a PO raised for that branch
   // (stock.service.ts) — but the picker no longer hides the branches outright.
+  // allBranches: without it a branch user (Branch Custodian) gets only their
+  // own branch's location — and a direct delivery can't go there, so the
+  // Location list came up empty. The backend still decides where a receipt
+  // may land (stock.service.ts receiveStock).
   const destinationWarehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-lookup'],
-    queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
+    queryKey: ['inventory-warehouses-lookup', 'all-branches'],
+    queryFn: () => getWarehouses({ limit: 200, status: 'active', allBranches: true }),
     staleTime: STALE.LOOKUP,
     enabled: isCreateOpen,
   })
@@ -924,7 +926,6 @@ export default function ReceivingReportsTab({
           submitLabel="Create Receiving Report"
           submittingLabel="Creating…"
           serviceCenterPreset={serviceCenterPreset}
-          itemPresetId={itemPresetId}
         />
       )}
     </div>

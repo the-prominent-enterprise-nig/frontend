@@ -50,7 +50,6 @@ import {
   useServiceCenterPreset,
   type ServiceCenterPreset,
 } from './create-rr/useServiceCenterPreset'
-import { useItemPreset } from './create-rr/useItemPreset'
 import { RrAttachmentsPanel } from './create-rr/RrAttachmentsPanel'
 import { RrDeliveryPanel, type WarehouseOption } from './create-rr/RrDeliveryPanel'
 import { RrLineRow } from './create-rr/RrLineRow'
@@ -91,9 +90,6 @@ type Props = {
   /** Opens as a Repair/Return from this service center with these units
    * ticked — the UDS list's "Receive Back". */
   serviceCenterPreset?: ServiceCenterPreset | null
-  /** Opens with this item on the first line — Item 360's "Receive Stock",
-   * e.g. a new 0-stock item getting its first units. */
-  itemPresetId?: string | null
 }
 
 /** What the form payload has no room for but the screen has to know: the item
@@ -204,7 +200,6 @@ export default function ReceiveStockModal({
   submitLabel = 'Receive Stock',
   submittingLabel = 'Receiving…',
   serviceCenterPreset = null,
-  itemPresetId = null,
 }: Props) {
   const {
     control,
@@ -329,6 +324,17 @@ export default function ReceiveStockModal({
     enabled: isOpen && repairIntake,
   })
   const locationWarehouses = repairIntake ? (allLocationsQuery.data?.data?.data ?? []) : warehouses
+
+  // A direct delivery (no PO, no reason) only offers the real warehouses (see
+  // RrDeliveryPanel), so a branch location picked earlier — before a PO was
+  // unlinked or a reason cleared — is dropped rather than refused on post.
+  const directDelivery = !linkedPo && !watched.reason
+  useEffect(() => {
+    if (!directDelivery || !watched.warehouseId) return
+    const picked = locationWarehouses.find((w) => w.id === watched.warehouseId)
+    if (picked?.branchId || picked?.branch) setValue('warehouseId', '', { shouldValidate: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [directDelivery, watched.warehouseId])
   const serviceCentersQuery = useQuery({
     queryKey: ['service-centers-holding-units'],
     queryFn: () => getServiceCenters(),
@@ -687,15 +693,6 @@ export default function ReceiveStockModal({
     serviceCenterId: watched.serviceCenterId,
     setValue,
     onUnits: (units) => units.forEach((u, i) => pickServiceCenterUnit(u, units.slice(0, i))),
-  })
-
-  useItemPreset({
-    isOpen,
-    itemId: itemPresetId,
-    onItem: (option) => {
-      setValue('lines.0.itemId', option.id, { shouldValidate: false })
-      onSelectCatalogItem(0, option)
-    },
   })
 
   if (!isOpen) return null

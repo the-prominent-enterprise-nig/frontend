@@ -127,6 +127,11 @@ export function RrDeliveryPanel({
   // receiver picks the wrong kind of destination.
   const isBranchLocation = (warehouse: WarehouseOption): boolean =>
     !!warehouse.branchId || !!warehouse.branch
+  // A direct delivery (no PO, no reason) can only go into a real warehouse —
+  // the backend refuses a branch location without a PO raised for it — so
+  // branches aren't offered until a PO or a reason is set. Stock for a branch
+  // goes through the warehouse, then a transfer.
+  const directDelivery = !linkedPo && !reason
   const locationOptions: SearchableSelectOption[] = [
     ...warehouses
       .filter((warehouse) => !isBranchLocation(warehouse))
@@ -134,7 +139,7 @@ export function RrDeliveryPanel({
         value: warehouse.id,
         label: locationLabel(warehouse, warehouse.name),
       })),
-    ...warehouses.filter(isBranchLocation).map((warehouse) => ({
+    ...(directDelivery ? [] : warehouses.filter(isBranchLocation)).map((warehouse) => ({
       value: warehouse.id,
       label: `${locationLabel(warehouse, warehouse.name)}`,
     })),
@@ -435,6 +440,13 @@ export function RrDeliveryPanel({
           <Field
             label={repairIntake ? 'Receiving branch' : 'Location'}
             required
+            // In the label's tooltip, not a footer: a two-line note pushed
+            // this field out of line with Date Received beside it.
+            tooltip={
+              directDelivery
+                ? 'No PO — warehouses only. Receive here, then transfer to the branch.'
+                : undefined
+            }
             footer={
               showErrors && errors.warehouseId ? (
                 <FieldError text={errors.warehouseId.message} />
@@ -449,7 +461,13 @@ export function RrDeliveryPanel({
                   portal
                   value={field.value ?? ''}
                   onChange={field.onChange}
-                  placeholder={repairIntake ? 'Select branch…' : 'Select location…'}
+                  placeholder={
+                    repairIntake
+                      ? 'Select branch…'
+                      : directDelivery
+                        ? 'Select warehouse…'
+                        : 'Select location…'
+                  }
                   loading={warehousesLoading}
                   loadingLabel="Loading locations…"
                   chrome={showErrors && errors.warehouseId ? INVALID_CHROME : CONTROL_CHROME}
@@ -630,7 +648,10 @@ function Field({
   children: React.ReactNode
 }): React.ReactElement {
   return (
-    <label className="flex min-w-0 flex-col gap-1.5 self-stretch">
+    // justify-end on the whole field, not just the control: when a sibling
+    // (Source, with its toggle row) makes the row taller, the label rides
+    // down with its control instead of staying at the top across a gap.
+    <label className="flex min-w-0 flex-col justify-end gap-1.5 self-stretch">
       <span className="flex items-center gap-1 text-[12px] font-medium text-[#3d3d4a]">
         {label}
         {required && <span className="text-[#b42318]"> *</span>}
@@ -641,12 +662,7 @@ function Field({
           </Tooltip>
         )}
       </span>
-      {/* flex-1 + justify-end: when a sibling field (Source, which has a
-       * toggle row above its own control) stretches this row taller than
-       * this field's own content needs, the control still bottom-aligns
-       * with everyone else's instead of floating at the top of the extra
-       * space. */}
-      <div className="flex flex-1 flex-col justify-end gap-1.5">{children}</div>
+      <div className="flex flex-col gap-1.5">{children}</div>
       {footer}
     </label>
   )

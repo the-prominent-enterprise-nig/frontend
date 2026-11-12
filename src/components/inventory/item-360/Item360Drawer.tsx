@@ -1,7 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { X, PackageCheck, ArrowLeftRight, ChevronLeft } from 'lucide-react'
+import { X, PackagePlus, ArrowLeftRight, ChevronLeft } from 'lucide-react'
+import { useMe } from '@/src/hooks/useMe'
+import { hasPermission } from '@/src/hooks/usePermission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { useItem360 } from './hooks/useItem360'
 import OverviewTab from './tabs/OverviewTab'
 import StockTab from './tabs/StockTab'
@@ -83,6 +86,8 @@ function Item360Content({
   const { item, stock, serials } = useItem360(itemId, activeTab, locations, region)
 
   const itemData = item.data?.success ? item.data.data : null
+  const { data: me } = useMe()
+  const canRequestStock = !!me && hasPermission(me, INVENTORY_PERMISSIONS.TRANSFERS_CREATE)
   const stockBalances: StockBalance[] = stock.data?.success
     ? ((stock.data.data as { data: StockBalance[] } | undefined)?.data ?? [])
     : []
@@ -171,13 +176,18 @@ function Item360Content({
         {/* Quick actions — operational, so Stock-context only */}
         {itemData && context === 'stock' && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <a
-              href={`/inventory/stock-transaction?tab=receiving&new=1&item=${encodeURIComponent(itemId)}`}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[#4a189b]"
-            >
-              <PackageCheck className="h-3.5 w-3.5" />
-              Receive Stock
-            </a>
+            {/* Stock Request: branch staff ask a warehouse or another branch
+                for an out-of-stock item. Receiving isn't offered here — it
+                starts from the delivery's paperwork in Stock Transaction. */}
+            {canRequestStock && (
+              <a
+                href={stockRequestHref(itemId, itemData.name)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[#4a189b]"
+              >
+                <PackagePlus className="h-3.5 w-3.5" />
+                Stock Request
+              </a>
+            )}
             <a
               href={`/inventory/stock-transaction?tab=transfers&new=1`}
               className="inline-flex items-center gap-1.5 rounded-lg border border-[#d3d3db] bg-white px-3 py-1.5 text-[12px] font-medium text-[#3d3d4a] hover:border-[#a3a3b2]"
@@ -322,4 +332,10 @@ export default function Item360Drawer() {
     </>,
     document.body
   )
+}
+
+/** Stock Transaction's Stock Request tab, opened with this item on the first line. */
+function stockRequestHref(itemId: string, itemLabel: string): string {
+  const params = new URLSearchParams({ tab: 'stock-request', item: itemId, itemLabel })
+  return `/inventory/stock-transaction?${params.toString()}`
 }
