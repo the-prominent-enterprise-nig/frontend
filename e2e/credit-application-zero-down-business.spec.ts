@@ -142,7 +142,7 @@ test.describe('Credit application — ₱0 down for a business customer (Docket 
     await openForFan(page, applicant.id)
 
     await expect(zeroAllowedHint(page)).toBeVisible({ timeout: 15_000 })
-    await expect(zeroAllowedHint(page)).toHaveText(/business customer/)
+    await expect(zeroAllowedHint(page)).toHaveText(/^Business customer — down payment can be 0.$/)
     await expect(downPayment(page)).toHaveAttribute('placeholder', 'Any amount, including 0')
 
     await downPayment(page).fill('0')
@@ -209,7 +209,7 @@ test.describe('Credit application — ₱0 down for a business customer (Docket 
     const id = await openEditFor(page, applicant.id)
 
     await expect(zeroAllowedHint(page)).toBeVisible({ timeout: 15_000 })
-    await expect(zeroAllowedHint(page)).toHaveText(/business customer/)
+    await expect(zeroAllowedHint(page)).toHaveText(/^Business customer — down payment can be 0.$/)
     await downPayment(page).fill('0')
     await page.waitForTimeout(1_000)
     await expect(refusedZero(page)).toHaveCount(0)
