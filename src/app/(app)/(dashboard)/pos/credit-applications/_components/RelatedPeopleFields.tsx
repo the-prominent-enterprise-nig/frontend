@@ -17,7 +17,7 @@ import type {
 } from '@/src/schema/credit/applications'
 
 const fieldClass =
-  'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
+  'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-ink-muted'
 
 /**
  * The four people the mockup's RELATED PEOPLE block names. Co-maker joined
@@ -111,6 +111,10 @@ type Props = {
    *  co-maker row so a branch can see who is already on file — without them
    *  the only way to find out was to type a name and hope it matched. */
   coMakers?: CreditApplicationCoMakerLite[]
+  /** A co-maker picked from those on file is part of the customer's record,
+   *  which only the Business Owner edits: its boxes are read-only. A new
+   *  co-maker typed into the row is a create and stays open. */
+  lockPickedCoMaker?: boolean
 }
 
 /**
@@ -140,7 +144,13 @@ type Props = {
  * and one nobody can reach is not worth the row. A co-maker additionally
  * needs a relationship — the other three roles already are one.
  */
-export function RelatedPeopleFields({ control, setValue, errors, coMakers = [] }: Props) {
+export function RelatedPeopleFields({
+  control,
+  setValue,
+  errors,
+  coMakers = [],
+  lockPickedCoMaker = false,
+}: Props) {
   const { fields, append, remove } = useFieldArray({
     control,
     name: 'relatedPeople',
@@ -176,6 +186,7 @@ export function RelatedPeopleFields({ control, setValue, errors, coMakers = [] }
           setValue={setValue}
           coMakers={coMakers}
           coMakerPicks={coMakerPicks}
+          lockPickedCoMaker={lockPickedCoMaker}
           index={index}
           removable={fields.length > 1}
           onRemove={() => remove(index)}
@@ -203,6 +214,7 @@ function RelatedPersonRow({
   setValue,
   coMakers,
   coMakerPicks,
+  lockPickedCoMaker,
   index,
   removable,
   onRemove,
@@ -212,6 +224,7 @@ function RelatedPersonRow({
   setValue: UseFormSetValue<CreateCreditApplicationFormValues>
   coMakers: CreditApplicationCoMakerLite[]
   coMakerPicks: { rowIndex: number; id: string }[]
+  lockPickedCoMaker: boolean
   index: number
   removable: boolean
   onRemove: () => void
@@ -232,6 +245,7 @@ function RelatedPersonRow({
           (cm) => !coMakerPicks.some((pick) => pick.id === cm.id && pick.rowIndex !== index)
         )
         const pickedCoMakerId = coMakerPicks.find((pick) => pick.rowIndex === index)?.id ?? ''
+        const locked = lockPickedCoMaker && !!pickedCoMakerId
 
         return (
           <div className="rounded-lg border border-zinc-100 bg-zinc-50/50 p-3">
@@ -337,7 +351,7 @@ function RelatedPersonRow({
                 )}
               </div>
 
-              <div className="min-w-0">
+              <fieldset disabled={locked} className="min-w-0">
                 <label className="mb-1 block text-xs font-medium text-zinc-600">
                   Mobile <span className="text-red-500">*</span>
                 </label>
@@ -351,9 +365,9 @@ function RelatedPersonRow({
                 {rowError?.mobileNumber && (
                   <p className="mt-1 text-xs text-red-600">{rowError.mobileNumber.message}</p>
                 )}
-              </div>
+              </fieldset>
 
-              <div className="min-w-0">
+              <fieldset disabled={locked} className="min-w-0">
                 <label className="mb-1 block text-xs font-medium text-zinc-600">First name</label>
                 <Controller
                   name={`relatedPeople.${index}.firstName` as const}
@@ -365,9 +379,9 @@ function RelatedPersonRow({
                 {rowError?.firstName && (
                   <p className="mt-1 text-xs text-red-600">{rowError.firstName.message}</p>
                 )}
-              </div>
+              </fieldset>
 
-              <div className="min-w-0">
+              <fieldset disabled={locked} className="min-w-0">
                 <label className="mb-1 block text-xs font-medium text-zinc-600">
                   Last name <span className="text-zinc-400">(optional)</span>
                 </label>
@@ -378,13 +392,13 @@ function RelatedPersonRow({
                     <input {...f} value={f.value ?? ''} maxLength={150} className={fieldClass} />
                   )}
                 />
-              </div>
+              </fieldset>
 
               {/* Co-maker only. The other three roles ARE the relationship —
                   asking how a father relates to the applicant is asking what
                   the row already answered. */}
               {isCoMaker && (
-                <div className="min-w-0">
+                <fieldset disabled={locked} className="min-w-0">
                   <label className="mb-1 block text-xs font-medium text-zinc-600">
                     Relationship to applicant <span className="text-red-500">*</span>
                   </label>
@@ -404,7 +418,7 @@ function RelatedPersonRow({
                   {rowError?.relationship && (
                     <p className="mt-1 text-xs text-red-600">{rowError.relationship.message}</p>
                   )}
-                </div>
+                </fieldset>
               )}
             </div>
           </div>
