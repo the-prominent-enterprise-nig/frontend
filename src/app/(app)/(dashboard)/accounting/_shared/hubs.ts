@@ -176,6 +176,9 @@ export const CASH_BANKING_HUB: Hub = {
     },
     {
       // Route and permissions keep the old cash-in-transit name (Scenario 61).
+      // Counted on a role's own rows, so the Cashier and the Branch Manager,
+      // whose read comes with POS's Collections feature, don't get the screen
+      // here as well as in POS (Ticket #76).
       id: 'undeposited-funds',
       label: 'Collected Funds History',
       href: '/accounting/cash-in-transit',
