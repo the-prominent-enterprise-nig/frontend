@@ -226,9 +226,13 @@ function toggleLineSelection(
 // A loaded (aging-sheet) account is collected on its own. The bulk-payment
 // endpoint only settles installment dues — it walks a plan's schedule, and an
 // aging account has none — so an aging account cannot share one collection with
-// another account or with a POS plan's dues. Ticking one replaces whatever else
-// was ticked, and ticking a POS due drops any aging account, so the panel never
-// holds a selection the backend would refuse.
+// another account or with a POS plan's dues. Ticking one of its months drops
+// whatever was ticked on any other plan (and ticking a POS due drops any aging
+// account), so the panel never holds a selection the backend would refuse.
+//
+// Within the account its months tick in order like any plan's — ticking month 3
+// ticks months 1–3 still to pay — and they are collected as one payment against
+// the account's one invoice (see onSubmit).
 function selectionAfterToggle(
   schedules: InstallmentSchedule[],
   plan: InstallmentSchedule,
@@ -236,7 +240,9 @@ function selectionAfterToggle(
   selected: Set<string>
 ): Set<string> {
   if (line.isAgingAccount) {
-    return selected.has(line.id) ? new Set() : new Set([line.id])
+    const planLineIds = new Set(plan.lines.map((l) => l.id))
+    const thisPlanOnly = new Set([...selected].filter((id) => planLineIds.has(id)))
+    return toggleLineSelection(plan.lines, line, thisPlanOnly)
   }
   const agingIds = new Set(
     schedules.filter((s) => s.isAgingAccount).flatMap((s) => s.lines.map((l) => l.id))
@@ -312,10 +318,11 @@ function dueSuggestions(
   return {
     isLate,
     suggestedRebate: ppd,
-    // A loaded (aging-sheet) account carries its penalty beside the balance,
-    // never inside it, and the backend refuses a rebate or penalty on an
-    // invoice with no plan behind it — so none is ever offered.
-    penaltyEligible: !line.isAgingAccount && daysLate >= PENALTY_GRACE_DAYS,
+    // A loaded (aging-sheet) account's months earn a penalty like any plan's:
+    // the backend judges it against the same months (ARInvoicesService
+    // loadedAccountOf). The sheet's own penalty is a separate figure, shown
+    // beside the dues for reference and never part of this one.
+    penaltyEligible: daysLate >= PENALTY_GRACE_DAYS,
   }
 }
 
@@ -443,7 +450,7 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
   const debouncedQuery = useDebounced(query, 300)
   const customersQuery = useCollectionsCustomers(branchId || undefined, debouncedQuery || undefined)
   // Asks for the customer's loaded (aging-sheet) accounts too — each comes back
-  // as a one-due plan. Without them a customer from the aging upload showed
+  // as a plan with a due per month. Without them a customer from the aging upload showed
   // "No installment plans" here, though the ledger and CRM both had them.
   const schedulesQuery = useCustomerInstallmentSchedules(customer?.id, {
     withAgingAccounts: true,
@@ -749,59 +756,27 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                                             )
                                           }
                                           title={
-                                            line.isAgingAccount
-                                              ? 'An aging account is collected on its own — ticking it clears any other selection.'
-                                              : !isNextDue
-                                                ? 'Selecting this also selects every earlier unpaid due — dues are settled in order.'
+                                            !isNextDue
+                                              ? 'Selecting this also selects every earlier unpaid due — dues are settled in order.'
+                                              : line.isAgingAccount
+                                                ? 'An aging account is collected on its own — ticking it clears any other selection.'
                                                 : undefined
                                           }
                                           className="h-4 w-4 shrink-0 rounded border-zinc-300 text-prominent-purple-600 focus:ring-prominent-purple-500"
                                         />
                                       )}
                                       <div className="min-w-0">
-                                        {line.isAgingAccount && s.agingAccount ? (
-                                          // The sheet keeps no per-month schedule, so this is
-                                          // the whole balance, dated at its next due date.
-                                          <>
-                                            <div
-                                              className="text-[13px] text-zinc-800"
-                                              data-testid="aging-account-balance"
-                                            >
-                                              Outstanding {fmtMoney(s.agingAccount.outstanding)} ·
-                                              next due {fmtDate(line.dueDate)}
-                                            </div>
-                                            <div className="flex flex-wrap items-center gap-2 text-[12px] text-zinc-500">
-                                              <StatusBadge status={dueStatus(line)} />
-                                              <span>
-                                                {s.agingAccount.dueNow > 0
-                                                  ? `${fmtMoney(s.agingAccount.dueNow)} due now`
-                                                  : 'Nothing due yet'}
-                                                {s.agingAccount.collected > 0 &&
-                                                  ` · ${fmtMoney(s.agingAccount.collected)} collected here`}
-                                              </span>
-                                            </div>
-                                            {s.agingAccount.penalty > 0 && (
-                                              <div className="mt-0.5 text-[11px] text-zinc-400">
-                                                Sheet penalty {fmtMoney(s.agingAccount.penalty)} —
-                                                for reference, not added to the balance.
-                                              </div>
-                                            )}
-                                          </>
-                                        ) : (
-                                          <>
-                                            <div className="text-[13px] text-zinc-800">
-                                              Payment {line.lineNumber} of {s.lines.length} · due{' '}
-                                              {fmtDate(line.dueDate)}
-                                            </div>
-                                            <div className="flex items-center gap-2 text-[12px] text-zinc-500">
-                                              <StatusBadge status={dueStatus(line)} />
-                                              <span>
-                                                {fmtMoney(Number(line.paidAmount))} of{' '}
-                                                {fmtMoney(Number(line.amount))} paid
-                                              </span>
-                                            </div>
-                                          </>
-                                        )}
+                                        <div className="text-[13px] text-zinc-800">
+                                          Payment {line.lineNumber} of {s.lines.length} · due{' '}
+                                          {fmtDate(line.dueDate)}
+                                        </div>
+                                        <div className="flex items-center gap-2 text-[12px] text-zinc-500">
+                                          <StatusBadge status={dueStatus(line)} />
+                                          <span>
+                                            {fmtMoney(Number(line.paidAmount))} of{' '}
+                                            {fmtMoney(Number(line.amount))} paid
+                                          </span>
+                                        </div>
                                       </div>
                                     </div>
                                     {isFullyPaid && (
@@ -819,6 +794,20 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
                             </ul>
                           )
                         })()}
+                      {/* The sheet carries a loaded account's late penalty beside the
+                          balance, never inside the dues above — so it is shown for
+                          reference and never added. */}
+                      {!collapsedPlanIds.has(s.id) &&
+                        s.agingAccount &&
+                        s.agingAccount.penalty > 0 && (
+                          <p
+                            data-testid="aging-account-penalty"
+                            className="border-t border-zinc-100 px-5 py-2 text-[11px] text-zinc-400"
+                          >
+                            Sheet penalty {fmtMoney(s.agingAccount.penalty)} — for reference, not
+                            added to the dues.
+                          </p>
+                        )}
                     </div>
                   ))}
                 </div>
@@ -1274,14 +1263,22 @@ function PaymentPanel({
     setSubmitting(true)
     setError(null)
 
-    if (single) {
-      const res = await ARInvoices.recordPayment(single.line.arInvoice.id, {
-        amount: bulkAllocated[0]?.amount ?? typedAmount,
+    // A loaded account's months share its one invoice and have no schedule line
+    // to settle, which is all the bulk endpoint does — so ticked months go in as
+    // ONE payment carrying what the bulk would have: the cash, the rebates and
+    // the penalties the months earned. The server walks the same months to
+    // judge them (ARInvoicesService loadedAccountOf).
+    const asOnePayment = liveLines.length > 0 && liveLines.every((l) => l.line.isAgingAccount)
+    const sumOf = (pick: (a: (typeof bulkAllocated)[number]) => number) =>
+      Math.round(bulkAllocated.reduce((n, a) => n + pick(a), 0) * 100) / 100
+    if (single || asOnePayment) {
+      const res = await ARInvoices.recordPayment(liveLines[0].line.arInvoice.id, {
+        amount: bulkAllocated.length > 0 ? sumOf((a) => a.amount) : typedAmount,
         paymentDate: receiptDate,
         assessedAsOf,
-        withholdingAmount: Number(form.withholdingAmount || 0),
-        rebateAmount: bulkAllocated[0]?.rebateAmount ?? 0,
-        penaltyAmount: bulkAllocated[0]?.penaltyAmount ?? 0,
+        withholdingAmount: typedWithholding,
+        rebateAmount: sumOf((a) => a.rebateAmount),
+        penaltyAmount: sumOf((a) => a.penaltyAmount),
         method: firstPayment.method,
         paymentMethodConfigId: firstPayment.option?.configId,
         paymentMethodOptionId: firstPayment.optionId,
@@ -1522,9 +1519,7 @@ function PaymentPanel({
                   return (
                     <tr key={line.id}>
                       <td className="px-3 py-2 text-zinc-700">
-                        {line.isAgingAccount
-                          ? `Balance · due ${fmtDate(line.dueDate)}`
-                          : `Payment ${line.lineNumber} · due ${fmtDate(line.dueDate)}`}
+                        {`Payment ${line.lineNumber} · due ${fmtDate(line.dueDate)}`}
                       </td>
                       <td className="px-3 py-2">
                         {isLate ? (
@@ -1753,7 +1748,7 @@ function PaymentPanel({
                 ? ''
                 : ' across the selected dues'} by {fmtMoney(totalApplied - outstandingTotal)}.{' '}
               {lines.every((l) => l.line.isAgingAccount)
-                ? 'An aging account has no later due to carry it, so check the amount before collecting.'
+                ? 'The extra will go toward this account’s next months, oldest first — or be recorded as a flagged overpayment if the whole balance is already covered. Tick those months to collect them together instead.'
                 : 'The extra will automatically apply toward the next unpaid due on this schedule — or be recorded as a flagged overpayment if there isn’t one.'}
             </div>
           )}
