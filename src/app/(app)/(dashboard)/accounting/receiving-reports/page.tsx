@@ -1,7 +1,7 @@
 import { Suspense } from 'react'
 import { getSessionOrNull } from '@/src/libs/auth/actions'
 import { requirePermission } from '@/src/libs/guards/require-permission'
-import { ACCOUNTING_PERMISSIONS } from '@/src/libs/guards/accounting-permissions'
+import { RECEIVING_REPORT_ACCESS } from '@/src/libs/guards/accounting-permissions'
 import { HubTabs } from '../_shared/HubTabs'
 import ReceivingReportsTable from './_components/ReceivingReportsTable'
 import ManualRrPanel from './_components/ManualRrPanel'
@@ -9,7 +9,7 @@ import ManualRrPanel from './_components/ManualRrPanel'
 export const metadata = { title: 'Receiving Reports' }
 export default async function Page() {
   const session = await getSessionOrNull()
-  const authedSession = requirePermission(session, ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ)
+  const authedSession = requirePermission(session, RECEIVING_REPORT_ACCESS)
   return (
     <div className="min-h-screen bg-gray-50">
       <Suspense fallback={null}>
