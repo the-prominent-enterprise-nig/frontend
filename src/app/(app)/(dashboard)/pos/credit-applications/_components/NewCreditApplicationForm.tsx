@@ -14,6 +14,9 @@ import {
   type CreateCreditApplicationFormValues,
 } from '@/src/schema/credit/applications'
 import { posCustomersApi } from '@/src/libs/api/pos-customers'
+import { useMe } from '@/src/hooks/useMe'
+import { hasPermission } from '@/src/hooks/usePermission'
+import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { useCreateCreditApplication } from '../_hooks/useCreateCreditApplication'
 import { ApplicantSearchCombobox } from './ApplicantSearchCombobox'
 import { ApplicantContactFields } from './ApplicantContactFields'
@@ -170,6 +173,11 @@ export default function NewCreditApplicationForm({
     enabled: !!applicantCustomerId,
   })
   const coMakers = applicantQuery.data?.data?.coMakers ?? []
+  // Editing a customer's record is the Business Owner's alone
+  // (CRM_OWNER_ONLY_EDITS). Everyone else sees the saved profile and saved
+  // co-makers read-only here, and can still add a new co-maker.
+  const { data: me } = useMe()
+  const canEditCustomer = !!me && hasPermission(me, POS_PERMISSIONS.CUSTOMERS_UPDATE)
   const applicant = applicantQuery.data?.data
 
   // Skips the first run so restoring a stashed draft (or arriving with a
@@ -276,7 +284,7 @@ export default function NewCreditApplicationForm({
       // Applicant contact: only persisted if actually changed, straight to
       // the customer's real record — independent of whether the credit
       // application below ends up saving successfully.
-      if (applicant) {
+      if (applicant && canEditCustomer) {
         // Scenario 64 item 27 — the whole CUSTOMER PROFILE block is diffed,
         // not just phone and email. Each entry is [what the form holds, what
         // the customer record holds]; only a genuine change is sent, so an
@@ -395,6 +403,12 @@ export default function NewCreditApplicationForm({
           // Same person, new number. Without this the match above would
           // silently discard a correction — the whole point of retyping a
           // co-maker whose number has changed.
+          if (newContact && newContact !== existing.contactNumber && !canEditCustomer) {
+            setServerError(
+              `${existing.name} is already on file with a different mobile number. Pick them from the list, or ask the Business Owner to change the number.`
+            )
+            return
+          }
           if (newContact && newContact !== existing.contactNumber) {
             const updateRes = await posCustomersApi.updateCoMaker(
               data.applicantCustomerId,
@@ -447,7 +461,7 @@ export default function NewCreditApplicationForm({
           (joinedName !== selected.name ||
             (coMakerRow.mobileNumber || '') !== selected.contactNumber ||
             !sameCoMakerRelation(selected.relationship, coMakerRow.relationship ?? ''))
-        if (changed) {
+        if (changed && canEditCustomer) {
           const updateRes = await posCustomersApi.updateCoMaker(
             data.applicantCustomerId,
             resolvedCoMakerId,
@@ -586,8 +600,10 @@ export default function NewCreditApplicationForm({
                 {/* </button> */}
                 {/* {profileOpen && ( */}
                 <div className="border-t border-zinc-200 p-4">
-                  <p className="mb-3 text-xs text-zinc-500">
-                    Changes save back to the customer&apos;s record, not to this application.
+                  <p className="mb-3 text-xs text-ink-muted">
+                    {canEditCustomer
+                      ? 'Changes save back to the customer\u2019s record, not to this application.'
+                      : 'From the customer\u2019s record. Only the Business Owner can change it; the address is kept on this application.'}
                   </p>
                   <ApplicantContactFields
                     control={control}
@@ -596,6 +612,7 @@ export default function NewCreditApplicationForm({
                     customerType={watch('applicantCustomerType')}
                     homeAddress={applicant?.homeAddress}
                     homeBarangayCode={applicant?.homeBarangayCode}
+                    readOnly={!canEditCustomer}
                   />
                 </div>
                 {/* )} */}
@@ -607,6 +624,7 @@ export default function NewCreditApplicationForm({
               setValue={setValue}
               errors={errors}
               coMakers={coMakers}
+              lockPickedCoMaker={!canEditCustomer}
             />
 
             <CharacterReferenceFields control={control} errors={errors} />

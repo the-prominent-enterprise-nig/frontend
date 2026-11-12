@@ -10,7 +10,7 @@ import { CUSTOMER_TYPE_LABELS } from '@/src/schema/crm/types'
 import type { CreateCreditApplicationFormValues } from '@/src/schema/credit/applications'
 
 const fieldClass =
-  'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
+  'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:cursor-not-allowed disabled:bg-zinc-50 disabled:text-ink-muted'
 const labelClass = 'mb-1 block text-xs font-medium text-zinc-600'
 
 const CIVIL_STATUS_SELECT = CIVIL_STATUS_OPTIONS.map((c) => ({ value: c, label: c }))
@@ -34,6 +34,9 @@ type Props = {
    *  as a one-tick fill for the address below; not captured separately here. */
   homeAddress?: string | null
   homeBarangayCode?: string | null
+  /** Read-only profile for anyone who can't edit a customer (Business Owner
+   *  only). The address stays open: it is kept on the application alone. */
+  readOnly?: boolean
 }
 
 /**
@@ -65,6 +68,7 @@ export function ApplicantContactFields({
   customerType,
   homeAddress,
   homeBarangayCode,
+  readOnly = false,
 }: Props) {
   // PhilippineAddressPicker reads its initial values once, at mount — so
   // filling the fields underneath it is not enough to change what it shows.
@@ -91,7 +95,10 @@ export function ApplicantContactFields({
        * Grouped the way the counter asks them: who they are, how to reach
        * them, where they are online, how they earn, where they live.
        */}
-      <div className="grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-12">
+      <fieldset
+        disabled={readOnly}
+        className="grid min-w-0 grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-12"
+      >
         <div className="col-span-1 min-w-0 sm:col-span-5">
           <label className={labelClass}>Last name</label>
           <Controller
@@ -269,7 +276,7 @@ export function ApplicantContactFields({
             )}
           />
         </div>
-      </div>
+      </fieldset>
 
       {/* Its own panel: the picker brings four dropdowns, a street line and a
           status message of its own, so inline it read as a second form
