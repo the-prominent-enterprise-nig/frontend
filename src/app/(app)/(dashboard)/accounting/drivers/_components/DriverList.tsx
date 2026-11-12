@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query'
-import { Contact, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Contact, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { RowActionsMenu, type RowMenuItem } from '@/src/components/ui/RowActionsMenu'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { showToast } from '@/src/components/ui/toast'
@@ -115,6 +115,15 @@ export function DriverList({ session }: { session: SessionUser }) {
   return (
     <div className="w-full min-h-full bg-zinc-50 p-[14px] min-[1080px]:px-5 min-[1080px]:py-[22px]">
       <div className="w-full space-y-6">
+        {/* No tab any more (Docket #55) — the way back is the Recurring list. */}
+        <Link
+          href="/accounting/expenses/recurring"
+          className="inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-800"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to recurring expenses
+        </Link>
+
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-[21px] font-semibold tracking-[-0.015em] text-prominent-purple-900">

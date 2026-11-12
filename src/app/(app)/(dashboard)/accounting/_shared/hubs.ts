@@ -27,6 +27,14 @@ export type HubTab = {
 export type Hub = {
   entryHref: string
   tabs: ReadonlyArray<HubTab>
+  /**
+   * Routes that belong to the hub but have no tab of their own — reached from a
+   * link inside it (Drivers and Vehicles, from the Recurring list's Fuel and
+   * Repair entries). They are not in the tab strip or the entry redirect; the
+   * sidebar item stays lit on them and, for a role that holds only their
+   * permission, still shows.
+   */
+  offTabs?: ReadonlyArray<HubTab>
 }
 
 export type HubTabId =
@@ -40,9 +48,6 @@ export type HubTabId =
   | 'recurring-expenses'
   | 'special-accounts'
   | 'employee-cash-loans'
-  | 'drivers'
-  | 'vehicles'
-  | 'electricity'
   | 'bank-accounts'
   | 'undeposited-funds'
   | 'inter-account-transfer'
@@ -114,6 +119,9 @@ export const EXPENSES_HUB: Hub = {
     {
       // The client's list of recurring expenses. Sits under /accounting/expenses —
       // the strip lights the most specific tab, so Expenses does not stay lit.
+      // Clicking an entry shows the amounts recorded under it (Docket #55), which
+      // is where Electricity, Fuel and Repair amounts are read — there are no
+      // Drivers, Vehicles or Electricity tabs beside it.
       id: 'recurring-expenses',
       label: 'Recurring',
       href: '/accounting/expenses/recurring',
@@ -133,6 +141,11 @@ export const EXPENSES_HUB: Hub = {
       href: '/accounting/employee-cash-loans',
       permissions: [ACCOUNTING_PERMISSIONS.EMPLOYEE_CASH_LOAN_READ],
     },
+  ],
+  // No tabs since Docket #55 — the fleet roster is still where drivers and plate
+  // numbers are added and edited, so the pages stay and the Recurring list's Fuel
+  // and Repair entries link to them.
+  offTabs: [
     {
       // The people on the fleet roster — name, contact number, branch. Not tied
       // to a vehicle. Moved over from Inventory's Master Data. Accounting owns
@@ -145,22 +158,12 @@ export const EXPENSES_HUB: Hub = {
     },
     {
       // The roster by plate, and each vehicle's recorded Fuel / Repair expenses
-      // (read-only). Either permission shows it: an accountant reads vehicles
+      // (read-only). Either permission opens it: an accountant reads vehicles
       // here through expense:read without holding transfers:read.
       id: 'vehicles',
       label: 'Vehicles',
       href: '/accounting/vehicles',
       permissions: [...DRIVER_ACCESS.READ, ACCOUNTING_PERMISSIONS.EXPENSE_READ],
-    },
-    {
-      // The payments recorded on Electricity / Light Expense (read-only), the way
-      // Vehicles reads back what was spent on each plate. It reads existing
-      // expenses, so the Expense form asks for nothing extra. Kept under the
-      // expense permission.
-      id: 'electricity',
-      label: 'Electricity',
-      href: '/accounting/electricity',
-      permissions: [ACCOUNTING_PERMISSIONS.EXPENSE_READ],
     },
   ],
 }
@@ -251,6 +254,15 @@ export type HubKey = keyof typeof HUBS
 // suppliers…) never adds a tab (Scenario 74).
 export function visibleHubTabs(hub: Hub, session: SessionUser) {
   return hub.tabs.filter(
+    (tab) => tab.permissions.length === 0 || canNavigateAny(session, tab.permissions)
+  )
+}
+
+/** The hub's off-tab routes the caller can open — the entry route's fallback when
+ * they can open none of the tabs, so a role holding only a driver permission still
+ * lands somewhere. */
+export function visibleHubOffTabs(hub: Hub, session: SessionUser) {
+  return (hub.offTabs ?? []).filter(
     (tab) => tab.permissions.length === 0 || canNavigateAny(session, tab.permissions)
   )
 }
