@@ -8,10 +8,12 @@ import { AGING_TEMPLATE_HEADERS } from '../src/schema/crm/aging-load'
 // schedule lines, and a loaded account has no schedule. So a collector searching
 // for an aging customer found "No customers with an outstanding due".
 //
-// Now Collections lists them and collects them like any plan — one "due" holding
-// the whole balance, no rebate and no late penalty (the sheet keeps its penalty
-// beside the balance) — and the customer ledger is not branch-scoped, so a branch
-// user reads every transaction a customer has whichever branch it came from.
+// Now Collections lists them and collects them like any plan — a due per month of
+// the term, laid out from the contract the way a system-made plan's schedule is
+// (Docket NIG #50), with the late penalty and rebate a system-made plan's months
+// earn (the sheet's own penalty stays beside the balance, for reference) — and the
+// customer ledger is not branch-scoped, so a branch user reads every transaction a
+// customer has whichever branch it came from.
 //
 // The fixture is loaded through the real upload page (see ar-aging-upload.spec.ts)
 // so the accounts are exactly what the client's own upload makes.
@@ -172,8 +174,14 @@ test.afterAll(async ({ playwright }, testInfo) => {
   await request.dispose()
 })
 
-const agingRow = (page: Page) =>
-  page.locator('li').filter({ has: page.getByTestId('aging-account-balance') })
+// One loaded account's plan: a due per month of its term, like a system-made plan.
+const agingPlan = (page: Page, siNo: string) =>
+  page
+    .locator('div.rounded-xl')
+    .filter({ has: page.getByTestId('aging-account-badge') })
+    .filter({ hasText: siNo })
+// A month already paid shows this pill instead of a tick box.
+const PAID_MONTH = /already fully paid/
 
 test('a customer from the aging upload is listed in Collections and can be collected', async ({
   page,
@@ -188,52 +196,79 @@ test('a customer from the aging upload is listed in Collections and can be colle
   await expect(row).toContainText('₱3,000.00 due now')
   await row.click()
 
-  // Each account is its own plan, flagged as an aging account, holding its whole
-  // balance — oldest due first.
+  // Each account is its own plan, flagged as an aging account, with a due for
+  // every month of its term — oldest first.
   await expect(page.getByTestId('aging-account-badge')).toHaveCount(2, { timeout: 15_000 })
-  await expect(page.getByText(`${SI_PREFIX}-1`)).toBeVisible()
-  await expect(agingRow(page).nth(0)).toContainText('Outstanding ₱8,000.00')
-  await expect(agingRow(page).nth(1)).toContainText('Outstanding ₱5,000.00')
+  const plan1 = agingPlan(page, `${SI_PREFIX}-1`)
+  const plan2 = agingPlan(page, `${SI_PREFIX}-2`)
+  await expect(plan1.getByRole('listitem')).toHaveCount(12)
+  await expect(plan2.getByRole('listitem')).toHaveCount(12)
+  await expect(plan1.getByRole('listitem').nth(0)).toContainText('Payment 1 of 12')
+  await expect(plan1.getByRole('listitem').nth(0)).toContainText('₱1,000.00 of ₱1,000.00 paid')
+  // ₱12,000 billed less the ₱8,000 owed: the first four months are paid (oldest
+  // first) and the other eight are still to pay. The second account owes ₱5,000,
+  // so seven are paid and five are to pay.
+  await expect(plan1.getByTitle(PAID_MONTH)).toHaveCount(4)
+  await expect(plan1.getByRole('checkbox')).toHaveCount(8)
+  await expect(plan1.getByRole('listitem').nth(4)).toContainText('₱0.00 of ₱1,000.00 paid')
+  await expect(plan2.getByTitle(PAID_MONTH)).toHaveCount(7)
+  await expect(plan2.getByRole('checkbox')).toHaveCount(5)
 
-  await agingRow(page).nth(0).getByRole('checkbox').check()
+  // The next month to pay is the first with a tick box — month 5.
+  await plan1.getByRole('checkbox').first().check()
   await expect(page.getByRole('heading', { name: 'Collect Payment' })).toBeVisible()
   // The branch's payment methods load a moment after the panel opens.
   await expect(
     page.getByTestId('collection-method-0').getByRole('button', { name: 'Debit/Credit Card' })
   ).toBeVisible({ timeout: 15_000 })
 
-  // No rebate and no late penalty is ever offered: the sheet carries its penalty
-  // beside the balance, and the backend refuses either on an account with no plan.
+  // Month 5 (Jan 2025) is long past, so it earns the late penalty a system-made
+  // plan's month would — 5% of the part being paid, so ₱50 on ₱1,000 — and a
+  // rebate is on offer too (ticked off by default on a late month).
   const previewRow = page.locator('table tbody tr').first()
-  await expect(previewRow).toContainText('Balance · due')
-  await expect(previewRow.getByRole('checkbox')).toHaveCount(0)
-  await expect(page.getByText(/charged 5% on the part being paid/)).toHaveCount(0)
+  await expect(previewRow).toContainText('Payment 5 · due')
+  await expect(previewRow.getByRole('checkbox')).toHaveCount(2)
+  await expect(previewRow).toContainText('+₱50.00')
+  await expect(page.getByText(/charged 5% on the part being paid/)).toBeVisible()
+  await expect(page.getByText('Total with penalty')).toBeVisible()
 
-  await fillMoney(page.getByTestId('collection-amount-0'), 1000)
+  // What is handed over is the month plus its penalty.
+  await fillMoney(page.getByTestId('collection-amount-0'), 1050)
   await page.getByRole('button', { name: 'Collect payment' }).click()
   await expect(page.getByRole('heading', { name: 'Collect Payment' })).not.toBeVisible({
     timeout: 20_000,
   })
 
-  // The balance fell by what was collected, and the screen says so.
-  await expect(agingRow(page).nth(0)).toContainText('Outstanding ₱7,000.00', {
-    timeout: 15_000,
-  })
-  await expect(agingRow(page).nth(0)).toContainText('₱1,000.00 collected here')
-  await expect(agingRow(page).nth(1)).toContainText('Outstanding ₱5,000.00')
+  // The month fills: the collection pays month 5, the oldest still owing, and the
+  // second account is untouched.
+  await expect(plan1.getByTitle(PAID_MONTH)).toHaveCount(5, { timeout: 15_000 })
+  await expect(plan1.getByRole('checkbox')).toHaveCount(7)
+  await expect(plan2.getByTitle(PAID_MONTH)).toHaveCount(7)
 
-  // The customer ledger tells the same story — the payment as a credit, the
-  // balance down to what Collections shows.
+  // The customer ledger tells the same story, the way a system-made account's
+  // does: the late penalty as a charge row of its own, then the payment for the
+  // whole cash handed over — ₱1,000 and its ₱50 — and the balance down to what
+  // Collections shows (the penalty is income, so it never moves the balance).
   const ledger = await (
     await page.request.get(`/api/crm/customers/${await fixtureCustomerId(page)}/ledger`)
   ).json()
   expect(ledger.totals.outstanding).toBe(12_000)
+  type Row = { credit: number; debit: number; description: string; displayOnly?: boolean }
+  const rows: Row[] = ledger.rows
   expect(
-    ledger.rows.some((r: { credit: number }) => Math.round(r.credit * 100) === 100_000)
+    rows.some(
+      (r) =>
+        r.description === 'Late Penalty' && !r.displayOnly && Math.round(r.debit * 100) === 5_000
+    )
+  ).toBeTruthy()
+  expect(
+    rows.some(
+      (r) => r.description.startsWith('Payment for MI') && Math.round(r.credit * 100) === 105_000
+    )
   ).toBeTruthy()
 })
 
-test('an aging account is collected on its own: ticking another one replaces the first', async ({
+test("an aging account is collected on its own: ticking another account's month replaces the first's", async ({
   page,
 }) => {
   // The bulk-payment endpoint only settles installment dues, so two aging accounts
@@ -242,8 +277,9 @@ test('an aging account is collected on its own: ticking another one replaces the
   await expect(page.getByTestId('aging-account-badge')).toHaveCount(2, { timeout: 15_000 })
   await expect(page.getByTestId('aging-collected-alone-note')).toBeVisible()
 
-  const first = agingRow(page).nth(0).getByRole('checkbox')
-  const second = agingRow(page).nth(1).getByRole('checkbox')
+  // The next month to pay of each account.
+  const first = agingPlan(page, `${SI_PREFIX}-1`).getByRole('checkbox').first()
+  const second = agingPlan(page, `${SI_PREFIX}-2`).getByRole('checkbox').first()
   await first.check()
   await expect(page.getByRole('heading', { name: 'Collect Payment' })).toBeVisible()
   await second.check()
@@ -255,6 +291,33 @@ test('an aging account is collected on its own: ticking another one replaces the
 
   // Unticking it empties the panel.
   await second.uncheck()
+  await expect(page.getByText('No dues selected')).toBeVisible()
+})
+
+test('ticking a later month also ticks every earlier unpaid month, as one payment', async ({
+  page,
+}) => {
+  await openCustomerOnCollections(page, CUSTOMER)
+  const boxes = agingPlan(page, `${SI_PREFIX}-1`).getByRole('checkbox')
+  // The first test paid month 5, so months 6–12 are still to pay.
+  await expect(boxes).toHaveCount(7, { timeout: 15_000 })
+
+  await boxes.nth(2).check()
+  await expect(boxes.nth(0)).toBeChecked()
+  await expect(boxes.nth(1)).toBeChecked()
+  await expect(boxes.nth(3)).not.toBeChecked()
+  // Months 6–8 are itemized like any plan's selected dues, each with its own
+  // penalty and rebate, and go in as ONE payment against the account — the bulk
+  // endpoint has no schedule line to settle on a loaded account.
+  await expect(page.getByRole('heading', { name: 'Pay Selected Dues' })).toBeVisible()
+  await expect(page.locator('table tbody tr')).toHaveCount(3)
+
+  // Unticking a month drops it and every later one, never an earlier one.
+  await boxes.nth(1).uncheck()
+  await expect(boxes.nth(0)).toBeChecked()
+  await expect(boxes.nth(1)).not.toBeChecked()
+  await expect(boxes.nth(2)).not.toBeChecked()
+  await boxes.nth(0).uncheck()
   await expect(page.getByText('No dues selected')).toBeVisible()
 })
 
@@ -372,4 +435,70 @@ test("the customer page lists the customer's aging accounts, for every branch", 
     timeout: 30_000,
   })
   await context.close()
+})
+
+test('two months collected together are one payment, and fill the months oldest first', async ({
+  page,
+}) => {
+  // Last on purpose: it moves the balance the customer-page test above reads.
+  await openCustomerOnCollections(page, CUSTOMER)
+  const plan1 = agingPlan(page, `${SI_PREFIX}-1`)
+  await expect(plan1.getByTitle(PAID_MONTH)).toHaveCount(5, { timeout: 15_000 })
+
+  await plan1.getByRole('checkbox').nth(1).check()
+  await expect(page.getByRole('heading', { name: 'Pay Selected Dues' })).toBeVisible()
+  await expect(
+    page.getByTestId('collection-method-0').getByRole('button', { name: 'Debit/Credit Card' })
+  ).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator('table tbody tr')).toHaveCount(2)
+
+  // ₱2,000 of dues and the 5% penalty on each late month: ₱100.
+  await fillMoney(page.getByTestId('collection-amount-0'), 2100)
+  await page.getByRole('button', { name: 'Collect payment' }).click()
+  await expect(page.getByRole('heading', { name: 'Pay Selected Dues' })).not.toBeVisible({
+    timeout: 20_000,
+  })
+
+  // Months 6 and 7 are paid; the balance is ₱5,000 here and ₱5,000 on the other.
+  await expect(plan1.getByTitle(PAID_MONTH)).toHaveCount(7, { timeout: 15_000 })
+  await expect(plan1.getByRole('checkbox')).toHaveCount(5)
+  const ledger = await (
+    await page.request.get(`/api/crm/customers/${await fixtureCustomerId(page)}/ledger`)
+  ).json()
+  expect(ledger.totals.outstanding).toBe(10_000)
+})
+
+test('a month can take its rebate when the payment clears it in full', async ({ page }) => {
+  // After the test above months 1–7 are paid and the account owes ₱5,000.
+  await openCustomerOnCollections(page, CUSTOMER)
+  const plan1 = agingPlan(page, `${SI_PREFIX}-1`)
+  await expect(plan1.getByTitle(PAID_MONTH)).toHaveCount(7, { timeout: 15_000 })
+
+  await plan1.getByRole('checkbox').first().check()
+  await expect(page.getByRole('heading', { name: 'Collect Payment' })).toBeVisible()
+  await expect(
+    page.getByTestId('collection-method-0').getByRole('button', { name: 'Debit/Credit Card' })
+  ).toBeVisible({ timeout: 15_000 })
+
+  // The rebate is the account's prompt-payment discount: 7.5% of the ₱1,000
+  // month. Ticking it takes ₱75 off what is handed over; the 5% late penalty
+  // still follows the part of the month being settled (₱1,000, rebate included).
+  const previewRow = page.locator('table tbody tr').first()
+  await previewRow.getByRole('checkbox').first().check()
+  await expect(previewRow).toContainText('−₱75.00')
+  await expect(previewRow).toContainText('+₱50.00')
+  // ₱1,000 − ₱75 rebate + ₱50 penalty.
+  await fillMoney(page.getByTestId('collection-amount-0'), 975)
+  await page.getByRole('button', { name: 'Collect payment' }).click()
+  await expect(page.getByRole('heading', { name: 'Collect Payment' })).not.toBeVisible({
+    timeout: 20_000,
+  })
+
+  // Month 8 is paid — by ₱925 of cash and the ₱75 rebate — and the account owes
+  // ₱4,000; the penalty is income, never part of the receivable.
+  await expect(plan1.getByTitle(PAID_MONTH)).toHaveCount(8, { timeout: 15_000 })
+  const ledger = await (
+    await page.request.get(`/api/crm/customers/${await fixtureCustomerId(page)}/ledger`)
+  ).json()
+  expect(ledger.totals.outstanding).toBe(9_000)
 })

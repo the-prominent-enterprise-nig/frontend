@@ -555,12 +555,19 @@ function Section({
   items,
   total,
   scope,
+  signed,
 }: {
   title: string
   items?: any[]
   total?: number
   scope?: DrillScope
+  /** Show each amount with its real sign instead of its absolute value. The
+   * Balance Sheet's Assets need it: a credit balance in an asset (an Allowance
+   * for Doubtful Accounts, a partner receivable that has been over-settled)
+   * is a deduction, and the section total already subtracts it. */
+  signed?: boolean
 }) {
+  const shown = (n: number) => (signed ? n : Math.abs(n))
   const rows = Array.isArray(items) ? items : []
   const ids = new Set(rows.map((r: any) => r.accountId))
   const kidsOf = (id: string) => rows.filter((k: any) => k.parentAccountId === id)
@@ -579,10 +586,10 @@ function Section({
             {r.number} — {r.name}
           </span>
           {kids.length ? (
-            <span className="font-medium">{fmtMoney(Math.abs(rolledUp(r)))}</span>
+            <span className="font-medium">{fmtMoney(shown(rolledUp(r)))}</span>
           ) : (
             <DrillAmount accountId={r.accountId} scope={scope}>
-              {fmtMoney(Math.abs(r.balance ?? 0))}
+              {fmtMoney(shown(r.balance ?? 0))}
             </DrillAmount>
           )}
         </div>
@@ -650,7 +657,7 @@ function BalanceSheetView({ data }: { data: any }) {
   return (
     <>
       <div className="text-xs text-gray-500 mb-3">As of {fmtDate(data.asOf)}</div>
-      <Section scope={scope} title="Assets" items={data.assets} total={data.totalAssets} />
+      <Section signed scope={scope} title="Assets" items={data.assets} total={data.totalAssets} />
       <Section
         scope={scope}
         title="Liabilities"

@@ -585,15 +585,44 @@ export interface InstallmentLedgerRow {
    * (WIP, SSC, …), or "Price Override" when its price was manually overridden.
    * Omitted everywhere else (and by a backend that predates it). */
   scheme?: string
+  /** What the entry came from, called out on the ledger: a repair (a unit
+   * taken in for repair) or a return (a unit handed back, on its customer
+   * RR), a repossession (₱0, on its RR), or one of the credit memos that
+   * repossession or return closes the account with ('cm'), or a bill or
+   * penalty not charged while the unit is in repair ('paused'). Omitted on
+   * every other row. */
+  note?: LedgerNote
+  /** The document behind `ref`, so the Ref opens it in a new tab — set only
+   * where the app has a page for it. Omitted: the Ref is plain text. */
+  refLink?: LedgerRefLink
+}
+
+/** See InstallmentLedgerRow.note. */
+export type LedgerNote = 'repair' | 'return' | 'repossess' | 'cm' | 'paused'
+
+/** See InstallmentLedgerRow.refLink. */
+export interface LedgerRefLink {
+  kind: 'sale' | 'invoice' | 'customerReturn' | 'goodsReceipt' | 'deliveryReceipt'
+  id: string
 }
 
 /** Docket NIG #38 — what the "Existing customer" ledger (an account loaded
- * from the aging sheet) draws beside its rows. Worked out by the server from
- * the same rows, so no figure here can disagree with the table. Absent on a
- * POS plan's ledger, which keeps the paper-form layout. */
+ * from the aging sheet, or a POS plan — Docket #44, one layout for every
+ * account) draws beside its rows. Worked out by the server from the same rows,
+ * so no figure here can disagree with the table. */
 export interface ExistingLedgerSummary {
-  /** The beginning-balance cut-off (the end of that Manila day). */
+  /** The beginning-balance cut-off (the end of that Manila day) — or, on a POS
+   * plan with no cut-off (`hasCutoff` false), simply now. */
   asOf: string
+  /** False on a POS plan, whose balance is live from the sale: no cut-off
+   * marker in the ledger and no "were running at the cut-off" note. Absent
+   * (an older backend) reads as true. */
+  hasCutoff?: boolean
+  /** False on an account with no contract to lay out (hand-entered, or loaded
+   * with no FMI date): there is no billing history to count months from, so the
+   * page shows "—" for months running rather than a made-up 0 of N. Absent reads
+   * as true. */
+  hasBilling?: boolean
   term: number
   monthlyInstallment: number
   /** Installments billed at the cut-off — the sheet's MOS RUN. */
@@ -606,8 +635,12 @@ export interface ExistingLedgerSummary {
   installmentsWithBalance: number
   /** Due, less any penalty counted inside it. */
   miDue: number
-  /** The sheet's late penalty. */
+  /** The sheet's late penalty — or, on a POS plan, everything charged plus
+   * what is pending. */
   penalty: number
+  /** The part of `penalty` still owing. Absent: the same as `penalty` (a
+   * loaded account's sheet carries one running figure). */
+  penaltyBalance?: number
   /** Whether that penalty is counted inside Due and Outstanding. */
   penaltyInDue: boolean
   totalDue: number
@@ -626,6 +659,9 @@ export interface ExistingLedgerSummary {
     rebate: number
     unitDescription: string | null
     unitType: string | null
+    /** One entry per item a POS sale carries, each drawn as its own Unit box.
+     * Absent on a loaded account, which has the one unit above. */
+    units?: { description: string | null; type: string | null; serialNumber: string | null }[]
     agent: string | null
     address: string | null
   }
@@ -637,7 +673,10 @@ export interface InstallmentLedger {
   saleDate: string | null
   firstInstallmentDate: string | null
   rows: InstallmentLedgerRow[]
-  /** Present only for an account loaded from the aging sheet. */
+  /** Present whenever the account's installments can be laid out — an account
+   * loaded from the aging sheet, a POS plan, and (with `hasBilling` false) an
+   * account with no contract to lay out — Docket #44. Absent only on a backend
+   * older than that, which keeps the paper-form layout. */
   existing?: ExistingLedgerSummary
 }
 
@@ -678,7 +717,7 @@ export interface CustomerLedger {
   // What was bought, per purchase — shown above the ledger table (like the
   // paper form's own Brand/Type/Model/Serial box), one entry per Sale-type
   // row rather than folded into that row's description text.
-  items: { date: string; ref: string; itemLabel: string }[]
+  items: { date: string; ref: string; itemLabel: string; refLink?: LedgerRefLink }[]
   /** Every purchase this ledger can be narrowed to — the picker's options.
    * Always the full list, even when the rows themselves are narrowed to one
    * of them, so the picker can switch between purchases. */
@@ -693,6 +732,9 @@ export interface CustomerLedger {
      * still deducted from outstanding — the customer owes nothing on a TPF
      * purchase, the receivable is the partner's. */
     totalFinanced: number
+    /** A repossession's credit memos — kept out of Total Paid. Optional for a
+     * backend without it. */
+    totalCreditMemos?: number
     outstanding: number
     /** Oct 29 UAT CL-03 — what is demandable now across these plans (the Due
      * column's rule as at today). Optional for a backend without it. */

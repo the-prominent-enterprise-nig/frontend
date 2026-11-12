@@ -36,7 +36,7 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { formatAge, formatShortDate } from '@/src/libs/format/date'
-import { originLabel, originRef } from '@/src/libs/format/serial-provenance'
+import { originDate, originLabel, originRef } from '@/src/libs/format/serial-provenance'
 import { DestinationCell, LocationNote, ServiceCenterLocation } from './SerialWhereaboutsCells'
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { locationLabel } from '@/src/libs/format/locationLabel'
@@ -118,6 +118,7 @@ function MetricCell({
   label,
   value,
   sub,
+  amount,
   highlight,
   active,
   onClick,
@@ -125,6 +126,9 @@ function MetricCell({
   label: string
   value: number
   sub: string
+  /** Total amount of these units — shown under the count in place of `sub`
+   * for valuation holders. */
+  amount?: number
   highlight?: boolean
   /** The status this count stands for is the one filtering the list. */
   active?: boolean
@@ -153,7 +157,13 @@ function MetricCell({
       >
         {value.toLocaleString()}
       </span>
-      <span className="text-[11px] text-ink-muted">{sub}</span>
+      {amount != null ? (
+        <span className={`${MONO} text-[11.5px] font-medium text-[#4b4b5a]`}>
+          ₱{formatCost(amount)}
+        </span>
+      ) : (
+        <span className="text-[11px] text-ink-muted">{sub}</span>
+      )}
     </button>
   )
 }
@@ -219,6 +229,12 @@ export default function SerialNumberList({
   const canManageCaravan = hasPermission(session, INVENTORY_PERMISSIONS.CARAVAN_MANAGE)
   // Unit cost is for Business Owner / Accountant, as on receiving.
   const canViewCost = hasPermission(session, INVENTORY_PERMISSIONS.RECEIVE_COST_VIEW)
+  // Each count's total amount is aggregate valuation (as on the Valuation
+  // report), so it follows that permission or its totals-only one — Stock
+  // Controller, Branch Manager and the custodians see it without per-unit cost.
+  const canViewAmount =
+    hasPermission(session, INVENTORY_PERMISSIONS.REPORTS_VALUATION) ||
+    hasPermission(session, INVENTORY_PERMISSIONS.REPORTS_VALUATION_SUMMARY)
   const canConsign = canTransfer && canManageCaravan
   // The overall view across locations is head office's (NIG, 2026-11-09):
   // branch staff see only their own units — the backend enforces it — so the
@@ -231,6 +247,8 @@ export default function SerialNumberList({
     serials,
     pagination,
     statusCounts,
+    statusAmounts,
+    registered,
     isLoading,
     error,
     statusFilter,
@@ -264,7 +282,11 @@ export default function SerialNumberList({
     pickedCaravanKey,
     pickCaravan,
     groupSerials,
-  } = useSerialNumbers({ initialCaravanId, viewerBranchId: session.branchId })
+  } = useSerialNumbers({
+    initialCaravanId,
+    viewerBranchId: session.branchId,
+    withAmount: canViewAmount,
+  })
 
   // Nothing ticked means every class shows; the last class can't be unticked, so
   // the list never goes blank by accident.
@@ -416,14 +438,16 @@ export default function SerialNumberList({
             {/* Each count filters the list to its status; Registered clears it. */}
             <MetricCell
               label="Registered"
-              value={pagination.total}
-              sub="total units"
+              value={registered.count}
+              sub="every status"
+              amount={registered.amount}
               active={!statusFilter}
               onClick={() => setStatusFilter(undefined)}
             />
             <MetricCell
               label="In Stock"
               value={statusCounts.in_stock}
+              amount={statusAmounts.in_stock}
               sub="available to sell"
               highlight
               active={statusFilter === 'in_stock'}
@@ -432,6 +456,7 @@ export default function SerialNumberList({
             <MetricCell
               label="Reserved"
               value={statusCounts.held}
+              amount={statusAmounts.held}
               sub="claimed for a sale"
               active={statusFilter === 'held'}
               onClick={() => toggleStatus('held')}
@@ -439,6 +464,7 @@ export default function SerialNumberList({
             <MetricCell
               label="Pulled Out"
               value={statusCounts.pulled_out}
+              amount={statusAmounts.pulled_out}
               sub="repossessed"
               active={statusFilter === 'pulled_out'}
               onClick={() => toggleStatus('pulled_out')}
@@ -446,6 +472,7 @@ export default function SerialNumberList({
             <MetricCell
               label="Sold"
               value={statusCounts.sold}
+              amount={statusAmounts.sold}
               sub="out of stock"
               active={statusFilter === 'sold'}
               onClick={() => toggleStatus('sold')}
@@ -773,9 +800,7 @@ export default function SerialNumberList({
                                 {originRef(serial) ?? '—'}
                               </div>
                               <div className="text-[12.5px] text-ink-muted">
-                                {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
-                                  ? formatShortDate(serial.goodsReceiptLine.goodsReceipt.receivedAt)
-                                  : '—'}
+                                {originDate(serial) ? formatShortDate(originDate(serial)!) : '—'}
                               </div>
                             </td>
                             <td className="px-4 py-[11px] text-[13.5px] text-[#4b4b5a] hidden sm:table-cell">
@@ -800,14 +825,12 @@ export default function SerialNumberList({
                                         {serial.goodsReceiptLine.goodsReceipt.code}
                                       </Link>
                                     ) : (
-                                      '—'
+                                      (serial.returnOrigin?.receivingReportNumber ?? '—')
                                     )}
                                   </div>
                                   <div className="text-[12.5px] text-ink-muted">
-                                    {serial.goodsReceiptLine?.goodsReceipt?.receivedAt
-                                      ? formatShortDate(
-                                          serial.goodsReceiptLine.goodsReceipt.receivedAt
-                                        )
+                                    {originDate(serial)
+                                      ? formatShortDate(originDate(serial)!)
                                       : '—'}
                                   </div>
                                 </>

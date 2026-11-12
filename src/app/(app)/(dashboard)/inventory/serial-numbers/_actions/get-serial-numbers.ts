@@ -48,6 +48,9 @@ type Params = {
   itemSupplierId?: string
   /** Only units repossessed from this customer (Redeemed unit DRs). */
   repossessedFromCustomerId?: string
+  /** General Stockbook — also return `totalAmount` across every matching unit
+   * (the backend sends it only to valuation holders). */
+  withAmount?: boolean
 }
 
 export async function getSerialNumbers(
@@ -75,6 +78,7 @@ export async function getSerialNumbers(
     region: params.region,
     itemSupplierId: params.itemSupplierId,
     repossessedFromCustomerId: params.repossessedFromCustomerId,
+    withAmount: params.withAmount ? 'true' : undefined,
   }
 
   const result = await api.get<SerialNumberListResponse>('/inventory/serial-numbers', query)

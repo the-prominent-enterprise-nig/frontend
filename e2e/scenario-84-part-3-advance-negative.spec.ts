@@ -8,13 +8,21 @@ import { gotoReady } from './utils'
 // rather than hiding or flipping the sign.
 //
 // Read-only: a real ledger response is fetched and only its last row (and,
-// for the plan ledger, its Tot. Amt. Due) is turned into a ₱620 advance before
+// for the plan ledger, its Total amt due) is turned into a ₱620 advance before
 // the page sees it. Nothing is written.
+//
+// Docket NIG #44 — a POS plan's ledger reads in the one "Existing customer"
+// layout, whose Total amt due card draws the ledger's `existing.totalDue`, so
+// that is turned into the advance along with the account's own.
 
 const ADVANCE = -620
 const SHOWN = '-₱620.00'
 
-type LedgerBody = { rows: { due: number }[]; account?: { totalDue: unknown } }
+type LedgerBody = {
+  rows: { due: number }[]
+  account?: { totalDue: unknown }
+  existing?: { totalDue: number }
+}
 
 /** The ledger as the API sent it — bare, or inside a { data } envelope. */
 function ledgerOf(body: unknown): LedgerBody | null {
@@ -32,6 +40,7 @@ async function endOnAdvance(page: Page, url: RegExp) {
     if (ledger && ledger.rows.length > 0) {
       ledger.rows[ledger.rows.length - 1].due = ADVANCE
       if (ledger.account) ledger.account.totalDue = ADVANCE
+      if (ledger.existing) ledger.existing.totalDue = ADVANCE
     }
     await route.fulfill({ response, json: body })
   })
@@ -65,13 +74,13 @@ test.describe('Scenario 84 Part 3 — an advance shows as a negative Due', () =>
     customerId = plan!.customerId
   })
 
-  test('S84-FE-3.1: the plan ledger shows the advance in Tot. Amt. Due and, in red, on its last row', async ({
+  test('S84-FE-3.1: the plan ledger shows the advance in Total amt due and, in red, on its last row', async ({
     page,
   }) => {
     await endOnAdvance(page, /\/api\/crm\/installment-accounts\/[^/]+\/ledger(\?|$)/)
     await gotoReady(page, `/crm/customers/${customerId}/installments/${accountId}`)
 
-    const figure = page.getByText('Tot. Amt. Due', { exact: true }).locator('..')
+    const figure = page.getByTestId('total-amt-due')
     await expect(figure).toContainText(SHOWN, { timeout: 15_000 })
 
     const due = dueCellOfLastRow(page)
@@ -79,7 +88,7 @@ test.describe('Scenario 84 Part 3 — an advance shows as a negative Due', () =>
     await expect(due).toHaveClass(/text-red-600/)
   })
 
-  test('S84-FE-3.2: View ledger (the customer ledger narrowed to the plan) shows it in Tot. Amt. Due and, in red, on its last row', async ({
+  test('S84-FE-3.2: View ledger (the customer ledger narrowed to the plan) shows it in Total amt due and, in red, on its last row', async ({
     page,
   }) => {
     // Narrowed to one plan, the customer ledger renders that plan's own ledger
@@ -87,7 +96,7 @@ test.describe('Scenario 84 Part 3 — an advance shows as a negative Due', () =>
     await endOnAdvance(page, /\/api\/crm\/installment-accounts\/[^/]+\/ledger(\?|$)/)
     await gotoReady(page, `/crm/customers/${customerId}/ledger?transactionId=acct:${accountId}`)
 
-    const figure = page.getByText('Tot. Amt. Due', { exact: true }).locator('..')
+    const figure = page.getByTestId('total-amt-due')
     await expect(figure).toContainText(SHOWN, { timeout: 15_000 })
     const due = dueCellOfLastRow(page)
     await expect(due).toHaveText(SHOWN)

@@ -1,6 +1,7 @@
 import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { ledgerScheme } from '@/src/libs/format/ledgerScheme'
+import { ledgerNoteSuffix } from '@/src/libs/format/ledgerNote'
 import { MANILA_TZ, manilaDateOf, manilaMonthOf } from '@/src/libs/format/manila-date'
 import {
   receivingReportSourceName,
@@ -1101,7 +1102,7 @@ export function buildCustomerLedgerHtml(
         <td>${fmtDate(r.date)}</td>
         <td class="mono">${esc(r.ref)}</td>
         <td class="right">${r.instLabel ? esc(r.instLabel) : r.inst > 0 ? r.inst : '—'}</td>
-        <td>${esc(r.description)}</td>
+        <td>${esc(r.description + ledgerNoteSuffix(r.note))}</td>
         <td class="right">${r.debit > 0 ? fmt(r.debit) : '—'}</td>
         <td class="right">${r.credit > 0 ? fmt(r.credit) : '—'}</td>
         <td class="right">${fmt(r.due)}</td>
@@ -1305,7 +1306,7 @@ export function buildUnifiedCustomerLedgerHtml(ledger: CustomerLedger): string {
         <td>${fmtDate(r.date)}</td>
         <td class="mono">${esc(r.ref)}</td>
         <td class="right">${r.instLabel ? esc(r.instLabel) : r.inst > 0 ? r.inst : '—'}</td>
-        <td>${esc(r.description)}</td>
+        <td>${esc(r.description + ledgerNoteSuffix(r.note))}</td>
         ${showScheme ? `<td>${esc(r.scheme ?? '')}</td>` : ''}
         <td class="right">${r.debit > 0 ? fmt(r.debit) : '—'}</td>
         <td class="right">${r.credit > 0 ? fmt(r.credit) : '—'}</td>

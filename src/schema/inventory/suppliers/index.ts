@@ -3,6 +3,12 @@ import { z } from 'zod'
 export const SUPPLIER_ONBOARDING_STATUSES = ['pending', 'in_review', 'approved', 'blocked'] as const
 export const SUPPLIER_STATUSES = ['active', 'inactive', 'blacklisted'] as const
 
+// Major suppliers sell us stock and go through Purchase Order → Receiving →
+// Supplier Invoice. Minor suppliers (rent, electricity, water, fuel…) are paid
+// straight from Expenses with no invoice, so the Expense form drops Item, SI,
+// Qty and Unit Price for them.
+export const SUPPLIER_TIERS = ['MAJOR', 'MINOR'] as const
+
 // Scenario 33 — merged in from the retired Vendor model. Lets a Supplier
 // row stand in for any AP payee, not just an inventory supplier.
 export const SUPPLIER_TYPES = [
@@ -64,6 +70,7 @@ export const CreateSupplierFormSchema = z.object({
   status: z.enum(SUPPLIER_STATUSES).optional(),
   notes: z.string().max(1000).optional(),
   type: z.enum(SUPPLIER_TYPES).optional(),
+  tier: z.enum(SUPPLIER_TIERS).optional(),
   isServiceCenter: z.boolean().optional(),
   businessType: z.string().max(100).optional(),
   alphanumericTaxCode: z.string().max(50).optional(),
@@ -113,6 +120,7 @@ export const SupplierListItemSchema = z.object({
   onboardingStatus: z.enum(SUPPLIER_ONBOARDING_STATUSES),
   status: z.enum(SUPPLIER_STATUSES),
   type: z.enum(SUPPLIER_TYPES),
+  tier: z.enum(SUPPLIER_TIERS).optional(),
   // Repairs units for us — offered in the repair-provider pickers.
   isServiceCenter: z.boolean().optional(),
   createdAt: z.string(),

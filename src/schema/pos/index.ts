@@ -1356,9 +1356,10 @@ export interface InstallmentScheduleLineWithInvoice {
    * be read here. */
   paidAmount: number
   settledAt: string | null
-  /** A loaded (aging-sheet) account's one "due" — its whole outstanding
-   * balance. Collected like any due, but with no rebate and no late penalty:
-   * the sheet keeps its penalty beside the balance, never inside it. */
+  /** One month of a loaded (aging-sheet) account, laid out from its contract
+   * the way a system-made plan's schedule is. Collected against the account's
+   * one invoice, so several ticked months go in as one payment — with the
+   * rebate and late penalty each month earned. */
   isAgingAccount?: boolean
   arInvoice: {
     id: string
@@ -1398,8 +1399,9 @@ export interface InstallmentSchedule {
     occurredAt: string
   } | null
   financingTerm?: { termMonths: number; factorRate: number } | null
-  /** A loaded (aging-sheet) account, returned as a one-due plan so POS
-   * Collections can collect it. Only sent when Collections asks for it. */
+  /** A loaded (aging-sheet) account, returned as a plan with a due per month of
+   * its term so POS Collections can collect it. Only sent when Collections asks
+   * for it. */
   isAgingAccount?: boolean
   agingAccount?: {
     accountNumber: string

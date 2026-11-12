@@ -67,6 +67,17 @@ import {
 // outside of.
 const FORM_ID = 'expense-form'
 
+/** Which kind of supplier is being paid. A Minor supplier (rent, electricity, water, fuel…)
+ * is paid straight from Expenses with no invoice; a Major one sells us stock and its
+ * lines carry Item, SI, Qty and Unit Price. Only a filter on this form — the expense
+ * saves the supplier itself, whose own tag says which kind it is. */
+type SupplierTier = 'MINOR' | 'MAJOR'
+
+const SUPPLIER_TIER_OPTIONS: { value: SupplierTier; label: string }[] = [
+  { value: 'MINOR', label: 'Minor' },
+  { value: 'MAJOR', label: 'Major' },
+]
+
 const PAYEE_OPTIONS: { value: PayeeType; label: string }[] = [
   { value: 'CUSTOMER', label: 'Customer' },
   { value: 'SUPPLIER', label: 'Supplier' },
@@ -556,6 +567,14 @@ function ExpenseFormFields({
     clearedType: (initial?.clearedType ?? 'SAME_DATE') as ClearedType,
     clearedDate: initial?.clearedDate?.slice(0, 10) ?? '',
     payeeType: initialPayeeType,
+    // A saved entry opens on its supplier's own type; a new one starts on Minor,
+    // the everyday recurring bills. The type is not saved, so a line that carries an
+    // Item, Supplier Invoice, quantity or price (a Minor supplier paid as Major) opens
+    // as Major whatever the supplier is — Minor hides those fields and a re-save
+    // would drop them.
+    supplierTier: (initial?.lines?.some((l) => l.itemId || l.apBillId || l.qty || l.unitPrice)
+      ? 'MAJOR'
+      : (initial?.supplier?.tier ?? 'MINOR')) as SupplierTier,
     supplierId: initial?.supplierId ?? '',
     // "Paid from (Bank/Cash)". An older draft kept its bank on its payment row.
     sourceOfFundId:
@@ -742,6 +761,9 @@ function ExpenseFormFields({
   // Reuses CategorySelect (flat, depth 0) rather than the plain Select —
   // suppliers grew past a comfortable scroll-and-eyeball list, same reason
   // Category itself is a search box instead of a native <select>.
+  // EVERY supplier, whatever the Supplier type above says. The type only decides which
+  // fields the lines show; it does not decide who can be picked, so a Minor supplier
+  // that does need a Supplier Invoice is paid by choosing Major and picking it.
   const supplierOptions = useMemo(
     () => suppliers.map((s) => ({ id: s.id, name: `${s.code} — ${s.name}`, depth: 0 })),
     [suppliers]
@@ -774,7 +796,14 @@ function ExpenseFormFields({
   // SUPPLIER-only — the only payee type that can be a real inventory
   // purchase, so it's the only one that gets an Item/Qty/Unit Price line
   // shape. Everyone else just types a flat Amount.
-  const isItemMode = form.payeeType === 'SUPPLIER'
+  //
+  // The Supplier type chosen above decides the line. A MINOR supplier (rent, electricity,
+  // water, fuel… — paid straight from Expenses) has no Supplier Invoice, item, quantity
+  // or unit price to record, so it gets the plain Account / Description / Amount line
+  // like any other payee; a MAJOR one keeps the full line.
+  const isSupplierPayee = form.payeeType === 'SUPPLIER'
+  const isMinorSupplier = isSupplierPayee && form.supplierTier === 'MINOR'
+  const isItemMode = isSupplierPayee && !isMinorSupplier
   // Payee -> Other -> "Payroll". The spreadsheet import and the Special
   // Account / Name / Division columns exist for a payroll run and nothing
   // else, so they are rendered here and nowhere else.
@@ -864,7 +893,7 @@ function ExpenseFormFields({
   // A customer refund or an employee reimbursement is not a purchase, and a
   // payroll run is compensation, which an EWT code does not cover.
   const ewt = useEwtCodes()
-  const canWithhold = isItemMode || (isOtherMode && !isPayrollCategory)
+  const canWithhold = isSupplierPayee || (isOtherMode && !isPayrollCategory)
   /** A line can carry a code unless it is a deduction (a negative amount) or an advance /
    * loan line — neither is a purchase, and the server refuses a code on them. An amount not
    * typed yet does not count against it: the amount is required, so the code can be picked
@@ -1748,6 +1777,20 @@ function ExpenseFormFields({
               )}
               {form.payeeType === 'SUPPLIER' && (
                 <>
+                  <Field label="Supplier type">
+                    <Select
+                      compact
+                      aria-label="Supplier type"
+                      value={form.supplierTier}
+                      onChange={(value) => {
+                        // Only the line fields change; the supplier already picked stays.
+                        if (value !== form.supplierTier) {
+                          setForm({ ...form, supplierTier: value as SupplierTier })
+                        }
+                      }}
+                      options={SUPPLIER_TIER_OPTIONS}
+                    />
+                  </Field>
                   <Field label="Supplier">
                     <CategorySelect
                       compact
