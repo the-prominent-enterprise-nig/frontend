@@ -476,6 +476,36 @@ test('a link that brings its own search (an AR invoice’s "Sale:" link) starts 
   await expect.poll(() => listedDocNos(page)).toEqual([si('2')])
 })
 
+test('a cash sale opens with the same cards and columns as an installment one, "—" where they do not apply', async ({
+  page,
+}) => {
+  const stamp = Date.now()
+  const { si, cashBago, planBago } = await threeSales(page, stamp)
+
+  for (const [link, doc, cash] of [
+    [`/pos/transactions?id=${cashBago}`, si('2'), true],
+    [`/pos/transactions?id=${planBago}`, si('3'), false],
+  ] as const) {
+    await gotoReady(page, link)
+    const modal = page.getByTestId('transaction-modal')
+    await expect(modal.getByRole('heading', { name: doc })).toBeVisible({ timeout: 15_000 })
+    for (const title of ['Sale', 'Account details', 'Agent and credit']) {
+      await expect(modal.getByText(title, { exact: true })).toBeVisible()
+    }
+    for (const column of ['Price Used', 'Credit']) {
+      await expect(modal.getByRole('columnheader', { name: column })).toBeVisible()
+    }
+    const lcp = modal.getByText('LCP', { exact: true }).locator('xpath=following-sibling::p')
+    if (cash) await expect(lcp).toHaveText('—')
+    else await expect(lcp).not.toHaveText('—')
+    // The same editable fields on both.
+    await modal.getByRole('button', { name: 'Edit entry' }).click()
+    for (const name of ['Invoice Date', 'Agent', 'Credit', 'Commission', 'SMI']) {
+      await expect(modal.getByLabel(name, { exact: true })).toBeVisible()
+    }
+  }
+})
+
 test('an ?id= link, and the old /pos/transactions/<id> page, open the transaction as a modal over the list', async ({
   page,
 }) => {

@@ -14,7 +14,9 @@ import CustomerCommissionHistory from '@/src/components/crm/CustomerCommissionHi
 import {
   LEDGER_ACTION,
   LedgerCard,
+  LedgerEventBanners,
   LedgerHero,
+  LedgerRef,
   LedgerTable,
 } from '@/src/components/crm/LedgerParts'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
@@ -333,6 +335,10 @@ export default function CustomerLedgerView({
               ]}
             />
 
+            {/* Only on one picked transaction — on "All transactions" a
+                banner would sit over every purchase, not the one it is about. */}
+            {transactionId && <LedgerEventBanners rows={ledger.rows} />}
+
             {SHOW_TAX_INFO && customer && (
               <section className="mb-3 overflow-hidden rounded-xl border border-gray-200 bg-white">
                 <div className="flex items-center justify-between p-4 pb-2">
@@ -446,7 +452,7 @@ export default function CustomerLedgerView({
                     >
                       <span className="w-32 shrink-0 text-gray-600">{fmtDate(item.date)}</span>
                       <span className="w-48 shrink-0 font-mono text-[13px] text-gray-600">
-                        {item.ref}
+                        <LedgerRef value={item.ref} link={item.refLink} />
                       </span>
                       <span className="min-w-0 flex-1 font-medium text-prominent-purple-900">
                         {item.itemLabel}

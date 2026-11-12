@@ -585,6 +585,25 @@ export interface InstallmentLedgerRow {
    * (WIP, SSC, …), or "Price Override" when its price was manually overridden.
    * Omitted everywhere else (and by a backend that predates it). */
   scheme?: string
+  /** What the entry came from, called out on the ledger: a repair (a unit
+   * taken in for repair) or a return (a unit handed back, on its customer
+   * RR), a repossession (₱0, on its RR), or one of the credit memos that
+   * repossession or return closes the account with ('cm'), or a bill or
+   * penalty not charged while the unit is in repair ('paused'). Omitted on
+   * every other row. */
+  note?: LedgerNote
+  /** The document behind `ref`, so the Ref opens it in a new tab — set only
+   * where the app has a page for it. Omitted: the Ref is plain text. */
+  refLink?: LedgerRefLink
+}
+
+/** See InstallmentLedgerRow.note. */
+export type LedgerNote = 'repair' | 'return' | 'repossess' | 'cm' | 'paused'
+
+/** See InstallmentLedgerRow.refLink. */
+export interface LedgerRefLink {
+  kind: 'sale' | 'invoice' | 'customerReturn' | 'goodsReceipt' | 'deliveryReceipt'
+  id: string
 }
 
 /** Docket NIG #38 — what the "Existing customer" ledger (an account loaded
@@ -698,7 +717,7 @@ export interface CustomerLedger {
   // What was bought, per purchase — shown above the ledger table (like the
   // paper form's own Brand/Type/Model/Serial box), one entry per Sale-type
   // row rather than folded into that row's description text.
-  items: { date: string; ref: string; itemLabel: string }[]
+  items: { date: string; ref: string; itemLabel: string; refLink?: LedgerRefLink }[]
   /** Every purchase this ledger can be narrowed to — the picker's options.
    * Always the full list, even when the rows themselves are narrowed to one
    * of them, so the picker can switch between purchases. */
@@ -713,6 +732,9 @@ export interface CustomerLedger {
      * still deducted from outstanding — the customer owes nothing on a TPF
      * purchase, the receivable is the partner's. */
     totalFinanced: number
+    /** A repossession's credit memos — kept out of Total Paid. Optional for a
+     * backend without it. */
+    totalCreditMemos?: number
     outstanding: number
     /** Oct 29 UAT CL-03 — what is demandable now across these plans (the Due
      * column's rule as at today). Optional for a backend without it. */

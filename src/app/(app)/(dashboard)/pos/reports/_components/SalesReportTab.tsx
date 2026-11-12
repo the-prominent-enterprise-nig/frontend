@@ -46,9 +46,10 @@ const COLUMNS: Column[] = [
   { header: 'Price Used', cell: (l) => l.priceUseName },
   { header: 'Agent', cell: (l) => l.agentName },
   { header: 'Commission', cell: (l) => (l.commission ? money(l.commission) : ''), numeric: true },
-  // FOLLOW-UP: empty, like the Excel, until NIG adds Credit and SMI to their price list.
-  { header: 'Credit', cell: () => '' },
-  { header: 'SMI', cell: () => '' },
+  // What Edit entry set on the sale, else empty, like the Excel.
+  // FOLLOW-UP: NIG will add Credit and SMI to their price list.
+  { header: 'Credit', cell: (l) => (l.credit == null ? '' : money(l.credit)), numeric: true },
+  { header: 'SMI', cell: (l) => (l.smi == null ? '' : money(l.smi)), numeric: true },
 ]
 
 function columnsFor(showCost: boolean): Column[] {
