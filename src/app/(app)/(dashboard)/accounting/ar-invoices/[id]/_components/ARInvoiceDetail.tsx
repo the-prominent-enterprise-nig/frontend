@@ -10,6 +10,7 @@ import {
   fmtMoney,
   fmtDate,
   type ARInvoiceDocument,
+  type ARPayment,
   type ARInvoiceDue,
   type ARInvoiceMemo,
 } from '@/src/libs/data/AccountingV2Data'
@@ -21,6 +22,7 @@ import CollectionReceiptSheet, {
   type CollectionReceiptDocument,
 } from '../../_components/CollectionReceiptSheet'
 import RetentionPanel from './RetentionPanel'
+import PaymentClearing, { clearsABank } from './PaymentClearing'
 import { saleDocNo } from '@/src/libs/format/saleDocNo'
 
 // Mirrors ARInvoicesList's own INVOICE_STATUS_BADGE — kept local rather
@@ -126,8 +128,11 @@ export default function ARInvoiceDetail({
   id,
   canReleaseRetention = false,
   canAdjustRetention = false,
+  canEditPayments = false,
 }: {
   id: string
+  /** May change a payment's reference, notes and when it clears the bank. */
+  canEditPayments?: boolean
   /** May take the retained amount in (a collection). */
   canReleaseRetention?: boolean
   /** May offset, write off or provide for it (needs approval). */
@@ -203,6 +208,21 @@ export default function ARInvoiceDetail({
   const enterprise = doc.enterprise
   const detail = invoice.installmentDetail
   const payments = invoice.payments ?? []
+  // A cleared date saved on one payment: patch it into the loaded document.
+  const replacePayment = (updated: ARPayment): void =>
+    setDoc((d) =>
+      d
+        ? {
+            ...d,
+            document: {
+              ...d.document,
+              payments: (d.document.payments ?? []).map((p) =>
+                p.id === updated.id ? { ...p, ...updated } : p
+              ),
+            },
+          }
+        : d
+    )
   // getReceiptDocument() sets document.id to the ARPayment it was built for,
   // which is what pairs a fetched receipt back to its row below.
   const receiptByPaymentId = new Map(
@@ -520,6 +540,14 @@ export default function ARInvoiceDetail({
                       )}
                     </span>
                   </button>
+                  {clearsABank(p) && (
+                    <PaymentClearing
+                      invoiceId={id}
+                      payment={p}
+                      canEdit={canEditPayments}
+                      onSaved={replacePayment}
+                    />
+                  )}
                   {/* The receipt itself — what was actually received, and the
                     balance it left behind. Rendered only for the row the
                     reader opened, so the page stays the invoice's. */}

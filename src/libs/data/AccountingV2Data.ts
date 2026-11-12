@@ -367,6 +367,13 @@ export interface ARPayment {
    *  BANK_TRANSFER, distinct from `reference` (the CR number). */
   bankReferenceNumber?: string | null
   notes?: string | null
+  bankAccountId?: string | null
+  /** When it clears the bank (see RecordArPaymentInput.clearedType). */
+  clearedType?: 'SAME_DATE' | 'LATER_DATE' | null
+  clearedDate?: string | null
+  /** Set once a completed bank reconciliation matched it; its clearing date
+   * can no longer change. */
+  clearedAt?: string | null
   isOverpayment: boolean
   overpaidAmount: number
   wasClosedAccount: boolean
@@ -459,6 +466,11 @@ export interface RecordArPaymentInput {
   rebateAmount?: number
   penaltyAmount?: number
   bankAccountId?: string
+  /** When the money clears the bank — Bank Reconciliation reads it instead of
+   * a tick. SAME_DATE (default) clears on paymentDate; LATER_DATE on
+   * clearedDate, outstanding while that is still blank. */
+  clearedType?: 'SAME_DATE' | 'LATER_DATE'
+  clearedDate?: string | null
   branchId?: string
   collectorId?: string
   /**
@@ -936,12 +948,17 @@ export const ARInvoices = {
     api.post<BulkRecordPaymentResult>('/ar-invoices/bulk-payments', body),
   cancelPayment: (invoiceId: string, paymentId: string, reason?: string) =>
     api.post<ARInvoice>(`/ar-invoices/${invoiceId}/payments/${paymentId}/cancel`, { reason }),
-  // Scenario 44 Part 3 — reference/notes only; anything else requires
-  // cancelPayment + a fresh receipt instead.
+  // Scenario 44 Part 3 — reference/notes, and when it clears the bank;
+  // anything else requires cancelPayment + a fresh receipt instead.
   updatePayment: (
     invoiceId: string,
     paymentId: string,
-    body: { reference?: string; notes?: string }
+    body: {
+      reference?: string
+      notes?: string
+      clearedType?: 'SAME_DATE' | 'LATER_DATE'
+      clearedDate?: string | null
+    }
   ) => api.patch<ARPayment>(`/ar-invoices/${invoiceId}/payments/${paymentId}`, body),
   remove: (id: string) => api.delete(`/ar-invoices/${id}`),
   void: (id: string) => api.post<ARInvoice>(`/ar-invoices/${id}/void`, {}),
@@ -2655,7 +2672,14 @@ export interface BankReconciliationLine {
   amount: number
   date: string
   reference?: string | null
+  /** Cleared on the statement as of the statement date — read off the source
+   * document's own clearing date, never ticked here. */
   checked: boolean
+  /** The date the source document says it clears; null when none is set yet. */
+  clearedDate?: string | null
+  /** The record where that date is changed (AR invoice, AP voucher, expense,
+   * transfer, deposit); null where there is none. */
+  sourceDocumentId?: string | null
 }
 export interface BankReconciliation {
   id: string
@@ -2740,10 +2764,6 @@ export const BankAccounts = {
   // completed reconciliation is deleted.
   deleteReconciliation: (id: string) =>
     api.delete<{ deleted: boolean; uncleared: number }>(`/bank-accounts/reconciliations/${id}`),
-  toggleReconciliationLine: (id: string, lineId: string, checked: boolean) =>
-    api.patch<BankReconciliationLine>(`/bank-accounts/reconciliations/${id}/lines/${lineId}`, {
-      checked,
-    }),
   completeReconciliation: (id: string) =>
     api.post<any>(`/bank-accounts/reconciliations/${id}/complete`, {}),
   // The Discrepancy tile's drill-down: every GL movement through this bank
@@ -3205,13 +3225,8 @@ export const UnidentifiedBankCredits = {
       '/bank-accounts/unidentified-bank-credits',
       status ? { status } : undefined
     ),
-  record: (body: {
-    bankAccountId: string
-    amount: number
-    creditDate: string
-    bankRef?: string
-    voucherControlNo: string
-  }) => api.post<UnidentifiedBankCredit>('/bank-accounts/unidentified-bank-credits', body),
+  record: (body: { bankAccountId: string; amount: number; creditDate: string; bankRef?: string }) =>
+    api.post<UnidentifiedBankCredit>('/bank-accounts/unidentified-bank-credits', body),
   reclassify: (id: string, body: { targetType: ClearingSettlementType; tpfProviderId?: string }) =>
     api.post<UnidentifiedBankCredit>(
       `/bank-accounts/unidentified-bank-credits/${id}/reclassify`,
