@@ -81,15 +81,26 @@ export function FormSection({
   defaultOpen = true,
   errorCount = 0,
   forceOpen = false,
+  variant = 'default',
 }: {
   title: string
   children: React.ReactNode
   defaultOpen?: boolean
   errorCount?: number
   forceOpen?: boolean
+  /** 'card' — a standalone card in the Stock Transaction form style (New
+   * Stock Request's section cards), used by the Add Item form. */
+  variant?: 'default' | 'card'
 }): React.ReactElement {
   const [open, setOpen] = useState(defaultOpen)
   const isOpen = forceOpen || open
+  if (variant === 'card') {
+    return (
+      <CardSection title={title} isOpen={isOpen} errorCount={errorCount} onToggle={setOpen}>
+        {children}
+      </CardSection>
+    )
+  }
   return (
     <div className="border-b border-zinc-100 last:border-0">
       <button
@@ -110,6 +121,44 @@ export function FormSection({
         </div>
       </button>
       {isOpen && <div className="grid gap-4 px-6 pb-5 pt-1 sm:grid-cols-2">{children}</div>}
+    </div>
+  )
+}
+
+function CardSection({
+  title,
+  isOpen,
+  errorCount,
+  onToggle,
+  children,
+}: {
+  title: string
+  isOpen: boolean
+  errorCount: number
+  onToggle: (update: (v: boolean) => boolean) => void
+  children: React.ReactNode
+}): React.ReactElement {
+  return (
+    <div className="rounded-xl border border-[#e4e4e9] bg-white">
+      <button
+        type="button"
+        onClick={() => onToggle((v) => !v)}
+        aria-expanded={isOpen}
+        className={`flex w-full items-center justify-between gap-3 px-[18px] py-[13px] text-left ${isOpen ? 'border-b border-[#eeeef1]' : ''}`}
+      >
+        <span className="text-[13.5px] font-semibold text-[#17171c]">{title}</span>
+        <div className="flex items-center gap-2">
+          {errorCount > 0 && (
+            <span className="rounded-full bg-[#fdeceb] px-2 py-0.5 text-[11.5px] font-medium text-[#b42318]">
+              {errorCount} error{errorCount !== 1 ? 's' : ''}
+            </span>
+          )}
+          <ChevronRight
+            className={`h-4 w-4 text-ink-faint transition-transform duration-150 ${isOpen ? 'rotate-90' : ''}`}
+          />
+        </div>
+      </button>
+      {isOpen && <div className="grid gap-4 px-[18px] py-4 sm:grid-cols-2">{children}</div>}
     </div>
   )
 }

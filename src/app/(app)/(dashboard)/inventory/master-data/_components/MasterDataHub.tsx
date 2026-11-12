@@ -1,7 +1,7 @@
 'use client'
 
 import { useSearchParams } from 'next/navigation'
-import { Settings, Warehouse, Wrench, type LucideIcon } from 'lucide-react'
+import { PackagePlus, Settings, Warehouse, Wrench, type LucideIcon } from 'lucide-react'
 import { TabNav, type NavTab } from '@/src/components/ui/TabNav'
 import { can, type SessionUser } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -9,11 +9,21 @@ import { SUPPLIER_ACCESS } from '@/src/libs/guards/shared-ownership'
 import { WarehouseList } from '../../warehouses/_components'
 import { CostingConfigForm } from '../../settings/_components'
 import { ServiceCenterList } from '../../service-centers/_components/ServiceCenterList'
+import AddItemTab from '../../items/_components/AddItemTab'
 import { PAGE_INNER, PAGE_SHELL } from './masterDataChrome'
 
 type MasterDataTab = NavTab & { icon: LucideIcon; permissions: string[] }
 
 const TABS: MasterDataTab[] = [
+  {
+    // New items are added here, inline like Stock Transaction's Stock
+    // Request — moved from the button on Item Master's tab strip. First, so
+    // it's what Master Data opens on for anyone who can create items.
+    id: 'add-item',
+    label: 'Add Item',
+    icon: PackagePlus,
+    permissions: [INVENTORY_PERMISSIONS.ITEMS_CREATE],
+  },
   {
     id: 'warehouses',
     label: 'Warehouses',
@@ -42,6 +52,8 @@ function TabBody({ id, session }: { id: string; session: SessionUser }) {
   switch (id) {
     case 'warehouses':
       return <WarehouseList session={session} />
+    case 'add-item':
+      return <AddItemTab />
     case 'service-centers':
       return <ServiceCenterList session={session} />
     case 'settings':

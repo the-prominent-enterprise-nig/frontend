@@ -380,6 +380,8 @@ export default function ReceivingReportsTab({
       ? { serviceCenterId, serialNumberIds: serials }
       : null
   }, [wantsNew, searchParams])
+  // Item 360's "Receive Stock" names the item, so its first line is filled.
+  const itemPresetId = wantsNew ? searchParams.get('item') : null
   const [autoOpened, setAutoOpened] = useState(false)
 
   useEffect(() => {
@@ -397,7 +399,7 @@ export default function ReceivingReportsTab({
     setIsCreateOpen(false)
     if (!wantsNew) return
     const next = new URLSearchParams(searchParams.toString())
-    ;['new', 'serviceCenter', 'serials'].forEach((key) => next.delete(key))
+    ;['new', 'serviceCenter', 'serials', 'item'].forEach((key) => next.delete(key))
     const qs = next.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }, [wantsNew, searchParams, router, pathname])
@@ -922,6 +924,7 @@ export default function ReceivingReportsTab({
           submitLabel="Create Receiving Report"
           submittingLabel="Creating…"
           serviceCenterPreset={serviceCenterPreset}
+          itemPresetId={itemPresetId}
         />
       )}
     </div>

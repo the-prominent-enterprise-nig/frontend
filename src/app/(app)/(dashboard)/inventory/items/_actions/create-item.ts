@@ -14,6 +14,7 @@ const INITIAL_STOCK_KEYS = [
   'initialOrigin',
   'initialPrice',
   'initialSerialNumber',
+  'initialClassification',
 ] as const
 
 export async function createItem(input: unknown): Promise<ApiResponse<{ id: string }>> {
