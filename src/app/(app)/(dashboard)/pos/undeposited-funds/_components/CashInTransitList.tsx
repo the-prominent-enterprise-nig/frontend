@@ -1342,7 +1342,12 @@ function SlipNames({
   return (
     <p className="mt-0.5 text-xs text-gray-500">
       {counted.length
-        ? counted.map((s) => `${bankName(s.bankAccountId)} ${fmtMoney(slipAmount(s))}`).join(' · ')
+        ? counted
+            .map(
+              (s) =>
+                `${s.credit ? `Unidentified credit (${s.credit.bankName})` : bankName(s.bankAccountId)} ${fmtMoney(slipAmount(s))}`
+            )
+            .join(' · ')
         : 'No slips yet'}
     </p>
   )

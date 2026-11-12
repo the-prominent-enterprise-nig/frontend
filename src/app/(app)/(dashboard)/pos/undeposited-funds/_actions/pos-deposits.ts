@@ -77,6 +77,13 @@ export interface PosDepositLine {
   clearsAccount: { id: string; number: string | null; name: string } | null
   /** A 1-01-010 sub-ledger fund the slip emptied instead of an account. */
   clearsBankAccount: { id: string; name: string } | null
+  /** The Unidentified Bank Credit this slip matched instead of banking. */
+  unidentifiedCredit?: {
+    id: string
+    bankRef: string | null
+    creditDate: string
+    amount: string | number
+  } | null
 }
 
 /** Scenario 70 G8 — one slip: a bank, an amount, and what it empties. */
@@ -92,6 +99,9 @@ export interface PosDepositLineInput {
   clearsAccountId?: string
   /** A 1-01-010 sub-ledger fund — Cash on Hand, a petty cash fund, a bank. */
   clearsBankAccountId?: string
+  /** An Unidentified Bank Credit this slip matches; the server fills its bank,
+   * amount, reference and date from it. */
+  unidentifiedCreditId?: string
   note?: string
   /** This bank's own deposit slip / reference number. Required. */
   reference: string
