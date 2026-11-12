@@ -480,7 +480,11 @@ function kindOf(description: string): { label: string; style: string } | null {
   if (description === 'Required DP') return { label: 'Required DP', style: PILL.purple }
   if (description === 'Bill' || description.startsWith('Billing '))
     return { label: 'Bill', style: PILL.blue }
-  if (description === 'Late Penalty' || description === 'Penalty')
+  if (
+    description === 'Late Penalty' ||
+    description === 'Penalty' ||
+    description === 'Sheet penalty'
+  )
     return { label: 'Penalty', style: PILL.amber }
   if (description === 'Rebate') return { label: 'Rebate', style: PILL.green }
   if (
@@ -493,7 +497,13 @@ function kindOf(description: string): { label: string; style: string } | null {
 }
 
 const isPenaltyRow = (r: InstallmentLedgerRow) =>
-  r.description === 'Late Penalty' || r.description === 'Penalty'
+  r.description === 'Late Penalty' ||
+  r.description === 'Penalty' ||
+  r.description === 'Sheet penalty'
+
+/** The aging sheet's own penalty — a reference row, never charged. Told apart
+ * from the "Late Penalty" rows a collection taken here charged. */
+const isSheetPenalty = (r: InstallmentLedgerRow) => r.description === 'Sheet penalty'
 
 function LedgerRows({
   rows,
@@ -568,8 +578,15 @@ function LedgerRows({
               </span>
             )}
             <span className="min-w-0 font-medium text-prominent-purple-900">
-              {isPenaltyRow(row) ? 'Penalty' : row.description}
+              {isSheetPenalty(row)
+                ? 'Sheet penalty'
+                : isPenaltyRow(row)
+                  ? 'Penalty'
+                  : row.description}
             </span>
+            {isSheetPenalty(row) && (
+              <span className="shrink-0 text-[11px] font-normal text-gray-500">reference only</span>
+            )}
           </span>
         </td>
         <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-gray-800">
