@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
@@ -17,7 +17,20 @@ const TRANSFERS_TAB = '/inventory/stock-transaction?tab=transfers'
 // it landed.
 export default function StockRequestTab({ session }: { session: SessionUser }): React.JSX.Element {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [formKey, setFormKey] = useState(0)
+  // Item 360's "Stock Request" names the item, so the request opens on it.
+  // Submitting navigates away, which drops these params with it.
+  // Memoized: the form resets whenever initialDraft's identity changes.
+  const prefillItemId = searchParams.get('item')
+  const prefillItemLabel = searchParams.get('itemLabel')
+  const initialDraft = useMemo(
+    () =>
+      prefillItemId
+        ? { itemId: prefillItemId, itemLabel: prefillItemLabel ?? undefined, quantity: 1 }
+        : null,
+    [prefillItemId, prefillItemLabel]
+  )
   const {
     warehouseOptions,
     branchOptions,
@@ -48,6 +61,7 @@ export default function StockRequestTab({ session }: { session: SessionUser }): 
       key={formKey}
       variant="page"
       isOpen
+      initialDraft={initialDraft}
       onClose={() => setFormKey((k) => k + 1)}
       onSubmit={submit}
       isSubmitting={isCreating}

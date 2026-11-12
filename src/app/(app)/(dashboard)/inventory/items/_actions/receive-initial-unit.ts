@@ -5,6 +5,7 @@ import { api, ApiResponse } from '@/src/libs/api/client'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import type { UnitClassification } from '@/src/schema/inventory/reports'
 
 type ReceiveInitialUnitInput = {
   warehouseId: string
@@ -13,6 +14,8 @@ type ReceiveInitialUnitInput = {
   origin?: string
   price?: number
   serialNumber?: string
+  /** General Stockbook Classification; the backend defaults to Brand New. */
+  classification?: UnitClassification
 }
 
 type ReceiveInitialUnitResult = {

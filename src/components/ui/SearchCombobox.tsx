@@ -151,6 +151,14 @@ export function SearchCombobox({
     if (prevValue && !value) setConfirmedLabel('')
   }, [value])
 
+  // A value set by the parent after mount — a row that already existed when
+  // a preset filled it (Receive Stock opened for one item) — would otherwise
+  // stay blank, since initialLabel is only read as initial state. Fills a
+  // blank label only; never replaces one the user picked.
+  useEffect(() => {
+    if (value && !confirmedLabel && initialLabel) setConfirmedLabel(initialLabel)
+  }, [value, initialLabel, confirmedLabel])
+
   const updatePosition = useCallback(() => {
     const rect = containerRef.current?.getBoundingClientRect()
     if (!rect) return

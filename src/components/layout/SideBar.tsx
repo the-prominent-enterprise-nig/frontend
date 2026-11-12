@@ -266,6 +266,7 @@ const navItemsBySegment: Record<string, NavConfig> = {
         icon: Layers,
         requiredPermission: [
           INVENTORY_PERMISSIONS.WAREHOUSES_READ,
+          INVENTORY_PERMISSIONS.ITEMS_CREATE,
           INVENTORY_PERMISSIONS.COSTING_READ,
           INVENTORY_PERMISSIONS.COSTING_CONFIGURE,
           INVENTORY_PERMISSIONS.WILDCARD,

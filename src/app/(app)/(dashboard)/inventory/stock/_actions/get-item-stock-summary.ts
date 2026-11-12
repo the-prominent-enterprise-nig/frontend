@@ -13,6 +13,10 @@ export async function getItemStockSummary(
     itemId,
     limit: 50,
     includeReorderPoints: true,
+    // Same as the Stock Balance list: without it the backend narrows a
+    // branch user (Branch Custodian) to their own branch, so an item stocked
+    // elsewhere read "Out of Stock" here while the row said In Stock.
+    allBranches: true,
     branchIds: scope?.branchIds?.length ? scope.branchIds.join(',') : undefined,
     warehouseIds: scope?.warehouseIds?.length ? scope.warehouseIds.join(',') : undefined,
     region: scope?.region,
