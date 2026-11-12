@@ -589,7 +589,7 @@ export function CreditApplicationFinancingFields<T extends FinancingScopedFormVa
             <p className="mt-1 text-xs text-zinc-500" data-testid="down-payment-zero-allowed">
               {anyOverridden
                 ? 'An item on this application has a price override, so the down payment can be as low as 0.'
-                : 'The applicant is a business customer, so the down payment can be as low as 0.'}
+                : 'Business customer — down payment can be 0.'}
             </p>
           ) : (
             <p className="mt-1 text-xs text-zinc-500">

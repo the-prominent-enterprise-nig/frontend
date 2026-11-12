@@ -90,6 +90,48 @@ async function wipPriceUseId(page: Page): Promise<string> {
   return (Array.isArray(body) ? body : (body.data ?? [])).find((t) => t.name === 'WIP')!.id
 }
 
+const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** Swaps the applicant on the New Credit Application form. Once one is picked
+ * in the form the closed picker shows their name, and the open box uses it as
+ * its placeholder. One handed over by URL id alone (as openForFan does) has no
+ * label yet, so the picker still shows its search placeholder — either works. */
+async function switchApplicant(page: Page, fromName: string, toName: string): Promise<void> {
+  const current = new RegExp(`${escapeRegExp(fromName)}|Search customer by name or phone`)
+  await page.getByRole('button', { name: current }).first().click()
+  const box = page.getByPlaceholder(current)
+  const result = page.getByRole('button', { name: new RegExp(escapeRegExp(toName)) })
+  await expect(async () => {
+    await box.fill(toName)
+    await expect(result).toBeVisible({ timeout: 3_000 })
+  }).toPass({ timeout: 20_000 })
+  await result.click()
+}
+
+/** Creates an application for the applicant with the fan on it (no term, no
+ * down payment) and opens it in the Edit modal, on the 3-month term. */
+async function openEditFor(page: Page, applicantId: string): Promise<string> {
+  const created = await page.request.post('/api/credit/applications', {
+    data: {
+      applicantCustomerId: applicantId,
+      items: [{ itemId: await itemId(page, FAN) }],
+      priceUseTypeId: await wipPriceUseId(page),
+    },
+  })
+  expect(created.ok(), await created.text()).toBeTruthy()
+  const createdBody = await created.json()
+  const id = (createdBody.data ?? createdBody).id as string
+
+  await gotoReady(page, `/pos/credit-applications/${id}`)
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await expect(editHeading(page)).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('Estimated amount')).toBeVisible({ timeout: 15_000 })
+  await pickOption(term(page), page, '3 months')
+  return id
+}
+
+const editHeading = (page: Page) => page.getByRole('heading', { name: 'Edit Financing Request' })
+
 test.describe('Credit application — ₱0 down for a business customer (Docket #48)', () => {
   test.describe.configure({ timeout: 150_000 })
 
@@ -164,25 +206,8 @@ test.describe('Credit application — ₱0 down for a business customer (Docket 
 
   test('BZ-F04: a business applicant’s application can be edited down to ₱0', async ({ page }) => {
     const applicant = await createApplicant(page, 'business', 'private')
-    const created = await page.request.post('/api/credit/applications', {
-      data: {
-        applicantCustomerId: applicant.id,
-        items: [{ itemId: await itemId(page, FAN) }],
-        priceUseTypeId: await wipPriceUseId(page),
-      },
-    })
-    expect(created.ok(), await created.text()).toBeTruthy()
-    const createdBody = await created.json()
-    const id = (createdBody.data ?? createdBody).id as string
+    const id = await openEditFor(page, applicant.id)
 
-    await gotoReady(page, `/pos/credit-applications/${id}`)
-    await page.getByRole('button', { name: 'Edit', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Edit Financing Request' })).toBeVisible({
-      timeout: 15_000,
-    })
-    await expect(page.getByText('Estimated amount')).toBeVisible({ timeout: 15_000 })
-
-    await pickOption(term(page), page, '3 months')
     await expect(zeroAllowedHint(page)).toBeVisible({ timeout: 15_000 })
     await expect(zeroAllowedHint(page)).toHaveText(/business customer/)
     await downPayment(page).fill('0')
@@ -190,13 +215,63 @@ test.describe('Credit application — ₱0 down for a business customer (Docket 
     await expect(refusedZero(page)).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Save Changes' }).click()
-    await expect(page.getByRole('heading', { name: 'Edit Financing Request' })).toHaveCount(0, {
-      timeout: 20_000,
-    })
+    await expect(editHeading(page)).toHaveCount(0, { timeout: 20_000 })
 
     const app = await getApplication(page, id)
     expect(Number(app.downPayment)).toBe(0)
     expect((app.items[0] as { priceOverridden?: boolean }).priceOverridden).toBe(false)
+  })
+
+  test('BZ-F06 (regression): in the Edit modal an individual applicant with no override is still refused ₱0, and nothing is saved', async ({
+    page,
+  }) => {
+    const applicant = await createApplicant(page, 'individual')
+    const id = await openEditFor(page, applicant.id)
+
+    await expect(downPayment(page)).toHaveAttribute('placeholder', 'Any amount above 0', {
+      timeout: 15_000,
+    })
+    await expect(zeroAllowedHint(page)).toHaveCount(0)
+    await downPayment(page).fill('0')
+    await expect(refusedZero(page).first()).toBeVisible({ timeout: 10_000 })
+
+    await page.getByRole('button', { name: 'Save Changes' }).click()
+    await page.waitForTimeout(2_000)
+    await expect(editHeading(page)).toBeVisible()
+
+    const app = await getApplication(page, id)
+    expect(app.downPayment == null || Number(app.downPayment) !== 0).toBe(true)
+  })
+
+  test('BZ-F07 (edge): picking a different applicant moves the ₱0 rule with them, and it saves for the business one', async ({
+    page,
+  }) => {
+    const individual = await createApplicant(page, 'individual')
+    const business = await createApplicant(page, 'business', 'private')
+    await openForFan(page, individual.id)
+
+    await downPayment(page).fill('0')
+    await expect(refusedZero(page).first()).toBeVisible({ timeout: 10_000 })
+
+    // To the business customer — the refusal clears without retyping 0.
+    await switchApplicant(page, individual.name, business.name)
+    await expect(zeroAllowedHint(page)).toBeVisible({ timeout: 15_000 })
+    await expect(refusedZero(page)).toHaveCount(0, { timeout: 10_000 })
+
+    // Back to the individual — refused again.
+    await switchApplicant(page, business.name, individual.name)
+    await expect(zeroAllowedHint(page)).toHaveCount(0, { timeout: 15_000 })
+    await expect(refusedZero(page).first()).toBeVisible({ timeout: 10_000 })
+
+    // The business customer once more, and it saves at ₱0 under them.
+    await switchApplicant(page, individual.name, business.name)
+    await expect(refusedZero(page)).toHaveCount(0, { timeout: 10_000 })
+    await fillTheRest(page)
+    await fillNoPpd(page)
+    const id = await submit(page)
+    const app = await getApplication(page, id)
+    expect(Number(app.downPayment)).toBe(0)
+    expect((app as { applicantCustomerId?: string }).applicantCustomerId).toBe(business.id)
   })
 
   for (const customerType of ['self_employed', 'employee'] as const) {
