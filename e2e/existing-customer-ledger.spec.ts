@@ -190,10 +190,13 @@ test('an account not yet matured: months-running band, Billing row at the cut-of
   await expect(page.getByTestId('ledger-status')).toHaveCount(0)
   await expect(ledger.getByText('W/tax received')).toHaveCount(0)
 
-  // Record payment goes to AR New Receipt, this account's invoice picked.
+  // Record payment opens POS Collections on this account (`aging:<account id>`):
+  // that is where the open session is attached, so the cash counts in the
+  // cashier's drawer at Close Session. AR New Receipt takes no session.
   const href = await ledger.getByRole('link', { name: 'Record payment' }).getAttribute('href')
-  expect(href).toContain('/accounting/ar-invoices/receipts/new')
-  expect(href).toContain('invoiceId=')
+  expect(href).toContain('/pos/collections')
+  expect(href).toContain('scheduleId=aging%3A')
+  expect(href).not.toContain('/accounting/ar-invoices/receipts/new')
 
   // The Billing row stands for the seven installments billed at the cut-off,
   // and Due is billed less paid (7,000 − 3,000), not the sheet's Total Due.
