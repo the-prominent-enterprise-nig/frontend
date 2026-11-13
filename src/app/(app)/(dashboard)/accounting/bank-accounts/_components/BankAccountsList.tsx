@@ -14,6 +14,7 @@ export default function BankAccountsList() {
   const canCreate = !!me && can(me, 'accounting:bank-accounts:create')
   const canUpdate = !!me && can(me, 'accounting:bank-accounts:update')
   const canDelete = !!me && can(me, 'accounting:bank-accounts:delete')
+  const canOpenLedger = !!me && can(me, 'accounting:generalLedger:read')
   const [items, setItems] = useState<BankAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<BankAccount | null>(null)
@@ -38,6 +39,24 @@ export default function BankAccountsList() {
         )
       )
     : items
+  // What clicking a row does: open its ledger, or its edit form when no GL
+  // account is linked, and only for someone who may use that. A view-only
+  // reader (the Branch Cashier's own petty cash fund) just reads the row.
+  const rowAction = (a: BankAccount) => {
+    if (a.glAccountId && canOpenLedger) {
+      return {
+        title: 'Open ledger',
+        run: () =>
+          router.push(
+            `/accounting/general-ledger?accountId=${a.glAccountId}&bankAccountId=${a.id}&startDate=`
+          ),
+      }
+    }
+    if (!a.glAccountId && canUpdate) {
+      return { title: 'No GL account linked — click to edit', run: () => setEditing(a) }
+    }
+    return null
+  }
   const del = async (id: string) => {
     if (confirm('Deactivate account?')) {
       await BankAccounts.remove(id)
@@ -103,15 +122,9 @@ export default function BankAccountsList() {
               visible.map((a) => (
                 <tr
                   key={a.id}
-                  className="cursor-pointer hover:bg-gray-50"
-                  onClick={() =>
-                    a.glAccountId
-                      ? router.push(
-                          `/accounting/general-ledger?accountId=${a.glAccountId}&bankAccountId=${a.id}&startDate=`
-                        )
-                      : setEditing(a)
-                  }
-                  title={a.glAccountId ? 'Open ledger' : 'No GL account linked — click to edit'}
+                  className={rowAction(a) ? 'cursor-pointer hover:bg-gray-50' : undefined}
+                  onClick={rowAction(a)?.run}
+                  title={rowAction(a)?.title}
                 >
                   <td className="px-3 py-2 font-medium">{a.name}</td>
                   <td className="px-3 py-2">{a.bankName}</td>

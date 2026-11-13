@@ -178,7 +178,13 @@ export const CASH_BANKING_HUB: Hub = {
       id: 'bank-accounts',
       label: 'Bank and Cash Accounts',
       href: '/accounting/bank-accounts',
-      permissions: [ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ],
+      // The Branch Cashier's own-branch petty cash fund view opens this tab
+      // only; Inter-Account Transfer and Bank Reconciliation stay on the full
+      // read (they carry other accounts' and branches' data).
+      permissions: [
+        ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
+        ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ_BRANCH_FUND,
+      ],
     },
     {
       // Route and permissions keep the old cash-in-transit name (Scenario 61).
