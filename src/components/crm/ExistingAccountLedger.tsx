@@ -100,35 +100,51 @@ export default function ExistingAccountLedger({
   const matured = hasBilling && existing.billed >= existing.term
   const scheme = ledgerScheme(ledger)
 
-  // Record payment goes where the payment is posted — the same split the
-  // account page makes, each behind its own screen's permission so the button
-  // never leads to a 403. A POS-sale plan is collected in POS Collections; an
-  // account with no schedule (loaded from the sheet) at AR New Receipt, with
-  // its one invoice picked, and back here afterwards.
+  // Record payment opens POS Collections, on this account. A POS-sale plan is
+  // listed there under its schedule's id; an account loaded from the sheet (no
+  // schedule) under `aging:<account id>`. Collections is where the open
+  // session is attached to the receipt, so the cash counts in the cashier's
+  // drawer at Close Session — AR New Receipt takes no session, and a payment
+  // recorded there never reached the drawer.
+  //
+  // A loaded account goes to AR New Receipt (its one invoice picked, and back
+  // here afterwards) only where Collections can't take it, so the button never
+  // leads to a 403 or an empty list: someone who can pay an AR invoice but not
+  // collect in POS (Accounting), or a branch-tied user on another branch's
+  // account (Collections lists a branch user's own branch and the unbranched).
   const here = `${pathname}${searchParams.toString() ? `?${searchParams}` : ''}`
-  const paymentHref = account.installmentScheduleId
-    ? `/pos/collections?${new URLSearchParams({
-        customerId: account.customerId,
-        customerName: account.customer?.name ?? '',
-        scheduleId: account.installmentScheduleId,
-      })}`
-    : account.arInvoiceId
-      ? `/accounting/ar-invoices/receipts/new?${new URLSearchParams({
+  const canCollectAtPos = !!me && hasPermission(me, POS_PERMISSIONS.COLLECTIONS_MANAGE)
+  const canPayArInvoice =
+    !!me &&
+    hasPermission(me, ACCOUNTING_PERMISSIONS.AR_INVOICES_READ) &&
+    hasPermission(me, ACCOUNTING_PERMISSIONS.AR_INVOICES_PAY)
+  const listedInCollections = !me?.branchId || !account.branchId || account.branchId === me.branchId
+  const collectionsScheduleId =
+    account.installmentScheduleId ?? (account.arInvoiceId ? `aging:${accountId}` : null)
+  const paymentAtPos =
+    !!collectionsScheduleId &&
+    (!!account.installmentScheduleId || (canCollectAtPos && listedInCollections))
+  const paymentHref =
+    paymentAtPos && collectionsScheduleId
+      ? `/pos/collections?${new URLSearchParams({
           customerId: account.customerId,
           customerName: account.customer?.name ?? '',
-          invoiceId: account.arInvoiceId,
-          returnTo: here,
+          scheduleId: collectionsScheduleId,
         })}`
-      : null
+      : account.arInvoiceId
+        ? `/accounting/ar-invoices/receipts/new?${new URLSearchParams({
+            customerId: account.customerId,
+            customerName: account.customer?.name ?? '',
+            invoiceId: account.arInvoiceId,
+            returnTo: here,
+          })}`
+        : null
   const canRecordPayment =
     account.status === 'active' &&
     !!paymentHref &&
     !!me &&
     hasPermission(me, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_RECORD_PAYMENT) &&
-    (account.installmentScheduleId
-      ? hasPermission(me, POS_PERMISSIONS.COLLECTIONS_MANAGE)
-      : hasPermission(me, ACCOUNTING_PERMISSIONS.AR_INVOICES_READ) &&
-        hasPermission(me, ACCOUNTING_PERMISSIONS.AR_INVOICES_PAY))
+    (paymentAtPos ? canCollectAtPos : canPayArInvoice)
   // Editing an installment account is the Business Owner's alone (an
   // explicit-only permission — a CRM wildcard never grants it), so it is read
   // with can(), the check the edit page and the server apply. hasPermission()

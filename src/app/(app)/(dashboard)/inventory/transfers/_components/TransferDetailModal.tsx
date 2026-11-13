@@ -13,7 +13,7 @@ import {
   type FieldErrors,
 } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   X,
   Loader2,
@@ -66,6 +66,8 @@ import {
 } from '../../purchase-orders/_components/receive-po/serialScan'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
 import { getSenderSerials, type SenderSerial } from '../_actions/get-sender-serials'
+import { getTransfer } from '../_actions/get-transfer'
+import { isStaleReceiveError } from '@/src/libs/inventory/stale-receive'
 import {
   buildWrongUnitNote,
   hasWrongUnitNote,
@@ -1225,6 +1227,7 @@ export default function TransferDetailModal({
   isApprovingManager,
   isRejectingManager,
 }: Props) {
+  const queryClient = useQueryClient()
   const [showDispatchForm, setShowDispatchForm] = useState(false)
   const [showReceiveForm, setShowReceiveForm] = useState(false)
   const [showRejectHqForm, setShowRejectHqForm] = useState(false)
@@ -1578,8 +1581,23 @@ export default function TransferDetailModal({
     }
   }
 
-  function openReceiveForm() {
+  async function openReceiveForm() {
     if (!transfer) return
+    // Build the form from the server's CURRENT lines, never from the copy the
+    // screen has been holding: the backend wants exactly one receipt line per
+    // line still outstanding, so a copy that is even one receipt old (someone
+    // else at the branch received units meanwhile) is refused with "Receive
+    // payload must include exactly one line per outstanding transfer line".
+    // fetchQuery also refreshes the cache the table above reads from. If the
+    // reload fails, fall back to what is on screen — the server still checks.
+    const fresh = await queryClient
+      .fetchQuery({
+        queryKey: ['inventory-transfer', transfer.id],
+        queryFn: () => getTransfer(transfer.id),
+        staleTime: 0,
+      })
+      .catch(() => null)
+    const current = fresh?.success && fresh.data ? fresh.data : transfer
     // Only lines not yet at their full dispatched quantity are actionable —
     // on a first receive that's every line; on a reopened partially_received
     // transfer it's just what's still short. Serial lines start unticked
@@ -1588,9 +1606,15 @@ export default function TransferDetailModal({
     // confirmed unseen — "Mark all received" keeps a complete one to a
     // click. Quantity lines still default to the full remaining amount;
     // there is no per-unit sighting to confirm there.
-    const outstanding = (transfer.lines ?? []).filter(
+    const outstanding = (current.lines ?? []).filter(
       (line) => Number(line.receivedQuantity ?? 0) < Number(line.quantity)
     )
+    // Someone else finished the receipt: nothing left to do here, and the
+    // refreshed transfer above now shows it as received.
+    if (outstanding.length === 0) {
+      setShowReceiveForm(false)
+      return
+    }
     // Only serial lines get split into several rows for the same item at
     // create time — label just those with "(i of N)" so they're tellable
     // apart; a non-serial line's itemLabel is left as-is.
@@ -1644,6 +1668,11 @@ export default function TransferDetailModal({
     if (result.success) {
       setShowReceiveForm(false)
       receiveForm.reset()
+    } else if (isStaleReceiveError(result)) {
+      // The transfer changed since this form was built. Rebuild it from the
+      // server's current lines so the receiver re-checks and confirms again,
+      // instead of retrying the same refused receipt.
+      await openReceiveForm()
     }
   }
 

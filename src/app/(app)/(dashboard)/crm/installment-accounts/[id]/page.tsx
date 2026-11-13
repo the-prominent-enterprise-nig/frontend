@@ -27,9 +27,11 @@ export default async function InstallmentAccountDetailPage({
       // account, so staff who can't edit can still ask.
       canRequest={can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_CREATE)}
       canEarlyPayoff={can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_EARLY_PAYOFF)}
-      // Record payment opens POS Collections (POS-sale plan) or AR New
-      // Receipt (imported account), each with its own guard — so the button
-      // needs the CRM permission plus that screen's, or it leads to a 403.
+      // Record payment opens POS Collections (any account Collections lists) or
+      // AR New Receipt (an imported account it can't take), each with its own
+      // guard — so the button needs the CRM permission plus that screen's, or
+      // it leads to a 403.
+      userBranchId={session.branchId ?? null}
       canCollectAtPos={
         can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_RECORD_PAYMENT) &&
         can(session, POS_PERMISSIONS.COLLECTIONS_MANAGE)

@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
+import { isStaleReceiveError } from '@/src/libs/inventory/stale-receive'
 import { getTransfers } from '../_actions/get-transfers'
 import { getTransfer } from '../_actions/get-transfer'
 import { updateCaravan } from '../_actions/update-caravan'
@@ -459,6 +460,17 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
           const status = result.data.status as TransferStatus
           setSelectedTransfer((prev) => (prev ? { ...prev, status } : null))
         }
+      } else if (isStaleReceiveError(result)) {
+        // Someone received units since this form was built. Reload the
+        // transfer and say so plainly; the form rebuilds itself from it.
+        showToast({
+          title: 'This transfer was just updated',
+          description:
+            'Some units were already received. The transfer has been reloaded. Please check the lines and confirm again.',
+          status: 'warning',
+        })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfer', selectedTransfer?.id] })
       } else {
         showToast({
           title: 'Failed to receive transfer',
