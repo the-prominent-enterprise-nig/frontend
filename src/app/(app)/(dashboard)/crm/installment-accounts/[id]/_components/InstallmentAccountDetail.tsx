@@ -160,6 +160,7 @@ export default function InstallmentAccountDetail({
   canEarlyPayoff,
   canCollectAtPos,
   canRecordReceipt,
+  userBranchId,
   canApproveGraduation,
   canApproveDamEscalation,
   canManageLegalEscalation,
@@ -173,10 +174,16 @@ export default function InstallmentAccountDetail({
   /** File a graduation or DAM escalation request (a create, not an edit). */
   canRequest: boolean
   canEarlyPayoff: boolean
-  /** Record payment for a POS-sale plan — it opens POS Collections. */
+  /** Record payment opens POS Collections: a POS-sale plan's own schedule, or
+   * an imported account as `aging:<id>`. */
   canCollectAtPos: boolean
-  /** Record payment for an imported/hand-entered account — it opens AR New Receipt. */
+  /** Record payment for an imported/hand-entered account Collections can't take
+   * (Accounting, or another branch's account) — it opens AR New Receipt. */
   canRecordReceipt: boolean
+  /** The viewer's branch; null for Head Office. Collections lists a branch user
+   * their own branch's accounts and the unbranched, so another branch's loaded
+   * account is sent to AR New Receipt instead of an empty list. */
+  userBranchId?: string | null
   canApproveGraduation: boolean
   canApproveDamEscalation: boolean
   canManageLegalEscalation: boolean
@@ -360,27 +367,42 @@ export default function InstallmentAccountDetail({
   const canSettle = canEarlyPayoff && account.status === 'active'
   // Scenario 79 — Record payment goes where the payment is posted (receipt,
   // GL, dues), not the old CRM-only modal that only moved this account's
-  // stored figures. POS Collections only lists POS-sale plans, so an
-  // imported/hand-entered account (one AR invoice, no schedule) goes to AR
-  // New Receipt with that invoice picked instead.
-  const paymentHref = account.installmentScheduleId
-    ? `/pos/collections?${new URLSearchParams({
-        customerId: account.customerId,
-        customerName: account.customer.name,
-        scheduleId: account.installmentScheduleId,
-      })}`
-    : account.arInvoiceId
-      ? `/accounting/ar-invoices/receipts/new?${new URLSearchParams({
+  // stored figures. It opens POS Collections on this account: a POS-sale plan
+  // under its schedule's id, an imported/hand-entered account (one AR invoice,
+  // no schedule) under `aging:<account id>`. Collections is where the open
+  // session is attached to the receipt, so the cash counts in the cashier's
+  // drawer at Close Session — AR New Receipt takes no session.
+  //
+  // An imported account goes to AR New Receipt (its invoice picked) only where
+  // Collections can't take it: someone who can pay an AR invoice but not
+  // collect in POS (Accounting), or a branch-tied user on another branch's
+  // account (Collections lists a branch user's own branch and the unbranched).
+  const listedInCollections =
+    !userBranchId || !account.branchId || account.branchId === userBranchId
+  const collectionsScheduleId =
+    account.installmentScheduleId ?? (account.arInvoiceId ? `aging:${id}` : null)
+  const paymentAtPos =
+    !!collectionsScheduleId &&
+    (!!account.installmentScheduleId || (canCollectAtPos && listedInCollections))
+  const paymentHref =
+    paymentAtPos && collectionsScheduleId
+      ? `/pos/collections?${new URLSearchParams({
           customerId: account.customerId,
           customerName: account.customer.name,
-          invoiceId: account.arInvoiceId,
-          returnTo: `/crm/installment-accounts/${id}`,
+          scheduleId: collectionsScheduleId,
         })}`
-      : null
+      : account.arInvoiceId
+        ? `/accounting/ar-invoices/receipts/new?${new URLSearchParams({
+            customerId: account.customerId,
+            customerName: account.customer.name,
+            invoiceId: account.arInvoiceId,
+            returnTo: `/crm/installment-accounts/${id}`,
+          })}`
+        : null
   const canPay =
     account.status === 'active' &&
     !!paymentHref &&
-    (account.installmentScheduleId ? canCollectAtPos : canRecordReceipt)
+    (paymentAtPos ? canCollectAtPos : canRecordReceipt)
   // The first payment still to come — the one the billing list points at.
   const nextBillLine = account.billingHistory.find(
     (b) => b.status !== 'PAID' && b.status !== 'CANCELLED'
