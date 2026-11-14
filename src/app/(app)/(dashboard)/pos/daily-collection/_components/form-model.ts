@@ -474,10 +474,12 @@ export interface CashPosition {
   balanced: boolean
 }
 
-/** What the denomination count has to come to: the closed sessions' cash
- * and (Scenario 83) any turnover from another branch acknowledged that day,
- * which is in the same cash on hand. Mirrors the backend's expectedCount. */
+/** What the denomination count has to come to: what the day's closed drawers
+ * expected at close, so this form's variance is the drawers' own. Falls back
+ * to settled cash plus acknowledged turnovers when a drawer stored none.
+ * Mirrors the backend's expectedCount. */
 export function expectedCount(report: DailyCollectionReport): number {
+  if (report.drawerExpectedCash != null) return report.drawerExpectedCash
   return report.settledCashCollection + (report.turnoverInTotal ?? 0)
 }
 
