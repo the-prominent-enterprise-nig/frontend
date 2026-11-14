@@ -128,7 +128,7 @@ export const CreateItemFormSchema = CreateItemFormBaseSchema.superRefine((data, 
     ctx.addIssue({
       code: 'custom',
       path: ['initialWarehouseId'],
-      message: 'Warehouse is required to record initial stock',
+      message: 'Branch is required to record initial stock',
     })
   }
   if (!data.initialDateIn) {
