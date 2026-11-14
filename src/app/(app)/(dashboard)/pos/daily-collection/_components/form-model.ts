@@ -472,15 +472,44 @@ export interface CashPosition {
   pendingCashOnHand: number
   /** Within half a centavo, which is as close as a peso form can ask. */
   balanced: boolean
+  /** What the count is measured against — see expectedCount. */
+  expected: number
+  /** The count differs from the sessions' own, so it covers cash held
+   * outside the drawers too. */
+  corrected: boolean
 }
 
-/** What the denomination count has to come to: what the day's closed drawers
- * expected at close, so this form's variance is the drawers' own. Falls back
- * to settled cash plus acknowledged turnovers when a drawer stored none.
- * Mirrors the backend's expectedCount. */
-export function expectedCount(report: DailyCollectionReport): number {
-  if (report.drawerExpectedCash != null) return report.drawerExpectedCash
-  return report.settledCashCollection + (report.turnoverInTotal ?? 0)
+/** Reasons whose cash the branch holds outside the drawers. Drops, petty cash
+ * and another day's session cash are not on hand to count. */
+const HELD_OUTSIDE_DRAWER = new Set(['NO_SESSION', 'NEW_RECEIPT', 'TURNOVER'])
+
+/** Cash on hand outside the drawers — what a corrected count also covers. */
+export function heldOutsideDrawer(report: DailyCollectionReport): number {
+  return report.outsideDrawer
+    .filter((line) => HELD_OUTSIDE_DRAWER.has(line.reason))
+    .reduce((sum, line) => sum + line.amount, 0)
+}
+
+/** Whether two counts agree; a face missing from one reads as zero. */
+export function sameCounts(a: Record<string, number>, b: Record<string, number>): boolean {
+  const faces = new Set([...Object.keys(a), ...Object.keys(b)])
+  return [...faces].every((face) => (a[face] ?? 0) === (b[face] ?? 0))
+}
+
+/**
+ * What the denomination count has to come to. The sessions' own count is
+ * drawer cash, so it meets what the closed drawers expected. A corrected count
+ * is everything the branch holds, so it also meets the cash held outside the
+ * drawers (turnovers, no-session collections, cash New Receipts). Falls back
+ * to settled cash plus turnovers when a drawer stored no expected cash.
+ * Mirrors the backend's expectedCount.
+ */
+export function expectedCount(report: DailyCollectionReport, corrected: boolean): number {
+  if (report.drawerExpectedCash == null) {
+    return report.settledCashCollection + (report.turnoverInTotal ?? 0)
+  }
+  if (!corrected) return report.drawerExpectedCash
+  return Math.round((report.drawerExpectedCash + heldOutsideDrawer(report)) * 100) / 100
 }
 
 export function cashPosition(
@@ -489,7 +518,9 @@ export function cashPosition(
 ): CashPosition {
   const denominationTotal = sumDenominations(counts)
   const cashCollected = denominationTotal - report.openingFloat
-  const variance = cashCollected - expectedCount(report)
+  const corrected = !sameCounts(counts, report.countedDenominations ?? {})
+  const expected = expectedCount(report, corrected)
+  const variance = cashCollected - expected
 
   return {
     denominationTotal,
@@ -497,6 +528,8 @@ export function cashPosition(
     variance,
     pendingCashOnHand: report.pendingCashOnHand,
     balanced: Math.abs(variance) < 0.005,
+    expected,
+    corrected,
   }
 }
 

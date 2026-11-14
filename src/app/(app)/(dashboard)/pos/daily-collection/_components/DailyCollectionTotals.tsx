@@ -130,9 +130,17 @@ function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.El
 /** The figure the count is measured against, in words: what the closed
  * drawers expected, or — when a drawer stored none — the closed sessions'
  * cash plus any turnover. */
-function expectationText(report: DailyCollectionReport): string {
+function expectationText(
+  report: DailyCollectionReport,
+  position: ReturnType<typeof cashPosition>
+): string {
   if (report.drawerExpectedCash != null) {
-    return `The day’s closed drawers expected ${peso(report.drawerExpectedCash)}`
+    const drawers = `The day’s closed drawers expected ${peso(report.drawerExpectedCash)}`
+    const outside = position.expected - report.drawerExpectedCash
+    // A corrected count is everything on hand, turnovers and the rest included.
+    return position.corrected && outside > 0.005
+      ? `${drawers}, plus ${peso(outside)} held outside them`
+      : drawers
   }
   const turnover = report.turnoverInTotal ?? 0
   return turnover > 0.005
@@ -328,7 +336,7 @@ function Verdict({
           </>
         ) : (
           <>
-            {expectationText(report)} — that is what this count must come to.
+            {expectationText(report, position)} — that is what this count must come to.
             {!balanced && ' Recount, then check the day’s sessions before signing.'}
           </>
         )}
