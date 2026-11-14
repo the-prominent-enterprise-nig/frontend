@@ -32,6 +32,12 @@ export interface Slip {
   /** A 1-01-010 sub-ledger fund the slip empties instead — Cash on Hand, a
    * petty cash or special fund, another bank. Empty when it empties an account. */
   clearsBankAccountId: string
+  /** The provider a card / e-wallet / bank-transfer slip banks, as a tender key
+   * ("card::BDO"); empty when it names none, ANY_PROVIDER when accounting chose
+   * not to. Providers share one clearing account, so the account alone cannot
+   * say whose money the slip is — without a name the deposit clears the oldest
+   * session's money, whichever provider took it. */
+  clearsTender: string
   note: string
   /** This bank's own deposit slip number — each bank issues its own, and a
    * deposit cannot be recorded without it. */
@@ -102,6 +108,55 @@ export function joinReferences(refs: (string | undefined)[]): string | undefined
   return unique.length ? unique.join(', ').slice(0, 100) : undefined
 }
 
+/** A card or e-wallet provider the sessions being deposited took money on, and
+ * the clearing account it posts to. */
+export interface SlipProvider {
+  /** Tender key: "card::BDO", "qr::Soundpay". */
+  key: string
+  label: string
+  /** The clearing account the provider posts to, or null where none is set. */
+  accountId: string | null
+  /** What is still to bank of it across the selected sessions. */
+  amount: number
+}
+
+/** Accounting's explicit "not specified": the slip clears the oldest session's
+ * card money, as every deposit did before a slip could name a provider. */
+export const ANY_PROVIDER = '*'
+
+/** The providers the selected sessions still have money on, one entry each. */
+export function providersOf(
+  rows: {
+    clearingTenders?: { key: string; label: string; accountId: string | null; amount: number }[]
+  }[]
+): SlipProvider[] {
+  const byKey = new Map<string, SlipProvider>()
+  for (const row of rows) {
+    for (const t of row.clearingTenders ?? []) {
+      const held = byKey.get(t.key)
+      byKey.set(t.key, {
+        key: t.key,
+        label: t.label,
+        accountId: t.accountId,
+        amount: round2((held?.amount ?? 0) + Number(t.amount)),
+      })
+    }
+  }
+  return [...byKey.values()].sort((a, b) => a.label.localeCompare(b.label))
+}
+
+/** The providers that post to the account a slip empties. */
+function providersFor(providers: SlipProvider[], clearsAccountId: string): SlipProvider[] {
+  return clearsAccountId ? providers.filter((p) => p.accountId === clearsAccountId) : []
+}
+
+/** The one provider an account holds, when it holds exactly one — nothing to
+ * ask then. Empty when several share it (accounting picks) or none do. */
+function onlyProvider(providers: SlipProvider[], clearsAccountId: string): string {
+  const held = providersFor(providers, clearsAccountId)
+  return held.length === 1 ? held[0].key : ''
+}
+
 type Option = { value: string; label: string; group?: string; indent?: boolean }
 
 /** One slip: the bank it went to, the amount on it, the account it empties,
@@ -112,6 +167,7 @@ function SlipRow({
   label,
   bankOptions,
   clearsOptions,
+  providers,
   credits,
   onChange,
   onRemove,
@@ -123,6 +179,8 @@ function SlipRow({
   bankOptions: Option[]
   /** Everything a slip can empty, grouped by its GL account. */
   clearsOptions: Option[]
+  /** The providers the selected sessions took money on. */
+  providers: SlipProvider[]
   /** The Unidentified Bank Credits this slip may match. */
   credits: SlipCredit[]
   onChange: (patch: Partial<Slip>) => void
@@ -138,12 +196,57 @@ function SlipRow({
         label={label}
         bankOptions={bankOptions}
         clearsOptions={clearsOptions}
+        providers={providers}
         auto={auto}
         onChange={onChange}
         onRemove={onRemove}
         removeDisabled={removeDisabled}
       />
+      <ProviderPicker slip={slip} label={label} providers={providers} onChange={onChange} />
       {auto && <CreditPicker slip={slip} label={label} credits={credits} onChange={onChange} />}
+    </div>
+  )
+}
+
+/** Which provider's money a card / e-wallet slip banks. Asked only when several
+ * providers share the account the slip empties — one provider is no choice, and
+ * with none there is nothing to name. */
+function ProviderPicker({
+  slip,
+  label,
+  providers,
+  onChange,
+}: {
+  slip: Slip
+  label: string
+  providers: SlipProvider[]
+  onChange: (patch: Partial<Slip>) => void
+}): React.JSX.Element | null {
+  const held = providersFor(providers, slip.clearsAccountId)
+  if (held.length === 0) return null
+  if (held.length === 1) {
+    return (
+      <p className="text-xs text-ink-muted" data-testid="slip-provider-note">
+        Banks {held[0].label} — {fmtMoney(held[0].amount)} to bank.
+      </p>
+    )
+  }
+  return (
+    <div data-testid="slip-provider">
+      <SearchableSelect
+        value={slip.clearsTender}
+        onChange={(value) => onChange({ clearsTender: value })}
+        options={[
+          ...held.map((p) => ({
+            value: p.key,
+            label: `${p.label} — ${fmtMoney(p.amount)} to bank`,
+          })),
+          { value: ANY_PROVIDER, label: 'Not specified — oldest session first' },
+        ]}
+        placeholder="Whose money is this slip banking?"
+        ariaLabel={`${label} provider`}
+        portal
+      />
     </div>
   )
 }
@@ -188,6 +291,7 @@ function SlipFields({
   label,
   bankOptions,
   clearsOptions,
+  providers,
   auto,
   onChange,
   onRemove,
@@ -197,6 +301,7 @@ function SlipFields({
   label: string
   bankOptions: Option[]
   clearsOptions: Option[]
+  providers: SlipProvider[]
   /** The reference comes from a credit. */
   auto: boolean
   onChange: (patch: Partial<Slip>) => void
@@ -225,7 +330,7 @@ function SlipFields({
       />
       <SearchableSelect
         value={clearsValue(slip)}
-        onChange={(value) => onChange(clearsPatch(value))}
+        onChange={(value) => onChange(clearsPatch(value, providers))}
         options={clearsOptions}
         placeholder="Deposit from…"
         ariaLabel={`${label} deposit from`}
@@ -296,11 +401,24 @@ function clearsValue(slip: Slip): string {
   return slip.clearsBankAccountId ? FUND_PREFIX + slip.clearsBankAccountId : slip.clearsAccountId
 }
 
-/** A Deposit from pick, back in the slip's fields. */
-function clearsPatch(value: string): Pick<Slip, 'clearsAccountId' | 'clearsBankAccountId'> {
+/** A Deposit from pick, back in the slip's fields. Changing it drops any
+ * provider named for the old account; an account that holds just one provider
+ * names it at once. */
+function clearsPatch(
+  value: string,
+  providers: SlipProvider[]
+): Pick<Slip, 'clearsAccountId' | 'clearsBankAccountId' | 'clearsTender'> {
   return value.startsWith(FUND_PREFIX)
-    ? { clearsAccountId: '', clearsBankAccountId: value.slice(FUND_PREFIX.length) }
-    : { clearsAccountId: value, clearsBankAccountId: '' }
+    ? {
+        clearsAccountId: '',
+        clearsBankAccountId: value.slice(FUND_PREFIX.length),
+        clearsTender: '',
+      }
+    : {
+        clearsAccountId: value,
+        clearsBankAccountId: '',
+        clearsTender: onlyProvider(providers, value),
+      }
 }
 
 /** The funds kept in 1-01-010's sub-ledger — every bank and cash fund posts
@@ -367,6 +485,7 @@ export function emptySlip(): Slip {
     amount: '',
     clearsAccountId: '',
     clearsBankAccountId: '',
+    clearsTender: '',
     note: '',
     reference: '',
     depositDate: manilaToday(),
@@ -382,8 +501,10 @@ export function earliestDate(slips: Slip[]): string {
  * counts, where Number() alone would make it nothing. */
 export const slipAmount = (slip: Slip): number => Number(slip.amount.replace(/,/g, '')) || 0
 
-/** Why the slips cannot be saved yet, or null when they can. */
-export function slipsProblem(slips: Slip[]): string | null {
+/** Why the slips cannot be saved yet, or null when they can. `providers` are
+ * the card and e-wallet providers of the sessions being deposited: where
+ * several share the account a slip empties, the slip has to say which. */
+export function slipsProblem(slips: Slip[], providers: SlipProvider[] = []): string | null {
   const incomplete = slips.some(
     (s) =>
       !s.bankAccountId ||
@@ -402,6 +523,12 @@ export function slipsProblem(slips: Slip[]): string | null {
   if (incomplete) {
     return 'Every slip needs a bank account, an amount, a Deposit from account, a reference number and a date — remove any empty slip.'
   }
+  const unnamed = slips.findIndex(
+    (s) => !s.clearsTender && providersFor(providers, s.clearsAccountId).length > 1
+  )
+  if (unnamed >= 0) {
+    return `Slip ${unnamed + 1}: say whose money it banks. Several providers share that clearing account, and without a name the deposit clears the oldest session's money.`
+  }
   return slips.some((s) => s.clearsBankAccountId && s.clearsBankAccountId === s.bankAccountId)
     ? "A slip can't be deposited from the same account it is banked to."
     : null
@@ -416,6 +543,10 @@ export function toLineInputs(slips: Slip[]): PosDepositLineInput[] {
     amount: slipAmount(s),
     clearsAccountId: clearsAccountOf(s),
     clearsBankAccountId: s.clearsBankAccountId || undefined,
+    clearsTender:
+      s.clearsAccountId && s.clearsTender && s.clearsTender !== ANY_PROVIDER
+        ? s.clearsTender
+        : undefined,
     note: s.note || undefined,
     reference: s.reference.trim(),
     depositDate: s.depositDate,
@@ -456,6 +587,7 @@ export function slipsFromLines(
     amount: String(Number(l.amount)),
     clearsAccountId: l.clearsAccount?.id ?? '',
     clearsBankAccountId: l.clearsBankAccount?.id ?? (l.clearsAccount ? '' : cashFundId),
+    clearsTender: l.clearsTender ?? '',
     note: l.note ?? '',
     reference: l.reference ?? '',
     depositDate: (l.depositDate ?? depositDate).slice(0, 10),
@@ -472,10 +604,14 @@ export function SlipEditor({
   slips,
   onChange,
   accounts,
+  providers = [],
 }: {
   slips: Slip[]
   onChange: (slips: Slip[]) => void
   accounts: BankAccountOption[]
+  /** The card and e-wallet providers of the sessions being deposited. Empty
+   * when correcting a recorded deposit: its slips keep the provider they named. */
+  providers?: SlipProvider[]
 }): React.JSX.Element {
   // The chart, for the Deposit from column: a slip empties the branch's own
   // cash, a fund in 1-01-010's sub-ledger, or one of the accounts the client's
@@ -518,6 +654,7 @@ export function SlipEditor({
             label={`slip ${i + 1}`}
             bankOptions={bankOptions}
             clearsOptions={[...fundOptions(accounts, slip.bankAccountId), ...clearingOptions]}
+            providers={providers}
             credits={creditsFor(slip, slips, unmatched)}
             onChange={(patch) => setSlip(i, patch)}
             onRemove={() => onChange(slips.filter((_, n) => n !== i))}

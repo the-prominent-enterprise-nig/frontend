@@ -35,6 +35,7 @@ import {
 } from '../_actions/pos-deposits'
 import {
   SlipEditor,
+  providersOf,
   isBranchCashSlip,
   earliestDate,
   emptySlip,
@@ -44,6 +45,7 @@ import {
   slipsProblem,
   toLineInputs,
   type Slip,
+  type SlipProvider,
 } from './SlipEditor'
 import {
   SettleAsToggle,
@@ -110,6 +112,8 @@ export interface LedgerRow {
   cash: number
   /** Card and e-wallet money waiting in processors' clearing accounts. */
   clearing: number
+  /** `clearing` by provider, for a slip that names the one it banks. */
+  clearingTenders?: NonNullable<CashInTransitSessionRow['clearingTenders']>
   /** What earlier deposits already banked of a To-deposit session — a short
    * deposit leaves the rest here, still to deposit. */
   deposited: number
@@ -180,6 +184,7 @@ function fromOutstanding(r: CashInTransitSessionRow): LedgerRow[] {
             ...base,
             key: r.sessionId,
             ...amounts(r.amount, r.clearingAmount, r.newReceiptsAmount),
+            clearingTenders: r.clearingTenders ?? [],
             deposited: Number(r.depositedAmount ?? 0),
             status: 'to_deposit',
             depositId: null,
@@ -961,6 +966,9 @@ function DepositForm({
   const receipts = newReceipts.data?.data ?? []
 
   const owed = owedTotals(sessions, receipts)
+  // The card and e-wallet providers these sessions took, so a slip can say
+  // whose money it banks (several share one clearing account).
+  const providers = providersOf(sessions)
   const activeTurnover = mode === 'turnover' ? turnover : null
   const activeSlips = mode === 'bank' || withSlips ? slips : []
   const turnedOver = activeTurnover ? turnoverAmount(activeTurnover) : 0
@@ -971,7 +979,8 @@ function DepositForm({
   const blockedReason =
     sessions.length === 0 && receipts.length === 0
       ? 'Select at least one session to deposit.'
-      : (settleProblem(activeTurnover, activeSlips) ?? clearingOverProblem(owed, entered))
+      : (settleProblem(activeTurnover, activeSlips, providers) ??
+        clearingOverProblem(owed, entered))
   const turnoverOnly = !!activeTurnover && activeSlips.length === 0
   const switchMode = (next: SettleMode): void => {
     setMode(next)
@@ -1068,7 +1077,12 @@ function DepositForm({
                 + Allocate for Bank Deposit
               </button>
             ) : (
-              <SlipEditor slips={slips} onChange={setSlips} accounts={accounts} />
+              <SlipEditor
+                slips={slips}
+                onChange={setSlips}
+                accounts={accounts}
+                providers={providers}
+              />
             )}
             {mode === 'turnover' && withSlips && (
               <button
@@ -1148,9 +1162,13 @@ function settleLines(turnover: Turnover | null, slips: Slip[]): PosDepositLineIn
 }
 
 /** Why the turnover or the slips cannot be saved yet, or null. */
-function settleProblem(turnover: Turnover | null, slips: Slip[]): string | null {
-  if (!turnover) return slipsProblem(slips)
-  return turnoverProblem(turnover) ?? (slips.length ? slipsProblem(slips) : null)
+function settleProblem(
+  turnover: Turnover | null,
+  slips: Slip[],
+  providers: SlipProvider[]
+): string | null {
+  if (!turnover) return slipsProblem(slips, providers)
+  return turnoverProblem(turnover) ?? (slips.length ? slipsProblem(slips, providers) : null)
 }
 
 /** What a deposit has to bank, by where the money sits: the branch's own cash

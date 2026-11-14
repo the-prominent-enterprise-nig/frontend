@@ -77,6 +77,8 @@ export interface PosDepositLine {
   clearsAccount: { id: string; number: string | null; name: string } | null
   /** A 1-01-010 sub-ledger fund the slip emptied instead of an account. */
   clearsBankAccount: { id: string; name: string } | null
+  /** The provider the slip banks ("card::BDO"), when it names one. */
+  clearsTender?: string | null
   /** The Unidentified Bank Credit this slip matched instead of banking. */
   unidentifiedCredit?: {
     id: string
@@ -99,6 +101,10 @@ export interface PosDepositLineInput {
   clearsAccountId?: string
   /** A 1-01-010 sub-ledger fund — Cash on Hand, a petty cash fund, a bank. */
   clearsBankAccountId?: string
+  /** The provider a card / e-wallet / bank-transfer slip banks ("card::BDO").
+   * Providers share one clearing account, so without it the deposit clears the
+   * oldest session's money instead of this provider's. Needs clearsAccountId. */
+  clearsTender?: string
   /** An Unidentified Bank Credit this slip matches; the server fills its bank,
    * amount, reference and date from it. */
   unidentifiedCreditId?: string
