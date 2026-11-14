@@ -122,6 +122,19 @@ export interface SessionTenderSummary {
    *  (Tonik, Skyro, Salmon). Not taken at the counter, so in no total above. */
   tpf?: Record<string, number>
   totalTpf?: number
+  /** Cash turned over from another branch and acknowledged into this drawer.
+   *  Already in the expected drawer; banked with the session. */
+  turnovers?: SessionTurnover[]
+  totalTurnoversIn?: number
+}
+
+export interface SessionTurnover {
+  id: string
+  /** The ACK number. */
+  number: string | null
+  /** 'Turnover from Libertad Caravan'. */
+  from: string
+  amount: number
 }
 
 export interface SessionCollection {
@@ -163,6 +176,8 @@ export interface SessionReconciliation {
    * exceed the shift's own sales.
    */
   totalCollectionsCash: number
+  /** Cash turned over from another branch, acknowledged into this drawer. */
+  totalTurnoversIn?: number
   /** Every transaction rung up on the shift, voids and refunds included. */
   transactions?: ShiftTransaction[]
 }
