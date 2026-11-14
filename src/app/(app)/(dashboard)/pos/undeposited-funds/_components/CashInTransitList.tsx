@@ -35,7 +35,9 @@ import {
 } from '../_actions/pos-deposits'
 import {
   SlipEditor,
+  SlipWarnings,
   providersOf,
+  slipsWarnings,
   isBranchCashSlip,
   earliestDate,
   emptySlip,
@@ -1105,6 +1107,12 @@ function DepositForm({
               >
                 Remove bank slips
               </button>
+            )}
+
+            {(sessions.length > 0 || receipts.length > 0) && (
+              <SlipWarnings
+                warnings={slipsWarnings(activeSlips, providers, owed.cash, turnedOver)}
+              />
             )}
 
             {(sessions.length > 0 || receipts.length > 0) && (

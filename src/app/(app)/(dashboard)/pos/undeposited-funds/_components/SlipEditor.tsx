@@ -534,6 +534,104 @@ export function slipsProblem(slips: Slip[], providers: SlipProvider[] = []): str
     : null
 }
 
+/** 'slip 2' / 'slips 1 and 3' — the slips a warning is about, by position. */
+function slipNumbers(slips: Slip[], picked: Slip[]): string {
+  const numbers = picked.map((s) => slips.indexOf(s) + 1)
+  if (numbers.length === 1) return `Slip ${numbers[0]}`
+  return `Slips ${numbers.slice(0, -1).join(', ')} and ${numbers[numbers.length - 1]}`
+}
+
+const total = (picked: Slip[]): number => round2(picked.reduce((t, s) => t + slipAmount(s), 0))
+
+/** True when a card / e-wallet slip names the provider whose money it banks. */
+const namesProvider = (s: Slip): boolean =>
+  !!s.clearsAccountId && !!s.clearsTender && s.clearsTender !== ANY_PROVIDER
+
+/** Slips naming a provider for more than it has left to bank — the extra
+ * clears nothing (Pandan, Nov 14 2026: ₱6,000 named for BPI-Central's
+ * ₱1,842.01). */
+function providerOverWarnings(slips: Slip[], providers: SlipProvider[]): string[] {
+  return providers.flatMap((p) => {
+    const picked = slips.filter((s) => namesProvider(s) && s.clearsTender === p.key)
+    const over = round2(total(picked) - p.amount)
+    if (over < 0.005) return []
+    return [
+      `${slipNumbers(slips, picked)}: ${fmtMoney(total(picked))} for ${p.label}, which has only ${fmtMoney(p.amount)} left to bank. The extra ${fmtMoney(over)} won't clear anything — check the provider or the amount.`,
+    ]
+  })
+}
+
+/** Slips naming no provider, against what is left on the account they empty
+ * once the named slips have taken theirs. */
+function accountOverWarnings(slips: Slip[], providers: SlipProvider[]): string[] {
+  // No providers at all is an older backend, not an empty account.
+  if (!providers.length) return []
+  const unnamed = slips.filter((s) => s.clearsAccountId && !namesProvider(s))
+  const accounts = [...new Set(unnamed.map((s) => s.clearsAccountId))]
+  return accounts.flatMap((account) => {
+    const picked = unnamed.filter((s) => s.clearsAccountId === account)
+    const held = providersFor(providers, account)
+    if (!held.length) {
+      return [
+        `${slipNumbers(slips, picked)}: none of these sessions has money left on that Deposit from account, so it will clear the oldest session's card or e-wallet money instead. Check the Deposit from.`,
+      ]
+    }
+    const named = total(slips.filter((s) => s.clearsAccountId === account && namesProvider(s)))
+    const left = round2(Math.max(0, held.reduce((t, p) => t + p.amount, 0) - named))
+    const over = round2(total(picked) - left)
+    if (over < 0.005) return []
+    return [
+      `${slipNumbers(slips, picked)}: ${fmtMoney(total(picked))} from an account with only ${fmtMoney(left)} left to bank. The extra ${fmtMoney(over)} won't clear anything.`,
+    ]
+  })
+}
+
+/** Cash slips for more than the ticked sessions and New Receipts hold — the
+ * extra clears nothing (San Sebastian, Nov 14 2026: a ₱21,065 cash slip with
+ * only an ₱8,420 receipt ticked). */
+function cashOverWarning(slips: Slip[], cashToBank: number, turnedOver: number): string[] {
+  const entered = round2(total(slips.filter(isBranchCashSlip)) + turnedOver)
+  const over = round2(entered - cashToBank)
+  if (over < 0.005) return []
+  return [
+    `Cash comes to ${fmtMoney(entered)}, but what is ticked has only ${fmtMoney(cashToBank)} of cash to bank. Is a session missing from this deposit? The extra ${fmtMoney(over)} won't clear anything.`,
+  ]
+}
+
+/**
+ * What looks wrong with the slips without stopping them being recorded — an
+ * amount larger than the money it is meant to bank. Accounting may know
+ * better (a correction, money from elsewhere), so these warn, never block.
+ */
+export function slipsWarnings(
+  slips: Slip[],
+  providers: SlipProvider[],
+  cashToBank: number,
+  turnedOver = 0
+): string[] {
+  return [
+    ...providerOverWarnings(slips, providers),
+    ...accountOverWarnings(slips, providers),
+    ...cashOverWarning(slips, cashToBank, turnedOver),
+  ]
+}
+
+/** The warnings, under the slips. Nothing when there are none. */
+export function SlipWarnings({ warnings }: { warnings: string[] }): React.JSX.Element | null {
+  if (!warnings.length) return null
+  return (
+    <div
+      role="status"
+      data-testid="slip-warnings"
+      className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+    >
+      {warnings.map((w) => (
+        <p key={w}>{w}</p>
+      ))}
+    </div>
+  )
+}
+
 /** The slips as the API takes them. */
 export function toLineInputs(slips: Slip[]): PosDepositLineInput[] {
   return slips.map((s) => ({
