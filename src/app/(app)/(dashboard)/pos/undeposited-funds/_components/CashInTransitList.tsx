@@ -82,6 +82,13 @@ function useUnbankedReceipts(branchId: string | null, enabled = true) {
   })
 }
 
+/** Rides along with the ticked sessions' deposit. An acknowledged turnover
+ * does not: it is deposited from its own row, so a slip for it is never
+ * taken by the sessions, which a short deposit banks first. */
+function ridesWithSessions(receipt: AcknowledgementReceipt): boolean {
+  return !receipt.turnoverLine
+}
+
 function leftOfReceipt(r: AcknowledgementReceipt): AcknowledgementReceipt {
   return { ...r, amount: round2(Number(r.amount ?? 0) - Number(r.depositedAmount ?? 0)) }
 }
@@ -550,9 +557,11 @@ export function CashInTransitList({
       {canManage && selection.rows.length > 0 && (
         <SelectionBar
           rows={selection.rows}
-          // The branch's unbanked receipts — an acknowledged turnover among
-          // them — go into the same deposit.
-          receipts={unbanked.filter((r) => r.branchId === selection.rows[0].branchId)}
+          // The branch's unbanked New Receipts go into the same deposit; an
+          // acknowledged turnover is deposited from its own row.
+          receipts={unbanked.filter(
+            (r) => r.branchId === selection.rows[0].branchId && ridesWithSessions(r)
+          )}
           onClear={selection.clear}
           onRecord={depositSelection}
         />
@@ -957,8 +966,12 @@ function DepositForm({
   // against no sale, which sits in the branch's cash like any collection
   // (Scenario 70 G11). Banked with the day, so always part of this deposit;
   // accounting enters a cheque like any other bank, on a slip of its own.
+  // With sessions, an acknowledged turnover stays out (ridesWithSessions);
+  // a receipts-only deposit, opened from a receipt's row, takes them all.
   const newReceipts = useUnbankedReceipts(branchId)
-  const receipts = newReceipts.data?.data ?? []
+  const receipts = (newReceipts.data?.data ?? []).filter(
+    (r) => sessions.length === 0 || ridesWithSessions(r)
+  )
 
   const owed = owedTotals(sessions, receipts)
   const activeTurnover = mode === 'turnover' ? turnover : null
