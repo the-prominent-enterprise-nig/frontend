@@ -40,9 +40,10 @@ export default function BankAccountsList() {
       )
     : items
   // What clicking a row does: open its ledger, or its edit form when no GL
-  // account is linked, and only for someone who may use that. A view-only
-  // reader (the Branch Cashier's own petty cash fund) just reads the row.
-  const rowAction = (a: BankAccount) => {
+  // account is linked, for someone who may use that. Anyone else (a Branch
+  // Cashier on their petty cash fund, a Branch Manager without the General
+  // Ledger) opens the account's own transactions.
+  const rowAction = (a: BankAccount): { title: string; run: () => void } => {
     if (a.glAccountId && canOpenLedger) {
       return {
         title: 'Open ledger',
@@ -55,7 +56,10 @@ export default function BankAccountsList() {
     if (!a.glAccountId && canUpdate) {
       return { title: 'No GL account linked — click to edit', run: () => setEditing(a) }
     }
-    return null
+    return {
+      title: 'View transactions',
+      run: () => router.push(`/accounting/bank-accounts/${a.id}`),
+    }
   }
   const del = async (id: string) => {
     if (confirm('Deactivate account?')) {
@@ -122,9 +126,9 @@ export default function BankAccountsList() {
               visible.map((a) => (
                 <tr
                   key={a.id}
-                  className={rowAction(a) ? 'cursor-pointer hover:bg-gray-50' : undefined}
-                  onClick={rowAction(a)?.run}
-                  title={rowAction(a)?.title}
+                  className="cursor-pointer hover:bg-gray-50"
+                  onClick={rowAction(a).run}
+                  title={rowAction(a).title}
                 >
                   <td className="px-3 py-2 font-medium">{a.name}</td>
                   <td className="px-3 py-2">{a.bankName}</td>
