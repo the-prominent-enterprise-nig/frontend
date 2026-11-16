@@ -4,11 +4,10 @@ import { useEffect, useState } from 'react'
 import { useForm, Controller, useWatch } from 'react-hook-form'
 import { useQuery } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2, Images } from 'lucide-react'
+import { X, Loader2 } from 'lucide-react'
 import { CONTROL_CHROME, MONO, PLEX } from '@/src/libs/design/plex'
 import { errorClass, inputClass, labelClass } from './itemFormChrome'
 import { CategorySubgroupFields } from './item-create-fields'
-import ItemImageGallery from './ItemImageGallery'
 import {
   UpdateItemFormSchema,
   UpdateItemFormValues,
@@ -66,7 +65,6 @@ export default function EditItemModal({
   onSubmit,
   isSubmitting,
   categories,
-  uomOptions,
   onAttributeSubmit,
   isAttributeSubmitting,
   canReadAttributes = true,
@@ -101,7 +99,6 @@ export default function EditItemModal({
     defaultValues: {
       name: '',
       sku: '',
-      description: '',
       primaryCategoryId: '',
       baseUnitId: '',
       costPrice: undefined,
@@ -132,7 +129,6 @@ export default function EditItemModal({
       reset({
         name: item.name,
         sku: item.sku,
-        description: item.description ?? '',
         primaryCategoryId: item.primaryCategory?.id ?? undefined,
         baseUnitId: item.baseUnit?.id ?? undefined,
         costPrice: item.costPrice != null ? Number(item.costPrice) : undefined,
@@ -398,33 +394,6 @@ export default function EditItemModal({
                 {errors.sku && <p className={errorClass}>{errors.sku.message}</p>}
               </div>
 
-              {/* Unit of Measure */}
-              <div>
-                <label className={labelClass}>
-                  Unit of Measure <span className="text-[#b42318]">*</span>
-                </label>
-                <Controller
-                  name="baseUnitId"
-                  control={control}
-                  render={({ field }) => (
-                    <SearchableSelect
-                      chrome={CONTROL_CHROME}
-                      portal
-                      value={field.value ?? ''}
-                      onChange={field.onChange}
-                      options={uomOptions.map((uom) => ({
-                        value: uom.id,
-                        label: `${uom.code} – ${uom.name}`,
-                      }))}
-                      placeholder="Select unit…"
-                      loading={uomOptions.length === 0}
-                      loadingLabel="Loading units…"
-                    />
-                  )}
-                />
-                {errors.baseUnitId && <p className={errorClass}>{errors.baseUnitId.message}</p>}
-              </div>
-
               {/* Type */}
               <div>
                 <label className={labelClass}>
@@ -509,24 +478,6 @@ export default function EditItemModal({
                 />
                 {errors.modelNumber && <p className={errorClass}>{errors.modelNumber.message}</p>}
               </div>
-
-              {/* Description */}
-              <div className="sm:col-span-2">
-                <label className={labelClass}>Description</label>
-                <Controller
-                  name="description"
-                  control={control}
-                  render={({ field }) => (
-                    <textarea
-                      {...field}
-                      value={field.value ?? ''}
-                      rows={3}
-                      placeholder="Optional item description…"
-                      className={`${inputClass} resize-none`}
-                    />
-                  )}
-                />
-              </div>
             </FormSection>
 
             {/* Pricing */}
@@ -563,8 +514,6 @@ export default function EditItemModal({
                 {(
                   [
                     { name: 'isSerialTracked', label: 'Serial Tracking' },
-                    { name: 'requiresSecondarySerial', label: 'Dual Serial (Indoor + Outdoor)' },
-                    { name: 'isBundle', label: 'Bundle Item' },
                     { name: 'isService', label: 'Service Item (no stock/serial tracking)' },
                   ] as const
                 ).map(({ name, label }) => {
@@ -664,17 +613,6 @@ export default function EditItemModal({
                     </label>
                   ))}
                 </div>
-              </div>
-            </FormSection>
-
-            {/* Images */}
-            <FormSection variant="card" title="Images" defaultOpen={true}>
-              <div className="sm:col-span-2">
-                <div className="mb-2 flex items-center gap-2">
-                  <Images className="h-4 w-4 text-ink-faint" />
-                  <span className="text-[12px] font-medium text-[#3d3d4a]">Item Images</span>
-                </div>
-                <ItemImageGallery itemId={item.id} />
               </div>
             </FormSection>
 
