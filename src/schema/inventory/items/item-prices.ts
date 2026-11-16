@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { ItemPriceGuideEntry } from '../price-lists'
 
 export const PRICE_TERM_MONTHS = [3, 6, 9, 12] as const
 export type PriceTermMonths = (typeof PRICE_TERM_MONTHS)[number]
@@ -78,4 +79,39 @@ export function toItemPricePayload(entry: ItemPriceEntry): ItemPricePayload {
         : [{ termMonths: months, monthlyInstallment: mi, ppd }]
     }),
   }
+}
+
+function toOptionalNumber(value: string | number | null | undefined): number | undefined {
+  return value === null || value === undefined || value === '' ? undefined : Number(value)
+}
+
+/** An item's current price on one list, as the Edit Item form's price entry. */
+export function fromPriceGuideEntry(entry: ItemPriceGuideEntry): ItemPriceEntry {
+  const base = emptyItemPriceEntry()
+  for (const term of entry.terms) {
+    const key = `t${term.termMonths}` as `t${PriceTermMonths}`
+    if (!(key in base.terms)) continue
+    base.terms[key] = {
+      mi: toOptionalNumber(term.monthlyInstallment),
+      ppd: toOptionalNumber(term.ppd),
+    }
+  }
+  return {
+    ...base,
+    priceUse: entry.priceUseType.name,
+    price: toOptionalNumber(entry.price),
+    downPayment: toOptionalNumber(entry.downPayment),
+    credit: toOptionalNumber(entry.creditAmount),
+    cm: toOptionalNumber(entry.cmAmount),
+  }
+}
+
+/** Entries that are new or differ from what the item already had — resaving
+ * an unchanged price would send a live list back to pending approval. */
+export function changedPriceEntries(
+  current: ItemPriceEntry[],
+  original: ItemPriceEntry[]
+): ItemPriceEntry[] {
+  const before = new Map(original.map((e) => [e.priceUse, JSON.stringify(toItemPricePayload(e))]))
+  return current.filter((e) => before.get(e.priceUse) !== JSON.stringify(toItemPricePayload(e)))
 }

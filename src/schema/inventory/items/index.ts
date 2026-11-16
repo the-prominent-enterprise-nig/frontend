@@ -142,6 +142,9 @@ const UpdateItemFormBaseSchema = z.object({
   // and Brand + Model are how Item Master and the ledgers name it.
   typeId: z.string({ message: 'Type is required' }).min(1, 'Type is required'),
   modelNumber: z.string().max(60).optional(),
+  // Same price section as Add Item — saved with POST /inventory/items/:id/prices,
+  // never sent in the PATCH.
+  prices: z.array(ItemPriceEntrySchema).optional(),
 })
 
 export const UpdateItemFormSchema = UpdateItemFormBaseSchema.superRefine(refineIdentity)
