@@ -42,10 +42,12 @@ import { useOwnerEdit } from '@/src/components/accounting/EditReasonSection'
 import { RECORDED_SALES_EDIT } from '@/src/libs/guards/explicit-only-permissions'
 import {
   AgentInput,
-  AmountInput,
   EditEntryBar,
   InvoiceDateInput,
+  LineAmountInput,
+  LinePriceUseInput,
   useEditEntryForm,
+  type AmountField,
   type EditEntryForm,
 } from './EditEntry'
 
@@ -125,9 +127,21 @@ export function TransactionDetail({
   const canEditEntry = useOwnerEdit(RECORDED_SALES_EDIT) && isFull && tx.transactionType === 'sale'
   const editEntry = useEditEntryForm(tx)
   const editing = canEditEntry && editEntry.editing
-  // Price Used and Credit show on every sale type; only the full view has room.
+  // Price Used, Credit, CM and SMI show on every sale type; only the full view
+  // has room. CM and SMI are the agent's pay, so they follow the card's gate.
   const showUnitFigures = isFull
-  const lineCredits = tx.accountSummary?.lineCredits ?? noAccountFigures(tx)?.lineCredits ?? {}
+  const canSeeCommission = tx.accountSummary?.commission != null || tx.saleCommission != null
+  const showCommissionFigures = showUnitFigures && canSeeCommission
+  // What the sale recorded per item row (Docket #49, Nov 16), and what Edit
+  // entry put on each row for the Sales Report.
+  const lineCredits =
+    tx.lineFigures?.credits ??
+    tx.accountSummary?.lineCredits ??
+    noAccountFigures(tx)?.lineCredits ??
+    {}
+  const lineCommissions = tx.lineFigures?.commissions ?? tx.accountSummary?.lineCommissions ?? null
+  const lineSmis = tx.lineFigures?.smis ?? tx.accountSummary?.lineSmis ?? null
+  const lineEdits = tx.reportEdit?.lines ?? {}
   // Escape closes the full view, as the × does — not while Edit entry or the
   // Refund pop-up is open (Cancel / their own close handle those).
   useEffect(() => {
@@ -190,7 +204,7 @@ export function TransactionDetail({
           data-testid={isFull ? 'transaction-modal' : undefined}
           className={
             isFull
-              ? 'pointer-events-auto relative w-full max-w-4xl max-h-[92vh] space-y-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl sm:p-8'
+              ? 'pointer-events-auto relative w-full max-w-6xl max-h-[92vh] space-y-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl sm:p-8'
               : 'relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl'
           }
         >
@@ -307,9 +321,7 @@ export function TransactionDetail({
                   tx={tx}
                   customerName={customerName}
                   card={card}
-                  canSeeCommission={
-                    tx.accountSummary?.commission != null || tx.saleCommission != null
-                  }
+                  canSeeCommission={canSeeCommission}
                   edit={editing ? editEntry : null}
                 />
               )}
@@ -332,86 +344,168 @@ export function TransactionDetail({
                     ))}
                   </div>
                 ) : tx.lines && tx.lines.length > 0 ? (
-                  <table className="w-full table-fixed text-sm">
-                    <thead>
-                      <tr
-                        className={
-                          isFull
-                            ? 'border-b border-gray-200 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500'
-                            : 'border-b text-left text-xs text-gray-500'
-                        }
-                      >
-                        <th className={isFull ? 'w-auto pb-2' : 'w-auto pb-1'}>Item</th>
-                        {showUnitFigures && (
-                          <th className="w-28 pb-2 pl-2 text-center">
-                            <span className={unitFigureHeader}>Price Used</span>
-                          </th>
-                        )}
-                        <th className="w-12 pb-1 pl-2 text-right">Qty</th>
-                        <th className="w-28 pb-1 pl-2 text-right">Unit Price</th>
-                        <th className="w-28 pb-1 pl-2 text-right">Total</th>
-                        {showUnitFigures && (
-                          <th className="w-32 pb-2 pl-2 text-right">
-                            <span className={`${unitFigureHeader} block`}>Credit</span>
-                          </th>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {tx.lines.map((l) => (
-                        <tr key={l.id}>
-                          <td
-                            className={
-                              isFull
-                                ? 'py-3 pr-2 font-medium text-gray-900'
-                                : 'py-1.5 pr-2 text-gray-800'
-                            }
-                          >
-                            {l.itemName}
-                            {l.serialNumber && (
-                              <p
-                                className={
-                                  isFull
-                                    ? 'mt-0.5 text-[11px] font-normal text-purple-500'
-                                    : 'font-mono text-[10px] text-purple-500'
-                                }
-                              >
-                                SN: {l.serialNumber}
-                                {l.secondarySerialNumber && ` / ${l.secondarySerialNumber}`}
-                              </p>
-                            )}
-                          </td>
+                  <div className={isFull ? 'overflow-x-auto' : ''}>
+                    <table
+                      className={`w-full table-fixed text-sm ${
+                        isFull ? (showCommissionFigures ? 'min-w-[820px]' : 'min-w-[640px]') : ''
+                      }`}
+                    >
+                      <thead>
+                        <tr
+                          className={
+                            isFull
+                              ? 'border-b border-gray-200 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500'
+                              : 'border-b text-left text-xs text-gray-500'
+                          }
+                        >
+                          <th className={isFull ? 'w-auto pb-2' : 'w-auto pb-1'}>Item</th>
                           {showUnitFigures && (
-                            <td className="py-3 pl-2 text-center">
-                              {l.priceUseName && (
-                                <span
-                                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${priceUseTone(l.priceUseName)}`}
-                                >
-                                  {l.priceUseName}
-                                </span>
-                              )}
-                            </td>
+                            <th className={`${editing ? 'w-44' : 'w-28'} pb-2 pl-2 text-center`}>
+                              <span className={unitFigureHeader}>Price Used</span>
+                            </th>
                           )}
-                          <td className="py-1.5 pl-2 text-right text-gray-600">{l.quantity}</td>
-                          <td className="py-1.5 pl-2 text-right text-gray-600">
-                            {formatCurrency(l.unitPrice)}
-                          </td>
-                          <td
-                            className={`py-1.5 pl-2 text-right text-gray-900 ${isFull ? 'font-semibold' : 'font-medium'}`}
-                          >
-                            {formatCurrency(l.lineTotal)}
-                          </td>
+                          <th className="w-12 pb-1 pl-2 text-right">Qty</th>
+                          <th className="w-28 pb-1 pl-2 text-right">Unit Price</th>
+                          <th className="w-28 pb-1 pl-2 text-right">Total</th>
                           {showUnitFigures && (
-                            <td className="py-1.5 pl-2 text-right text-gray-600">
-                              {lineCredits[l.id] != null ? formatCurrency(lineCredits[l.id]) : '—'}
-                            </td>
+                            <th className="w-32 pb-2 pl-2 text-right">
+                              <span className={`${unitFigureHeader} block`}>Credit</span>
+                            </th>
+                          )}
+                          {showCommissionFigures && (
+                            <>
+                              <th className="w-28 pb-2 pl-2 text-right">CM</th>
+                              <th className="w-28 pb-2 pl-2 text-right">SMI</th>
+                            </>
                           )}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {tx.lines.map((l, i) => (
+                          <tr key={l.id}>
+                            <td
+                              className={
+                                isFull
+                                  ? 'py-3 pr-2 font-medium text-gray-900'
+                                  : 'py-1.5 pr-2 text-gray-800'
+                              }
+                            >
+                              {l.itemName}
+                              {l.serialNumber && (
+                                <p
+                                  className={
+                                    isFull
+                                      ? 'mt-0.5 text-[11px] font-normal text-purple-500'
+                                      : 'font-mono text-[10px] text-purple-500'
+                                  }
+                                >
+                                  SN: {l.serialNumber}
+                                  {l.secondarySerialNumber && ` / ${l.secondarySerialNumber}`}
+                                </p>
+                              )}
+                            </td>
+                            {showUnitFigures && (
+                              <td className="py-3 pl-2 text-center">
+                                {editing ? (
+                                  <LinePriceUseInput form={editEntry} lineId={l.id} row={i + 1} />
+                                ) : (
+                                  <>
+                                    {l.priceUseName && (
+                                      <span
+                                        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${priceUseTone(l.priceUseName)}`}
+                                      >
+                                        {l.priceUseName}
+                                      </span>
+                                    )}
+                                    {lineEdits[l.id]?.priceUseName && (
+                                      <span
+                                        data-testid="line-edit-note"
+                                        title="In Sales Report"
+                                        className={`mt-1 block rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-prominent-purple-300 ${priceUseTone(lineEdits[l.id].priceUseName ?? '')}`}
+                                      >
+                                        {lineEdits[l.id].priceUseName}
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </td>
+                            )}
+                            <td className="py-1.5 pl-2 text-right text-gray-600">{l.quantity}</td>
+                            <td className="py-1.5 pl-2 text-right text-gray-600">
+                              {formatCurrency(l.unitPrice)}
+                            </td>
+                            <td
+                              className={`py-1.5 pl-2 text-right text-gray-900 ${isFull ? 'font-semibold' : 'font-medium'}`}
+                            >
+                              {formatCurrency(l.lineTotal)}
+                            </td>
+                            {showUnitFigures && (
+                              <td className="py-1.5 pl-2 text-right text-gray-600">
+                                {editing ? (
+                                  <LineAmountInput
+                                    form={editEntry}
+                                    lineId={l.id}
+                                    row={i + 1}
+                                    field="credit"
+                                    label="Credit"
+                                  />
+                                ) : (
+                                  <LineFigure
+                                    recorded={lineCredits[l.id]}
+                                    edited={lineEdits[l.id]?.credit}
+                                  />
+                                )}
+                              </td>
+                            )}
+                            {showCommissionFigures && (
+                              <>
+                                <td className="py-1.5 pl-2 text-right text-gray-600">
+                                  {editing ? (
+                                    <LineAmountInput
+                                      form={editEntry}
+                                      lineId={l.id}
+                                      row={i + 1}
+                                      field="commission"
+                                      label="CM"
+                                    />
+                                  ) : (
+                                    <LineFigure
+                                      recorded={lineCommissions?.[l.id]}
+                                      edited={lineEdits[l.id]?.commission}
+                                    />
+                                  )}
+                                </td>
+                                <td className="py-1.5 pl-2 text-right text-gray-600">
+                                  {editing ? (
+                                    <LineAmountInput
+                                      form={editEntry}
+                                      lineId={l.id}
+                                      row={i + 1}
+                                      field="smi"
+                                      label="SMI"
+                                    />
+                                  ) : (
+                                    <LineFigure
+                                      recorded={lineSmis?.[l.id]}
+                                      edited={lineEdits[l.id]?.smi}
+                                    />
+                                  )}
+                                </td>
+                              </>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 ) : (
                   <p className="text-xs text-gray-400">No items found.</p>
+                )}
+                {!editing && Object.keys(lineEdits).length > 0 && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    <span className="font-semibold text-prominent-purple-700">Purple</span> figures
+                    are what the Sales Report shows for that item.
+                  </p>
                 )}
               </div>
 
@@ -1029,17 +1123,21 @@ function Field({
   label,
   value,
   reportValue,
+  testId,
 }: {
   label: string
   value: React.ReactNode
   /** Docket #49: what Edit entry changed this to, for the Sales Report only.
    * Shows as a second figure under the recorded one. */
   reportValue?: string | null
+  testId?: string
 }): React.JSX.Element {
   return (
     <div className="min-w-0">
       <p className="text-xs text-gray-500">{label}</p>
-      <p className="mt-1 break-words text-base font-semibold text-gray-900">{value}</p>
+      <p className="mt-1 break-words text-base font-semibold text-gray-900" data-testid={testId}>
+        {value}
+      </p>
       {reportValue && (
         <p
           className="mt-1 flex flex-wrap items-center gap-2 text-base font-semibold text-gray-900"
@@ -1074,6 +1172,31 @@ function CardGrid({
 
 /** A section's small heading, above its card (NIG's mockup). */
 const sectionTitle = 'mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500'
+
+/** An Items-table figure: what the sale recorded ("—" when it has none) and,
+ * under it in purple, what Edit entry put there for the Sales Report. */
+function LineFigure({
+  recorded,
+  edited,
+}: {
+  recorded?: number | null
+  edited?: number | null
+}): React.JSX.Element {
+  return (
+    <>
+      <span>{recorded ? formatCurrency(recorded) : '—'}</span>
+      {edited != null && (
+        <span
+          data-testid="line-edit-note"
+          title="In Sales Report"
+          className="mt-0.5 block font-semibold text-prominent-purple-700"
+        >
+          {formatCurrency(edited)}
+        </span>
+      )}
+    </>
+  )
+}
 
 /** The Price Used and Credit column headings: tinted, as in the mockup. */
 const unitFigureHeader = 'rounded-md bg-prominent-purple-50 px-2 py-1 text-prominent-purple-700'
@@ -1192,6 +1315,32 @@ function SaleAccountCards({
   const edited = tx.reportEdit
   const editedMoney = (n: number | null | undefined): string | null =>
     n == null ? null : formatCurrency(n)
+  // Docket #49 (Nov 16): the card's three figures are the Items table's columns
+  // added up. What Edit entry put on the rows reads as their sum, a row with no
+  // edit counting at what the sale recorded for it; an older sale-level edit
+  // (before the rows were editable) still reads as it was typed.
+  const lineEdits = edited?.lines ?? {}
+  const rowTotal = (
+    field: AmountField,
+    recorded: Record<string, number> | null | undefined,
+    saleLevel: number | null | undefined
+  ): string | null => {
+    const rows = tx.lines ?? []
+    if (!rows.some((l) => lineEdits[l.id]?.[field] != null)) return editedMoney(saleLevel)
+    const sum = rows.reduce((s, l) => s + (lineEdits[l.id]?.[field] ?? recorded?.[l.id] ?? 0), 0)
+    return formatCurrency(Math.round(sum * 100) / 100)
+  }
+  const creditNote = rowTotal(
+    'credit',
+    tx.lineFigures?.credits ?? account?.lineCredits ?? noAccount?.lineCredits,
+    edited?.credit
+  )
+  const commissionNote = rowTotal(
+    'commission',
+    tx.lineFigures?.commissions ?? account?.lineCommissions,
+    edited?.commission
+  )
+  const smiNote = rowTotal('smi', tx.lineFigures?.smis ?? account?.lineSmis, edited?.smi)
 
   return (
     <>
@@ -1241,35 +1390,40 @@ function SaleAccountCards({
           <Field label="Agent" value={agentName ?? '—'} reportValue={edited?.agentName} />
         )}
         {edit ? (
-          <EditField label="Credit">
-            <AmountInput form={edit} field="credit" />
-          </EditField>
+          <Field label="Total Credit" value={money(edit.totals.credit)} testId="total-credit" />
         ) : (
           <Field
-            label="Credit"
+            label="Total Credit"
             value={money(account ? account.amountFinanced : noAccount?.credit)}
-            reportValue={editedMoney(edited?.credit)}
+            reportValue={creditNote}
+            testId="total-credit"
           />
         )}
         {canSeeCommission &&
           (edit ? (
-            <EditField label="Commission">
-              <AmountInput form={edit} field="commission" />
-            </EditField>
+            <Field
+              label="Total Commission"
+              value={money(edit.totals.commission)}
+              testId="total-commission"
+            />
           ) : (
             <Field
-              label="Commission"
+              label="Total Commission"
               value={money(commission ?? 0)}
-              reportValue={editedMoney(edited?.commission)}
+              reportValue={commissionNote}
+              testId="total-commission"
             />
           ))}
         {canSeeCommission &&
           (edit ? (
-            <EditField label="SMI">
-              <AmountInput form={edit} field="smi" />
-            </EditField>
+            <Field label="Total SMI" value={money(edit.totals.smi)} testId="total-smi" />
           ) : (
-            <Field label="SMI" value={money(smi ?? 0)} reportValue={editedMoney(edited?.smi)} />
+            <Field
+              label="Total SMI"
+              value={money(smi ?? 0)}
+              reportValue={smiNote}
+              testId="total-smi"
+            />
           ))}
       </CardGrid>
     </>

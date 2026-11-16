@@ -35,6 +35,10 @@ export const ACCOUNTING_PERMISSIONS = {
   EXPENSE_CREATE: 'accounting:expense:create',
   EXPENSE_UPDATE: 'accounting:expense:update',
   EXPENSE_DELETE: 'accounting:expense:delete',
+  /** An item's cost on the Expense form (a Major supplier's line starts at it).
+   * Its own permission, not an expense one: the branch roles hold Expenses and
+   * must not read item cost through it. */
+  EXPENSE_ITEM_COST_READ: 'accounting:expense-item-cost:read',
 
   // The client's Access Levels sheet gives some roles Expenses without
   // Recurring, or Special Accounts without Expenses, so both have their own
@@ -268,6 +272,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:expense:create': 'Create expenses',
   'accounting:expense:update': 'Edit expenses',
   'accounting:expense:delete': 'Delete expenses',
+  'accounting:expense-item-cost:read':
+    "See an item's cost on the Expense form (a supplier line's Unit Price starts at it)",
   'accounting:recurring-expenses:read': 'View recurring expenses and their types',
   'accounting:recurring-expenses:create':
     'Add a recurring expense type, or run a recurring expense',
