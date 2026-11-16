@@ -34,12 +34,6 @@ import {
   TableCard,
 } from '../../master-data/_components/masterDataChrome'
 
-const LIFECYCLE_OPTIONS = [
-  { value: 'active', label: 'Active' },
-  { value: 'discontinued', label: 'Discontinued' },
-  { value: 'archived', label: 'Archived' },
-]
-
 /** Branches filter: every branch plus the standalone warehouses (Panay,
  * Negros), each labelled by name. */
 function useBranchFilterOptions(): { value: string; label: string }[] {
@@ -93,8 +87,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     error,
     search,
     setSearch,
-    lifecycle,
-    setLifecycle,
     approvalStatus,
     setApprovalStatus,
     primaryCategoryId,
@@ -162,14 +154,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
 
   const branchOptions = useBranchFilterOptions()
 
-  const filtered = !!(
-    search ||
-    lifecycle ||
-    approvalStatus ||
-    primaryCategoryId ||
-    typeId ||
-    warehouseId
-  )
+  const filtered = !!(search || approvalStatus || primaryCategoryId || typeId || warehouseId)
   const showClear = filtered || sortBy !== 'name' || sortOrder !== 'asc'
 
   return (
@@ -212,17 +197,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
             )}
           </div>
           {/* Filters share one row, each stretching to fill it. */}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            <SearchableSelect
-              className="w-full"
-              value={lifecycle ?? ''}
-              onChange={(v) => setLifecycle((v || undefined) as typeof lifecycle)}
-              placeholder="All Statuses"
-              ariaLabel="Status"
-              chrome={CONTROL_CHROME}
-              clearable
-              options={LIFECYCLE_OPTIONS}
-            />
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:auto-cols-fr lg:grid-flow-col lg:grid-cols-none">
             {/* Scenario 56 — items with units on hand at that branch. */}
             <SearchableSelect
               className="w-full"
