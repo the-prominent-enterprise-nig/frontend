@@ -21,6 +21,7 @@ import {
   Building2,
   Power,
   CreditCard,
+  Hash,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { BranchFull } from '../../../_actions/get-branch'
@@ -116,12 +117,14 @@ export default function BranchDetailClient({
   const [type, setType] = useState(branch.type)
   const [address, setAddress] = useState(branch.addressLine1 ?? '')
   const [city, setCity] = useState(branch.city ?? '')
+  const [seriesCode, setSeriesCode] = useState(branch.seriesCode ?? '')
 
   const isDirty =
     name !== branch.name ||
     type !== branch.type ||
     address !== (branch.addressLine1 ?? '') ||
-    city !== (branch.city ?? '')
+    city !== (branch.city ?? '') ||
+    seriesCode !== (branch.seriesCode ?? '')
 
   const managers = branch.managers ?? []
   const managerIds = new Set(managers.map((m) => m.id))
@@ -157,6 +160,7 @@ export default function BranchDetailClient({
     setType(branch.type)
     setAddress(branch.addressLine1 ?? '')
     setCity(branch.city ?? '')
+    setSeriesCode(branch.seriesCode ?? '')
     setEditing(false)
   }
 
@@ -182,6 +186,7 @@ export default function BranchDetailClient({
       type: type as (typeof BRANCH_TYPES)[number],
       address: address.trim() || undefined,
       city: city.trim() || undefined,
+      seriesCode: seriesCode.trim().toUpperCase(),
     })
     setSaving(false)
     if (!result.success) {
@@ -282,6 +287,23 @@ export default function BranchDetailClient({
                       className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
                     />
                   </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-zinc-400">
+                      Document Series Code
+                    </label>
+                    <input
+                      type="text"
+                      value={seriesCode}
+                      onChange={(e) => setSeriesCode(e.target.value.toUpperCase())}
+                      placeholder={branch.code ?? 'e.g. MUBN'}
+                      maxLength={20}
+                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm uppercase outline-none focus:border-zinc-400"
+                    />
+                    <p className="mt-1 text-xs text-ink-faint">
+                      RR, ST and DR numbers end with this, e.g. RR00001
+                      {seriesCode.trim() || branch.code || 'MUBN'}. Blank uses the branch code.
+                    </p>
+                  </div>
                 </div>
               ) : (
                 <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
@@ -295,6 +317,12 @@ export default function BranchDetailClient({
                     <Tag className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
                     {BRANCH_TYPE_LABELS[type] ?? type}
                   </span>
+                  {(branch.seriesCode || branch.code) && (
+                    <span className="flex items-center gap-1.5 text-sm text-zinc-500">
+                      <Hash className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                      Series {branch.seriesCode || branch.code}
+                    </span>
+                  )}
                   <span className="flex items-center gap-1.5 text-sm text-zinc-500">
                     <Calendar className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
                     {formatDate(branch.createdAt)}

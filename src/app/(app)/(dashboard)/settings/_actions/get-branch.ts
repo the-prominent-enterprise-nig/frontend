@@ -14,6 +14,8 @@ export interface BranchFull {
   id: string
   name: string
   code: string | null
+  /** Suffix on the branch's RR / ST / DR series; null falls back to `code`. */
+  seriesCode: string | null
   type: string
   addressLine1: string | null
   city: string | null

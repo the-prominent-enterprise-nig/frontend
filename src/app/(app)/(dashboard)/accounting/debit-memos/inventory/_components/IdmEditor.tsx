@@ -384,7 +384,12 @@ function MemoHeaderSection({
             control={control}
             name="referenceNo"
             render={({ field }) => (
-              <input {...field} className={INPUT} placeholder="e.g. DR000001" disabled={readOnly} />
+              <input
+                {...field}
+                className={INPUT}
+                placeholder="e.g. DR00001MUBN"
+                disabled={readOnly}
+              />
             )}
           />
         </Field>
