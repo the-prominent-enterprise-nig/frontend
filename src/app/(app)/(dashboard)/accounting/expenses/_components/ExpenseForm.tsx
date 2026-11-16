@@ -1040,12 +1040,17 @@ function ExpenseFormFields({
     ? round2(lines.reduce((sum, l) => sum + Math.min(Number(l.amount) || 0, 0), 0))
     : 0
 
-  // Item mode computes Amount from Qty * Unit Price. Applied to every line
-  // change, not just setLine's — the SI resolver writes a line's price
-  // directly, and its Amount has to follow the same rule.
+  // Item mode computes Amount from Qty * Unit Price: always once an Item is
+  // picked, and with no Item as soon as both Qty and Unit Price are entered (a
+  // lone Qty must not blank an Amount that was typed by hand). Only a Major
+  // supplier's lines have those fields, so no other payee's Amount is touched.
+  const amountIsComputed = (l: LineState) =>
+    isItemMode && (!!l.itemId || (!!l.qty && !!l.unitPrice))
+  // Applied to every line change, not just setLine's — the SI resolver writes
+  // a line's price directly, and its Amount has to follow the same rule.
   const withComputedAmount = (l: LineState): LineState => {
-    if (!l.itemId || (!l.qty && !l.unitPrice)) return l
-    const computed = (Number(l.qty) || 0) * (Number(l.unitPrice) || 0)
+    if (!amountIsComputed(l) || (!l.qty && !l.unitPrice)) return l
+    const computed = round2((Number(l.qty) || 0) * (Number(l.unitPrice) || 0))
     return { ...l, amount: computed ? String(computed) : '' }
   }
 
@@ -2315,11 +2320,11 @@ function ExpenseFormFields({
                                 ? `VAT-inclusive — the ${VAT_RATE_PERCENT}% Input VAT is split out of this amount`
                                 : undefined
                             }
-                            readOnly={isItemMode && !!line.itemId}
+                            readOnly={amountIsComputed(line)}
                             value={line.amount}
                             onChange={(e) => setLine(i, { amount: e.target.value })}
                             className={`w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${
-                              isItemMode && line.itemId ? 'bg-zinc-50 text-zinc-500' : ''
+                              amountIsComputed(line) ? 'bg-zinc-50 text-zinc-500' : ''
                             }`}
                           />
                         </LineField>
