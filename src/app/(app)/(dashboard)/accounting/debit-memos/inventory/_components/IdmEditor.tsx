@@ -387,7 +387,7 @@ function MemoHeaderSection({
               <input
                 {...field}
                 className={INPUT}
-                placeholder="e.g. DR00001MUBN"
+                placeholder="e.g. DR00001PMIB"
                 disabled={readOnly}
               />
             )}

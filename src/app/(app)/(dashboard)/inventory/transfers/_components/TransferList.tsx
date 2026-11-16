@@ -398,7 +398,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Deep link into one transfer — `?transfer=ST00001MUBN`, as the receiving report
+  // Deep link into one transfer — `?transfer=ST00001PMIB`, as the receiving report
   // that arrived on it links here. Transfers have no per-transfer route (the
   // detail is a modal over this list), so the number is resolved in two
   // steps: seed the search box on mount so the list actually contains the
