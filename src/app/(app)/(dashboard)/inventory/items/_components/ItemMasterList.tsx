@@ -41,14 +41,6 @@ function useBranchFilterOptions(): { value: string; label: string }[] {
   return warehouses.map((w) => ({ value: w.id, label: w.branch?.name ?? w.name }))
 }
 
-const APPROVAL_OPTIONS = [
-  { value: 'draft', label: 'Draft' },
-  { value: 'pending_accounting_confirmation', label: 'Pending Accounting' },
-  { value: 'pending_approval', label: 'Pending Approval' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Rejected' },
-]
-
 const SORT_OPTIONS = [
   { value: 'createdAt:desc', label: 'Newest first' },
   { value: 'createdAt:asc', label: 'Oldest first' },
@@ -87,8 +79,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     error,
     search,
     setSearch,
-    approvalStatus,
-    setApprovalStatus,
     primaryCategoryId,
     setPrimaryCategoryId,
     typeId,
@@ -154,7 +144,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
 
   const branchOptions = useBranchFilterOptions()
 
-  const filtered = !!(search || approvalStatus || primaryCategoryId || typeId || warehouseId)
+  const filtered = !!(search || primaryCategoryId || typeId || warehouseId)
   const showClear = filtered || sortBy !== 'name' || sortOrder !== 'asc'
 
   return (
@@ -209,18 +199,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
               clearable
               options={branchOptions}
             />
-            {(canSubmitReview || canConfirmAccounting || canApproveItem) && (
-              <SearchableSelect
-                className="w-full"
-                value={approvalStatus ?? ''}
-                onChange={(v) => setApprovalStatus((v || undefined) as typeof approvalStatus)}
-                placeholder="All Approval Statuses"
-                ariaLabel="Approval status"
-                chrome={CONTROL_CHROME}
-                clearable
-                options={APPROVAL_OPTIONS}
-              />
-            )}
             {/* Type / Category = the sheet's TYPE / GROUP / SUBGROUP:
               Type is the item type, Category/Subgroup the category tree. */}
             <SearchableSelect
