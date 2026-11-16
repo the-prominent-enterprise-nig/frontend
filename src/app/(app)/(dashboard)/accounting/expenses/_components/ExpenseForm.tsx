@@ -10,13 +10,11 @@ import {
   APBillSuppliers,
   APBills,
   ARInvoices,
-  AccountMappings,
   BankAccounts,
   type BusinessExpense,
   type APBillSupplierOption,
   type APBill,
   type ARInvoice,
-  type AccountMapping,
   type PayeeType,
   type ClearedType,
   type BankAccountOption,
@@ -252,7 +250,7 @@ interface LineState {
   /** The EWT tax code this line is withheld at ('' = not withheld). The amount
    * withheld is derived (withholdingFor), never typed. */
   withholdingTaxCode: string
-  // SUPPLIER-only — picking an item prefills categoryAccountId + unitPrice
+  // SUPPLIER-only — picking an item prefills unitPrice (never the account)
   // and computes amount as qty * unitPrice (see setLine).
   itemId: string
   itemLabel: string
@@ -379,7 +377,6 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
   const [postableAccounts, setPostableAccounts] = useState<Account[]>([])
   const [inventoryAccounts, setInventoryAccounts] = useState<Account[]>([])
   const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([])
-  const [mappings, setMappings] = useState<AccountMapping[]>([])
 
   useEffect(() => {
     getAccountOptions().then((r) => {
@@ -414,9 +411,6 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
     // Payment Method → Bank Transfer unlocks picking which bank account the
     // cash side actually posts to.
     BankAccounts.options('expense-fund').then((r) => setBankAccounts(r.data ?? []))
-    // Payee → Supplier line-category default (EXPENSE_SUPPLIER_INVENTORY) —
-    // used when a picked Item has no inventory account of its own.
-    AccountMappings.list().then((r) => setMappings(r.data ?? []))
   }, [])
 
   useEffect(() => {
@@ -462,7 +456,6 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
       postableAccounts={postableAccounts}
       inventoryAccounts={inventoryAccounts}
       bankAccounts={bankAccounts}
-      mappings={mappings}
       // A recorded expense goes back to its own page, where the journal entry
       // it now carries can be checked; a draft goes back to the list.
       onSaved={() =>
@@ -543,7 +536,6 @@ function ExpenseFormFields({
   postableAccounts,
   inventoryAccounts,
   bankAccounts,
-  mappings,
   onSaved,
 }: {
   initial: BusinessExpense | null
@@ -551,7 +543,6 @@ function ExpenseFormFields({
   postableAccounts: Account[]
   inventoryAccounts: Account[]
   bankAccounts: BankAccountOption[]
-  mappings: AccountMapping[]
   onSaved: () => void
 }) {
   // Only used while creating — an attachment needs the expense's id, which
@@ -1027,13 +1018,6 @@ function ExpenseFormFields({
     }
     return out
   }, [isOtherMode, lines, specialAccountControlIds, balancesByAccount])
-  // Supplier line-category default (Settings → Account Mapping) — used when
-  // a picked Item has no inventory account of its own, or no Item is
-  // picked yet at all.
-  const supplierDefaultAccountId = mappings.find(
-    (m) => m.key === 'EXPENSE_SUPPLIER_INVENTORY'
-  )?.accountId
-
   const subtotal = lines.reduce((sum, l) => sum + netFor(l), 0)
   const vatTotal = lines.reduce((sum, l) => sum + vatFor(l), 0)
   // Equals what was typed into the Amount boxes — on an Input VAT line the
@@ -1084,7 +1068,6 @@ function ExpenseFormFields({
       ...prev,
       {
         ...emptyLine(defaultTaxCodeFor(form.payeeType, form.otherCategory)),
-        categoryAccountId: isItemMode ? (supplierDefaultAccountId ?? '') : '',
         // apBillId stays blank here on purpose — an unused row gets no bill
         // until it actually has an Item on it (see the Item onSelect below).
       },
@@ -1097,19 +1080,6 @@ function ExpenseFormFields({
     setSiCandidates({})
     setLines((prev) => prev.filter((_, i) => i !== index))
   }
-
-  // Backfills any still-blank Supplier line's category once the default
-  // mapping loads (async, and may still be loading when the form first
-  // renders or when Payee switches to Supplier) — only ever fills a blank,
-  // never overwrites a deliberate pick.
-  useEffect(() => {
-    if (!isItemMode || !supplierDefaultAccountId) return
-    setLines((prev) =>
-      prev.map((l) =>
-        l.categoryAccountId ? l : { ...l, categoryAccountId: supplierDefaultAccountId }
-      )
-    )
-  }, [isItemMode, supplierDefaultAccountId])
 
   // Supplier Invoice (AP Bill) candidates, per line, keyed on that line's
   // Item — a bill carries no item lines of its own, so the server matches
@@ -1946,10 +1916,6 @@ function ExpenseFormFields({
                                       ? String(meta.costPrice)
                                       : line.unitPrice,
                                     qty: line.qty || '1',
-                                    categoryAccountId:
-                                      meta.inventoryAccountId ??
-                                      supplierDefaultAccountId ??
-                                      line.categoryAccountId,
                                     // A new item means a new bill context — drop
                                     // the old pick; the resolver effect fills in
                                     // the one that actually covers this item.
