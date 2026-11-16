@@ -51,6 +51,9 @@ type Props = {
    * called after a successful save (Add Item uses it to go to Item Master).
    */
   variant?: 'overlay' | 'page'
+  /** Called after a successful save in place of onClose — Add Item uses it
+   * to go on to the new item's Add units. */
+  onSaved?: (item: { id?: string; isService: boolean }) => void
 }
 
 export default function CreateItemModal({
@@ -63,6 +66,7 @@ export default function CreateItemModal({
   brandOptions,
   typeOptions,
   variant = 'overlay',
+  onSaved,
 }: Props) {
   const isPage = variant === 'page'
   const {
@@ -210,7 +214,8 @@ export default function CreateItemModal({
     const newItemId = result.data?.id
     if (newItemId && data.prices?.length) await savePrices(newItemId, data.prices)
 
-    onClose()
+    if (onSaved) onSaved({ id: newItemId, isService: data.isService })
+    else onClose()
   }
 
   /** Prices are a second call once the item exists; a failure there keeps
@@ -274,7 +279,7 @@ export default function CreateItemModal({
                 no Scenario 16 draft → accounting → approver chain. */}
             <p className="mt-1 text-[13px] text-[#4b4b5a]">
               Ready to use in PO, receiving and POS as soon as it&apos;s saved. It starts with no
-              stock — add units from Item Master once it&apos;s created.
+              stock — you&apos;ll add its units next.
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">

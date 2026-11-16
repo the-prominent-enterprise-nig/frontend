@@ -17,7 +17,7 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { isItemLockedForReview } from '@/src/libs/inventory/item-edit'
 import { ICON_BUTTON, TABLE_HEAD_ROW } from '../../master-data/_components/masterDataChrome'
 
-// Type / Category = the sheet's TYPE / GROUP / SUBGROUP: Type is
+// Type / Category = the sheet's TYPE / CATEGORY / SUBGROUP: Type is
 // the item type; Category/Subgroup is the category tree — primaryCategory is the Subgroup when it has a parent, else the Group.
 function groupName(item: ItemSummary): string | undefined {
   const name = item.primaryCategory?.parentCategory?.name ?? item.primaryCategory?.name

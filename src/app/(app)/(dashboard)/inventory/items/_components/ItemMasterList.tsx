@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Search, X, Package } from 'lucide-react'
 import { useItemMaster } from '../_hooks/useItemMaster'
 import EditItemModal from './EditItemModal'
@@ -8,7 +9,6 @@ import ItemMasterTable from './ItemMasterTable'
 import ItemApprovalActionModal from './ItemApprovalActionModal'
 import ItemRejectModal from './ItemRejectModal'
 import BundleDetailModal from '../../bundles/_components/BundleDetailModal'
-import AddUnitsModal from './AddUnitsModal'
 import { useReceivingWarehouses } from './item-create-fields'
 import type { ItemSummary, UpdateItemFormValues } from '@/src/schema/inventory/items'
 import { hasPermission } from '@/src/hooks/usePermission'
@@ -119,7 +119,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     isRejectingItem,
   } = useItemMaster()
 
-  const [addUnitsTarget, setAddUnitsTarget] = useState<ItemSummary | null>(null)
+  const router = useRouter()
   const [editTarget, setEditTarget] = useState<ItemSummary | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ItemSummary | null>(null)
   // Scenario 16 — Item Master Governance
@@ -183,7 +183,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
               clearable
               options={branchOptions}
             />
-            {/* Type / Category = the sheet's TYPE / GROUP / SUBGROUP:
+            {/* Type / Category = the sheet's TYPE / CATEGORY / SUBGROUP:
               Type is the item type, Category/Subgroup the category tree. */}
             <SearchableSelect
               className="w-full"
@@ -246,7 +246,11 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
                 onDelete={handleDelete}
                 onLifecycleChange={(id, lc) => updateLifecycle(id, lc)}
                 onViewBundle={(item) => setSelectedBundleItem(item)}
-                onAddUnits={canCreate ? (item) => setAddUnitsTarget(item) : undefined}
+                onAddUnits={
+                  canCreate
+                    ? (item) => router.push(`/inventory/items/${item.id}/add-units`)
+                    : undefined
+                }
                 canSubmitReview={canSubmitReview}
                 canConfirmAccounting={canConfirmAccounting}
                 canApproveItem={canApproveItem}
@@ -290,8 +294,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         brandOptions={brandOptions}
         typeOptions={typeOptions}
       />
-
-      <AddUnitsModal item={addUnitsTarget} onClose={() => setAddUnitsTarget(null)} />
 
       {/* Bundle Detail Modal */}
       <BundleDetailModal

@@ -25,14 +25,26 @@ export const AddUnitsFormSchema = z
     classification: UnitClassificationSchema,
     price: z.number().min(0).optional(),
     serialsText: z.string(),
+    // The item's own flag, carried so the serials rule can follow it.
+    isSerialTracked: z.boolean(),
   })
   .superRefine((data, ctx) => {
     const serials = parseSerialList(data.serialsText)
+    if (!data.isSerialTracked) {
+      if (serials.length > 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['serialsText'],
+          message: 'Remove the serials — this item is not serial-tracked',
+        })
+      }
+      return
+    }
     if (serials.length === 0) {
       ctx.addIssue({
         code: 'custom',
         path: ['serialsText'],
-        message: 'Enter at least one serial number',
+        message: 'Enter at least one serial number — this item is serial-tracked',
       })
       return
     }
