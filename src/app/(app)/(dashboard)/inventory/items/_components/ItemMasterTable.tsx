@@ -1,6 +1,14 @@
 'use client'
 
-import { Archive, CheckCircle2, Layers, PauseCircle, Pencil, Trash2 } from 'lucide-react'
+import {
+  Archive,
+  CheckCircle2,
+  Layers,
+  PackagePlus,
+  PauseCircle,
+  Pencil,
+  Trash2,
+} from 'lucide-react'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import { displayClassificationLabel } from '@/src/libs/format/text'
@@ -96,6 +104,8 @@ type Props = {
   onDelete: (item: ItemSummary) => void
   onLifecycleChange: (id: string, lifecycle: 'active' | 'discontinued' | 'archived') => void
   onViewBundle?: (item: ItemSummary) => void
+  /** Record serials the beginning balance missed (serial-tracked items only). */
+  onAddUnits?: (item: ItemSummary) => void
   // Scenario 16 — Item Master Governance
   canSubmitReview: boolean
   canConfirmAccounting: boolean
@@ -143,6 +153,7 @@ export default function ItemMasterTable({
   onDelete,
   onLifecycleChange,
   onViewBundle,
+  onAddUnits,
   canSubmitReview,
   canConfirmAccounting,
   canApproveItem,
@@ -158,6 +169,7 @@ export default function ItemMasterTable({
     canUpdate ||
     canDelete ||
     !!onViewBundle ||
+    !!onAddUnits ||
     canSubmitReview ||
     canConfirmAccounting ||
     canApproveItem ||
@@ -281,6 +293,15 @@ export default function ItemMasterTable({
                                 label: 'Components',
                                 icon: Layers,
                                 onClick: () => onViewBundle(item),
+                              },
+                            ]
+                          : []),
+                        ...(onAddUnits && item.isSerialTracked
+                          ? [
+                              {
+                                label: 'Add units',
+                                icon: PackagePlus,
+                                onClick: () => onAddUnits(item),
                               },
                             ]
                           : []),

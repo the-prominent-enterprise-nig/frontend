@@ -66,10 +66,13 @@ export async function bulkImportItems(
     }
 
     if (parsed.data.created.length > 0) revalidatePath('/inventory/items')
+    if (parsed.data.prices?.status === 'done') revalidatePath('/pos/price-lists')
 
-    const skippedNote = parsed.data.skippedBlankRows
-      ? `, ${parsed.data.skippedBlankRows} blank row(s) skipped`
-      : ''
+    const existingCount = parsed.data.skippedExisting?.length ?? 0
+    const unitsCreated = parsed.data.units?.created ?? 0
+    const skippedNote =
+      (existingCount ? `, ${existingCount} already in catalog` : '') +
+      (unitsCreated ? `, ${unitsCreated} unit(s) recorded` : '')
 
     return {
       success: true,

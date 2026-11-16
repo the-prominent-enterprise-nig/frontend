@@ -21,6 +21,8 @@ export async function getItems(params?: {
   typeId?: string
   /** Scenario 56 — only items with units on hand in this operation. */
   region?: 'panay' | 'negros'
+  /** Items with units on hand at this branch / warehouse. */
+  warehouseId?: string
 }): Promise<ApiResponse<ItemListResponse>> {
   try {
     const result = await api.get<ItemListResponse>(

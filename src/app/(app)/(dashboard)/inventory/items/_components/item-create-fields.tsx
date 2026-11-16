@@ -8,6 +8,8 @@ import type { CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { CONTROL_CHROME } from '@/src/libs/design/plex'
 import type { ClassificationOption, CreateItemFormValues } from '@/src/schema/inventory/items'
 import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
+import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
+import type { WarehouseSummary } from '@/src/schema/inventory/warehouses'
 import { errorClass, labelClass } from './itemFormChrome'
 
 type SelectOption = { value: string; label: string }
@@ -171,5 +173,36 @@ export function useOriginOptions(enabled: boolean): SelectOption[] {
       ...(suppliers.data?.data?.data ?? []).map((s) => ({ value: s.name, label: s.name })),
     ],
     [suppliers.data]
+  )
+}
+
+/** Standalone warehouses (Panay, Negros) first, then the branch ones, deduped by id. */
+function mergeWarehouses(
+  standalone: WarehouseSummary[],
+  scoped: WarehouseSummary[]
+): WarehouseSummary[] {
+  const seen = new Set(standalone.map((w) => w.id))
+  return [...standalone, ...scoped.filter((w) => !seen.has(w.id))]
+}
+
+/** Where an already-in-hand unit can be recorded: every active branch
+ * warehouse the user can see, plus the standalone Panay / Negros ones — a
+ * branch-scoped user's list leaves those out, so they're fetched on their own. */
+export function useReceivingWarehouses(enabled: boolean): WarehouseSummary[] {
+  const scoped = useQuery({
+    queryKey: ['inventory-warehouses-lookup'],
+    queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+  const standalone = useQuery({
+    queryKey: ['inventory-warehouses-standalone-lookup'],
+    queryFn: () => getWarehouses({ limit: 200, status: 'active', standaloneOnly: true }),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
+  return useMemo(
+    () => mergeWarehouses(standalone.data?.data?.data ?? [], scoped.data?.data?.data ?? []),
+    [standalone.data, scoped.data]
   )
 }

@@ -41,6 +41,8 @@ export async function createItem(input: unknown): Promise<ApiResponse<{ id: stri
   // after the item exists — they're not part of the item's own body.
   const data: CreateItemFormValues = { ...parsed.data }
   for (const key of INITIAL_STOCK_KEYS) delete data[key]
+  // Prices go to the price lists in their own call, after the item exists.
+  delete data.prices
 
   const result = await api.post<{ id: string }>('/inventory/items', data)
 

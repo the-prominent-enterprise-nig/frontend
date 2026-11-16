@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { RefreshCw, Search, X, Pencil, Ruler } from 'lucide-react'
+import { Search, X, Pencil, Ruler } from 'lucide-react'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { MONO, PLEX, STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
@@ -167,7 +167,6 @@ export default function UomList({ session }: { session: SessionUser }) {
     isCreating,
     updateUom,
     isUpdating,
-    refetch,
   } = useUomManager()
 
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -207,22 +206,7 @@ export default function UomList({ session }: { session: SessionUser }) {
         <ListHeader
           title="Units of Measure"
           description="Define units and conversion factors for purchasing and selling."
-          actions={
-            <>
-              <Tooltip label="Refresh">
-                <button
-                  type="button"
-                  onClick={() => refetch()}
-                  disabled={isFetching}
-                  aria-label="Refresh"
-                  className={`${ICON_BUTTON} disabled:opacity-50`}
-                >
-                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-                </button>
-              </Tooltip>
-              {addButton}
-            </>
-          }
+          actions={<>{addButton}</>}
         />
 
         <form onSubmit={handleSearchSubmit} className="flex flex-wrap items-center gap-2">

@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useForm, Controller, useWatch } from 'react-hook-form'
-import { useQuery } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, Upload, ImageOff, Images, PackagePlus } from 'lucide-react'
 import { CreateItemFormSchema, CreateItemFormValues, UomOption } from '@/src/schema/inventory/items'
@@ -16,15 +15,24 @@ import { uploadItemFile, addItemImage } from '../_actions/item-images'
 import { checkItemDuplicates } from '../_actions/check-item-duplicates'
 import type { DuplicateCandidate } from '@/src/schema/inventory/items'
 import { receiveInitialUnit } from '../_actions/receive-initial-unit'
-import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import type { WarehouseSummary } from '@/src/schema/inventory/warehouses'
+import { setItemPrices } from '../_actions/set-item-prices'
+import ItemPricesSection from './ItemPricesSection'
+import { useMe } from '@/src/hooks/useMe'
+import { hasPermission } from '@/src/hooks/usePermission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { toItemPricePayload, type ItemPriceEntry } from '@/src/schema/inventory/items/item-prices'
 import { CONTROL_CHROME, MONO, PLEX } from '@/src/libs/design/plex'
 import {
   UNIT_CLASSIFICATION_LABELS,
   UnitClassificationSchema,
 } from '@/src/schema/inventory/reports'
 import { errorClass, inputClass, labelClass } from './itemFormChrome'
-import { CategorySubgroupFields, useAutoItemName, useOriginOptions } from './item-create-fields'
+import {
+  CategorySubgroupFields,
+  useAutoItemName,
+  useOriginOptions,
+  useReceivingWarehouses,
+} from './item-create-fields'
 
 interface PendingImage {
   fileId: string
@@ -40,15 +48,6 @@ const TRACKING_FIELDS_DISABLED_BY_SERVICE = [
   'requiresSecondarySerial',
   'isExpiryTracked',
 ] as const
-
-/** Standalone warehouses (Panay, Negros) first, then the branch ones, deduped by id. */
-function mergeWarehouses(
-  standalone: WarehouseSummary[],
-  scoped: WarehouseSummary[]
-): WarehouseSummary[] {
-  const seen = new Set(standalone.map((w) => w.id))
-  return [...standalone, ...scoped.filter((w) => !seen.has(w.id))]
-}
 
 type Props = {
   isOpen: boolean
@@ -112,6 +111,7 @@ export default function CreateItemModal({
       initialPrice: undefined,
       initialSerialNumber: '',
       initialClassification: 'brand_new',
+      prices: [],
     },
   })
 
@@ -150,24 +150,9 @@ export default function CreateItemModal({
 
   const isSerialTrackedValue = useWatch({ control, name: 'isSerialTracked' })
 
-  const warehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-lookup'],
-    queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
-    enabled: isOpen,
-    staleTime: 5 * 60 * 1000,
-  })
-  // The 2 real warehouses (Panay, Negros) are standalone (branchId: null), so a
-  // branch-scoped user's list above leaves them out — fetch them on their own.
-  const standaloneWarehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-standalone-lookup'],
-    queryFn: () => getWarehouses({ limit: 200, status: 'active', standaloneOnly: true }),
-    enabled: isOpen,
-    staleTime: 5 * 60 * 1000,
-  })
-  const warehouses = mergeWarehouses(
-    standaloneWarehousesQuery.data?.data?.data ?? [],
-    warehousesQuery.data?.data?.data ?? []
-  )
+  const warehouses = useReceivingWarehouses(isOpen)
+  const { data: me } = useMe()
+  const canSetPrices = hasPermission(me ?? null, INVENTORY_PERMISSIONS.PRICE_LISTS_UPDATE)
   const originOptions = useOriginOptions(isOpen)
 
   const [categoryName, setCategoryName] = useState('')
@@ -266,11 +251,11 @@ export default function CreateItemModal({
         ...pendingImages.map((img) => addItemImage(newItemId, { fileId: img.fileId })),
       ])
 
-      if (data.initialWarehouseId && data.initialDateIn && data.initialRr) {
+      if (data.initialWarehouseId) {
         const initialStockResult = await receiveInitialUnit(newItemId, {
           warehouseId: data.initialWarehouseId,
-          dateIn: data.initialDateIn,
-          rr: data.initialRr,
+          dateIn: data.initialDateIn || undefined,
+          rr: data.initialRr || undefined,
           origin: data.initialOrigin || undefined,
           price: data.initialPrice,
           serialNumber: data.initialSerialNumber || undefined,
@@ -284,9 +269,33 @@ export default function CreateItemModal({
           })
         }
       }
+
+      if (data.prices?.length) await savePrices(newItemId, data.prices)
     }
 
     onClose()
+  }
+
+  /** Prices are a second call once the item exists; a failure there keeps
+   * the item and says what didn't stick. */
+  async function savePrices(itemId: string, prices: ItemPriceEntry[]): Promise<void> {
+    const res = await setItemPrices(itemId, prices.map(toItemPricePayload))
+    if (!res.success || !res.data) {
+      showToast({
+        title: 'Item created, but prices failed',
+        description: res.message,
+        status: 'error',
+      })
+      return
+    }
+    const notSaved = res.data.rows.filter((r) => r.status !== 'create' && r.status !== 'update')
+    if (notSaved.length > 0) {
+      showToast({
+        title: 'Some prices were not saved',
+        description: notSaved.map((r) => r.message).join(' · '),
+        status: 'error',
+      })
+    }
   }
 
   const basicInfoErrors = [
@@ -669,8 +678,9 @@ export default function CreateItemModal({
             <FormSection variant="card" title="Initial Stock (Optional)" defaultOpen={true}>
               <div className="sm:col-span-2 -mt-1 mb-1 flex items-start gap-2 rounded-lg border border-[#eeeef1] bg-[#fbfbfc] px-3 py-2 text-[12px] text-[#4b4b5a]">
                 <PackagePlus className="h-4 w-4 shrink-0 text-ink-faint" />
-                Record one already-in-hand unit for this item right now — e.g. pasting in a single
-                row from a legacy stock sheet. Leave blank to create the item with no stock.
+                Record one already-in-hand unit for this item. Branch (and the serial, for a
+                serial-tracked item) is required; a blank date in means today and a blank RR # is
+                generated. Leave the section empty to create the item with no stock.
               </div>
 
               {/* Branch — a branch's warehouse, labelled by branch, plus the
@@ -702,7 +712,9 @@ export default function CreateItemModal({
 
               {/* Date In */}
               <div>
-                <label className={labelClass}>Date In</label>
+                <label className={labelClass}>
+                  Date In <span className="font-normal text-ink-faint">(optional — today)</span>
+                </label>
                 <Controller
                   name="initialDateIn"
                   control={control}
@@ -722,7 +734,9 @@ export default function CreateItemModal({
 
               {/* RR # */}
               <div>
-                <label className={labelClass}>RR #</label>
+                <label className={labelClass}>
+                  RR # <span className="font-normal text-ink-faint">(optional — generated)</span>
+                </label>
                 <Controller
                   name="initialRr"
                   control={control}
@@ -822,6 +836,17 @@ export default function CreateItemModal({
                 </div>
               )}
             </FormSection>
+
+            {canSetPrices && (
+              <FormSection
+                variant="card"
+                title="Prices (Optional)"
+                defaultOpen={true}
+                errorCount={errors.prices ? 1 : 0}
+              >
+                <ItemPricesSection control={control} errors={errors} />
+              </FormSection>
+            )}
 
             {/* Images */}
             <FormSection variant="card" title="Images" defaultOpen={true}>

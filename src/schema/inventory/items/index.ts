@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { UnitClassificationSchema } from '../reports'
+import { ItemPriceEntrySchema } from './item-prices'
 
 export const CostingMethodSchema = z.enum(['fifo', 'lifo', 'weighted_average'])
 export const ItemLifecycleSchema = z.enum(['active', 'discontinued', 'archived'])
@@ -95,6 +96,9 @@ const CreateItemFormBaseSchema = z.object({
   initialSerialNumber: z.string().optional(),
   // The unit's Classification on the General Stockbook (SerialNumber.receivedAs).
   initialClassification: UnitClassificationSchema.optional(),
+  // Optional — put the new item on the price list for each price use, in a
+  // separate call once it exists (POST /inventory/items/:id/prices).
+  prices: z.array(ItemPriceEntrySchema).optional(),
 })
 
 /** Brand + Model are how Item Master and both ledgers name an item (Brand ·
@@ -131,20 +135,8 @@ export const CreateItemFormSchema = CreateItemFormBaseSchema.superRefine((data, 
       message: 'Branch is required to record initial stock',
     })
   }
-  if (!data.initialDateIn) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['initialDateIn'],
-      message: 'Date received is required to record initial stock',
-    })
-  }
-  if (!data.initialRr) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['initialRr'],
-      message: 'RR number is required to record initial stock',
-    })
-  }
+  // Date in and RR # are optional — blank date = today, blank RR # = one is
+  // generated — the same rule as the item bulk upload's unit columns.
   if (data.isSerialTracked && !data.initialSerialNumber) {
     ctx.addIssue({
       code: 'custom',
