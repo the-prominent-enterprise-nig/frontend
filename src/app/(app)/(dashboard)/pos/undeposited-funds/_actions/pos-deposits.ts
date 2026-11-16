@@ -217,6 +217,15 @@ export async function correctPosDeposit(
   return result
 }
 
+/** Voids a posted deposit the bank never received — a slip recorded twice:
+ * its entries are reversed and what it banked goes back to To deposit, with
+ * the reason kept in the audit log. */
+export async function voidPosDeposit(id: string, reason: string): Promise<ApiResponse<PosDeposit>> {
+  const result = await api.post<PosDeposit>(`/pos-deposits/${id}/void`, { reason })
+  if (result.success) revalidate()
+  return result
+}
+
 export async function clearPosDeposit(id: string): Promise<ApiResponse<PosDeposit>> {
   const result = await api.post<PosDeposit>(`/pos-deposits/${id}/clear`, {})
   if (result.success) revalidate()
@@ -318,7 +327,7 @@ export async function correctPosTurnover(
 /** One change made to a posted deposit, from the accounting audit log. */
 export interface PosDepositHistoryEntry {
   id: string
-  action: 'CORRECT' | 'CORRECT_TURNOVER' | 'REJECT_TURNOVER' | 'ACKNOWLEDGE_TURNOVER'
+  action: 'CORRECT' | 'VOID' | 'CORRECT_TURNOVER' | 'REJECT_TURNOVER' | 'ACKNOWLEDGE_TURNOVER'
   at: string
   by: string
   reason: string | null

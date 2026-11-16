@@ -94,21 +94,15 @@ function referenceLabel(x: BusinessExpense): string {
   return first ? first + extra(x) : '—'
 }
 
-/** Scenario 78 Part 3 — the client's "SI and amount disbursed" columns. The
- * lines tied to a sale are the Commissions - Sales and Commissions - SMI lines
- * (each names the POS sale it releases): their SI/DR numbers, and what they
- * pay out between them — "amount disbursed" is the commission (Kian, Oct 23).
- * An entry with none falls back to its own Sales Invoice reference, if any. */
-function releaseColumns(x: BusinessExpense): { si: string; disbursed: number | null } {
+/** Scenario 78 Part 3 — the client's "SI" column. The lines tied to a sale are
+ * the Commissions - Sales and Commissions - SMI lines (each names the POS sale
+ * it releases): their SI/DR numbers. An entry with none falls back to its own
+ * Sales Invoice reference, if any. (Docket #63 dropped the "Amount Disbursed"
+ * column that used to sit beside it; a Description column took its place.) */
+function releaseSi(x: BusinessExpense): string {
   const linked = x.lines.filter((l) => l.posTransaction)
-  if (linked.length === 0) {
-    return { si: x.salesInvoiceNumber?.trim() || '—', disbursed: null }
-  }
-  const numbers = [...new Set(linked.map((l) => saleDocNo(l.posTransaction!)))]
-  return {
-    si: numbers.join(', '),
-    disbursed: linked.reduce((sum, l) => sum + Number(l.amount || 0), 0),
-  }
+  if (linked.length === 0) return x.salesInvoiceNumber?.trim() || '—'
+  return [...new Set(linked.map((l) => saleDocNo(l.posTransaction!)))].join(', ')
 }
 
 export default function ExpensesList() {
@@ -283,7 +277,7 @@ export default function ExpensesList() {
                 <th className="px-5 py-3 text-left font-semibold">Date</th>
                 <th className="px-5 py-3 text-left font-semibold">Payee</th>
                 <th className="px-5 py-3 text-left font-semibold">SI No.</th>
-                <th className="px-5 py-3 text-right font-semibold">Amount Disbursed</th>
+                <th className="px-5 py-3 text-left font-semibold">Description</th>
                 <th className="px-5 py-3 text-right font-semibold">Amount</th>
                 <th className="px-5 py-3 text-left font-semibold">Status</th>
                 <th className="w-12 px-3 py-3">
@@ -307,7 +301,8 @@ export default function ExpensesList() {
               ) : (
                 items.map((x) => {
                   const ref = referenceLabel(x)
-                  const release = releaseColumns(x)
+                  const si = releaseSi(x)
+                  const description = x.description?.trim() || ''
                   return (
                     <tr
                       key={x.id}
@@ -328,9 +323,15 @@ export default function ExpensesList() {
                           {ref !== '—' && <span className="font-sans"> · Ref {ref}</span>}
                         </span>
                       </td>
-                      <td className="px-5 py-2.5 font-mono text-xs text-zinc-700">{release.si}</td>
-                      <td className="whitespace-nowrap px-5 py-2.5 text-right tabular-nums text-zinc-700">
-                        {release.disbursed == null ? '—' : fmtMoney(release.disbursed)}
+                      <td className="px-5 py-2.5 font-mono text-xs text-zinc-700">{si}</td>
+                      <td className="max-w-xs px-5 py-2.5 text-zinc-700">
+                        {description ? (
+                          <span className="line-clamp-2" title={description}>
+                            {description}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-5 py-2.5 text-right font-semibold tabular-nums text-zinc-900">
                         {/* A liquidated cash advance can net to zero or below: what came

@@ -20,6 +20,7 @@ import {
   LedgerTable,
 } from '@/src/components/crm/LedgerParts'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import LedgerTransactionActions from './LedgerTransactionActions'
 import {
   buildCustomerLedgerHtml,
   buildUnifiedCustomerLedgerHtml,
@@ -100,6 +101,15 @@ export default function CustomerLedgerView({
   const accountPending = accountId !== null && accountResult?.id !== accountId
   const accountLedger =
     accountId !== null && accountResult?.id === accountId ? accountResult.ledger : null
+
+  const selectedTransaction =
+    transactionId && !loading
+      ? ledger?.transactions.find(
+          (tx) =>
+            tx.id === transactionId ||
+            (transactionId.startsWith('txn:') && tx.saleId === transactionId.slice('txn:'.length))
+        )
+      : undefined
 
   function setTransaction(next: string) {
     const params = new URLSearchParams(searchParams.toString())
@@ -286,6 +296,17 @@ export default function CustomerLedgerView({
             </div>
           )}
         </div>
+
+        {/* Docket #46 — the Business Owner's Edit / Delete for the one live
+            transaction picked above. A `txn:` key (the POS receipt modal's)
+            is the same sale under another name. */}
+        {selectedTransaction && (
+          <LedgerTransactionActions
+            key={selectedTransaction.id}
+            transaction={selectedTransaction}
+            onDeleted={() => setTransaction('')}
+          />
+        )}
 
         {loading || accountPending ? (
           <div className="mt-6 text-center text-gray-500">Loading…</div>

@@ -8,14 +8,17 @@ import {
   ACCESS_MODULES,
   SETTABLE_ACCESS_LEVELS,
   SHORT_ACCESS_LEVEL_LABELS,
+  applyPettyCashOnly,
   applyResourceLevel,
   countEffectivePermissions,
   formatPermission,
   formatResourceLabel,
   getAccessLevelForPermissions,
   getModulePermissions,
+  getPettyCashPermissions,
   getResourceRows,
   getSelectedPermissionIdsForLevel,
+  isPettyCashOnly,
   type AccessLevel,
 } from './access-levels'
 import {
@@ -142,6 +145,10 @@ export default function ModuleAccessList({
         permissionCount: modulePermissions.length,
         selectedCount: countEffectivePermissions(modulePermissions, selectedModulePermissions),
         level: getAccessLevelForPermissions(selectedModulePermissions, modulePermissions),
+        // "Petty cash only" (#66): offered where the backend marks permissions
+        // for it (Accounting), and read back from the grant itself.
+        hasPettyCash: getPettyCashPermissions(modulePermissions).length > 0,
+        pettyOnly: isPettyCashOnly(selected, modulePermissions),
         // Full Access via applyResourceLevel's per-resource buttons always
         // collapses back to this row when every resource ends up covered
         // (see collapseToWildcardIfComplete) — but Advanced permissions'
@@ -172,6 +179,12 @@ export default function ModuleAccessList({
     for (const permission of modulePermissions) next.delete(permission.id)
     for (const id of nextIds) next.add(id)
     onChange(next)
+  }
+
+  function handlePettyCashOnly(moduleKey: string) {
+    const moduleConfig = ACCESS_MODULES.find((item) => item.key === moduleKey)
+    if (!moduleConfig) return
+    onChange(applyPettyCashOnly(selected, getModulePermissions(availablePermissions, moduleConfig)))
   }
 
   function handleResourceLevelChange(
@@ -217,6 +230,8 @@ export default function ModuleAccessList({
           permissionCount,
           selectedCount,
           holdsWildcard,
+          hasPettyCash,
+          pettyOnly,
         }) => {
           const summary = summarizeModule(
             accessMap,
@@ -245,7 +260,7 @@ export default function ModuleAccessList({
                 <span
                   aria-hidden
                   className={`absolute inset-y-3 left-0 w-[3px] rounded-r-full ${
-                    level === 'mixed' ? 'bg-amber-400' : 'bg-prominent-purple-600'
+                    level === 'mixed' && !pettyOnly ? 'bg-amber-400' : 'bg-prominent-purple-600'
                   }`}
                 />
               )}
@@ -264,30 +279,41 @@ export default function ModuleAccessList({
                       <ChevronRight className="h-4 w-4 shrink-0 text-zinc-400 group-hover:text-prominent-purple-500" />
                     )}
                     {moduleConfig.label}
-                    {summary
-                      ? summary.kind !== 'none' && (
-                          <span
-                            data-module-summary={moduleConfig.key}
-                            className={`ml-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ring-1 ring-inset ${
-                              summary.kind === 'partial'
-                                ? 'bg-amber-50 text-amber-700 ring-amber-200'
-                                : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-                            }`}
-                          >
-                            {formatModuleSummary(summary)}
-                          </span>
-                        )
-                      : level === 'mixed' && (
-                          <span className="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-inset ring-amber-200">
-                            Mixed
-                          </span>
-                        )}
+                    {pettyOnly ? (
+                      <span
+                        data-petty-cash-only={moduleConfig.key}
+                        className="ml-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-emerald-700 ring-1 ring-inset ring-emerald-200"
+                      >
+                        Petty cash only
+                      </span>
+                    ) : summary ? (
+                      summary.kind !== 'none' && (
+                        <span
+                          data-module-summary={moduleConfig.key}
+                          className={`ml-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ring-1 ring-inset ${
+                            summary.kind === 'partial'
+                              ? 'bg-amber-50 text-amber-700 ring-amber-200'
+                              : 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                          }`}
+                        >
+                          {formatModuleSummary(summary)}
+                        </span>
+                      )
+                    ) : (
+                      level === 'mixed' && (
+                        <span className="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-inset ring-amber-200">
+                          Mixed
+                        </span>
+                      )
+                    )}
                   </button>
                   <div className="mt-1.5 flex items-center gap-2.5 pl-5.5">
                     <div className="h-1 w-24 overflow-hidden rounded-full bg-zinc-100">
                       <div
                         className={`h-full rounded-full transition-[width] duration-300 ${
-                          level === 'mixed' ? 'bg-amber-400' : 'bg-prominent-purple-600'
+                          level === 'mixed' && !pettyOnly
+                            ? 'bg-amber-400'
+                            : 'bg-prominent-purple-600'
                         }`}
                         style={{ width: `${percentEnabled}%` }}
                       />
@@ -299,23 +325,49 @@ export default function ModuleAccessList({
                   </div>
                 </div>
 
-                <div className="grid shrink-0 grid-cols-2 gap-1 rounded-xl border border-zinc-200 bg-zinc-50 p-1 sm:grid-cols-4">
-                  {SETTABLE_ACCESS_LEVELS.map((accessLevel) => (
+                <div className="flex shrink-0 flex-col gap-1.5 lg:items-end">
+                  <div className="grid grid-cols-2 gap-1 rounded-xl border border-zinc-200 bg-zinc-50 p-1 sm:grid-cols-4">
+                    {SETTABLE_ACCESS_LEVELS.map((accessLevel) => (
+                      <button
+                        key={accessLevel}
+                        type="button"
+                        onClick={() => handleModuleLevelChange(moduleConfig.key, accessLevel)}
+                        className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150 sm:text-[13px] ${
+                          level === accessLevel && !pettyOnly
+                            ? 'bg-prominent-purple-700 text-white shadow-sm'
+                            : 'text-zinc-600 hover:bg-white hover:text-zinc-900 hover:shadow-sm'
+                        }`}
+                      >
+                        {ACCESS_LEVEL_LABELS[accessLevel]}
+                      </button>
+                    ))}
+                  </div>
+                  {hasPettyCash && (
                     <button
-                      key={accessLevel}
                       type="button"
-                      onClick={() => handleModuleLevelChange(moduleConfig.key, accessLevel)}
-                      className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150 sm:text-[13px] ${
-                        level === accessLevel
-                          ? 'bg-prominent-purple-700 text-white shadow-sm'
-                          : 'text-zinc-600 hover:bg-white hover:text-zinc-900 hover:shadow-sm'
+                      aria-pressed={pettyOnly}
+                      data-petty-cash-only-button={moduleConfig.key}
+                      onClick={() => handlePettyCashOnly(moduleConfig.key)}
+                      title="Their own branch's petty cash fund and the expenses paid from it. Nothing else in Accounting."
+                      className={`whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-medium transition-all duration-150 sm:text-[13px] ${
+                        pettyOnly
+                          ? 'border-prominent-purple-700 bg-prominent-purple-700 text-white shadow-sm'
+                          : 'border-zinc-200 bg-white text-zinc-600 hover:border-prominent-purple-300 hover:text-zinc-900'
                       }`}
                     >
-                      {ACCESS_LEVEL_LABELS[accessLevel]}
+                      Petty cash only
                     </button>
-                  ))}
+                  )}
                 </div>
               </div>
+
+              {pettyOnly && (
+                <p className="mt-2 pl-5.5 text-xs text-zinc-500">
+                  Sees only their own branch&apos;s petty cash fund and records expenses paid from
+                  it. Nothing else in {moduleConfig.label}. Saving also limits &ldquo;Paid
+                  from&rdquo; to that fund.
+                </p>
+              )}
 
               {summary?.kind === 'all-protected' && (
                 <p className="mt-2 pl-5.5 text-xs text-zinc-500">
@@ -326,7 +378,7 @@ export default function ModuleAccessList({
                 </p>
               )}
 
-              {!summary && level === 'mixed' && !isExpanded && (
+              {!summary && level === 'mixed' && !pettyOnly && !isExpanded && (
                 <p className="mt-2 pl-5.5 text-xs text-amber-700">
                   Resources are at different levels — expand to see which.
                 </p>

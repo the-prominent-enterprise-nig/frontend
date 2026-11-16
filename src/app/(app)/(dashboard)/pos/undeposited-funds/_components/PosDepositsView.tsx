@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQueries, useQuery, type QueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Loader2, Pencil, X } from 'lucide-react'
+import { Ban, CheckCircle2, Loader2, Pencil, X } from 'lucide-react'
 import AttachmentsPanel from '@/src/components/common/AttachmentsPanel'
 import { ConfirmDialog } from '@/src/components/ui/Modal'
 import { showToast } from '@/src/components/ui/toast'
@@ -46,6 +46,7 @@ import {
   turnoversFromLines,
   type Turnover,
 } from './TurnoverFields'
+import { VoidDepositDialog, voidable } from './VoidDepositDialog'
 
 /**
  * Scenario 61 Part 5 — a POS deposit opened from the Undeposited Funds table:
@@ -201,6 +202,8 @@ function CombinedDepositDetail({
   onChanged: () => void
 }): React.JSX.Element {
   const [editing, setEditing] = useState(false)
+  const [voiding, setVoiding] = useState<PosDeposit | null>(null)
+  const ownerOf = new Map(deposits.flatMap((d) => (d.lines ?? []).map((l) => [l.id, d])))
   const lines = deposits
     .flatMap(datedLines)
     .sort((a, b) => (a.depositDate ?? '').localeCompare(b.depositDate ?? ''))
@@ -234,6 +237,24 @@ function CombinedDepositDetail({
               fallbackDate={deposits[0].depositDate}
               onEdit={canEdit ? () => setEditing(true) : undefined}
               editLabel="Edit deposit"
+              onVoidLine={
+                canCorrect ? (line) => setVoiding(ownerOf.get(line.id) ?? null) : undefined
+              }
+              canVoidLine={(line) => {
+                const owner = ownerOf.get(line.id)
+                return !!owner && voidable(owner)
+              }}
+            />
+          )}
+          {voiding && (
+            <VoidDepositDialog
+              deposit={voiding}
+              onCancel={() => setVoiding(null)}
+              onVoided={() => {
+                setVoiding(null)
+                onChanged()
+                onClose()
+              }}
             />
           )}
           <DepositHistory ids={deposits.map((d) => d.id)} />
@@ -290,6 +311,7 @@ function CombinedHeader({
 
 const HISTORY_LABEL: Record<PosDepositHistoryEntry['action'], string> = {
   CORRECT: 'Deposit corrected',
+  VOID: 'Deposit voided',
   CORRECT_TURNOVER: 'Turnover corrected',
   REJECT_TURNOVER: 'Turnover rejected',
   ACKNOWLEDGE_TURNOVER: 'Turnover acknowledged',
@@ -398,7 +420,9 @@ export function DepositDetail({
   const canEditSlips =
     correctableSlips(deposit) &&
     (isDraft ? canManage || canVerify : correcting && canCorrect && !deposit.reconciledAt)
+  const canVoid = canCorrect && voidable(deposit)
   const [editing, setEditing] = useState(false)
+  const [voiding, setVoiding] = useState(false)
 
   return (
     // Fills the content area like Record deposit, leaving the navigation in
@@ -450,6 +474,18 @@ export function DepositDetail({
               fallbackDate={deposit.depositDate}
               onEdit={canEditSlips ? () => setEditing(true) : undefined}
               editLabel={correcting ? 'Edit deposit' : 'Edit slips'}
+              onVoid={canVoid ? () => setVoiding(true) : undefined}
+            />
+          )}
+          {voiding && (
+            <VoidDepositDialog
+              deposit={deposit}
+              onCancel={() => setVoiding(false)}
+              onVoided={() => {
+                setVoiding(false)
+                onChanged()
+                onClose()
+              }}
             />
           )}
           {deposit.status !== 'draft' && <DepositHistory ids={[deposit.id]} />}
@@ -508,6 +544,9 @@ function SlipList({
   fallbackDate,
   onEdit,
   editLabel = 'Edit slips',
+  onVoid,
+  onVoidLine,
+  canVoidLine,
 }: {
   lines: PosDepositLine[]
   /** The date a slip with none of its own shows: its deposit's. */
@@ -515,22 +554,42 @@ function SlipList({
   /** Present while the slips can still be corrected. */
   onEdit?: () => void
   editLabel?: string
+  /** Present while the (one) deposit can still be voided. */
+  onVoid?: () => void
+  /** Several deposits read as one: voids the deposit a slip belongs to. */
+  onVoidLine?: (line: PosDepositLine) => void
+  canVoidLine?: (line: PosDepositLine) => boolean
 }): React.JSX.Element | null {
   if (lines.length === 0) return null
+  const voidColumn = !!onVoidLine && lines.some((l) => canVoidLine?.(l) ?? true)
   return (
     <div className="space-y-2">
-      {onEdit && (
-        <div className="flex justify-end">
-          <Tooltip label="Correct the slips before clearing">
-            <button
-              type="button"
-              onClick={onEdit}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              {editLabel}
-            </button>
-          </Tooltip>
+      {(onEdit || onVoid) && (
+        <div className="flex justify-end gap-2">
+          {onVoid && (
+            <Tooltip label="Void a deposit the bank never received" align="end">
+              <button
+                type="button"
+                onClick={onVoid}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+              >
+                <Ban className="h-3.5 w-3.5" />
+                Void deposit
+              </button>
+            </Tooltip>
+          )}
+          {onEdit && (
+            <Tooltip label="Correct the slips before clearing" align="end">
+              <button
+                type="button"
+                onClick={onEdit}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                {editLabel}
+              </button>
+            </Tooltip>
+          )}
         </div>
       )}
       {lines.length > 0 && (
@@ -542,6 +601,11 @@ function SlipList({
               <th className="px-3 py-2 text-left">Clears</th>
               <th className="px-3 py-2 text-left">Reference no.</th>
               <th className="px-3 py-2 text-left">Date</th>
+              {voidColumn && (
+                <th className="px-3 py-2">
+                  <span className="sr-only">Actions</span>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -568,6 +632,22 @@ function SlipList({
                 <td className="whitespace-nowrap px-3 py-2">
                   {fmtDate(l.depositDate ?? fallbackDate)}
                 </td>
+                {voidColumn && (
+                  <td className="px-3 py-2 text-right">
+                    {onVoidLine && (canVoidLine?.(l) ?? true) && (
+                      <Tooltip label="Void this deposit" align="end">
+                        <button
+                          type="button"
+                          onClick={() => onVoidLine(l)}
+                          aria-label="Void this deposit"
+                          className="rounded p-1 text-red-600 hover:bg-red-50"
+                        >
+                          <Ban className="h-4 w-4" />
+                        </button>
+                      </Tooltip>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

@@ -10,6 +10,7 @@ import {
   reactivateRole,
   updateRoleHomeModule,
 } from '@/src/app/(app)/(dashboard)/settings/_actions'
+import { ensureOwnBranchPettyCashLimit } from '@/src/app/(app)/(dashboard)/settings/_actions/role-scopes'
 import ModuleAccessList from '@/src/components/settings/ModuleAccessList'
 import { type AccessMap } from '@/src/components/settings/module-map'
 import AdvancedPermissionsSection from '@/src/components/settings/AdvancedPermissionsSection'
@@ -17,7 +18,11 @@ import UnsavedChangesModal from '@/src/components/settings/UnsavedChangesModal'
 import HomePageField from '@/src/components/settings/HomePageField'
 import { showToast } from '@/src/components/ui/toast'
 import { useUnsavedChangesGuard } from '@/src/hooks/useUnsavedChangesGuard'
-import { ACCESS_MODULES, getModulePermissions } from '@/src/components/settings/access-levels'
+import {
+  ACCESS_MODULES,
+  getModulePermissions,
+  hasPettyCashOnlyAccess,
+} from '@/src/components/settings/access-levels'
 
 // Business Owner's permissions and active status can't be changed by anyone
 // via the API — see the backend's roles.service.ts assertNotFounderRole.
@@ -131,6 +136,21 @@ export default function RoleAccessClient({
     setIsSaving(true)
 
     try {
+      // "Petty cash only" goes with its limit, and the limit goes first: if it
+      // can't be set, nothing is saved, so the role never holds expense access
+      // with "Paid from" open to every fund.
+      if (hasPettyCashOnlyAccess(selected, availablePermissions)) {
+        const limit = await ensureOwnBranchPettyCashLimit(role.id)
+        if (!limit.success) {
+          showToast({
+            title: 'Could not limit this role to petty cash',
+            description: `${limit.message || limit.error} Access was not changed.`,
+            status: 'error',
+          })
+          return
+        }
+      }
+
       const result = await assignPermissions({
         roleId: role.id,
         permissionIds: Array.from(selected),
