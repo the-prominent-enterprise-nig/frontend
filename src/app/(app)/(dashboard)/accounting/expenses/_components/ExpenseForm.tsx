@@ -43,6 +43,7 @@ import {
   type Department,
 } from '@/src/libs/data/OrgStructureData'
 import { ExpenseItemSearchCombobox, type ExpenseItemSearchMeta } from './ExpenseItemSearchCombobox'
+import { getItem } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-item'
 import ExpenseAttachmentsPanel, { uploadStagedExpenseAttachments } from './ExpenseAttachmentsPanel'
 import { showToast } from '@/src/components/ui/toast'
 import { importSpreadsheetLines, nameKeys, type ImportResult } from './importSpreadsheetLines'
@@ -1186,6 +1187,34 @@ function ExpenseFormFields({
     // resolveSiForLine is redefined every render; siRequestedRef is what
     // actually gates repeat work, so listing it would only add churn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines])
+
+  // A saved line stores only its Item's id — the API sends no name with it — so
+  // a reopened expense would show the Item box as "— None —" while the line
+  // still holds the item. Look the name up once per item and fill it in, the
+  // same way the SI is looked up above. Keyed by item (not row) so removing or
+  // reordering lines can't land a name on the wrong one; a row the user has
+  // already picked an item on has its label and is left alone.
+  const itemLabelRequestedRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    lines.forEach((l) => {
+      if (!l.itemId || l.itemLabel || itemLabelRequestedRef.current.has(l.itemId)) return
+      const id = l.itemId
+      itemLabelRequestedRef.current.add(id)
+      void getItem(id).then((res) => {
+        if (!res.success || !res.data) {
+          // Let a later change retry rather than leave the box blank for good.
+          itemLabelRequestedRef.current.delete(id)
+          return
+        }
+        const label = res.data.sku ? `${res.data.name} (${res.data.sku})` : res.data.name
+        setLines((prev) =>
+          prev.map((row) =>
+            row.itemId === id && !row.itemLabel ? { ...row, itemLabel: label } : row
+          )
+        )
+      })
+    })
   }, [lines])
 
   const setPayment = (index: number, patch: Partial<PaymentState>) =>
