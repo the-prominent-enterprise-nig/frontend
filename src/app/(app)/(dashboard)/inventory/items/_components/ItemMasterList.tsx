@@ -1,14 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { Search, X, Package, FileUp } from 'lucide-react'
+import { Search, X, Package } from 'lucide-react'
 import { useItemMaster } from '../_hooks/useItemMaster'
 import EditItemModal from './EditItemModal'
 import ItemMasterTable from './ItemMasterTable'
 import ItemApprovalActionModal from './ItemApprovalActionModal'
 import ItemRejectModal from './ItemRejectModal'
 import BundleDetailModal from '../../bundles/_components/BundleDetailModal'
-import BulkImportItemsModal from './BulkImportItemsModal'
 import AddUnitsModal from './AddUnitsModal'
 import { useReceivingWarehouses } from './item-create-fields'
 import type { ItemSummary, UpdateItemFormValues } from '@/src/schema/inventory/items'
@@ -30,7 +29,6 @@ import {
   LoadError,
   PAGE_INNER,
   PAGE_SHELL,
-  PRIMARY_BUTTON,
   TableCard,
 } from '../../master-data/_components/masterDataChrome'
 
@@ -51,7 +49,6 @@ const SORT_OPTIONS = [
 
 export default function ItemMasterList({ session }: { session: SessionUser }) {
   const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_CREATE)
-  const canSetPrices = hasPermission(session, INVENTORY_PERMISSIONS.PRICE_LISTS_UPDATE)
   const canUpdate = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_UPDATE)
   const canDelete = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_DELETE)
   const canManageLifecycle = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_MANAGE_LIFECYCLE)
@@ -122,7 +119,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     isRejectingItem,
   } = useItemMaster()
 
-  const [isCsvImportOpen, setIsCsvImportOpen] = useState(false)
   const [addUnitsTarget, setAddUnitsTarget] = useState<ItemSummary | null>(null)
   const [editTarget, setEditTarget] = useState<ItemSummary | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ItemSummary | null>(null)
@@ -153,18 +149,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         <ListHeader
           title="Item Master"
           description="Create and manage product records across the system."
-          actions={
-            canCreate ? (
-              <button
-                type="button"
-                onClick={() => setIsCsvImportOpen(true)}
-                className={PRIMARY_BUTTON}
-              >
-                <FileUp className="h-4 w-4" />
-                Bulk Upload Items
-              </button>
-            ) : undefined
-          }
         />
 
         <div className="space-y-2">
@@ -305,12 +289,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         canReadAttributes={canReadAttributes}
         brandOptions={brandOptions}
         typeOptions={typeOptions}
-      />
-
-      <BulkImportItemsModal
-        isOpen={isCsvImportOpen}
-        onClose={() => setIsCsvImportOpen(false)}
-        canSetPrices={canSetPrices}
       />
 
       <AddUnitsModal item={addUnitsTarget} onClose={() => setAddUnitsTarget(null)} />

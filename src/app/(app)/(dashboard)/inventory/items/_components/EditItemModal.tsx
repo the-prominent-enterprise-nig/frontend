@@ -279,7 +279,7 @@ export default function EditItemModal({
     errors.modelNumber,
   ].filter(Boolean).length
 
-  const pricingErrors = [errors.costPrice, errors.sellingPrice].filter(Boolean).length
+  const pricingErrors = [errors.costPrice].filter(Boolean).length
   const hasSubmitErrors = submitCount > 0 && Object.keys(errors).length > 0
   const isSaving = isSubmitting || isAttributeSubmitting
 
@@ -532,36 +532,29 @@ export default function EditItemModal({
             {/* Pricing */}
             <FormSection
               variant="card"
-              title="Pricing"
+              title="Cost"
               defaultOpen={true}
               errorCount={pricingErrors}
               forceOpen={hasSubmitErrors && pricingErrors > 0}
             >
-              {(
-                [
-                  { name: 'costPrice', label: 'Cost Price (₱)' },
-                  { name: 'sellingPrice', label: 'Selling Price (₱)' },
-                ] as const
-              ).map(({ name, label }) => (
-                <div key={name}>
-                  <label className={labelClass}>{label}</label>
-                  <Controller
-                    name={name}
-                    control={control}
-                    render={({ field }) => (
-                      <NumericInput
-                        value={field.value}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        fieldRef={field.ref}
-                        placeholder="0.00"
-                        className={inputClass}
-                      />
-                    )}
-                  />
-                  {errors[name] && <p className={errorClass}>{errors[name]?.message}</p>}
-                </div>
-              ))}
+              <div>
+                <label className={labelClass}>Cost Price (₱)</label>
+                <Controller
+                  name="costPrice"
+                  control={control}
+                  render={({ field }) => (
+                    <NumericInput
+                      value={field.value}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      fieldRef={field.ref}
+                      placeholder="0.00"
+                      className={inputClass}
+                    />
+                  )}
+                />
+                {errors.costPrice && <p className={errorClass}>{errors.costPrice.message}</p>}
+              </div>
             </FormSection>
 
             {/* Tracking — the same four options Add New Item offers */}

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useForm, Controller, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2, Upload, ImageOff, Images, PackagePlus } from 'lucide-react'
+import { X, Loader2, Upload, ImageOff, Images, PackagePlus, FileUp } from 'lucide-react'
 import { CreateItemFormSchema, CreateItemFormValues, UomOption } from '@/src/schema/inventory/items'
 import type { ClassificationOption } from '@/src/schema/inventory/items'
 import { NumericInput, FormSection } from './item-form-shared'
@@ -17,6 +17,8 @@ import type { DuplicateCandidate } from '@/src/schema/inventory/items'
 import { receiveInitialUnit } from '../_actions/receive-initial-unit'
 import { setItemPrices } from '../_actions/set-item-prices'
 import ItemPricesSection from './ItemPricesSection'
+import BulkImportItemsModal from './BulkImportItemsModal'
+import { PRIMARY_BUTTON } from '../../master-data/_components/masterDataChrome'
 import { useMe } from '@/src/hooks/useMe'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -153,6 +155,7 @@ export default function CreateItemModal({
   const warehouses = useReceivingWarehouses(isOpen)
   const { data: me } = useMe()
   const canSetPrices = hasPermission(me ?? null, INVENTORY_PERMISSIONS.PRICE_LISTS_UPDATE)
+  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false)
   const originOptions = useOriginOptions(isOpen)
 
   const [categoryName, setCategoryName] = useState('')
@@ -308,7 +311,7 @@ export default function CreateItemModal({
     errors.modelNumber,
   ].filter(Boolean).length
 
-  const pricingErrors = [errors.costPrice, errors.sellingPrice].filter(Boolean).length
+  const pricingErrors = [errors.costPrice].filter(Boolean).length
 
   const hasSubmitErrors = submitCount > 0 && Object.keys(errors).length > 0
 
@@ -340,18 +343,35 @@ export default function CreateItemModal({
               stock unless you record initial stock below.
             </p>
           </div>
-          {!isPage && (
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Many items at once — the same sheet also prices them and
+                records their units (item upload template). */}
             <button
               type="button"
-              onClick={handleRequestClose}
-              aria-label="Close"
-              className="rounded-lg p-2 text-[#4b4b5a] hover:bg-[#f1f1f4]"
+              onClick={() => setIsBulkUploadOpen(true)}
+              className={PRIMARY_BUTTON}
             >
-              <X className="h-5 w-5" />
+              <FileUp className="h-4 w-4" />
+              Bulk Upload Items
             </button>
-          )}
+            {!isPage && (
+              <button
+                type="button"
+                onClick={handleRequestClose}
+                aria-label="Close"
+                className="rounded-lg p-2 text-[#4b4b5a] hover:bg-[#f1f1f4]"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
+      <BulkImportItemsModal
+        isOpen={isBulkUploadOpen}
+        onClose={() => setIsBulkUploadOpen(false)}
+        canSetPrices={canSetPrices}
+      />
       {confirmingClose && (
         <div className="flex shrink-0 items-center justify-between border-b border-[#f5dcb0] bg-[#fdf3e2] px-6 py-3">
           <p className="text-[13px] text-[#8a4b06]">You have unsaved changes. Discard them?</p>
@@ -580,10 +600,10 @@ export default function CreateItemModal({
               </div>
             </FormSection>
 
-            {/* Pricing */}
+            {/* Cost — the selling price lives on the price lists (Prices section). */}
             <FormSection
               variant="card"
-              title="Pricing"
+              title="Cost"
               defaultOpen={true}
               errorCount={pricingErrors}
               forceOpen={hasSubmitErrors && pricingErrors > 0}
@@ -608,26 +628,6 @@ export default function CreateItemModal({
                   )}
                 />
                 {errors.costPrice && <p className={errorClass}>{errors.costPrice.message}</p>}
-              </div>
-
-              {/* Selling Price — Item Master's Price column. */}
-              <div>
-                <label className={labelClass}>Selling Price (₱)</label>
-                <Controller
-                  name="sellingPrice"
-                  control={control}
-                  render={({ field }) => (
-                    <NumericInput
-                      value={field.value}
-                      onChange={field.onChange}
-                      onBlur={field.onBlur}
-                      fieldRef={field.ref}
-                      placeholder="0.00"
-                      className={inputClass}
-                    />
-                  )}
-                />
-                {errors.sellingPrice && <p className={errorClass}>{errors.sellingPrice.message}</p>}
               </div>
             </FormSection>
 
