@@ -632,11 +632,12 @@ function ExpenseFormFields({
       : [emptyLine()]
   )
   const [siCandidates, setSiCandidates] = useState<Record<number, APBill[]>>({})
-  // Sales Invoice (ARInvoice) suggestions for the header field below —
-  // scoped to the header's customer. A resolver effect re-runs whenever the
-  // customer changes, and backfills the display text when the form already
-  // holds a linked arInvoiceId (e.g. an edit-mode draft loading) — same "no
-  // joined label yet" gap apBillId has, for the same cross-module-id reason.
+  // The customer's MI (monthly installment) invoices, listed in the Sales
+  // Invoice field below — scoped to the header's customer. A resolver effect
+  // re-runs whenever the customer changes, and backfills the display text when
+  // the form already holds a linked arInvoiceId (e.g. an edit-mode draft
+  // loading) — same "no joined label yet" gap apBillId has, for the same
+  // cross-module-id reason.
   const [arInvoiceCandidates, setArInvoiceCandidates] = useState<ARInvoice[]>([])
   useEffect(() => {
     const customerId = form.customerId
@@ -644,7 +645,7 @@ function ExpenseFormFields({
       setArInvoiceCandidates([])
       return
     }
-    ARInvoices.list({ customerId }).then((res) => {
+    ARInvoices.list({ customerId, installment: true }).then((res) => {
       const candidates = res.data?.items ?? []
       setArInvoiceCandidates(candidates)
       setForm((f) => {
@@ -654,6 +655,18 @@ function ExpenseFormFields({
       })
     })
   }, [form.customerId])
+  // What the Sales Invoice list shows: every MI invoice of the customer. A draft
+  // saved earlier may hold an invoice that is not an MI one (the field used to
+  // suggest them all) — it stays listed so the box does not read as empty while
+  // the draft still carries it.
+  const arInvoiceOptions: CategorySelectOption[] = [
+    ...arInvoiceCandidates.map((c) => ({ id: c.id, name: c.invoiceNumber, depth: 0 })),
+    ...(form.arInvoiceId &&
+    form.salesInvoiceNumber &&
+    !arInvoiceCandidates.some((c) => c.id === form.arInvoiceId)
+      ? [{ id: form.arInvoiceId, name: form.salesInvoiceNumber, depth: 0 }]
+      : []),
+  ]
   // A line's Division is one pick from the tenant's branches and departments
   // listed together — "dropdown came from branches and departments". Loaded
   // once here and shared by every line.
@@ -1719,28 +1732,22 @@ function ExpenseFormFields({
                     />
                   </Field>
                   <Field label="Sales Invoice">
-                    <input
-                      list="ar-invoice-suggestions"
-                      value={form.salesInvoiceNumber}
-                      onChange={(e) => {
-                        const text = e.target.value
-                        const matched = arInvoiceCandidates.find(
-                          (c) => c.invoiceNumber.toLowerCase() === text.trim().toLowerCase()
-                        )
+                    <CategorySelect
+                      compact
+                      aria-label="Sales Invoice"
+                      noun="MI invoices"
+                      value={form.arInvoiceId}
+                      onChange={(id) => {
+                        const picked = arInvoiceOptions.find((o) => o.id === id)
                         setForm({
                           ...form,
-                          salesInvoiceNumber: text,
-                          arInvoiceId: matched?.id ?? '',
+                          arInvoiceId: picked?.id ?? '',
+                          salesInvoiceNumber: picked?.name ?? '',
                         })
                       }}
-                      placeholder="Sales Invoice #"
-                      className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                      options={arInvoiceOptions}
+                      placeholder="— None —"
                     />
-                    <datalist id="ar-invoice-suggestions">
-                      {arInvoiceCandidates.map((c) => (
-                        <option key={c.id} value={c.invoiceNumber} />
-                      ))}
-                    </datalist>
                   </Field>
                 </>
               )}
