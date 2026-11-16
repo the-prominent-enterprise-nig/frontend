@@ -156,15 +156,13 @@ export async function approvedApplication(
   await page.request.post(`/api/credit/applications/${application.id}/documents`, {
     data: { fileId: file.id, documentType: 'applicant_id' },
   })
-  await page.request.patch(`/api/credit/applications/${application.id}/submit`)
-  await page.request.post(`/api/credit/applications/${application.id}/investigation/start`)
-  await page.request.post(`/api/credit/applications/${application.id}/investigation`, {
-    data: { affordabilityOutcome: 'recommend_approve', notes: 'Looks fine' },
-  })
-  const decided = await page.request.patch(`/api/credit/applications/${application.id}/decide`, {
-    data: { approveItemIds: [application.items[0].id], declineItemIds: [] },
-  })
-  expect(decided.ok(), await decided.text()).toBeTruthy()
+  // Submitting approves the application and every item on it (UAT CA-01,
+  // 2026-11-05: no approval workflow). The investigation and decide steps this
+  // helper used to walk are gone for anything submitted since.
+  const submitted = await page.request.patch(`/api/credit/applications/${application.id}/submit`)
+  expect(submitted.ok(), await submitted.text()).toBeTruthy()
+  const submittedBody = await submitted.json()
+  expect((submittedBody.data ?? submittedBody).status).toBe('approved')
 
   await ensureOpenSession(page, branchId)
 

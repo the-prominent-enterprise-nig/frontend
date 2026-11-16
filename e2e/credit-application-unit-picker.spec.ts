@@ -131,33 +131,15 @@ async function wipPriceUseId(page: Page): Promise<string> {
   return types.find((t) => t.name === 'WIP')!.id
 }
 
-/** Takes an application through investigation and approves every item, as
- * the owner — a cashier cannot decide one. */
+/** Approves an application by submitting it, as the owner. Submitting approves
+ * the application and every item on it (UAT CA-01, 2026-11-05: no approval
+ * workflow); the investigation and decide steps this used to walk are gone
+ * for anything submitted since. */
 async function approveAsOwner(owner: APIRequestContext, id: string): Promise<void> {
-  const app = await (await owner.get(`/api/credit/applications/${id}`)).json()
-  const itemIds = ((app.data ?? app).items as { id: string }[]).map((i) => i.id)
-  const steps: [string, () => Promise<{ ok(): boolean; text(): Promise<string> }>][] = [
-    ['submit', () => owner.patch(`/api/credit/applications/${id}/submit`)],
-    ['start', () => owner.post(`/api/credit/applications/${id}/investigation/start`)],
-    [
-      'investigate',
-      () =>
-        owner.post(`/api/credit/applications/${id}/investigation`, {
-          data: { affordabilityOutcome: 'recommend_approve', notes: 'E2E unit picker' },
-        }),
-    ],
-    [
-      'decide',
-      () =>
-        owner.patch(`/api/credit/applications/${id}/decide`, {
-          data: { approveItemIds: itemIds, declineItemIds: [] },
-        }),
-    ],
-  ]
-  for (const [step, run] of steps) {
-    const res = await run()
-    expect(res.ok(), `${step}: ${await res.text()}`).toBeTruthy()
-  }
+  const res = await owner.patch(`/api/credit/applications/${id}/submit`)
+  expect(res.ok(), `submit: ${await res.text()}`).toBeTruthy()
+  const body = await res.json()
+  expect((body.data ?? body).status).toBe('approved')
 }
 
 test.describe('Scenario 64 item 29 — the unit on a credit application (cashier)', () => {
@@ -460,7 +442,8 @@ test.describe('Scenario 64 item 29 — the unit on a credit application (cashier
     }
 
     await gotoReady(page, `/pos/credit-applications/${id}`)
-    const sell = page.getByRole('button', { name: 'Continue to sale' })
+    // The banner's button; the same action repeats at the foot of the page.
+    const sell = page.getByRole('button', { name: 'Continue to sale' }).first()
     await expect(sell, "the cashier's Counter 1 session must be open").toBeEnabled({
       timeout: 20_000,
     })
