@@ -6,6 +6,7 @@ import {
   fillStable,
   openCustomSelect,
   pickCartPriceUse,
+  pickCheckoutSession,
 } from './utils'
 
 // Scenario 17, Part 7 — Promissory Note generation + signature gate.
@@ -117,6 +118,8 @@ async function submitInstallmentSale(
   applicantName: string
 ): Promise<void> {
   await gotoReady(page, '/pos/checkout')
+  // The cashier's own Bago session (opened just before) is listed first.
+  await pickCheckoutSession(page, 'Bago')
 
   // Add a WIP-priced item to cart (see pos-checkout-price-use.spec.ts —
   // seeded with a real price-list entry) and resolve its price. An item

@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
-import { gotoReady, fillStable } from './utils'
+import { gotoReady, fillStable, pickCheckoutSession } from './utils'
 
 // Picking a customer at POS checkout shows their approved, unused credit
 // applications on the customer card straight away — whatever the cart holds.
@@ -118,26 +118,12 @@ async function approveApplication(
   expect(decided.ok(), await decided.text()).toBeTruthy()
 }
 
-/** An owner sees every branch's open sessions: with several open the checkout asks
- * which one to ring on, with exactly one it simply picks it. Handles both. */
-async function pickSessionIfAsked(page: Page): Promise<void> {
-  const sessionSelect = page.locator('select').filter({ hasText: 'Select session' })
-  const autoSelected = page.getByText(/^Counter \d+$/).first()
-  await expect(sessionSelect.or(autoSelected)).toBeVisible({ timeout: 20_000 })
-  if (await sessionSelect.isVisible()) {
-    const value = await sessionSelect
-      .locator('option', { hasText: BRANCH })
-      .first()
-      .getAttribute('value')
-    await sessionSelect.selectOption(value!)
-  }
-}
-
 async function selectCustomer(page: Page, name: string): Promise<void> {
-  // Settled first — the catalog loaded and a session chosen — so the page is done
-  // re-rendering before anything is typed into the search.
+  // Settled first — a session picked and the catalog loaded — so the page is done
+  // re-rendering before anything is typed into the search. The cart only opens
+  // once a session is picked, and picking again later is a no-op.
+  await pickCheckoutSession(page, BRANCH)
   await expect(page.getByPlaceholder('Search by name or serial')).toBeVisible({ timeout: 20_000 })
-  await pickSessionIfAsked(page)
   const input = page.getByPlaceholder('Search by name or phone…')
   await input.click()
   await fillStable(input, name)

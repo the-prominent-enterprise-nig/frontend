@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test'
-import { clickStable, fillStable, pickCartPriceUse } from './utils'
+import { clickStable, fillStable, gotoReady, pickCartPriceUse, pickCheckoutSession } from './utils'
 
 // Shared by the specs that take a credit application to the till
 // (credit-application-low-down-payment, credit-application-fmi-checkout).
@@ -61,6 +61,14 @@ export async function ensureOpenSession(page: Page, branchId: string): Promise<v
     data: { terminalId: terminal.id, openingCash: 1000 },
   })
   expect(opened.ok(), await opened.text()).toBeTruthy()
+}
+
+/** Opens checkout and picks a Bago session there. Checkout never picks one on
+ * its own, and every till here sells from Bago (the application's branch and
+ * where the items are stocked). */
+export async function gotoBagoCheckout(page: Page): Promise<void> {
+  await gotoReady(page, '/pos/checkout')
+  await pickCheckoutSession(page, 'Bago')
 }
 
 /** Makes sure Bago has an open till session, so checkout opens. */

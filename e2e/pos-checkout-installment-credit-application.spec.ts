@@ -1,5 +1,12 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, clickStable, fillStable, openCustomSelect, pickCartPriceUse } from './utils'
+import {
+  gotoReady,
+  clickStable,
+  fillStable,
+  openCustomSelect,
+  pickCartPriceUse,
+  pickCheckoutSession,
+} from './utils'
 
 // Scenario 17, Part 6 — POS installment checkout now requires the customer's
 // approved, unused CreditApplication. This spec sticks to UI-surface checks
@@ -70,6 +77,7 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
     })
 
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page, 'Bago')
     await addInstallmentLine(page)
 
     const customerInput = page.getByPlaceholder('Search by name or phone…')
@@ -182,6 +190,7 @@ test.describe('POS Checkout — Installment requires an approved Credit Applicat
     })
 
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page, 'Bago')
     await addInstallmentLine(page)
 
     const customerInput = page.getByPlaceholder('Search by name or phone…')

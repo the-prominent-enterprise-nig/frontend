@@ -7,6 +7,7 @@ import {
   gotoReady,
   openCustomSelect,
   pickCartPriceUse,
+  pickCheckoutSession,
   sweepE2ECustomers,
   sweepE2EPriceLists,
   sweepE2EPriceUseTypes,
@@ -139,20 +140,6 @@ async function createCustomer(request: APIRequestContext, fx: PlanFixtures, labe
   return { id: customer.id, name }
 }
 
-async function pickSessionIfAsked(page: Page): Promise<void> {
-  await expect(page.getByPlaceholder('Search by name or serial')).toBeVisible({ timeout: 15_000 })
-  const sessionSelect = page.locator('select').filter({ hasText: 'Select session' })
-  const autoSelected = page.getByText(/^Counter \d+$/).first()
-  await expect(sessionSelect.or(autoSelected)).toBeVisible({ timeout: 15_000 })
-  if (await sessionSelect.isVisible()) {
-    const value = await sessionSelect
-      .locator('option', { hasText: PLAN_BRANCH })
-      .first()
-      .getAttribute('value')
-    await sessionSelect.selectOption(value!)
-  }
-}
-
 async function addItemAndCustomer(page: Page, fx: PlanFixtures, customerName: string) {
   const search = page.getByPlaceholder('Search by name or serial')
   await expect(search).toBeVisible({ timeout: 15_000 })
@@ -205,7 +192,7 @@ export async function createInstallmentPlan(
   const customer = await createCustomer(page.request, fx, label)
   const tag = label.replace(/\W/g, '').toUpperCase()
   await gotoReady(page, '/pos/checkout')
-  await pickSessionIfAsked(page)
+  await pickCheckoutSession(page, PLAN_BRANCH)
   await addItemAndCustomer(page, fx, customer.name)
   await fillInstallmentTerms(page)
   await fillStable(page.getByLabel('Sales Invoice No.'), `SI-${tag}-${Date.now()}`)

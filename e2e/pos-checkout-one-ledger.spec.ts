@@ -6,7 +6,12 @@ import {
   deleteCustomers,
   sweepE2ECustomers,
 } from './utils'
-import { addInstallmentLine, addItemToCart, ensureBagoSession } from './credit-application-checkout'
+import {
+  addInstallmentLine,
+  addItemToCart,
+  ensureBagoSession,
+  gotoBagoCheckout,
+} from './credit-application-checkout'
 
 // Client notes 2026-10-28: an installment sale is ONE plan — several items are
 // one sale, so one ledger and one collection; the only difference to a one-item
@@ -63,7 +68,7 @@ test.describe('POS checkout — one ledger for several items', () => {
     const customer = await customerRes.json()
     createdCustomerIds.push(customer.id)
 
-    await gotoReady(page, '/pos/checkout')
+    await gotoBagoCheckout(page)
     await addInstallmentLine(page)
     await addItemToCart(page, SECOND_ITEM, 1)
     await selectCustomer(page, name)

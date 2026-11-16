@@ -6,7 +6,7 @@ import {
   type Locator,
   type Page,
 } from '@playwright/test'
-import { gotoReady, loginAs } from './utils'
+import { gotoReady, loginAs, pickCheckoutSession } from './utils'
 import {
   fieldBox,
   fillTheRest,
@@ -466,6 +466,9 @@ test.describe('Scenario 64 item 29 — the unit on a credit application (cashier
     })
     await sell.click()
     await expect(page).toHaveURL(/\/pos\/checkout/, { timeout: 20_000 })
+    // Checkout asks which session the sale goes into, even after a handoff.
+    // The cashier's own Bago session is listed first.
+    await pickCheckoutSession(page, 'Bago')
 
     // Picked, not asked for: the line carries the unit, in green.
     await expect(page.getByRole('button', { name: `SN: ${unit.serialNumber}` })).toBeVisible({

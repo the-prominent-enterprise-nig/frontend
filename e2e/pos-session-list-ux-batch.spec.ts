@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, fillStable } from './utils'
+import { gotoReady, fillStable, pickCheckoutSession } from './utils'
 
 // Batch of POS UX corrections requested 2026-09-16. Each check is a
 // UI-surface assertion that doesn't need seeded branch/warehouse fixtures.
@@ -51,7 +51,11 @@ test.describe('POS — out-of-stock items open the cross-branch request picker',
     const sessionsRes = await page.request.get('/api/pos/sessions?status=open')
     expect(sessionsRes.ok()).toBeTruthy()
     const rawSessions: unknown = await sessionsRes.json()
-    type OpenSession = { id: string; terminal?: { branchId?: string; branch?: { id?: string } } }
+    type OpenSession = {
+      id: string
+      terminalId: string
+      terminal?: { terminalCode?: string; branchId?: string; branch?: { id?: string } }
+    }
     const sessions = (
       Array.isArray(rawSessions) ? rawSessions : ((rawSessions as { data?: unknown[] }).data ?? [])
     ) as OpenSession[]
@@ -60,21 +64,11 @@ test.describe('POS — out-of-stock items open the cross-branch request picker',
     const branchId = session.terminal?.branchId ?? session.terminal?.branch?.id
     test.skip(!branchId, 'open session has no resolvable branch')
 
-    // Several open sessions render a picker in the top bar and leave stock
-    // unresolved (no out-of-stock labels at all) until one is chosen.
-    const sessionSelect = page
-      .locator('select')
-      .filter({ has: page.locator('option', { hasText: 'Select session…' }) })
-    // isVisible() doesn't wait — right after navigation the sessions query is
-    // still a skeleton. The API already says whether the picker will render
-    // (more than one open session), so wait for it deterministically.
-    if (sessions.length > 1) {
-      await sessionSelect.waitFor({ state: 'visible', timeout: 15_000 })
-      await expect(async () => {
-        await sessionSelect.selectOption(session.id)
-        await expect(sessionSelect).toHaveValue(session.id)
-      }).toPass({ timeout: 10_000 })
-    }
+    // Checkout leaves stock unresolved (no out-of-stock labels at all) until
+    // a session is picked, and never picks one itself. Pick this session, by
+    // the terminal code its card shows, so the catalog read below is its
+    // branch's.
+    await pickCheckoutSession(page, session.terminal?.terminalCode ?? session.terminalId)
 
     const catalogRes = await page.request.get(`/api/pos/catalog?branchId=${branchId}`)
     expect(catalogRes.ok()).toBeTruthy()
