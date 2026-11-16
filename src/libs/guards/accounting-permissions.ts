@@ -115,6 +115,7 @@ export const ACCOUNTING_PERMISSIONS = {
   MANUAL_RR_CREATE: 'accounting:manual-rr:create',
 
   AP_BILLS_READ: 'accounting:ap-bills:read',
+  RECEIVING_REPORTS_READ: 'accounting:receiving-reports:read',
   AP_BILLS_CREATE: 'accounting:ap-bills:create',
   AP_BILLS_UPDATE: 'accounting:ap-bills:update',
   AP_BILLS_DELETE: 'accounting:ap-bills:delete',
@@ -308,6 +309,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:manual-rr:create':
     'Submit or approve a manual receiving report with no PO/transfer/count context, from Accounting',
   'accounting:ap-bills:read': 'View AP bills, match-check results, and payment documents',
+  'accounting:receiving-reports:read':
+    'View Receiving Reports, with their amounts, on Accounting › Payables',
   'accounting:ap-bills:create': 'Create an AP bill (vendor invoice)',
   'accounting:ap-bills:update': 'Edit a DRAFT AP bill',
   'accounting:ap-bills:delete': 'Soft-delete a DRAFT AP bill',
@@ -419,9 +422,10 @@ export type AccountingPermission =
   (typeof ACCOUNTING_PERMISSIONS)[keyof typeof ACCOUNTING_PERMISSIONS]
 
 /** Accounting's Receiving Reports (Payables hub): its financial-report
- * permission, or Payables, where a supplier bill is matched to what was
- * received (Finance Clerk - Payables, 2026-11-12). Holding either opens it. */
+ * permission, or its own read, where a supplier bill is matched to what was
+ * received. Payables (ap-bills) alone doesn't open it: the tab went to Finance
+ * Clerk - Payables & Suppliers only (2026-11-16). Holding either opens it. */
 export const RECEIVING_REPORT_ACCESS: string[] = [
   ACCOUNTING_PERMISSIONS.FINANCIAL_REPORT_READ,
-  ACCOUNTING_PERMISSIONS.AP_BILLS_READ,
+  ACCOUNTING_PERMISSIONS.RECEIVING_REPORTS_READ,
 ]
