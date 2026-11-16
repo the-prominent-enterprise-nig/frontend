@@ -6,19 +6,22 @@ import { Plus, Tag, Trash2 } from 'lucide-react'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { CONTROL_CHROME } from '@/src/libs/design/plex'
-import type { CreateItemFormValues } from '@/src/schema/inventory/items'
 import {
   emptyItemPriceEntry,
   PRICE_TERM_MONTHS,
+  type ItemPriceEntry,
   type PriceTermMonths,
 } from '@/src/schema/inventory/items/item-prices'
 import { getPriceUseTypes } from '../../price-use-types/_actions/get-price-use-types'
 import { NumericInput } from './item-form-shared'
 import { errorClass, inputClass, labelClass } from './itemFormChrome'
 
+/** The slice of the Add / Edit Item forms this section reads and writes. */
+export type PricesFormValues = { prices?: ItemPriceEntry[] }
+
 type Props = {
-  control: Control<CreateItemFormValues>
-  errors: FieldErrors<CreateItemFormValues>
+  control: Control<PricesFormValues>
+  errors: FieldErrors<PricesFormValues>
 }
 
 type MoneyField = 'price' | 'downPayment' | 'credit' | 'cm'
@@ -39,7 +42,7 @@ function usePriceUseOptions(): { value: string; label: string }[] {
   return (query.data ?? []).filter((t) => t.isActive).map((t) => ({ value: t.name, label: t.name }))
 }
 
-/** The Add Item form's prices — one card per price use with the same cells
+/** The Add / Edit Item form's prices — one card per price use with the same cells
  * as a price list upload row. Saved to each price use's list once the item
  * exists; a live list goes back to pending approval. */
 export default function ItemPricesSection({ control, errors }: Props): React.JSX.Element {
@@ -89,8 +92,9 @@ function PriceEntryCard({
   const entryErrors = errors.prices?.[index]
   return (
     <div className="rounded-lg border border-[#e4e4e9] bg-white p-3">
-      <div className="mb-3 flex items-end gap-2">
-        <div className="flex-1">
+      {/* One line: price use, the four money cells, remove. */}
+      <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-[minmax(0,2fr)_repeat(4,minmax(0,1fr))_auto]">
+        <div className="col-span-2 sm:col-span-1">
           <label className={labelClass}>Price Use</label>
           <Controller
             name={`prices.${index}.priceUse`}
@@ -107,6 +111,9 @@ function PriceEntryCard({
             )}
           />
         </div>
+        {MONEY_FIELDS.map((m) => (
+          <MoneyCell key={m.name} control={control} index={index} {...m} />
+        ))}
         <Tooltip label="Remove price use" align="end">
           <button
             type="button"
@@ -119,11 +126,6 @@ function PriceEntryCard({
         </Tooltip>
       </div>
       {entryErrors?.priceUse && <p className={errorClass}>{entryErrors.priceUse.message}</p>}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {MONEY_FIELDS.map((m) => (
-          <MoneyCell key={m.name} control={control} index={index} {...m} />
-        ))}
-      </div>
       {entryErrors?.price && <p className={errorClass}>{entryErrors.price.message}</p>}
       <TermsGrid control={control} index={index} errors={errors} />
     </div>
@@ -136,7 +138,7 @@ function MoneyCell({
   name,
   label,
 }: {
-  control: Control<CreateItemFormValues>
+  control: Control<PricesFormValues>
   index: number
   name: MoneyField
   label: string
@@ -193,7 +195,7 @@ function TermCell({
   months,
   cell,
 }: {
-  control: Control<CreateItemFormValues>
+  control: Control<PricesFormValues>
   index: number
   months: PriceTermMonths
   cell: 'mi' | 'ppd'

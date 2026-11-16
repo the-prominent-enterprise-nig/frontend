@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useForm, Controller, useWatch } from 'react-hook-form'
+import { useForm, Controller, useWatch, type Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2, FileUp } from 'lucide-react'
 import { CreateItemFormSchema, CreateItemFormValues, UomOption } from '@/src/schema/inventory/items'
@@ -14,7 +14,7 @@ import { showToast } from '@/src/components/ui/toast'
 import { checkItemDuplicates } from '../_actions/check-item-duplicates'
 import type { DuplicateCandidate } from '@/src/schema/inventory/items'
 import { setItemPrices } from '../_actions/set-item-prices'
-import ItemPricesSection from './ItemPricesSection'
+import ItemPricesSection, { type PricesFormValues } from './ItemPricesSection'
 import BulkImportItemsModal from './BulkImportItemsModal'
 import { PRIMARY_BUTTON } from '../../master-data/_components/masterDataChrome'
 import { useMe } from '@/src/hooks/useMe'
@@ -576,7 +576,10 @@ export default function CreateItemModal({
                 defaultOpen={true}
                 errorCount={errors.prices ? 1 : 0}
               >
-                <ItemPricesSection control={control} errors={errors} />
+                <ItemPricesSection
+                  control={control as unknown as Control<PricesFormValues>}
+                  errors={errors}
+                />
               </FormSection>
             )}
           </div>
