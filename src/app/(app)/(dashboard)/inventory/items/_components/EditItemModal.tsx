@@ -8,6 +8,7 @@ import { X, Loader2 } from 'lucide-react'
 import { CONTROL_CHROME, MONO, PLEX } from '@/src/libs/design/plex'
 import { errorClass, inputClass, labelClass } from './itemFormChrome'
 import { CategorySubgroupFields } from './item-create-fields'
+import { quickAddAction, useQuickAddClassification } from './useQuickAddClassification'
 import {
   UpdateItemFormSchema,
   UpdateItemFormValues,
@@ -92,6 +93,7 @@ export default function EditItemModal({
     reset,
     setError,
     setValue,
+    getValues,
     setFocus,
     formState: { errors, isDirty, submitCount },
   } = useForm<UpdateItemFormValues>({
@@ -162,6 +164,23 @@ export default function EditItemModal({
   }, [item?.id, isOpen, reset])
 
   const selectedCategoryId = useWatch({ control, name: 'primaryCategoryId' })
+  const addBrand = useQuickAddClassification('brand')
+  const addType = useQuickAddClassification('type')
+  // A quick-added brand/type is picked at once; its toast's Undo lets go of
+  // it again — unless something else has been picked since.
+  const pick = { shouldDirty: true, shouldValidate: submitCount > 0 }
+  const brandAction = quickAddAction(
+    addBrand,
+    'brand',
+    ({ id }) => setValue('brandId', id, pick),
+    (id) => getValues('brandId') === id && setValue('brandId', undefined, pick)
+  )
+  const typeAction = quickAddAction(
+    addType,
+    'type',
+    ({ id }) => setValue('typeId', id, pick),
+    (id) => getValues('typeId') === id && setValue('typeId', '', pick)
+  )
 
   // Service items never carry stock/serial tracking — force-clear + disable those
   // checkboxes whenever "Service Item" is checked.
@@ -415,6 +434,7 @@ export default function EditItemModal({
                       placeholder="Select type…"
                       loading={typeOptions.length === 0}
                       loadingLabel="Loading types…"
+                      emptyAction={typeAction}
                     />
                   )}
                 />
@@ -431,6 +451,7 @@ export default function EditItemModal({
                     onChange={field.onChange}
                     categories={categories}
                     error={errors.primaryCategoryId?.message}
+                    getValue={() => getValues('primaryCategoryId') ?? ''}
                   />
                 )}
               />
@@ -452,6 +473,7 @@ export default function EditItemModal({
                       options={brandOptions.map((b) => ({ value: b.id, label: b.name }))}
                       placeholder="Select brand…"
                       clearable
+                      emptyAction={brandAction}
                     />
                   )}
                 />

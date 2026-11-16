@@ -11,6 +11,7 @@ import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import type { WarehouseSummary } from '@/src/schema/inventory/warehouses'
 import { errorClass, labelClass } from './itemFormChrome'
+import { quickAddAction, useQuickAddClassification } from './useQuickAddClassification'
 
 type SelectOption = { value: string; label: string }
 
@@ -62,9 +63,12 @@ export function CategorySubgroupFields({
   categories,
   error,
   onCategoryNameChange,
+  getValue,
 }: {
   value: string
   onChange: (id: string) => void
+  /** The form's current value, read when a quick-added Category is undone. */
+  getValue?: () => string
   categories: CategorySelectOption[]
   error?: string
   onCategoryNameChange?: (name: string) => void
@@ -75,6 +79,24 @@ export function CategorySubgroupFields({
   // existing item (Edit Item) opens with its Category already selected.
   const rootId = pickedRootId || rootOf(tree, value)
   const subgroups = tree.children.get(rootId) ?? []
+  // A Category typed that doesn't exist yet can be added on the spot; it's new,
+  // so it has no subgroups and the item files under it directly.
+  const addCategory = useQuickAddClassification('category')
+  // Undo arrives later from a toast, so it asks the form for the value then.
+  const addCategoryAction = quickAddAction(
+    addCategory,
+    'category',
+    ({ id, name }) => pickNew(id, name),
+    (id) => {
+      if ((getValue?.() ?? value) === id) pickNew('', '')
+    }
+  )
+
+  function pickNew(id: string, name: string): void {
+    setRootId(id)
+    onCategoryNameChange?.(name)
+    onChange(id)
+  }
 
   function pickRoot(id: string): void {
     setRootId(id)
@@ -97,6 +119,7 @@ export function CategorySubgroupFields({
           placeholder="Select category…"
           loading={categories.length === 0}
           loadingLabel="Loading categories…"
+          emptyAction={addCategoryAction}
         />
         {error && !rootId && <p className={errorClass}>{error}</p>}
       </div>
