@@ -10,6 +10,8 @@ interface TokenData {
   used: boolean
   businessName: string
   email: string
+  firstName?: string | null
+  lastName?: string | null
 }
 
 async function getInvite(token: string): Promise<TokenData | null> {
@@ -35,6 +37,10 @@ export default async function OnboardPage({
   const invite = await getInvite(token)
 
   if (!invite) return notFound()
+
+  // An existing account that only needs a password already has its name on
+  // file, so the form skips asking for it.
+  const knownName = Boolean(invite.firstName?.trim() && invite.lastName?.trim())
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 py-12">
@@ -82,11 +88,23 @@ export default async function OnboardPage({
         {invite.valid && (
           <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
             <div className="border-b border-zinc-100 px-8 py-6">
-              <h1 className="text-xl font-bold text-zinc-900">Set up your account</h1>
+              <h1 className="text-xl font-bold text-zinc-900">
+                {knownName ? 'Create your password' : 'Set up your account'}
+              </h1>
               <p className="mt-1 text-sm text-zinc-500">
-                You&apos;ve been invited to manage{' '}
-                <span className="font-semibold text-zinc-700">{invite.businessName}</span>. Complete
-                the form below to activate your account.
+                {knownName ? (
+                  <>
+                    Welcome, {invite.firstName}. Choose a password to activate your{' '}
+                    <span className="font-semibold text-zinc-700">{invite.businessName}</span>{' '}
+                    account.
+                  </>
+                ) : (
+                  <>
+                    You&apos;ve been invited to manage{' '}
+                    <span className="font-semibold text-zinc-700">{invite.businessName}</span>.
+                    Complete the form below to activate your account.
+                  </>
+                )}
               </p>
             </div>
 
@@ -101,7 +119,7 @@ export default async function OnboardPage({
                 </div>
               </div>
 
-              <OnboardForm token={token} />
+              <OnboardForm token={token} knownName={knownName} />
             </div>
           </div>
         )}

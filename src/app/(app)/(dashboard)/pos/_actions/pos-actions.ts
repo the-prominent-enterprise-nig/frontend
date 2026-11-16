@@ -3088,6 +3088,11 @@ export interface CashInTransitSessionRow {
   /** Card and e-wallet money in processors' clearing accounts, banked in the
    * same deposit as `amount`. Absent on an older API. */
   clearingAmount?: number
+  /** `clearingAmount` by provider — what a deposit slip can name ("card::BDO") —
+   * with the clearing account each provider posts to. Several providers share
+   * one account, which is why the slip has to name which one it banks. Absent
+   * on an older API. */
+  clearingTenders?: { key: string; label: string; accountId: string | null; amount: number }[]
   /** The New Receipts this session's deposit took in — set on one session
    * per deposit, so they are counted once. */
   newReceiptsAmount?: number

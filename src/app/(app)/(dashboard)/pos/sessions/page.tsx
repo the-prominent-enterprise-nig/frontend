@@ -1347,6 +1347,12 @@ function CloseSessionModal({
       amount: Number(reconciliation?.totalCollectionsCash ?? 0),
     },
     {
+      key: 'turnovers',
+      label: 'Turnovers received',
+      note: 'cash turned over from another branch, acknowledged into this drawer',
+      amount: Number(reconciliation?.totalTurnoversIn ?? 0),
+    },
+    {
       key: 'pettyIn',
       label: 'Petty cash returned',
       note: 'unspent float put back in the drawer',
@@ -1379,7 +1385,7 @@ function CloseSessionModal({
   // Scenario 61 — the client's close lists sales, invoices and cash
   // collected; drops, petty cash and counter collections only earn a line on
   // a shift that had one.
-  const OPTIONAL_CASH_ROWS = ['collections', 'pettyIn', 'drops', 'pettyOut']
+  const OPTIONAL_CASH_ROWS = ['collections', 'turnovers', 'pettyIn', 'drops', 'pettyOut']
   const cashRows = expectedRows.filter(
     (row) => row.amount !== 0 || !OPTIONAL_CASH_ROWS.includes(row.key)
   )
@@ -2277,6 +2283,21 @@ function ReconciliationModal({
             <p className="mt-1 text-xs text-gray-400">
               Installment collections and delivery fees taken this shift — included in expected
               cash, because the money is in the drawer.
+            </p>
+          </div>
+        )}
+
+        {Number(data.totalTurnoversIn ?? 0) > 0 && (
+          <div className="rounded-xl border border-gray-200 px-4 py-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600">Turnovers received (cash)</span>
+              <span className="text-sm font-medium text-gray-900">
+                {formatCurrency(Number(data.totalTurnoversIn))}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-ink-subtle">
+              Cash another branch turned over, acknowledged into this drawer — included in expected
+              cash and banked with the session.
             </p>
           </div>
         )}

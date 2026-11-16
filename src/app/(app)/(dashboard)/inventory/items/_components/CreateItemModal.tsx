@@ -17,6 +17,7 @@ import { checkItemDuplicates } from '../_actions/check-item-duplicates'
 import type { DuplicateCandidate } from '@/src/schema/inventory/items'
 import { receiveInitialUnit } from '../_actions/receive-initial-unit'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
+import type { WarehouseSummary } from '@/src/schema/inventory/warehouses'
 import { CONTROL_CHROME, MONO, PLEX } from '@/src/libs/design/plex'
 import {
   UNIT_CLASSIFICATION_LABELS,
@@ -39,6 +40,15 @@ const TRACKING_FIELDS_DISABLED_BY_SERVICE = [
   'requiresSecondarySerial',
   'isExpiryTracked',
 ] as const
+
+/** Standalone warehouses (Panay, Negros) first, then the branch ones, deduped by id. */
+function mergeWarehouses(
+  standalone: WarehouseSummary[],
+  scoped: WarehouseSummary[]
+): WarehouseSummary[] {
+  const seen = new Set(standalone.map((w) => w.id))
+  return [...standalone, ...scoped.filter((w) => !seen.has(w.id))]
+}
 
 type Props = {
   isOpen: boolean
@@ -146,7 +156,18 @@ export default function CreateItemModal({
     enabled: isOpen,
     staleTime: 5 * 60 * 1000,
   })
-  const warehouses = warehousesQuery.data?.data?.data ?? []
+  // The 2 real warehouses (Panay, Negros) are standalone (branchId: null), so a
+  // branch-scoped user's list above leaves them out — fetch them on their own.
+  const standaloneWarehousesQuery = useQuery({
+    queryKey: ['inventory-warehouses-standalone-lookup'],
+    queryFn: () => getWarehouses({ limit: 200, status: 'active', standaloneOnly: true }),
+    enabled: isOpen,
+    staleTime: 5 * 60 * 1000,
+  })
+  const warehouses = mergeWarehouses(
+    standaloneWarehousesQuery.data?.data?.data ?? [],
+    warehousesQuery.data?.data?.data ?? []
+  )
   const originOptions = useOriginOptions(isOpen)
 
   const [categoryName, setCategoryName] = useState('')
@@ -652,9 +673,10 @@ export default function CreateItemModal({
                 row from a legacy stock sheet. Leave blank to create the item with no stock.
               </div>
 
-              {/* Warehouse — a branch's warehouse, labelled by branch. */}
+              {/* Branch — a branch's warehouse, labelled by branch, plus the
+                  standalone Panay / Negros warehouses. */}
               <div>
-                <label className={labelClass}>Warehouse</label>
+                <label className={labelClass}>Branch</label>
                 <Controller
                   name="initialWarehouseId"
                   control={control}
@@ -668,7 +690,7 @@ export default function CreateItemModal({
                         value: w.id,
                         label: w.branch?.name ?? w.name,
                       }))}
-                      placeholder="Select warehouse…"
+                      placeholder="Select branch…"
                       clearable
                     />
                   )}

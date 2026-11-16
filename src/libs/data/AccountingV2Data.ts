@@ -884,6 +884,9 @@ export const ARInvoices = {
     status?: string
     customerId?: string
     branchId?: string
+    /** Only the monthly-installment (MI) invoices — an installment sale's receivable,
+     * not an invoice raised by hand. */
+    installment?: boolean
     limit?: number
     offset?: number
     view?: 'summary'
@@ -2753,6 +2756,31 @@ export const BankAccounts = {
   // previous reconciliation's statement date through this one's.
   getReconciliationTransactions: (id: string, params?: { startDate?: string; endDate?: string }) =>
     api.get<BankLedgerWindow>(`/bank-accounts/reconciliations/${id}/transactions`, params),
+  /** Bank and Cash Accounts' balance drill-down: one account's posted lines,
+   * without the General Ledger permission (a Branch Cashier's petty cash fund). */
+  getTransactions: (id: string, params?: { startDate?: string; endDate?: string }) =>
+    api.get<BankAccountTransactions>(`/bank-accounts/${id}/transactions`, params),
+}
+export interface BankAccountTransaction {
+  id: string
+  date: string
+  reference: string | null
+  description: string | null
+  sourceDocumentNo: string | null
+  debit: number
+  credit: number
+  balance: number | null
+}
+export interface BankAccountTransactions {
+  account: BankAccount
+  startDate: string | null
+  endDate: string | null
+  openingBalance: number
+  totalIn: number
+  totalOut: number
+  closingBalance: number
+  /** Newest first. */
+  transactions: BankAccountTransaction[]
 }
 
 // ============ Fixed Assets ============

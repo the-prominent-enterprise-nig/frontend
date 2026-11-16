@@ -37,3 +37,17 @@ export async function setRoleScopes(
   if (result.success) revalidatePath(`/settings/roles/${roleId}/limits`)
   return result
 }
+
+/**
+ * "Petty cash only" (ticket #66) pairs its permissions with the own-branch petty
+ * cash limit, so "Paid from" offers only that fund. Adds the limit to what the
+ * role already has, so named funds, bank accounts and Special Accounts the
+ * Business Owner set on the limits page stay. Already there: nothing changes.
+ */
+export async function ensureOwnBranchPettyCashLimit(roleId: string): Promise<ApiResponse> {
+  const current = await getRoleScopes(roleId)
+  if (!current.success) return current
+  const scopes = current.data ?? []
+  if (scopes.some((s) => s.kind === 'expense-fund-own-branch')) return { success: true }
+  return setRoleScopes(roleId, [...scopes, { kind: 'expense-fund-own-branch', targetId: null }])
+}

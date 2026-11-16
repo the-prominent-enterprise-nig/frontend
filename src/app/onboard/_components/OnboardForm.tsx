@@ -4,9 +4,12 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff } from 'lucide-react'
 import { claimInvite } from '../actions'
+import { passwordRules } from '@/src/schema/auth/reset-password'
 
 interface Props {
   token: string
+  /** The account already has a name on file: ask for the password only. */
+  knownName?: boolean
 }
 
 function Input({
@@ -49,7 +52,7 @@ function Input({
   )
 }
 
-export function OnboardForm({ token }: Props) {
+export function OnboardForm({ token, knownName = false }: Props) {
   const router = useRouter()
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -62,10 +65,15 @@ export function OnboardForm({ token }: Props) {
 
   function validate() {
     const e: Record<string, string> = {}
-    if (!firstName.trim()) e.firstName = 'First name is required'
-    if (!lastName.trim()) e.lastName = 'Last name is required'
+    if (!knownName) {
+      if (!firstName.trim()) e.firstName = 'First name is required'
+      if (!lastName.trim()) e.lastName = 'Last name is required'
+    }
     if (!password) e.password = 'Password is required'
-    else if (password.length < 8) e.password = 'Password must be at least 8 characters'
+    else {
+      const rules = passwordRules.safeParse(password)
+      if (!rules.success) e.password = rules.error.issues[0].message
+    }
     if (password !== confirmPassword) e.confirmPassword = 'Passwords do not match'
     setErrors(e)
     return Object.keys(e).length === 0
@@ -78,11 +86,12 @@ export function OnboardForm({ token }: Props) {
     setSubmitting(true)
     setServerError(null)
 
-    const result = await claimInvite(token, {
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      password,
-    })
+    const result = await claimInvite(
+      token,
+      knownName
+        ? { password }
+        : { firstName: firstName.trim(), lastName: lastName.trim(), password }
+    )
 
     if (!result.success) {
       setServerError(result.error ?? 'Something went wrong')
@@ -95,31 +104,38 @@ export function OnboardForm({ token }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <Input
-          label="First Name"
-          value={firstName}
-          onChange={setFirstName}
-          placeholder="Juan"
-          error={errors.firstName}
-          required
-        />
-        <Input
-          label="Last Name"
-          value={lastName}
-          onChange={setLastName}
-          placeholder="Dela Cruz"
-          error={errors.lastName}
-          required
-        />
-      </div>
+      {!knownName && (
+        <div className="grid grid-cols-2 gap-4">
+          <Input
+            label="First Name"
+            value={firstName}
+            onChange={setFirstName}
+            placeholder="Juan"
+            error={errors.firstName}
+            required
+          />
+          <Input
+            label="Last Name"
+            value={lastName}
+            onChange={setLastName}
+            placeholder="Dela Cruz"
+            error={errors.lastName}
+            required
+          />
+        </div>
+      )}
+
+      <p className="text-xs text-zinc-400">
+        At least 8 characters, with an uppercase letter, a lowercase letter, a number and a special
+        character.
+      </p>
 
       <Input
         label="Password"
         value={password}
         onChange={setPassword}
         type={showPassword ? 'text' : 'password'}
-        placeholder="Min. 8 characters"
+        placeholder="Create a password"
         error={errors.password}
         required
         suffix={

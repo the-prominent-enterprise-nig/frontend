@@ -111,7 +111,13 @@ test.describe('POS Checkout — Payment Method Options', () => {
     await expect(bankSelect).toBeVisible({ timeout: 10_000 })
     const optionTexts = await bankSelect.locator('option').allTextContents()
     expect(optionTexts).toEqual(
-      expect.arrayContaining(['BDO-Q', 'BPI-Araneta', 'Metrobank', 'LB-Sagay'])
+      expect.arrayContaining([
+        'BDO-Quezon',
+        'BDO-Golden Field',
+        'BPI-Araneta',
+        'Metrobank',
+        'LB-Sagay',
+      ])
     )
 
     await cleanup(page, cartRow)
