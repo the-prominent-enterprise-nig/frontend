@@ -73,14 +73,8 @@ export default function PendingInvitesSection({
       })
       return
     }
-    if (result.data.expired) {
-      showToast({
-        title: 'This invite has expired',
-        description: 'Use Resend Invite to generate a fresh link before sharing it.',
-        status: 'error',
-      })
-      return
-    }
+    // The backend renews an expired (or missing) invite when a link is
+    // requested, so what comes back is always live. Nothing here is emailed.
     try {
       await navigator.clipboard.writeText(result.data.inviteUrl)
       showToast({
@@ -198,14 +192,13 @@ export default function PendingInvitesSection({
                             <div className="flex items-center justify-end gap-1">
                               <button
                                 type="button"
-                                disabled={inviteStatus === 'expired'}
                                 onClick={() => handleCopyInviteLink(user)}
                                 title={
                                   inviteStatus === 'expired'
-                                    ? 'Invite expired — resend to get a new link'
+                                    ? 'Invite expired — copying makes a fresh link'
                                     : 'Copy invite link'
                                 }
-                                className="rounded-lg border border-prominent-orange-500 bg-prominent-orange-100 p-1.5 text-prominent-orange-700 transition hover:bg-prominent-orange-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-prominent-orange-100"
+                                className="rounded-lg border border-prominent-orange-500 bg-prominent-orange-100 p-1.5 text-prominent-orange-700 transition hover:bg-prominent-orange-200"
                               >
                                 <Copy className="h-4 w-4" />
                               </button>
