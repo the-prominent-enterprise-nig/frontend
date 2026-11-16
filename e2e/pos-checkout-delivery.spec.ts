@@ -14,6 +14,7 @@ import {
   deleteCustomers,
   openCustomSelect,
   pickCartPriceUse,
+  pickCheckoutSession,
 } from './utils'
 
 // Scenario 66 — delivery at POS checkout: Deliver to, Delivery Address and a
@@ -145,22 +146,28 @@ async function createFixtures(request: APIRequestContext): Promise<Fixtures> {
   }
 }
 
-/** DELIVERY_FEE_INCOME → 4-02-030, as the seed and the Scenario 66 backfill do. */
+/** Makes sure DELIVERY_FEE_INCOME is mapped. The seed already maps it, and
+ * whatever it points at is kept. Otherwise it is pointed at the account named
+ * Delivery Income. Never by number: the spec used to pin 4-02-030, which went
+ * away with the client's chart (2026-10-08), and Delivery Income was
+ * renumbered again two days later (07-02-2000 → 07-01-110). */
 async function mapDeliveryIncome(request: APIRequestContext): Promise<void> {
   const mappings = (await (await request.get('/api/account-mapping')).json()) as
     | { key: string; accountId: string | null }[]
     | { data: { key: string; accountId: string | null }[] }
   const list = Array.isArray(mappings) ? mappings : mappings.data
   mappingBefore = list.find((m) => m.key === 'DELIVERY_FEE_INCOME')?.accountId ?? null
+  if (mappingBefore) return
 
-  const accountsBody = await (await request.get('/api/accounts?search=4-02-030')).json()
+  const accountsBody = await (await request.get('/api/accounts?search=Delivery Income')).json()
   const accounts = (Array.isArray(accountsBody) ? accountsBody : accountsBody.data) as {
     id: string
-    number: string
+    name: string
   }[]
-  const deliveryIncome = accounts.find((a) => a.number === '4-02-030')!
+  const deliveryIncome = accounts.find((a) => a.name === 'Delivery Income')
+  expect(deliveryIncome, 'a "Delivery Income" account in the chart').toBeTruthy()
   const res = await request.patch('/api/account-mapping/DELIVERY_FEE_INCOME', {
-    data: { accountId: deliveryIncome.id },
+    data: { accountId: deliveryIncome!.id },
   })
   expect(res.ok(), await res.text()).toBeTruthy()
 }
@@ -201,23 +208,9 @@ async function ensureOpenSession(request: APIRequestContext, branchId: string): 
   })
 }
 
-async function pickSessionIfAsked(page: Page): Promise<void> {
-  await expect(page.getByPlaceholder('Search by name or serial')).toBeVisible({ timeout: 15_000 })
-  const sessionSelect = page.locator('select').filter({ hasText: 'Select session' })
-  const autoSelected = page.getByText(/^Counter \d+$/).first()
-  await expect(sessionSelect.or(autoSelected)).toBeVisible({ timeout: 15_000 })
-  if (await sessionSelect.isVisible()) {
-    const value = await sessionSelect
-      .locator('option', { hasText: BRANCH })
-      .first()
-      .getAttribute('value')
-    await sessionSelect.selectOption(value!)
-  }
-}
-
 async function openCheckout(page: Page): Promise<void> {
   await gotoReady(page, '/pos/checkout')
-  await pickSessionIfAsked(page)
+  await pickCheckoutSession(page, BRANCH)
 }
 
 async function addItem(page: Page): Promise<void> {
