@@ -56,8 +56,8 @@ type Props = {
   /**
    * 'overlay' (default) covers the content area with its own close button.
    * 'page' renders in the flow of a hub tab — Master Data's Add Item, the
-   * Stock Request pattern — with no close/cancel; onClose then means "start
-   * a fresh form" and is called after a successful save.
+   * Stock Request pattern — with no close/cancel; onClose is then only
+   * called after a successful save (Add Item uses it to go to Item Master).
    */
   variant?: 'overlay' | 'page'
 }
