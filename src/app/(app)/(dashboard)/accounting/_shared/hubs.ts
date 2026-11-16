@@ -235,8 +235,9 @@ export const PAYABLES_HUB: Hub = {
       id: 'receiving-reports',
       label: 'Receiving Reports',
       href: '/accounting/receiving-reports',
-      // Payables' own read opens it too: an AP clerk matches a supplier bill
-      // to the receipt here without holding the financial reports.
+      // Its own read opens it too: an AP clerk matches a supplier bill to the
+      // receipt here without holding the financial reports. Not ap-bills:read
+      // (2026-11-16).
       permissions: RECEIVING_REPORT_ACCESS,
     },
     {
