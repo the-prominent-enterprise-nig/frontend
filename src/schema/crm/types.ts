@@ -703,6 +703,11 @@ export interface CustomerLedgerTransaction {
   termMonths: number | null
   status: string | null
   date: string
+  /** The POS sale behind this purchase — what the Business Owner's Edit and
+   * Delete act on (Docket #46). Null for a transaction with no sale of its own
+   * (an account loaded from the aging sheet, a hand-entered one): not "live",
+   * so it offers neither. Optional for a backend without it. */
+  saleId?: string | null
 }
 
 export interface CustomerLedger {

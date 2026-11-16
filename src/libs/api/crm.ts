@@ -180,6 +180,13 @@ export const customersApi = {
       ...(scope === 'all' ? {} : { scope }),
       ...(transactionId ? { transactionId } : {}),
     }),
+  /** Docket #46 — the Business Owner deletes a live transaction from the
+   * ledger: the sale is voided, with a required reason. Every rule Void has
+   * still applies, and its message comes back in `error`. */
+  deleteLedgerTransaction: (saleId: string, reason: string) =>
+    api.post<{ id: string; status: string }>(`/pos/transactions/${saleId}/ledger-delete`, {
+      reason,
+    }),
   /** Scenario 78 Part 3 — the customer's agent-credited sales with their
    * commission and the Commissions - Sales voucher that released it. With the
    * ledger's `transactionId`, only that one purchase's. */
