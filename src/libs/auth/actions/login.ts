@@ -3,6 +3,7 @@
 import { cookies } from 'next/headers'
 import { revalidateTag } from 'next/cache'
 import { LoginSchema, type LoginInput } from '@/src/schema/auth/login'
+import { FirstLoginSchema, type FirstLoginInput } from '@/src/schema/auth/first-login'
 import { redirect } from 'next/navigation'
 import { api } from '@/src/libs/api/client'
 
@@ -33,6 +34,12 @@ export async function login(input: LoginInput) {
     password: parsed.data.password,
   })
 
+  // The person has never set a password: the page switches to "create your
+  // password" instead of calling this a wrong password.
+  if (!result.success && result.errorCode === 'PASSWORD_SETUP_REQUIRED') {
+    return { success: false, passwordSetupRequired: true as const, error: result.error }
+  }
+
   if (!result.success || !result.data?.access_token) {
     const isUnauthorized =
       result.error?.toLowerCase().includes('401') ||
@@ -57,6 +64,41 @@ export async function login(input: LoginInput) {
 
   const redirectTo = result.data.user?.isSuperAdmin ? '/super-admin/dashboard' : '/'
   return { success: true, redirectTo }
+}
+
+/**
+ * First login: someone who has never had a password creates it here and is
+ * signed in. The backend only allows this during the announced first-login
+ * window, for accounts with no password and no invite link.
+ */
+export async function createFirstPassword(input: FirstLoginInput) {
+  const parsed = FirstLoginSchema.safeParse(input)
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? 'Invalid input' }
+  }
+
+  const result = await api.post<LoginResponse>('/auth/first-login', {
+    email: parsed.data.email,
+    password: parsed.data.password,
+  })
+
+  if (!result.success || !result.data?.access_token) {
+    return {
+      success: false,
+      error: result.error ?? 'An unexpected error occurred. Please try again.',
+    }
+  }
+
+  const cookieStore = await cookies()
+  cookieStore.set('authToken', result.data.access_token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60 * 24, // 24h — matches the JWT expiry set in auth.module.ts
+  })
+
+  return { success: true, redirectTo: '/' }
 }
 
 export async function logout() {

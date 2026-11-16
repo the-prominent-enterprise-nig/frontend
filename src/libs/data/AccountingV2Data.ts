@@ -884,6 +884,9 @@ export const ARInvoices = {
     status?: string
     customerId?: string
     branchId?: string
+    /** Only the monthly-installment (MI) invoices — an installment sale's receivable,
+     * not an invoice raised by hand. */
+    installment?: boolean
     limit?: number
     offset?: number
     view?: 'summary'

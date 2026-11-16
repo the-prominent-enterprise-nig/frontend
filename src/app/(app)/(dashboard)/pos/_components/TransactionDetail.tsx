@@ -18,7 +18,12 @@ import {
   PencilLine,
 } from 'lucide-react'
 import { getTransaction, getCustomerById, createTransaction } from '../_actions/pos-actions'
-import type { PosTransaction, PosTransactionInvoice, PosVoidRequest } from '@/src/schema/pos'
+import type {
+  PosPayment,
+  PosTransaction,
+  PosTransactionInvoice,
+  PosVoidRequest,
+} from '@/src/schema/pos'
 import { isRefundPendingApproval } from '@/src/schema/pos'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { usePosPendingRefundStore } from '@/src/stores/pos-pending-refund.store'
@@ -122,6 +127,7 @@ export function TransactionDetail({
   const editing = canEditEntry && editEntry.editing
   // Price Used and Credit show on every sale type; only the full view has room.
   const showUnitFigures = isFull
+  const lineCredits = tx.accountSummary?.lineCredits ?? noAccountFigures(tx)?.lineCredits ?? {}
   // Escape closes the full view, as the × does — not while Edit entry or the
   // Refund pop-up is open (Cancel / their own close handle those).
   useEffect(() => {
@@ -397,9 +403,7 @@ export function TransactionDetail({
                           </td>
                           {showUnitFigures && (
                             <td className="py-1.5 pl-2 text-right text-gray-600">
-                              {tx.accountSummary?.lineCredits[l.id] != null
-                                ? formatCurrency(tx.accountSummary.lineCredits[l.id])
-                                : '—'}
+                              {lineCredits[l.id] != null ? formatCurrency(lineCredits[l.id]) : '—'}
                             </td>
                           )}
                         </tr>
@@ -1101,6 +1105,63 @@ function termsLabel(months: number[]): string {
   return `${months.join(' & ')} months`
 }
 
+/** Docket #49 (client, Nov 13: "no account details under the Cash and TPF
+ * transactions"): a sale with no installment account still has figures of its
+ * own for the Account details card — what the items add up to at the price
+ * used and, for partner financing (TPF), the split the cashier tendered: the
+ * partner's share is the credit, what the customer paid at the counter is the
+ * down payment (checkout calls it that). Read off the payments because the
+ * approved amount is deliberately never stored (Scenario 64). Terms, monthly
+ * and rebate belong to an in-house plan this sale never opened, so they stay
+ * "—". Null when the sale has an account (its own summary is used) or is not a
+ * sale. */
+function noAccountFigures(tx: PosTransaction): {
+  cartPrice: number
+  credit: number | null
+  downPayment: number | null
+  lineCredits: Record<string, number>
+} | null {
+  if (tx.accountSummary || tx.transactionType !== 'sale') return null
+  const round2 = (n: number): number => Math.round(n * 100) / 100
+  const lines = tx.lines ?? []
+  const payments = tx.payments ?? []
+  const amountOf = (l: { unitPrice: number; quantity: number }): number =>
+    Number(l.unitPrice) * Number(l.quantity)
+  const sumOf = (rows: PosPayment[]): number => rows.reduce((s, p) => s + Number(p.amount), 0)
+  const cartPrice = round2(lines.reduce((s, l) => s + amountOf(l), 0))
+  const partnerShare = tx.tpfProviderId
+    ? round2(sumOf(payments.filter((p) => p.paymentMethod === 'tpf')))
+    : 0
+  if (partnerShare <= 0) return { cartPrice, credit: null, downPayment: null, lineCredits: {} }
+
+  // Each partner-financed unit's share of the credit, by price; the last unit
+  // takes the rounding remainder so the column adds up to the card.
+  const tpfLines = lines.filter((l) => l.installmentProvider === 'tpf')
+  const weight = tpfLines.reduce((s, l) => s + amountOf(l), 0)
+  const lineCredits: Record<string, number> = {}
+  let left = partnerShare
+  tpfLines.forEach((l, i) => {
+    const share =
+      i === tpfLines.length - 1
+        ? left
+        : round2(
+            (partnerShare * (weight > 0 ? amountOf(l) : 1)) /
+              (weight > 0 ? weight : tpfLines.length)
+          )
+    lineCredits[l.id] = share
+    left = round2(left - share)
+  })
+  // Only a cart that is entirely partner-financed: beside a cash line, the
+  // other tender is not a down payment.
+  const allTpf = lines.length > 0 && tpfLines.length === lines.length
+  return {
+    cartPrice,
+    credit: partnerShare,
+    downPayment: allTpf ? round2(sumOf(payments.filter((p) => p.paymentMethod !== 'tpf'))) : null,
+    lineCredits,
+  }
+}
+
 /** Ticket #24 — who bought, where, and (for an installment sale) the account
  * the sale opened: the figures a clerk reconciling branches reads off the
  * receipt, each on the page itself instead of behind the ledger. */
@@ -1125,6 +1186,7 @@ function SaleAccountCards({
   // installment has this format"); what an installment account alone has
   // reads "—" on a cash, charge or TPF sale.
   const money = (n: number | null | undefined): string => (n == null ? '—' : formatCurrency(n))
+  const noAccount = noAccountFigures(tx)
   const commission = account ? account.commission : (tx.saleCommission?.commission ?? null)
   const smi = account ? account.smi : (tx.saleCommission?.smi ?? null)
   const edited = tx.reportEdit
@@ -1156,8 +1218,14 @@ function SaleAccountCards({
       </CardGrid>
 
       <CardGrid title="Account details" card={card}>
-        <Field label="LCP" value={money(account?.listedCashPrice)} />
-        <Field label="Downpayment" value={money(account?.downPayment)} />
+        <Field
+          label="LCP"
+          value={money(account ? account.listedCashPrice : noAccount?.cartPrice)}
+        />
+        <Field
+          label="Downpayment"
+          value={money(account ? account.downPayment : noAccount?.downPayment)}
+        />
         <Field label="Terms" value={account ? termsLabel(account.termMonths) : '—'} />
         <Field label="Monthly installment" value={money(account?.monthlyInstallment)} />
         <Field label="Rebate" value={money(account?.rebate)} />
@@ -1179,7 +1247,7 @@ function SaleAccountCards({
         ) : (
           <Field
             label="Credit"
-            value={money(account?.amountFinanced)}
+            value={money(account ? account.amountFinanced : noAccount?.credit)}
             reportValue={editedMoney(edited?.credit)}
           />
         )}
