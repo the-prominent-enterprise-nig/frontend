@@ -118,8 +118,34 @@ function ByTypePane({ report }: { report: DailyCollectionReport }): React.JSX.El
       {report.offsiteCash.map((counter) => (
         <PlainRow key={counter.id} label={`At ${counter.name}`} amount={counter.amount} />
       ))}
+      {/* Settled cash no closed drawer counted — why this report's cash and
+          the drawers' closings differ, one reason per row. */}
+      {report.outsideDrawer.map((line) => (
+        <PlainRow key={line.reason} label={line.label} amount={line.amount} />
+      ))}
     </div>
   )
+}
+
+/** The figure the count is measured against, in words: what the closed
+ * drawers expected, or — when a drawer stored none — the closed sessions'
+ * cash plus any turnover. */
+function expectationText(
+  report: DailyCollectionReport,
+  position: ReturnType<typeof cashPosition>
+): string {
+  if (report.drawerExpectedCash != null) {
+    const drawers = `The day’s closed drawers expected ${peso(report.drawerExpectedCash)}`
+    const outside = position.expected - report.drawerExpectedCash
+    // A corrected count is everything on hand, turnovers and the rest included.
+    return position.corrected && outside > 0.005
+      ? `${drawers}, plus ${peso(outside)} held outside them`
+      : drawers
+  }
+  const turnover = report.turnoverInTotal ?? 0
+  return turnover > 0.005
+    ? `Closed sessions collected ${peso(report.settledCashCollection)}, plus ${peso(turnover)} turned over by another branch`
+    : `Closed sessions collected ${peso(report.settledCashCollection)}`
 }
 
 /** A label and a figure, for cash the day collected but this drawer does not
@@ -310,10 +336,7 @@ function Verdict({
           </>
         ) : (
           <>
-            {(report.turnoverInTotal ?? 0) > 0.005
-              ? `Closed sessions collected ${peso(report.settledCashCollection)}, plus ${peso(report.turnoverInTotal)} turned over by another branch`
-              : `Closed sessions collected ${peso(report.settledCashCollection)}`}{' '}
-            — that is what this count must come to.
+            {expectationText(report, position)} — that is what this count must come to.
             {!balanced && ' Recount, then check the day’s sessions before signing.'}
           </>
         )}

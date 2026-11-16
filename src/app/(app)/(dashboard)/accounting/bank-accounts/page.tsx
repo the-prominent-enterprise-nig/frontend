@@ -7,10 +7,10 @@ import BankAccountsList from './_components/BankAccountsList'
 
 export const metadata = { title: 'Bank and Cash Accounts' }
 export default async function Page() {
-  const session = requirePermission(
-    await getSessionOrNull(),
-    ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ
-  )
+  const session = requirePermission(await getSessionOrNull(), [
+    ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ,
+    ACCOUNTING_PERMISSIONS.BANK_ACCOUNTS_READ_BRANCH_FUND,
+  ])
   return (
     <div className="min-h-screen bg-gray-50">
       <Suspense fallback={null}>

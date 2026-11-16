@@ -172,6 +172,20 @@ export const DailyCollectionReportSchema = z.object({
   /** Cash taken on sessions that have closed — the part of totalCollection
    * the count stands behind. */
   settledCashCollection: z.number().default(0),
+  /** What the day's closed drawers themselves expected at close, float
+   * excluded — the figure the count is measured against, so this form's
+   * variance is the drawers' own. Null when a drawer stored none. */
+  drawerExpectedCash: z.number().nullable().default(null),
+  /** Settled cash on the form that no closed drawer counted, by reason. */
+  outsideDrawer: z
+    .array(
+      z.object({
+        reason: z.enum(['NO_SESSION', 'NEW_RECEIPT', 'TURNOVER', 'DRAWER_EVENTS', 'OTHER_DAY']),
+        label: z.string(),
+        amount: z.number(),
+      })
+    )
+    .default([]),
   /** Cash taken on sessions still open. Already inside totalCollection;
    * settled + pending === totalCollection. */
   pendingCashCollection: z.number().default(0),

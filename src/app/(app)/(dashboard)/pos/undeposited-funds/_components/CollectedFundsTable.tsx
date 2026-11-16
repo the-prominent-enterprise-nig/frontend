@@ -542,8 +542,11 @@ function BranchRows({
   onDepositReceipts: () => void
 }): React.JSX.Element {
   const selectable = group.rows.filter((r) => r.status === 'to_deposit')
-  // New Receipts with no session left to ride on are deposited on their own.
-  const receiptsAlone = canManage && selectable.length === 0 && group.receipts.length > 0
+  // New Receipts — an acknowledged turnover among them — are always banked
+  // from their own row, even while older sessions wait: a short deposit with
+  // sessions in it banks the sessions first, so riding on one would leave
+  // them unbanked. A ticked session's deposit never takes a turnover.
+  const receiptsAlone = canManage && group.receipts.length > 0
   const allPicked = selectable.length > 0 && selectable.every((r) => selection.has(r.sessionId))
   const receiptKeys = new Set(group.receipts.map((r) => r.id))
   const firstReceiptKey = lines.find((l) => receiptKeys.has(l.key))?.key
@@ -590,9 +593,9 @@ function BranchRows({
           <LineRow
             key={line.key}
             line={line}
-            // New Receipts with no session to ride on — an acknowledged
-            // turnover, say — are deposited on their own, from the first
-            // receipt's row; the form takes in all of the branch's.
+            // New Receipts — an acknowledged turnover, say — are deposited on
+            // their own from the first receipt's row; the form takes in all
+            // of the branch's unbanked receipts and no session.
             onDepositReceipts={
               receiptsAlone && line.key === firstReceiptKey ? onDepositReceipts : undefined
             }

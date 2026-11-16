@@ -35,6 +35,9 @@ import {
 } from '../_actions/pos-deposits'
 import {
   SlipEditor,
+  SlipWarnings,
+  providersOf,
+  slipsWarnings,
   isBranchCashSlip,
   earliestDate,
   emptySlip,
@@ -44,6 +47,7 @@ import {
   slipsProblem,
   toLineInputs,
   type Slip,
+  type SlipProvider,
 } from './SlipEditor'
 import {
   SettleAsToggle,
@@ -82,6 +86,13 @@ function useUnbankedReceipts(branchId: string | null, enabled = true) {
   })
 }
 
+/** Rides along with the ticked sessions' deposit. An acknowledged turnover
+ * does not: it is deposited from its own row, so a slip for it is never
+ * taken by the sessions, which a short deposit banks first. */
+function ridesWithSessions(receipt: AcknowledgementReceipt): boolean {
+  return !receipt.turnoverLine
+}
+
 function leftOfReceipt(r: AcknowledgementReceipt): AcknowledgementReceipt {
   return { ...r, amount: round2(Number(r.amount ?? 0) - Number(r.depositedAmount ?? 0)) }
 }
@@ -110,6 +121,8 @@ export interface LedgerRow {
   cash: number
   /** Card and e-wallet money waiting in processors' clearing accounts. */
   clearing: number
+  /** `clearing` by provider, for a slip that names the one it banks. */
+  clearingTenders?: NonNullable<CashInTransitSessionRow['clearingTenders']>
   /** What earlier deposits already banked of a To-deposit session — a short
    * deposit leaves the rest here, still to deposit. */
   deposited: number
@@ -180,6 +193,7 @@ function fromOutstanding(r: CashInTransitSessionRow): LedgerRow[] {
             ...base,
             key: r.sessionId,
             ...amounts(r.amount, r.clearingAmount, r.newReceiptsAmount),
+            clearingTenders: r.clearingTenders ?? [],
             deposited: Number(r.depositedAmount ?? 0),
             status: 'to_deposit',
             depositId: null,
@@ -550,9 +564,11 @@ export function CashInTransitList({
       {canManage && selection.rows.length > 0 && (
         <SelectionBar
           rows={selection.rows}
-          // The branch's unbanked receipts — an acknowledged turnover among
-          // them — go into the same deposit.
-          receipts={unbanked.filter((r) => r.branchId === selection.rows[0].branchId)}
+          // The branch's unbanked New Receipts go into the same deposit; an
+          // acknowledged turnover is deposited from its own row.
+          receipts={unbanked.filter(
+            (r) => r.branchId === selection.rows[0].branchId && ridesWithSessions(r)
+          )}
           onClear={selection.clear}
           onRecord={depositSelection}
         />
@@ -957,10 +973,17 @@ function DepositForm({
   // against no sale, which sits in the branch's cash like any collection
   // (Scenario 70 G11). Banked with the day, so always part of this deposit;
   // accounting enters a cheque like any other bank, on a slip of its own.
+  // With sessions, an acknowledged turnover stays out (ridesWithSessions);
+  // a receipts-only deposit, opened from a receipt's row, takes them all.
   const newReceipts = useUnbankedReceipts(branchId)
-  const receipts = newReceipts.data?.data ?? []
+  const receipts = (newReceipts.data?.data ?? []).filter(
+    (r) => sessions.length === 0 || ridesWithSessions(r)
+  )
 
   const owed = owedTotals(sessions, receipts)
+  // The card and e-wallet providers these sessions took, so a slip can say
+  // whose money it banks (several share one clearing account).
+  const providers = providersOf(sessions)
   const activeTurnover = mode === 'turnover' ? turnover : null
   const activeSlips = mode === 'bank' || withSlips ? slips : []
   const turnedOver = activeTurnover ? turnoverAmount(activeTurnover) : 0
@@ -971,7 +994,8 @@ function DepositForm({
   const blockedReason =
     sessions.length === 0 && receipts.length === 0
       ? 'Select at least one session to deposit.'
-      : (settleProblem(activeTurnover, activeSlips) ?? clearingOverProblem(owed, entered))
+      : (settleProblem(activeTurnover, activeSlips, providers) ??
+        clearingOverProblem(owed, entered))
   const turnoverOnly = !!activeTurnover && activeSlips.length === 0
   const switchMode = (next: SettleMode): void => {
     setMode(next)
@@ -1068,7 +1092,12 @@ function DepositForm({
                 + Allocate for Bank Deposit
               </button>
             ) : (
-              <SlipEditor slips={slips} onChange={setSlips} accounts={accounts} />
+              <SlipEditor
+                slips={slips}
+                onChange={setSlips}
+                accounts={accounts}
+                providers={providers}
+              />
             )}
             {mode === 'turnover' && withSlips && (
               <button
@@ -1078,6 +1107,12 @@ function DepositForm({
               >
                 Remove bank slips
               </button>
+            )}
+
+            {(sessions.length > 0 || receipts.length > 0) && (
+              <SlipWarnings
+                warnings={slipsWarnings(activeSlips, providers, owed.cash, turnedOver)}
+              />
             )}
 
             {(sessions.length > 0 || receipts.length > 0) && (
@@ -1148,9 +1183,13 @@ function settleLines(turnover: Turnover | null, slips: Slip[]): PosDepositLineIn
 }
 
 /** Why the turnover or the slips cannot be saved yet, or null. */
-function settleProblem(turnover: Turnover | null, slips: Slip[]): string | null {
-  if (!turnover) return slipsProblem(slips)
-  return turnoverProblem(turnover) ?? (slips.length ? slipsProblem(slips) : null)
+function settleProblem(
+  turnover: Turnover | null,
+  slips: Slip[],
+  providers: SlipProvider[]
+): string | null {
+  if (!turnover) return slipsProblem(slips, providers)
+  return turnoverProblem(turnover) ?? (slips.length ? slipsProblem(slips, providers) : null)
 }
 
 /** What a deposit has to bank, by where the money sits: the branch's own cash

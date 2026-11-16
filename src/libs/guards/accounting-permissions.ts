@@ -140,6 +140,9 @@ export const ACCOUNTING_PERMISSIONS = {
   AR_INVOICES_RESTRICTED_VAT: 'accounting:ar-invoices:restricted-vat',
 
   BANK_ACCOUNTS_READ: 'accounting:bank-accounts:read',
+  /** Branch Cashier: Bank and Cash Accounts, the branch's own petty cash fund
+   * only. Opens that one tab, not reconciliation or transfers. */
+  BANK_ACCOUNTS_READ_BRANCH_FUND: 'accounting:bank-accounts:read-branch-fund',
   BANK_ACCOUNTS_CREATE: 'accounting:bank-accounts:create',
   BANK_ACCOUNTS_UPDATE: 'accounting:bank-accounts:update',
   BANK_ACCOUNTS_DELETE: 'accounting:bank-accounts:delete',
@@ -328,6 +331,8 @@ export const ACCOUNTING_PERMISSION_DESCRIPTIONS: Record<
   'accounting:ar-invoices:restricted-vat':
     'Approve an AR invoice classified as zero-rated or VAT-exempt (no output VAT)',
   'accounting:bank-accounts:read': 'View bank accounts and reconciliation history',
+  'accounting:bank-accounts:read-branch-fund':
+    "View only your own branch's petty cash fund on Bank and Cash Accounts",
   'accounting:bank-accounts:create': 'Create a bank account',
   'accounting:bank-accounts:update': 'Edit a bank account',
   'accounting:bank-accounts:delete': 'Deactivate a bank account',

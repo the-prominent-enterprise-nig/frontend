@@ -5,7 +5,7 @@ import type {
   DailyCollectionReport,
   SaveDailyCollectionSheetInput,
 } from '@/src/schema/pos/daily-collection'
-import { DENOMINATION_LADDER } from '../_components/form-model'
+import { DENOMINATION_LADDER, sameCounts } from '../_components/form-model'
 
 /**
  * Scenario 53 Part 6 — the editable half of the Daily Collection Report, held
@@ -52,11 +52,6 @@ function draftFrom(report: DailyCollectionReport): SheetDraft {
 /** Empty means "none of these", which is a zero — but only once it is saved. */
 function toCounts(draft: Record<string, string>): Record<string, number> {
   return Object.fromEntries(Object.entries(draft).map(([face, raw]) => [face, Number(raw) || 0]))
-}
-
-function sameCounts(a: Record<string, number>, b: Record<string, number>): boolean {
-  const faces = new Set([...Object.keys(a), ...Object.keys(b)])
-  return [...faces].every((face) => (a[face] ?? 0) === (b[face] ?? 0))
 }
 
 export interface SheetDraftController {
