@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useForm, Controller, useWatch } from 'react-hook-form'
 import { useQuery } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2, Upload, ImageOff, Images, PackagePlus } from 'lucide-react'
+import { X, Loader2, PackagePlus } from 'lucide-react'
 import { CreateItemFormSchema, CreateItemFormValues, UomOption } from '@/src/schema/inventory/items'
 import type { ClassificationOption } from '@/src/schema/inventory/items'
 import { NumericInput, FormSection } from './item-form-shared'
@@ -12,7 +12,6 @@ import type { ApiResponse } from '@/src/libs/api/client'
 import type { CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { showToast } from '@/src/components/ui/toast'
-import { uploadItemFile, addItemImage } from '../_actions/item-images'
 import { checkItemDuplicates } from '../_actions/check-item-duplicates'
 import type { DuplicateCandidate } from '@/src/schema/inventory/items'
 import { receiveInitialUnit } from '../_actions/receive-initial-unit'
@@ -25,12 +24,6 @@ import {
 } from '@/src/schema/inventory/reports'
 import { errorClass, inputClass, labelClass } from './itemFormChrome'
 import { CategorySubgroupFields, useAutoItemName, useOriginOptions } from './item-create-fields'
-
-interface PendingImage {
-  fileId: string
-  previewUrl: string
-  name: string
-}
 
 // Tracking checkboxes that don't apply to service items and get disabled + cleared
 // when "Service Item" is checked.
@@ -93,7 +86,6 @@ export default function CreateItemModal({
     defaultValues: {
       name: '',
       sku: '',
-      description: '',
       modelNumber: '',
       baseUnitId: '',
       primaryCategoryId: '',
@@ -115,13 +107,10 @@ export default function CreateItemModal({
     },
   })
 
-  const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
-  const [imageUploading, setImageUploading] = useState(false)
   const [confirmingClose, setConfirmingClose] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const hasUnsavedChanges = isDirty || pendingImages.length > 0
+  const hasUnsavedChanges = isDirty
 
   // Service items never carry stock/serial tracking — force-clear + disable those
   // checkboxes whenever "Service Item" is checked.
@@ -197,10 +186,6 @@ export default function CreateItemModal({
     if (!isOpen) {
       reset()
       setConfirmingClose(false)
-      setPendingImages((prev) => {
-        prev.forEach((img) => URL.revokeObjectURL(img.previewUrl))
-        return []
-      })
     }
   }, [isOpen, reset])
 
@@ -216,39 +201,6 @@ export default function CreateItemModal({
     return () => clearTimeout(t)
   }, [submitCount, errors, setFocus])
 
-  async function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    e.target.value = ''
-
-    const previewUrl = URL.createObjectURL(file)
-    setImageUploading(true)
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const result = await uploadItemFile(formData)
-      if (!result.success || !result.data) {
-        URL.revokeObjectURL(previewUrl)
-        showToast({ title: 'Upload failed', description: result.message, status: 'error' })
-        return
-      }
-      setPendingImages((prev) => [
-        ...prev,
-        { fileId: result.data!.id, previewUrl, name: file.name },
-      ])
-    } finally {
-      setImageUploading(false)
-    }
-  }
-
-  function removePendingImage(fileId: string) {
-    setPendingImages((prev) => {
-      const img = prev.find((i) => i.fileId === fileId)
-      if (img) URL.revokeObjectURL(img.previewUrl)
-      return prev.filter((i) => i.fileId !== fileId)
-    })
-  }
-
   if (!isOpen) return null
 
   async function handleFormSubmit(data: CreateItemFormValues) {
@@ -262,10 +214,6 @@ export default function CreateItemModal({
 
     const newItemId = result.data?.id
     if (newItemId) {
-      await Promise.all([
-        ...pendingImages.map((img) => addItemImage(newItemId, { fileId: img.fileId })),
-      ])
-
       if (data.initialWarehouseId && data.initialDateIn && data.initialRr) {
         const initialStockResult = await receiveInitialUnit(newItemId, {
           warehouseId: data.initialWarehouseId,
@@ -551,24 +499,6 @@ export default function CreateItemModal({
                 />
                 {errors.modelNumber && <p className={errorClass}>{errors.modelNumber.message}</p>}
               </div>
-
-              {/* Description */}
-              <div className="sm:col-span-2">
-                <label className={labelClass}>Description</label>
-                <Controller
-                  name="description"
-                  control={control}
-                  render={({ field }) => (
-                    <textarea
-                      {...field}
-                      value={field.value ?? ''}
-                      rows={3}
-                      placeholder="Optional item description…"
-                      className={`${inputClass} resize-none`}
-                    />
-                  )}
-                />
-              </div>
             </FormSection>
 
             {/* Pricing */}
@@ -822,49 +752,6 @@ export default function CreateItemModal({
                 </div>
               )}
             </FormSection>
-
-            {/* Images */}
-            <FormSection variant="card" title="Images" defaultOpen={true}>
-              <div className="sm:col-span-2">
-                <div className="mb-2 flex items-center gap-2">
-                  <Images className="h-4 w-4 text-ink-faint" />
-                  <span className="text-[12px] font-medium text-[#3d3d4a]">Item Images</span>
-                  <span className="text-[12px] text-ink-faint">(optional)</span>
-                </div>
-                <div className="grid grid-cols-4 gap-2">
-                  {pendingImages.map((img, idx) => (
-                    <PendingThumbnail
-                      key={img.fileId}
-                      img={img}
-                      isPrimary={idx === 0}
-                      onRemove={() => removePendingImage(img.fileId)}
-                    />
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={imageUploading}
-                    className="flex aspect-square flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-[#d3d3db] bg-[#fbfbfc] text-ink-faint transition-colors hover:border-[#5b21b6] hover:bg-[#f0e9fc] hover:text-[#5b21b6] disabled:opacity-50"
-                  >
-                    {imageUploading ? (
-                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#d3d3db] border-t-[#5b21b6]" />
-                    ) : (
-                      <>
-                        <Upload className="h-5 w-5" />
-                        <span className="text-[10px] font-medium">Add Image</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleImageSelect}
-                />
-              </div>
-            </FormSection>
           </div>
         </div>
 
@@ -897,48 +784,6 @@ export default function CreateItemModal({
           </div>
         </div>
       </form>
-    </div>
-  )
-}
-
-function PendingThumbnail({
-  img,
-  isPrimary,
-  onRemove,
-}: {
-  img: PendingImage
-  isPrimary: boolean
-  onRemove: () => void
-}) {
-  const [imgError, setImgError] = useState(false)
-
-  return (
-    <div className="group relative aspect-square overflow-hidden rounded-xl border border-[#e4e4e9] bg-[#fbfbfc]">
-      {imgError ? (
-        <div className="flex h-full w-full items-center justify-center">
-          <ImageOff className="h-6 w-6 text-ink-faint" />
-        </div>
-      ) : (
-        <img
-          src={img.previewUrl}
-          alt={img.name}
-          className="h-full w-full object-cover"
-          onError={() => setImgError(true)}
-        />
-      )}
-      {isPrimary && (
-        <div className="absolute left-1.5 top-1.5 rounded-full bg-[#5b21b6] px-1.5 py-0.5 text-[10px] font-semibold text-white">
-          Primary
-        </div>
-      )}
-      <button
-        type="button"
-        onClick={onRemove}
-        className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-red-600"
-        aria-label="Remove image"
-      >
-        <X className="h-3 w-3" />
-      </button>
     </div>
   )
 }
