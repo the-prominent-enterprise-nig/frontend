@@ -117,58 +117,6 @@ export function getModulePermissions(
   )
 }
 
-/**
- * "Petty cash only" (ticket #66): a one-click choice on a module row, for a
- * user who may see their own branch's petty cash fund and record expenses paid
- * from it, and nothing else in that module. It is not a fifth level: the
- * levels are about how much, this is about which part, and a level that
- * only one module has would leak into every per-resource button.
- *
- * What it grants is decided by the backend (permission-tiers.ts) and arrives as
- * `pettyCash` on each permission, so this file keeps no list of its own. Only
- * Accounting has any, so the choice appears only there.
- */
-export function getPettyCashPermissions(modulePermissions: Permission[]): Permission[] {
-  return modulePermissions.filter((permission) => permission.pettyCash === true)
-}
-
-/** Whether a module's grant is exactly the petty cash set, no more and no less. */
-export function isPettyCashOnly(
-  selectedIds: Set<string>,
-  modulePermissions: Permission[]
-): boolean {
-  const pettyCash = getPettyCashPermissions(modulePermissions)
-  if (pettyCash.length === 0) return false
-  const held = modulePermissions.filter((permission) => selectedIds.has(permission.id))
-  return held.length === pettyCash.length && pettyCash.every((p) => selectedIds.has(p.id))
-}
-
-/** Replaces the module's grant with the petty cash set; other modules are untouched. */
-export function applyPettyCashOnly(
-  selected: Set<string>,
-  modulePermissions: Permission[]
-): Set<string> {
-  const next = new Set(selected)
-  for (const permission of modulePermissions) next.delete(permission.id)
-  for (const permission of getPettyCashPermissions(modulePermissions)) next.add(permission.id)
-  return next
-}
-
-/** Whether this selection leaves some module on "Petty cash only". */
-export function hasPettyCashOnlyAccess(
-  selectedIds: Set<string>,
-  availablePermissions: Permission[]
-): boolean {
-  return ACCESS_MODULES.some((moduleConfig) =>
-    isPettyCashOnly(selectedIds, getModulePermissions(availablePermissions, moduleConfig))
-  )
-}
-
-/** The permission ids the petty cash choice grants, across the whole list. */
-export function pettyCashPermissionIds(availablePermissions: Permission[]): string[] {
-  return getPettyCashPermissions(availablePermissions).map((permission) => permission.id)
-}
-
 export function isReadPermission(permission: Permission): boolean {
   return tierOf(permission) === 'view'
 }

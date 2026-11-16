@@ -21,8 +21,6 @@ import {
   SHORT_ACCESS_LEVEL_LABELS,
   countEffectivePermissions,
   getAccessLevelForRole,
-  getModulePermissions,
-  isPettyCashOnly,
   type AccessLevel,
 } from './access-levels'
 import {
@@ -72,20 +70,7 @@ function summaryTitle(label: string, summary: ModuleSummary, map: AccessMap): st
 /** "Module: access level" chips for a role, from the module map when it has one. */
 function moduleChips(role: Role, available: Permission[], map: AccessMap): ModuleChip[] {
   const held = role.permissions.map((rolePermission) => permissionSlug(rolePermission.permission))
-  const heldIds = new Set(role.permissions.map((rolePermission) => rolePermission.permission.id))
   return ACCESS_MODULES.flatMap((moduleConfig): ModuleChip[] => {
-    if (isPettyCashOnly(heldIds, getModulePermissions(available, moduleConfig))) {
-      return [
-        {
-          key: moduleConfig.key,
-          label: moduleConfig.label,
-          text: 'Petty cash only',
-          title: `${moduleConfig.label}: Petty cash only`,
-          dotClass: 'bg-emerald-500',
-          ring: false,
-        },
-      ]
-    }
     const summary = summarizeModule(map, held, moduleConfig.key, available)
     if (summary) {
       if (summary.kind === 'none') return []

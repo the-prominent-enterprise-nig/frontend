@@ -4,12 +4,7 @@ import { ArrowLeft, ShieldCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { type Permission } from '@/src/schema/settings/list'
-import { assignPermissions, createRole } from '@/src/app/(app)/(dashboard)/settings/_actions'
-import { ensureOwnBranchPettyCashLimit } from '@/src/app/(app)/(dashboard)/settings/_actions/role-scopes'
-import {
-  hasPettyCashOnlyAccess,
-  pettyCashPermissionIds,
-} from '@/src/components/settings/access-levels'
+import { createRole } from '@/src/app/(app)/(dashboard)/settings/_actions'
 import ModuleAccessList from '@/src/components/settings/ModuleAccessList'
 import { type AccessMap } from '@/src/components/settings/module-map'
 import AdvancedPermissionsSection from '@/src/components/settings/AdvancedPermissionsSection'
@@ -64,18 +59,11 @@ export default function CreateRoleClient({
     setIsSaving(true)
 
     try {
-      // "Petty cash only" goes with its limit, and the limit goes first. The
-      // role is created without the petty cash access, gets the limit, and only
-      // then is given the access, so it never exists with expense access and
-      // "Paid from" open to every fund.
-      const pettyCashOnly = hasPettyCashOnlyAccess(selected, availablePermissions)
-      const withheld = new Set(pettyCashOnly ? pettyCashPermissionIds(availablePermissions) : [])
-
       const result = await createRole({
         name: name.trim(),
         description: description.trim() || undefined,
         homeModule,
-        permissionIds: Array.from(selected).filter((id) => !withheld.has(id)),
+        permissionIds: Array.from(selected),
       })
 
       if (!result.success) {
@@ -85,26 +73,6 @@ export default function CreateRoleClient({
           status: 'error',
         })
         return
-      }
-
-      if (pettyCashOnly && result.data) {
-        const limit = await ensureOwnBranchPettyCashLimit(result.data.id)
-        const access = limit.success
-          ? await assignPermissions({
-              roleId: result.data.id,
-              permissionIds: Array.from(selected),
-            })
-          : limit
-        if (!access.success) {
-          showToast({
-            title: 'Role created without petty cash access',
-            description: `${access.message || access.error} Open the role to set it again.`,
-            status: 'error',
-          })
-          router.push(`/settings/roles/${result.data.id}`)
-          router.refresh()
-          return
-        }
       }
 
       showToast({

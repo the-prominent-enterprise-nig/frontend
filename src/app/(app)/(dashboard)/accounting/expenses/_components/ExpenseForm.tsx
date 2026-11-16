@@ -10,11 +10,13 @@ import {
   APBillSuppliers,
   APBills,
   ARInvoices,
+  AccountMappings,
   BankAccounts,
   type BusinessExpense,
   type APBillSupplierOption,
   type APBill,
   type ARInvoice,
+  type AccountMapping,
   type PayeeType,
   type ClearedType,
   type BankAccountOption,
@@ -41,7 +43,6 @@ import {
   type Department,
 } from '@/src/libs/data/OrgStructureData'
 import { ExpenseItemSearchCombobox, type ExpenseItemSearchMeta } from './ExpenseItemSearchCombobox'
-import { getItem } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-item'
 import ExpenseAttachmentsPanel, { uploadStagedExpenseAttachments } from './ExpenseAttachmentsPanel'
 import { showToast } from '@/src/components/ui/toast'
 import { importSpreadsheetLines, nameKeys, type ImportResult } from './importSpreadsheetLines'
@@ -250,7 +251,7 @@ interface LineState {
   /** The EWT tax code this line is withheld at ('' = not withheld). The amount
    * withheld is derived (withholdingFor), never typed. */
   withholdingTaxCode: string
-  // SUPPLIER-only — picking an item prefills unitPrice (never the account)
+  // SUPPLIER-only — picking an item prefills categoryAccountId + unitPrice
   // and computes amount as qty * unitPrice (see setLine).
   itemId: string
   itemLabel: string
@@ -377,6 +378,7 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
   const [postableAccounts, setPostableAccounts] = useState<Account[]>([])
   const [inventoryAccounts, setInventoryAccounts] = useState<Account[]>([])
   const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([])
+  const [mappings, setMappings] = useState<AccountMapping[]>([])
 
   useEffect(() => {
     getAccountOptions().then((r) => {
@@ -411,6 +413,9 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
     // Payment Method → Bank Transfer unlocks picking which bank account the
     // cash side actually posts to.
     BankAccounts.options('expense-fund').then((r) => setBankAccounts(r.data ?? []))
+    // Payee → Supplier line-category default (EXPENSE_SUPPLIER_INVENTORY) —
+    // used when a picked Item has no inventory account of its own.
+    AccountMappings.list().then((r) => setMappings(r.data ?? []))
   }, [])
 
   useEffect(() => {
@@ -456,6 +461,7 @@ export default function ExpenseForm({ expenseId }: { expenseId?: string }) {
       postableAccounts={postableAccounts}
       inventoryAccounts={inventoryAccounts}
       bankAccounts={bankAccounts}
+      mappings={mappings}
       // A recorded expense goes back to its own page, where the journal entry
       // it now carries can be checked; a draft goes back to the list.
       onSaved={() =>
@@ -536,6 +542,7 @@ function ExpenseFormFields({
   postableAccounts,
   inventoryAccounts,
   bankAccounts,
+  mappings,
   onSaved,
 }: {
   initial: BusinessExpense | null
@@ -543,6 +550,7 @@ function ExpenseFormFields({
   postableAccounts: Account[]
   inventoryAccounts: Account[]
   bankAccounts: BankAccountOption[]
+  mappings: AccountMapping[]
   onSaved: () => void
 }) {
   // Only used while creating — an attachment needs the expense's id, which
@@ -632,12 +640,11 @@ function ExpenseFormFields({
       : [emptyLine()]
   )
   const [siCandidates, setSiCandidates] = useState<Record<number, APBill[]>>({})
-  // The customer's MI (monthly installment) invoices, listed in the Sales
-  // Invoice field below — scoped to the header's customer. A resolver effect
-  // re-runs whenever the customer changes, and backfills the display text when
-  // the form already holds a linked arInvoiceId (e.g. an edit-mode draft
-  // loading) — same "no joined label yet" gap apBillId has, for the same
-  // cross-module-id reason.
+  // Sales Invoice (ARInvoice) suggestions for the header field below —
+  // scoped to the header's customer. A resolver effect re-runs whenever the
+  // customer changes, and backfills the display text when the form already
+  // holds a linked arInvoiceId (e.g. an edit-mode draft loading) — same "no
+  // joined label yet" gap apBillId has, for the same cross-module-id reason.
   const [arInvoiceCandidates, setArInvoiceCandidates] = useState<ARInvoice[]>([])
   useEffect(() => {
     const customerId = form.customerId
@@ -645,7 +652,7 @@ function ExpenseFormFields({
       setArInvoiceCandidates([])
       return
     }
-    ARInvoices.list({ customerId, installment: true }).then((res) => {
+    ARInvoices.list({ customerId }).then((res) => {
       const candidates = res.data?.items ?? []
       setArInvoiceCandidates(candidates)
       setForm((f) => {
@@ -655,18 +662,6 @@ function ExpenseFormFields({
       })
     })
   }, [form.customerId])
-  // What the Sales Invoice list shows: every MI invoice of the customer. A draft
-  // saved earlier may hold an invoice that is not an MI one (the field used to
-  // suggest them all) — it stays listed so the box does not read as empty while
-  // the draft still carries it.
-  const arInvoiceOptions: CategorySelectOption[] = [
-    ...arInvoiceCandidates.map((c) => ({ id: c.id, name: c.invoiceNumber, depth: 0 })),
-    ...(form.arInvoiceId &&
-    form.salesInvoiceNumber &&
-    !arInvoiceCandidates.some((c) => c.id === form.arInvoiceId)
-      ? [{ id: form.arInvoiceId, name: form.salesInvoiceNumber, depth: 0 }]
-      : []),
-  ]
   // A line's Division is one pick from the tenant's branches and departments
   // listed together — "dropdown came from branches and departments". Loaded
   // once here and shared by every line.
@@ -1031,6 +1026,13 @@ function ExpenseFormFields({
     }
     return out
   }, [isOtherMode, lines, specialAccountControlIds, balancesByAccount])
+  // Supplier line-category default (Settings → Account Mapping) — used when
+  // a picked Item has no inventory account of its own, or no Item is
+  // picked yet at all.
+  const supplierDefaultAccountId = mappings.find(
+    (m) => m.key === 'EXPENSE_SUPPLIER_INVENTORY'
+  )?.accountId
+
   const subtotal = lines.reduce((sum, l) => sum + netFor(l), 0)
   const vatTotal = lines.reduce((sum, l) => sum + vatFor(l), 0)
   // Equals what was typed into the Amount boxes — on an Input VAT line the
@@ -1053,17 +1055,12 @@ function ExpenseFormFields({
     ? round2(lines.reduce((sum, l) => sum + Math.min(Number(l.amount) || 0, 0), 0))
     : 0
 
-  // Item mode computes Amount from Qty * Unit Price: always once an Item is
-  // picked, and with no Item as soon as both Qty and Unit Price are entered (a
-  // lone Qty must not blank an Amount that was typed by hand). Only a Major
-  // supplier's lines have those fields, so no other payee's Amount is touched.
-  const amountIsComputed = (l: LineState) =>
-    isItemMode && (!!l.itemId || (!!l.qty && !!l.unitPrice))
-  // Applied to every line change, not just setLine's — the SI resolver writes
-  // a line's price directly, and its Amount has to follow the same rule.
+  // Item mode computes Amount from Qty * Unit Price. Applied to every line
+  // change, not just setLine's — the SI resolver writes a line's price
+  // directly, and its Amount has to follow the same rule.
   const withComputedAmount = (l: LineState): LineState => {
-    if (!amountIsComputed(l) || (!l.qty && !l.unitPrice)) return l
-    const computed = round2((Number(l.qty) || 0) * (Number(l.unitPrice) || 0))
+    if (!l.itemId || (!l.qty && !l.unitPrice)) return l
+    const computed = (Number(l.qty) || 0) * (Number(l.unitPrice) || 0)
     return { ...l, amount: computed ? String(computed) : '' }
   }
 
@@ -1086,6 +1083,7 @@ function ExpenseFormFields({
       ...prev,
       {
         ...emptyLine(defaultTaxCodeFor(form.payeeType, form.otherCategory)),
+        categoryAccountId: isItemMode ? (supplierDefaultAccountId ?? '') : '',
         // apBillId stays blank here on purpose — an unused row gets no bill
         // until it actually has an Item on it (see the Item onSelect below).
       },
@@ -1098,6 +1096,19 @@ function ExpenseFormFields({
     setSiCandidates({})
     setLines((prev) => prev.filter((_, i) => i !== index))
   }
+
+  // Backfills any still-blank Supplier line's category once the default
+  // mapping loads (async, and may still be loading when the form first
+  // renders or when Payee switches to Supplier) — only ever fills a blank,
+  // never overwrites a deliberate pick.
+  useEffect(() => {
+    if (!isItemMode || !supplierDefaultAccountId) return
+    setLines((prev) =>
+      prev.map((l) =>
+        l.categoryAccountId ? l : { ...l, categoryAccountId: supplierDefaultAccountId }
+      )
+    )
+  }, [isItemMode, supplierDefaultAccountId])
 
   // Supplier Invoice (AP Bill) candidates, per line, keyed on that line's
   // Item — a bill carries no item lines of its own, so the server matches
@@ -1175,34 +1186,6 @@ function ExpenseFormFields({
     // resolveSiForLine is redefined every render; siRequestedRef is what
     // actually gates repeat work, so listing it would only add churn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lines])
-
-  // A saved line stores only its Item's id — the API sends no name with it — so
-  // a reopened expense would show the Item box as "— None —" while the line
-  // still holds the item. Look the name up once per item and fill it in, the
-  // same way the SI is looked up above. Keyed by item (not row) so removing or
-  // reordering lines can't land a name on the wrong one; a row the user has
-  // already picked an item on has its label and is left alone.
-  const itemLabelRequestedRef = useRef<Set<string>>(new Set())
-  useEffect(() => {
-    lines.forEach((l) => {
-      if (!l.itemId || l.itemLabel || itemLabelRequestedRef.current.has(l.itemId)) return
-      const id = l.itemId
-      itemLabelRequestedRef.current.add(id)
-      void getItem(id).then((res) => {
-        if (!res.success || !res.data) {
-          // Let a later change retry rather than leave the box blank for good.
-          itemLabelRequestedRef.current.delete(id)
-          return
-        }
-        const label = res.data.sku ? `${res.data.name} (${res.data.sku})` : res.data.name
-        setLines((prev) =>
-          prev.map((row) =>
-            row.itemId === id && !row.itemLabel ? { ...row, itemLabel: label } : row
-          )
-        )
-      })
-    })
   }, [lines])
 
   const setPayment = (index: number, patch: Partial<PaymentState>) =>
@@ -1732,22 +1715,28 @@ function ExpenseFormFields({
                     />
                   </Field>
                   <Field label="Sales Invoice">
-                    <CategorySelect
-                      compact
-                      aria-label="Sales Invoice"
-                      noun="MI invoices"
-                      value={form.arInvoiceId}
-                      onChange={(id) => {
-                        const picked = arInvoiceOptions.find((o) => o.id === id)
+                    <input
+                      list="ar-invoice-suggestions"
+                      value={form.salesInvoiceNumber}
+                      onChange={(e) => {
+                        const text = e.target.value
+                        const matched = arInvoiceCandidates.find(
+                          (c) => c.invoiceNumber.toLowerCase() === text.trim().toLowerCase()
+                        )
                         setForm({
                           ...form,
-                          arInvoiceId: picked?.id ?? '',
-                          salesInvoiceNumber: picked?.name ?? '',
+                          salesInvoiceNumber: text,
+                          arInvoiceId: matched?.id ?? '',
                         })
                       }}
-                      options={arInvoiceOptions}
-                      placeholder="— None —"
+                      placeholder="Sales Invoice #"
+                      className="w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
                     />
+                    <datalist id="ar-invoice-suggestions">
+                      {arInvoiceCandidates.map((c) => (
+                        <option key={c.id} value={c.invoiceNumber} />
+                      ))}
+                    </datalist>
                   </Field>
                 </>
               )}
@@ -1928,6 +1917,10 @@ function ExpenseFormFields({
                                       ? String(meta.costPrice)
                                       : line.unitPrice,
                                     qty: line.qty || '1',
+                                    categoryAccountId:
+                                      meta.inventoryAccountId ??
+                                      supplierDefaultAccountId ??
+                                      line.categoryAccountId,
                                     // A new item means a new bill context — drop
                                     // the old pick; the resolver effect fills in
                                     // the one that actually covers this item.
@@ -2327,11 +2320,11 @@ function ExpenseFormFields({
                                 ? `VAT-inclusive — the ${VAT_RATE_PERCENT}% Input VAT is split out of this amount`
                                 : undefined
                             }
-                            readOnly={amountIsComputed(line)}
+                            readOnly={isItemMode && !!line.itemId}
                             value={line.amount}
                             onChange={(e) => setLine(i, { amount: e.target.value })}
                             className={`w-full rounded-lg border border-zinc-200 px-2.5 py-1.5 text-[13px] outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 ${
-                              amountIsComputed(line) ? 'bg-zinc-50 text-zinc-500' : ''
+                              isItemMode && line.itemId ? 'bg-zinc-50 text-zinc-500' : ''
                             }`}
                           />
                         </LineField>
