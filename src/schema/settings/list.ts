@@ -13,6 +13,9 @@ export const PermissionSchema = z.object({
   tier: z.enum(['view', 'edit', 'full']).optional(),
   // Withheld from View and Edit on purpose (shown as "Sensitive" under Advanced).
   sensitive: z.boolean().optional(),
+  // Part of the "Petty cash only" choice on an Accounting row (backend
+  // permission-tiers.ts, ticket #66). Only the full permission list carries it.
+  pettyCash: z.boolean().optional(),
 })
 
 // Role Permission Schema (join table)
