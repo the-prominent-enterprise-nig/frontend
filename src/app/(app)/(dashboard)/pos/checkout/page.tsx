@@ -1486,6 +1486,11 @@ export default function CheckoutPage() {
   // Load catalog when session is selected, then enrich with UOM data
   useEffect(() => {
     if (!sessionsData) return
+    // Only once a session is picked. Nothing behind the session picker shows
+    // the catalogue, and loading the whole branchless one there (~5 MB) only
+    // to load the branch's after the pick held up every request queued behind
+    // it, a credit application's items among them.
+    if (!sessionId) return
     const session = openSessions.find((s) => s.id === sessionId)
     const branchId =
       session?.terminal?.caravanBranchId ??
@@ -3442,6 +3447,11 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!arrivingCreditApplication || arrivingCreditApplication.stage !== 'fetching') return
     if (!selectedCustomer || catalogItems.length === 0) return
+    // Not before a session is picked and its branch's catalogue is in: checkout
+    // asks for the session first now (it used to be picked automatically), and
+    // building from the branchless catalogue loaded behind the picker stranded
+    // the arrival on "Loading items…".
+    if (!sessionId || !catalogStockKnown) return
     // Once per application, and enforced with a ref rather than the `stage`
     // above, because `stage` only advances after the fetch resolves. The
     // customer and the catalogue both arrive asynchronously, so a dep landing
@@ -3578,7 +3588,13 @@ export default function CheckoutPage() {
     // changes on every catalogue reload, and each change cancelled an attempt
     // that was already in flight. Only whether it has loaded matters here —
     // anything missing from it is fetched by SKU above anyway.
-  }, [arrivingCreditApplication, selectedCustomer, catalogItems.length])
+  }, [
+    arrivingCreditApplication,
+    selectedCustomer,
+    catalogItems.length,
+    sessionId,
+    catalogStockKnown,
+  ])
 
   useEffect(() => {
     if (arrivingCreditApplication?.stage !== 'adding') return
@@ -3626,6 +3642,9 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!arrivingDr || arrivingDr.stage !== 'fetching') return
     if (!selectedCustomer || catalogItems.length === 0) return
+    // As for a credit application: not before a session and its branch's
+    // catalogue.
+    if (!sessionId || !catalogStockKnown) return
     if (drBuiltRef.current === arrivingDr.id) return
     drBuiltRef.current = arrivingDr.id
     let cancelled = false
@@ -3688,7 +3707,7 @@ export default function CheckoutPage() {
       if (!completed) drBuiltRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arrivingDr, selectedCustomer, catalogItems.length])
+  }, [arrivingDr, selectedCustomer, catalogItems.length, sessionId, catalogStockKnown])
 
   // The DR's held units went onto its lines as they were created (addToCart's
   // presetSerial); this puts the cart on cash — a DR sale is cash / charge
