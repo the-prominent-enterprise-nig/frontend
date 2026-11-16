@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useForm, Controller, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2, PackagePlus, FileUp } from 'lucide-react'
+import { X, Loader2, FileUp } from 'lucide-react'
 import { CreateItemFormSchema, CreateItemFormValues, UomOption } from '@/src/schema/inventory/items'
 import type { ClassificationOption } from '@/src/schema/inventory/items'
 import { NumericInput, FormSection } from './item-form-shared'
@@ -13,7 +13,6 @@ import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { showToast } from '@/src/components/ui/toast'
 import { checkItemDuplicates } from '../_actions/check-item-duplicates'
 import type { DuplicateCandidate } from '@/src/schema/inventory/items'
-import { receiveInitialUnit } from '../_actions/receive-initial-unit'
 import { setItemPrices } from '../_actions/set-item-prices'
 import ItemPricesSection from './ItemPricesSection'
 import BulkImportItemsModal from './BulkImportItemsModal'
@@ -23,18 +22,9 @@ import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { toItemPricePayload, type ItemPriceEntry } from '@/src/schema/inventory/items/item-prices'
 import { CONTROL_CHROME, MONO, PLEX } from '@/src/libs/design/plex'
-import {
-  UNIT_CLASSIFICATION_LABELS,
-  UnitClassificationSchema,
-} from '@/src/schema/inventory/reports'
 import { errorClass, inputClass, labelClass } from './itemFormChrome'
 import { quickAddAction, useQuickAddClassification } from './useQuickAddClassification'
-import {
-  CategorySubgroupFields,
-  useAutoItemName,
-  useOriginOptions,
-  useReceivingWarehouses,
-} from './item-create-fields'
+import { CategorySubgroupFields, useAutoItemName } from './item-create-fields'
 
 // Tracking checkboxes that don't apply to service items and get disabled + cleared
 // when "Service Item" is checked.
@@ -100,13 +90,6 @@ export default function CreateItemModal({
       isExpiryTracked: false,
       isBundle: false,
       isService: false,
-      initialWarehouseId: '',
-      initialDateIn: '',
-      initialRr: '',
-      initialOrigin: '',
-      initialPrice: undefined,
-      initialSerialNumber: '',
-      initialClassification: 'brand_new',
       prices: [],
     },
   })
@@ -141,8 +124,6 @@ export default function CreateItemModal({
     return () => clearTimeout(timer)
   }, [isOpen, nameValue, brandIdValue])
 
-  const isSerialTrackedValue = useWatch({ control, name: 'isSerialTracked' })
-
   // UOM isn't on the form — every new item is PCS (the unit nearly the whole
   // catalogue uses), falling back to the first base unit if PCS is missing.
   const baseUnitIdValue = useWatch({ control, name: 'baseUnitId' })
@@ -152,11 +133,9 @@ export default function CreateItemModal({
     if (defaultUnit) setValue('baseUnitId', defaultUnit.id)
   }, [baseUnitIdValue, uomOptions, setValue])
 
-  const warehouses = useReceivingWarehouses(isOpen)
   const { data: me } = useMe()
   const canSetPrices = hasPermission(me ?? null, INVENTORY_PERMISSIONS.PRICE_LISTS_UPDATE)
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false)
-  const originOptions = useOriginOptions(isOpen)
 
   const [categoryName, setCategoryName] = useState('')
   const addBrand = useQuickAddClassification('brand')
@@ -229,28 +208,7 @@ export default function CreateItemModal({
     }
 
     const newItemId = result.data?.id
-    if (newItemId) {
-      if (data.initialWarehouseId) {
-        const initialStockResult = await receiveInitialUnit(newItemId, {
-          warehouseId: data.initialWarehouseId,
-          dateIn: data.initialDateIn || undefined,
-          rr: data.initialRr || undefined,
-          origin: data.initialOrigin || undefined,
-          price: data.initialPrice,
-          serialNumber: data.initialSerialNumber || undefined,
-          classification: data.initialClassification,
-        })
-        if (!initialStockResult.success) {
-          showToast({
-            title: 'Item created, but initial stock failed',
-            description: initialStockResult.message,
-            status: 'error',
-          })
-        }
-      }
-
-      if (data.prices?.length) await savePrices(newItemId, data.prices)
-    }
+    if (newItemId && data.prices?.length) await savePrices(newItemId, data.prices)
 
     onClose()
   }
@@ -316,7 +274,7 @@ export default function CreateItemModal({
                 no Scenario 16 draft → accounting → approver chain. */}
             <p className="mt-1 text-[13px] text-[#4b4b5a]">
               Ready to use in PO, receiving and POS as soon as it&apos;s saved. It starts with no
-              stock unless you record initial stock below.
+              stock — add units from Item Master once it&apos;s created.
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -604,169 +562,6 @@ export default function CreateItemModal({
                   )
                 })}
               </div>
-            </FormSection>
-
-            {/* Initial Stock */}
-            <FormSection variant="card" title="Initial Stock (Optional)" defaultOpen={true}>
-              <div className="sm:col-span-2 -mt-1 mb-1 flex items-start gap-2 rounded-lg border border-[#eeeef1] bg-[#fbfbfc] px-3 py-2 text-[12px] text-[#4b4b5a]">
-                <PackagePlus className="h-4 w-4 shrink-0 text-ink-faint" />
-                Record one already-in-hand unit for this item. Branch (and the serial, for a
-                serial-tracked item) is required; a blank date in means today and a blank RR # is
-                generated. Leave the section empty to create the item with no stock.
-              </div>
-
-              {/* Branch — a branch's warehouse, labelled by branch, plus the
-                  standalone Panay / Negros warehouses. */}
-              <div>
-                <label className={labelClass}>Branch</label>
-                <Controller
-                  name="initialWarehouseId"
-                  control={control}
-                  render={({ field }) => (
-                    <SearchableSelect
-                      chrome={CONTROL_CHROME}
-                      portal
-                      value={field.value ?? ''}
-                      onChange={field.onChange}
-                      options={warehouses.map((w) => ({
-                        value: w.id,
-                        label: w.branch?.name ?? w.name,
-                      }))}
-                      placeholder="Select branch…"
-                      clearable
-                    />
-                  )}
-                />
-                {errors.initialWarehouseId && (
-                  <p className={errorClass}>{errors.initialWarehouseId.message}</p>
-                )}
-              </div>
-
-              {/* Date In */}
-              <div>
-                <label className={labelClass}>
-                  Date In <span className="font-normal text-ink-faint">(optional — today)</span>
-                </label>
-                <Controller
-                  name="initialDateIn"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      value={field.value ?? ''}
-                      type="date"
-                      className={inputClass}
-                    />
-                  )}
-                />
-                {errors.initialDateIn && (
-                  <p className={errorClass}>{errors.initialDateIn.message}</p>
-                )}
-              </div>
-
-              {/* RR # */}
-              <div>
-                <label className={labelClass}>
-                  RR # <span className="font-normal text-ink-faint">(optional — generated)</span>
-                </label>
-                <Controller
-                  name="initialRr"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      value={field.value ?? ''}
-                      type="text"
-                      placeholder="e.g. RR#163451S"
-                      className={inputClass}
-                    />
-                  )}
-                />
-                {errors.initialRr && <p className={errorClass}>{errors.initialRr.message}</p>}
-              </div>
-
-              {/* Origin — a supplier on file, or WHSE for internal stock. */}
-              <div>
-                <label className={labelClass}>Origin</label>
-                <Controller
-                  name="initialOrigin"
-                  control={control}
-                  render={({ field }) => (
-                    <SearchableSelect
-                      chrome={CONTROL_CHROME}
-                      portal
-                      value={field.value ?? ''}
-                      onChange={field.onChange}
-                      options={originOptions}
-                      placeholder="Select supplier or WHSE…"
-                      clearable
-                    />
-                  )}
-                />
-              </div>
-
-              {/* Classification — the General Stockbook's Brand New / Repair / Repo / Return. */}
-              <div>
-                <label className={labelClass}>Classification</label>
-                <Controller
-                  name="initialClassification"
-                  control={control}
-                  render={({ field }) => (
-                    <SearchableSelect
-                      chrome={CONTROL_CHROME}
-                      portal
-                      value={field.value ?? 'brand_new'}
-                      onChange={(v) => field.onChange(v || 'brand_new')}
-                      options={UnitClassificationSchema.options.map((c) => ({
-                        value: c,
-                        label: UNIT_CLASSIFICATION_LABELS[c],
-                      }))}
-                    />
-                  )}
-                />
-              </div>
-
-              {/* Unit cost — the General Stockbook's Cost column. */}
-              <div>
-                <label className={labelClass}>Unit Cost (₱)</label>
-                <Controller
-                  name="initialPrice"
-                  control={control}
-                  render={({ field }) => (
-                    <NumericInput
-                      value={field.value}
-                      onChange={field.onChange}
-                      onBlur={field.onBlur}
-                      fieldRef={field.ref}
-                      placeholder="0.00"
-                      className={inputClass}
-                    />
-                  )}
-                />
-              </div>
-
-              {/* Serial Number — only when this item is serial-tracked */}
-              {isSerialTrackedValue && (
-                <div>
-                  <label className={labelClass}>Serial Number</label>
-                  <Controller
-                    name="initialSerialNumber"
-                    control={control}
-                    render={({ field }) => (
-                      <input
-                        {...field}
-                        value={field.value ?? ''}
-                        type="text"
-                        placeholder="e.g. GT248004"
-                        className={inputClass}
-                      />
-                    )}
-                  />
-                  {errors.initialSerialNumber && (
-                    <p className={errorClass}>{errors.initialSerialNumber.message}</p>
-                  )}
-                </div>
-              )}
             </FormSection>
 
             {canSetPrices && (

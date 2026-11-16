@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { UnitClassificationSchema } from '../reports'
 import { ItemPriceEntrySchema } from './item-prices'
 
 export const CostingMethodSchema = z.enum(['fifo', 'lifo', 'weighted_average'])
@@ -86,16 +85,6 @@ const CreateItemFormBaseSchema = z.object({
   // the only other place a Type can be set.
   typeId: z.string().min(1, 'Type is required'),
   modelNumber: z.string().max(60).optional(),
-  // Optional — record one already-in-hand unit at creation time (date in /
-  // RR # / origin / cost / serial). Left blank, no initial stock is recorded.
-  initialWarehouseId: z.string().optional(),
-  initialDateIn: z.string().optional(),
-  initialRr: z.string().max(30, 'RR number must be 30 characters or fewer').optional(),
-  initialOrigin: z.string().optional(),
-  initialPrice: z.number().min(0).optional(),
-  initialSerialNumber: z.string().optional(),
-  // The unit's Classification on the General Stockbook (SerialNumber.receivedAs).
-  initialClassification: UnitClassificationSchema.optional(),
   // Optional — put the new item on the price list for each price use, in a
   // separate call once it exists (POST /inventory/items/:id/prices).
   prices: z.array(ItemPriceEntrySchema).optional(),
@@ -116,42 +105,9 @@ function refineIdentity(
   }
 }
 
-export const CreateItemFormSchema = CreateItemFormBaseSchema.superRefine((data, ctx) => {
-  refineIdentity(data, ctx)
-  const hasAnyInitialStockField = !!(
-    data.initialWarehouseId ||
-    data.initialDateIn ||
-    data.initialRr ||
-    data.initialOrigin ||
-    data.initialPrice != null ||
-    data.initialSerialNumber
-  )
-  if (!hasAnyInitialStockField) return
-
-  if (!data.initialWarehouseId) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['initialWarehouseId'],
-      message: 'Branch is required to record initial stock',
-    })
-  }
-  // Date in and RR # are optional — blank date = today, blank RR # = one is
-  // generated — the same rule as the item bulk upload's unit columns.
-  if (data.isSerialTracked && !data.initialSerialNumber) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['initialSerialNumber'],
-      message: 'Serial number is required for a serial-tracked item',
-    })
-  }
-  if (!data.isSerialTracked && data.initialSerialNumber) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['initialSerialNumber'],
-      message: 'Remove the serial number — this item is not serial-tracked',
-    })
-  }
-})
+// Stock goes in through Item Master's Add units or the bulk sheet — Add Item
+// only creates the item.
+export const CreateItemFormSchema = CreateItemFormBaseSchema.superRefine(refineIdentity)
 
 const UpdateItemFormBaseSchema = z.object({
   name: z.string().min(1, 'Item name is required').max(120).optional(),
