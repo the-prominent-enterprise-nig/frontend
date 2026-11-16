@@ -31,6 +31,9 @@ function formKind(row: DailyCollectionRow): string {
   return row.kind === 'MI-PARTIAL' ? 'MI' : row.kind
 }
 
+/** The options under the POS's GCash button, upper-cased: both read as GCASH. */
+const GCASH_OPTION_LABELS = ['SOUNDPAY', 'GCASH SEND MONEY']
+
 /** A tender key as the short mode the client's form uses — CASH, CHECK, GCASH,
  * MAYA, CARD-BDO, or a bank by name. Same naming as the backend's `tenderLine`
  * (daily-collection.form-sheet.ts), plus CASH for drawer money. */
@@ -43,7 +46,7 @@ export function tenderModeLabel(tender: string): string {
   if (method === 'bank_transfer') return name || 'BANK'
   if (method === 'qr' || method === 'gcash' || method === 'maya') {
     const label = name || (method === 'maya' ? 'MAYA' : 'GCASH')
-    return label === 'SOUNDPAY' ? 'GCASH' : label
+    return GCASH_OPTION_LABELS.includes(label) ? 'GCASH' : label
   }
   return method.toUpperCase()
 }
