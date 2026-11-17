@@ -114,7 +114,7 @@ export function resolveCollectionPayment(
   }
 }
 
-export type CollectionIssueField = 'amount' | 'bankReference' | 'option'
+export type CollectionIssueField = 'amount' | 'bankReference' | 'option' | 'collector' | 'crNumber'
 
 export interface CollectionIssue {
   /** Zero-based payment, or null for the collection as a whole. */
@@ -136,9 +136,13 @@ export function collectionIssues(args: {
      * when its method offers any; null when there is nothing to choose. */
     option?: { label: string; chosen: boolean } | null
   }[]
+  /** The collection's CR number as typed. Required again (Nov 17): every
+   * collection is taken on a receipt from an Office or Field stub. Omitted by
+   * callers that don't collect one. */
+  crNumber?: string
+  /** A Field stub names the collector whose booklet it came off. */
+  fieldStubWithoutCollector?: boolean
 }): CollectionIssue[] {
-  // The CR number is no longer an issue: it is optional (Oct 29 UAT POS-14 /
-  // CC-01).
   const { rows } = args
   const several = rows.length > 1
   const issues: CollectionIssue[] = []
@@ -165,5 +169,11 @@ export function collectionIssues(args: {
       issues.push({ row: i, field: 'bankReference', message: `${who}Bank reference number` })
     }
   })
+  if (args.crNumber !== undefined && !args.crNumber.trim()) {
+    issues.push({ row: null, field: 'crNumber', message: 'CR number' })
+  }
+  if (args.fieldStubWithoutCollector) {
+    issues.push({ row: null, field: 'collector', message: 'Collector (Field stub)' })
+  }
   return issues
 }

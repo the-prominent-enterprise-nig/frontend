@@ -5,6 +5,7 @@ import {
   createPlanFixtures,
   deletePlanFixtures,
   dueRow,
+  fillCrNumber,
   fillMoney,
   openCustomerOnCollections,
   pesos,
@@ -39,6 +40,7 @@ const rebateBox = (page: Page) => rebateCell(page).getByRole('checkbox')
 
 async function collectAmount(page: Page, amount: number): Promise<void> {
   await fillMoney(page.getByTestId('collection-amount-0'), amount)
+  await fillCrNumber(page, 'GUARD')
   await collect(page).click()
   await expect(panelHeading(page)).not.toBeVisible({ timeout: 20_000 })
 }

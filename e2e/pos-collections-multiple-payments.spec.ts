@@ -333,14 +333,18 @@ test.describe('POS Collections — several payments in one collection', () => {
     const issues = page.getByTestId('collection-issues')
     await expect(issues).toContainText("You're missing:")
     await expect(issues).toContainText('Amount received')
-    // The CR number is optional (Scenario 80, Oct 29 UAT POS-14 / CC-01).
-    await expect(issues).not.toContainText('CR number')
+    // The CR number is required again (Nov 17): every collection comes off an
+    // Office or Field stub.
+    await expect(issues).toContainText('CR number')
     await expect(amount(page, 0)).toHaveClass(/border-red-400/)
-    await expect(page.getByTestId('collection-cr-number')).not.toHaveClass(/border-red-400/)
+    await expect(page.getByTestId('collection-cr-number')).toHaveClass(/border-red-400/)
 
-    // Filling the amount clears the list live; nothing was recorded by the
+    // Filling each clears it from the list live; nothing was recorded by the
     // refused click.
     await fillMoney(amount(page, 0), '100')
+    await expect(issues).not.toContainText('Amount received')
+    await expect(issues).toContainText('CR number')
+    await fillStable(page.getByTestId('collection-cr-number'), 'CR-CM-F01')
     await expect(issues).toHaveCount(0)
     expect((await paymentsOf(page.request, customer.id)).length).toBe(before)
   })

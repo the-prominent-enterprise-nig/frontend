@@ -95,6 +95,21 @@ export interface FormLine {
 }
 
 /**
+ * Which COLLECTION RECEIPTS column a receipt's CR number sits under — OFFICE or
+ * FIELD — by whose booklet (stub) it came off. Collect Payment's Stub owner
+ * decides it: a Field stub names the collector, an Office stub names none. A
+ * Field stub taken with no CR number still shows whose stub it was. Same rule
+ * as the backend's crStubColumns, which the Excel export uses.
+ */
+function crStubColumns(r: { crNumber?: string | null; collectorLabel?: string | null }): {
+  office: string
+  field: string
+} {
+  if (r.collectorLabel) return { office: '', field: r.crNumber || r.collectorLabel }
+  return { office: r.crNumber ?? '', field: '' }
+}
+
+/**
  * Every collection of the day as ledger lines, in the order the branch took
  * the money — cash and non-cash together.
  *
@@ -125,13 +140,10 @@ function collectionLines(report: DailyCollectionReport): {
       customer: r.customerName,
       desc: formKind(r),
       mode: r.cancelled ? '' : tenderModeLabel(r.tender),
-      // Three separate facts under CASH RECEIPT: the booklet number, who
-      // collected it in the field, and — under OTHERS — when the cash is in
-      // another drawer, the counter that took it. These used to be one receipt number routed into
-      // whichever of the three matched the row's channel, which left two
-      // blank on every row.
-      office: r.crNumber ?? '',
-      field: r.collectorLabel ?? '',
+      // The CR number sits under OFFICE or FIELD by whose stub it came off;
+      // OTHERS names the counter that took it when the cash is in another
+      // drawer.
+      ...crStubColumns(r),
       others: r.sourceCounter ?? '',
       cashInvoice: r.cashInvoiceNumber ?? '',
       ppd: r.ppd,
