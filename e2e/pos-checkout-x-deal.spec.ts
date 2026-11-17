@@ -15,6 +15,7 @@ import {
   openCustomSelect,
   loginAs,
   pickCartPriceUse,
+  pickCheckoutSession,
 } from './utils'
 
 // Scenario 67 — X-Deal (barter) at POS checkout. The backend rules (cart
@@ -172,29 +173,9 @@ async function ensureOpenSession(request: APIRequestContext, branchId: string): 
   })
 }
 
-/** Business Owner sees every branch's open sessions and has to pick Bago's
- * when there are several; with only this spec's own session open, checkout
- * auto-selects it and shows no picker at all. */
-async function pickSessionIfAsked(page: Page): Promise<void> {
-  await expect(page.getByPlaceholder('Search by name or serial')).toBeVisible({ timeout: 15_000 })
-  const sessionSelect = page.locator('select').filter({ hasText: 'Select session' })
-  // Wait for the session list to load before deciding: the picker only
-  // renders once it knows there's more than one session, and the counter
-  // chip only once it has auto-selected the single one.
-  const autoSelected = page.getByText(/^Counter \d+$/).first()
-  await expect(sessionSelect.or(autoSelected)).toBeVisible({ timeout: 15_000 })
-  if (await sessionSelect.isVisible()) {
-    const value = await sessionSelect
-      .locator('option', { hasText: BRANCH })
-      .first()
-      .getAttribute('value')
-    await sessionSelect.selectOption(value!)
-  }
-}
-
 async function openCheckout(page: Page): Promise<void> {
   await gotoReady(page, '/pos/checkout')
-  await pickSessionIfAsked(page)
+  await pickCheckoutSession(page, BRANCH)
 }
 
 async function addItem(page: Page): Promise<void> {
@@ -504,7 +485,7 @@ test.describe('POS Checkout — X-Deal (Scenario 67)', () => {
     await parkedRow.getByRole('button', { name: /Resume/ }).click()
 
     await expect(page).toHaveURL(/\/pos\/checkout/, { timeout: 15_000 })
-    await pickSessionIfAsked(page)
+    await pickCheckoutSession(page, BRANCH)
 
     await expect(xDealCheckbox(page)).toBeChecked({ timeout: 15_000 })
     await expect(xDealReference(page)).toHaveValue(reference)

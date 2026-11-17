@@ -1,5 +1,12 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, fillStable, pickComboboxOption, ensureItemStock, clickStable } from './utils'
+import {
+  gotoReady,
+  fillStable,
+  pickComboboxOption,
+  ensureItemStock,
+  clickStable,
+  pickCheckoutSession,
+} from './utils'
 
 // Scenario 72 — outbound Delivery Receipts.
 //
@@ -507,6 +514,9 @@ test.describe('Delivery Receipts — Scenario 72', () => {
       await gotoReady(page, `/inventory/delivery-receipts/${dr.id}`)
       await page.getByRole('button', { name: 'Proceed to POS' }).click()
       await page.waitForURL(/\/pos\/checkout/, { timeout: 30_000 })
+      // Checkout asks which session first, even after the DR hand-off; take
+      // the TN-B1-01 one made sure of above.
+      await pickCheckoutSession(page, 'TN-B1-01')
       await expect(page.getByText(`Invoicing ${dr.drNumber}`, { exact: false })).toBeVisible({
         timeout: 45_000,
       })

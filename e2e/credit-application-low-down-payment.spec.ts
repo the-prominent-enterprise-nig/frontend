@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, fillStable, openCustomSelect } from './utils'
+import { fillStable, openCustomSelect } from './utils'
 import {
   addInstallmentLine,
   addItemToCart,
   approvedApplication,
+  gotoBagoCheckout,
   pickCustomer,
 } from './credit-application-checkout'
 
@@ -26,7 +27,7 @@ test.describe('Credit application — a low down payment', () => {
     // 2% of the item total — well under the old 10% minimum.
     expect(app.downPayment).toBeLessThan(app.total * 0.1)
 
-    await gotoReady(page, '/pos/checkout')
+    await gotoBagoCheckout(page)
     await addInstallmentLine(page)
     await pickCustomer(page, app.name)
 
@@ -45,7 +46,7 @@ test.describe('Credit application — a low down payment', () => {
   }) => {
     const app = await approvedApplication(page, { percent: 0.02 })
 
-    await gotoReady(page, '/pos/checkout')
+    await gotoBagoCheckout(page)
     await addInstallmentLine(page)
 
     // Pick a term before the customer: this pre-fills the 10% starting value.
@@ -74,7 +75,7 @@ test.describe('Credit application — a low down payment', () => {
   }) => {
     const app = await approvedApplication(page, { percent: 0.02 })
 
-    await gotoReady(page, '/pos/checkout')
+    await gotoBagoCheckout(page)
     await addInstallmentLine(page)
 
     const termSelect = page.getByRole('combobox', { name: 'Select a term…' })
@@ -103,7 +104,7 @@ test.describe('Credit application — a low down payment', () => {
     // A bigger application figure, so there is room to go under it.
     const app = await approvedApplication(page, { percent: 0.3 })
 
-    await gotoReady(page, '/pos/checkout')
+    await gotoBagoCheckout(page)
     await addInstallmentLine(page)
 
     const termSelect = page.getByRole('combobox', { name: 'Select a term…' })
@@ -134,7 +135,7 @@ test.describe('Credit application — a low down payment', () => {
     const app = await approvedApplication(page, { percent: 0.1 })
     const otherMonths = app.termMonths === 12 ? 6 : 12
 
-    await gotoReady(page, '/pos/checkout')
+    await gotoBagoCheckout(page)
     await addInstallmentLine(page)
     await pickCustomer(page, app.name)
     await expect(

@@ -14,6 +14,7 @@ import {
   deleteCustomers,
   openCustomSelect,
   pickCartPriceUse,
+  pickCheckoutSession,
 } from './utils'
 
 // Docket #28 — "As a branch staff I want that the check out part is easy".
@@ -277,26 +278,9 @@ async function onHand(request: APIRequestContext, itemId: string): Promise<numbe
   return Number(row.onHandQty ?? 0)
 }
 
-/** Business Owner sees every branch's open sessions and has to pick Bago's
- * when there are several; with only this spec's own session open, checkout
- * auto-selects it and shows no picker at all. */
-async function pickSessionIfAsked(page: Page): Promise<void> {
-  await expect(page.getByPlaceholder('Search by name or serial')).toBeVisible({ timeout: 15_000 })
-  const sessionSelect = page.locator('select').filter({ hasText: 'Select session' })
-  const autoSelected = page.getByText(/^Counter \d+$/).first()
-  await expect(sessionSelect.or(autoSelected)).toBeVisible({ timeout: 15_000 })
-  if (await sessionSelect.isVisible()) {
-    const value = await sessionSelect
-      .locator('option', { hasText: BRANCH })
-      .first()
-      .getAttribute('value')
-    await sessionSelect.selectOption(value!)
-  }
-}
-
 async function openCheckout(page: Page): Promise<void> {
   await gotoReady(page, '/pos/checkout')
-  await pickSessionIfAsked(page)
+  await pickCheckoutSession(page, BRANCH)
 }
 
 /** Adds an item to the cart and puts its row on the fixture Price Use.

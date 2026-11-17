@@ -1,5 +1,12 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, clickStable, fillStable, openCustomSelect, pickCartPriceUse } from './utils'
+import {
+  gotoReady,
+  clickStable,
+  fillStable,
+  openCustomSelect,
+  pickCartPriceUse,
+  pickCheckoutSession,
+} from './utils'
 
 // Scenario 01 Gap 4 — installment sales need a down payment. It started at a
 // 10% floor; since 2026-10-15 the 10% is only the figure a line starts at, the
@@ -11,7 +18,7 @@ import { gotoReady, clickStable, fillStable, openCustomSelect, pickCartPriceUse 
 // pos-checkout-installment-credit-application.spec.ts).
 
 /** Closes any other open session for the branch's active terminal and opens
- * a fresh one, so checkout's "Select session…" combobox auto-selects it —
+ * a fresh one, for checkout's session picker to pick by branch —
  * same pattern as pos-checkout-promissory-note.spec.ts, needed here because
  * this spec (unlike pos-checkout-installment-credit-application.spec.ts)
  * actually clicks the final submit button rather than just checking picker
@@ -122,16 +129,9 @@ test.describe('POS Checkout — installment down payment floor', () => {
 
     await gotoReady(page, '/pos/checkout')
 
-    // Business Owner sees every branch's open sessions and must pick one
-    // explicitly (no auto-select once there's more than one) — Cashier-role
-    // specs elsewhere in this suite don't need this because a branch-scoped
-    // cashier only ever has their own single session to choose from.
-    const sessionSelect = page.locator('select').filter({ hasText: 'Select session' })
-    await expect(sessionSelect).toBeVisible({ timeout: 10_000 })
-    const sessionOptionValue = await sessionSelect
-      .locator('option', { hasText: 'Bago' })
-      .getAttribute('value')
-    await sessionSelect.selectOption(sessionOptionValue!)
+    // Checkout picks no session for anyone, not even when only one is open,
+    // so Bago's is picked before the cart opens.
+    await pickCheckoutSession(page, 'Bago')
 
     await addInstallmentLine(page)
 
@@ -184,12 +184,7 @@ test.describe('POS Checkout — installment down payment floor', () => {
 
     await gotoReady(page, '/pos/checkout')
 
-    const sessionSelect = page.locator('select').filter({ hasText: 'Select session' })
-    await expect(sessionSelect).toBeVisible({ timeout: 10_000 })
-    const sessionOptionValue = await sessionSelect
-      .locator('option', { hasText: 'Bago' })
-      .getAttribute('value')
-    await sessionSelect.selectOption(sessionOptionValue!)
+    await pickCheckoutSession(page, 'Bago')
 
     await addInstallmentLine(page)
 

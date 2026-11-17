@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, loginAs, fillStable, pickCartPriceUse } from './utils'
+import { gotoReady, loginAs, fillStable, pickCartPriceUse, pickCheckoutSession } from './utils'
 
 // SI/CR/DR reference numbers on a POS sale — a sale carries ONE document
 // number, free-text, once per whole transaction on PosTransaction (not per
@@ -205,6 +205,8 @@ test.describe('POS Checkout — SI/DR numbers end to end', () => {
     await ensureOpenSession(page, branchId)
 
     await gotoReady(page, '/pos/checkout')
+    // The cashier's own Bago session, opened just above, is listed first.
+    await pickCheckoutSession(page, 'Bago')
 
     const searchInput = page.getByPlaceholder('Search by name or serial')
     await expect(searchInput).toBeVisible({ timeout: 15_000 })
