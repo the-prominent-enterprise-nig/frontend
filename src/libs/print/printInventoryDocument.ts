@@ -539,6 +539,22 @@ function transferReceipts(
     .sort((a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime())
 }
 
+/** The picking sheet lists one row per model: a serial-tracked item requested
+ * as several units arrives as several lines (one per unit), so they're folded
+ * into a single row with the quantities summed, in first-seen order. */
+function groupLinesByItem(lines: Record<string, unknown>[]): Record<string, unknown>[] {
+  const groups = new Map<string, Record<string, unknown>>()
+  lines.forEach((l, i) => {
+    const item = l.item as { id?: string; sku?: string; name?: string } | undefined
+    const key = String(l.itemId ?? item?.id ?? item?.sku ?? item?.name ?? `line-${i}`)
+    const existing = groups.get(key)
+    const qty = Number(l.quantity ?? 0)
+    if (existing) existing.quantity = Number(existing.quantity ?? 0) + qty
+    else groups.set(key, { ...l, quantity: qty })
+  })
+  return [...groups.values()]
+}
+
 type TransferSheet = { title: string; noun: string; picking: boolean; signatures: string[] }
 
 const STOCK_TRANSFER_SHEET: TransferSheet = {
@@ -567,20 +583,15 @@ export function buildStockTransferHtml(data: unknown): string {
   const fromWarehouse = transfer.fromWarehouse as TransferParty | undefined
   const toWarehouse = transfer.toWarehouse as TransferParty | undefined
   const enterprise = doc.enterprise
-  const lines = Array.isArray(transfer.lines) ? (transfer.lines as Record<string, unknown>[]) : []
+  const rawLines = Array.isArray(transfer.lines)
+    ? (transfer.lines as Record<string, unknown>[])
+    : []
 
   const fmtDate = (v: unknown) =>
     v ? new Date(v as string).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
-  // Shown for any serial-tracked line (Scenario 71 item 19), not only once a
-  // serial is assigned — a pre-dispatch sheet reads "Assigned at dispatch".
-  const hasSerialLine = lines.some(
-    (l) =>
-      (l.serialNumber as Record<string, unknown> | null)?.serialNumber ||
-      (l.item as { isSerialTracked?: boolean } | undefined)?.isSerialTracked
-  )
   // Only a not-yet-dispatched transfer's empty serial is "to come".
   const awaitingDispatch = [
     'pending_manager_approval',
@@ -589,9 +600,20 @@ export function buildStockTransferHtml(data: unknown): string {
     'draft',
   ].includes(String(transfer.status))
   // Before dispatch the sheet is the warehouse's picking list: titled Stock
-  // Request, with SKUs and a blank Picked box per line for whoever prepares
-  // the stock, and prepare/check signatures instead of dispatch/receive.
+  // Request, one row per model with its SKU and a blank Picked box for whoever
+  // prepares the stock, no serials (none are assigned yet), and prepare/check
+  // signatures instead of dispatch/receive.
   const sheet = awaitingDispatch ? STOCK_REQUEST_SHEET : STOCK_TRANSFER_SHEET
+  const lines = sheet.picking ? groupLinesByItem(rawLines) : rawLines
+  // The transfer sheet shows the serial column for any serial-tracked line
+  // (Scenario 71 item 19), not only once a serial is assigned.
+  const hasSerialLine =
+    !sheet.picking &&
+    lines.some(
+      (l) =>
+        (l.serialNumber as Record<string, unknown> | null)?.serialNumber ||
+        (l.item as { isSerialTracked?: boolean } | undefined)?.isSerialTracked
+    )
   // Blank (—) until the transfer is received.
   const receipts = transferReceipts(transfer)
 
@@ -601,12 +623,8 @@ export function buildStockTransferHtml(data: unknown): string {
   // the unit that arrived, so the dispatched serial is read back from
   // receiptCorrectedFromSerialNumber.
   const serialCell = (l: Record<string, unknown>, serial?: string): string => {
-    const item = l.item as { isSerialTracked?: boolean } | undefined
     const dispatched = (l.receiptCorrectedFromSerialNumber as string | null | undefined) || serial
-    return (
-      esc(dispatched) ||
-      (item?.isSerialTracked && awaitingDispatch ? '<em>Assigned at dispatch</em>' : '—')
-    )
+    return esc(dispatched) || '—'
   }
 
   // Once anything has been received, a line still short gets a note under
