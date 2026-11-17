@@ -223,6 +223,12 @@ export function useSerialNumbers(
     return { serials, isLoading: query?.isLoading ?? false }
   }
 
+  // Every active filter except paging — ticks are cleared when it changes.
+  const filterKey = useMemo(
+    () => JSON.stringify({ ...queryParams, page: undefined, limit: undefined }),
+    [queryParams]
+  )
+
   const warehousesQuery = useQuery({
     queryKey: ['inventory-warehouses-lookup'],
     queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
@@ -326,6 +332,7 @@ export function useSerialNumbers(
 
   return {
     serials,
+    filterKey,
     pagination,
     statusCounts,
     statusAmounts,

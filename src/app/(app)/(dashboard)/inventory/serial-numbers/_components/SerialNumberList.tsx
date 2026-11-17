@@ -285,6 +285,7 @@ export default function SerialNumberList({
     pickedCaravanKey,
     pickCaravan,
     groupSerials,
+    filterKey,
   } = useSerialNumbers({
     initialCaravanId,
     viewerBranchId: session.branchId,
@@ -377,7 +378,7 @@ export default function SerialNumberList({
 
   // Scenario 60 — tick in-stock units, then "Consign to Caravan": a new
   // caravan plus a stock transfer carrying exactly those units.
-  const selection = useSerialSelection(serials)
+  const selection = useSerialSelection(serials, filterKey)
   const [isConsignOpen, setIsConsignOpen] = useState(false)
 
   // Ticked units go to the Transfers form as lines pinned to those serials.
