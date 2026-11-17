@@ -323,6 +323,7 @@ export interface PosTransactionLine {
   /** The Price Use (WIP / CR-BR / SSC…) this line was priced under — set by
    * findOne only. */
   priceUseName?: string | null
+  priceUseTypeId?: string | null
 }
 
 export interface PosPayment {
@@ -484,19 +485,44 @@ export interface PosTransaction {
    * (cash, charge, TPF): its recorded commission and SMI, read the same way
    * as the account summary's. Null when the viewer may not read agents. */
   saleCommission?: { commission: number; smi: number } | null
+  /** Docket #49 (Nov 16): what each item row carries of the Credit, CM and SMI
+   * the sale recorded, keyed by line id — the Items table's columns, which add
+   * up to the Agent and credit card. `commissions` and `smis` are null when the
+   * viewer may not read agents. Set by GET /pos/transactions/:id only. */
+  lineFigures?: PosSaleLineFigures
   /** Docket #49: what Edit entry changed for the POS Sales Report. Null when
    * nothing has been; a null field inside is not edited. */
   reportEdit?: PosSaleReportEdit | null
 }
 
+export interface PosSaleLineFigures {
+  credits: Record<string, number>
+  commissions: Record<string, number> | null
+  smis: Record<string, number> | null
+}
+
+/** What Edit entry changed on one item row, for the Sales Report only. A null
+ * field is not edited. */
+export interface PosSaleLineReportEdit {
+  priceUseTypeId: string | null
+  priceUseName: string | null
+  credit: number | null
+  commission: number | null
+  smi: number | null
+}
+
 export interface PosSaleReportEdit {
   agentId: string | null
   agentName: string | null
+  /** The sale-level amounts the first build took, before the rows were
+   * editable; an older edit keeps showing. New edits are per row (`lines`). */
   credit: number | null
   commission: number | null
   smi: number | null
   /** 'YYYY-MM-DD'. */
   invoiceDate: string | null
+  /** Per item row, keyed by line id; only the rows that have an edit. */
+  lines?: Record<string, PosSaleLineReportEdit>
 }
 
 /** Decimals arrive as numbers here — the backend rounds them for display. */
@@ -518,6 +544,10 @@ export interface PosSaleAccountSummary {
   smi: number | null
   /** Each unit's own share of the credit, keyed by line id. */
   lineCredits: Record<string, number>
+  /** Each unit's share of the commission and the SMI; null when the viewer may
+   * not read agents. */
+  lineCommissions?: Record<string, number> | null
+  lineSmis?: Record<string, number> | null
 }
 
 /** An installment-due payment collected later via POS Collections

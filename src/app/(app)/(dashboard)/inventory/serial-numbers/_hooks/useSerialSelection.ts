@@ -23,10 +23,27 @@ function sourceOf(serial: SerialNumberSummary): SerialNumberSummary['warehouse']
 }
 
 /**
- * Ticked serials on the All Serials list, for "Stock Transfer" and "Consign
- * to Caravan". Only
- * ticks on the rows currently shown count, so a tick can never carry over
- * silently to another page or filter.
+ * The ticked units, kept when the page changes. A unit shown on the current
+ * page uses its fresh row (and drops out if it can no longer be transferred);
+ * one ticked on another page keeps the row it had when ticked.
+ */
+function currentSelection(
+  picked: Map<string, SerialNumberSummary>,
+  serials: SerialNumberSummary[]
+): SerialNumberSummary[] {
+  const shown = new Map(serials.map((s) => [s.id, s]))
+  return [...picked.values()].flatMap((s) => {
+    const fresh = shown.get(s.id)
+    if (!fresh) return [s]
+    return isTransferable(fresh) ? [fresh] : []
+  })
+}
+
+/**
+ * Ticked serials on the General Stockbook, for "Stock Transfer" and "Consign
+ * to Caravan". Ticks carry over across pages, searches and filters, since
+ * the units to transfer rarely sit on one page; the header checkbox ticks or
+ * unticks only the rows currently shown. Clear empties the whole selection.
  */
 export function useSerialSelection(serials: SerialNumberSummary[]): {
   selected: SerialNumberSummary[]
@@ -39,27 +56,36 @@ export function useSerialSelection(serials: SerialNumberSummary[]): {
   mixedSources: boolean
   hasRepairUnits: boolean
 } {
-  const [ids, setIds] = useState<Set<string>>(new Set())
+  const [picked, setPicked] = useState<Map<string, SerialNumberSummary>>(new Map())
   const selectable = serials.filter(isTransferable)
-  const selected = selectable.filter((s) => ids.has(s.id))
+  const selected = currentSelection(picked, serials)
+  const selectedIds = new Set(selected.map((s) => s.id))
   const sourceIds = new Set(selected.map((s) => sourceOf(s)?.id))
-  const allSelected = selectable.length > 0 && selected.length === selectable.length
+  const allSelected = selectable.length > 0 && selectable.every((s) => selectedIds.has(s.id))
 
   const toggle = (id: string): void =>
-    setIds((prev) => {
-      const next = new Set(prev)
+    setPicked((prev) => {
+      const next = new Map(prev)
+      const serial = serials.find((s) => s.id === id)
       if (next.has(id)) next.delete(id)
-      else next.add(id)
+      else if (serial) next.set(id, serial)
+      return next
+    })
+
+  const toggleAll = (): void =>
+    setPicked((prev) => {
+      const next = new Map(prev)
+      selectable.forEach((s) => (allSelected ? next.delete(s.id) : next.set(s.id, s)))
       return next
     })
 
   return {
     selected,
-    isSelected: (id) => ids.has(id),
+    isSelected: (id) => selectedIds.has(id),
     toggle,
-    toggleAll: () => setIds(allSelected ? new Set() : new Set(selectable.map((s) => s.id))),
+    toggleAll,
     allSelected,
-    clear: () => setIds(new Set()),
+    clear: () => setPicked(new Map()),
     sourceWarehouse: selected[0] ? sourceOf(selected[0]) : null,
     mixedSources: sourceIds.size > 1,
     // A caravan sells what it carries, so a unit in repair can't go on one.
