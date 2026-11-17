@@ -15,7 +15,7 @@ export async function getItems(params?: {
     | 'pending_approval'
     | 'approved'
     | 'rejected'
-  /** A Category (the sheet's GROUP) or Subgroup; a Category matches its Subgroups too. */
+  /** A Category or Subgroup (the sheet's CATEGORY / SUBGROUP); a Category matches its Subgroups too. */
   primaryCategoryId?: string
   /** The client sheet's TYPE — an item type. */
   typeId?: string

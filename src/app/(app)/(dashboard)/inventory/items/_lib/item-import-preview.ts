@@ -57,6 +57,8 @@ const RECOGNIZED_HEADERS = new Set([
   'rr#',
   'cost',
   'unit cost',
+  'origin',
+  'classification',
 ])
 
 const SERIAL_HEADERS = new Set(['serial', 'serial number', 'serialnumber', 'serial no', 'sn'])

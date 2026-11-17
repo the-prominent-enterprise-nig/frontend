@@ -1,14 +1,17 @@
 import { downloadCsv } from '@/src/libs/format/csv-export'
 
 /** Item Master's bulk upload sheet. One row = one item line: BRAND…SUBGROUP
- * define the item, PRICE USE…CM price it on that price use's list, and
- * SERIAL + BRANCH record one unit on hand there (DATE IN / RR / COST
- * optional — blank date = upload day, blank RR = one generated per branch). */
+ * define the item (CATEGORY / SUBGROUP, the form's words — GROUP is still
+ * read from older sheets), PRICE USE…CM price it on that price use's list, and
+ * SERIAL + BRANCH record one unit on hand there (DATE IN / RR / COST /
+ * ORIGIN / CLASSIFICATION optional — blank date = upload day, blank RR = one
+ * generated per branch, blank ORIGIN / WHSE / the branch's own code = no
+ * supplier, blank CLASSIFICATION = Brand New). Same rules as Add units. */
 export const ITEM_UPLOAD_TEMPLATE_HEADERS = [
   'BRAND',
   'MODEL',
   'TYPE',
-  'GROUP',
+  'CATEGORY',
   'SUBGROUP',
   'PRICE USE',
   'PRICE',
@@ -28,6 +31,8 @@ export const ITEM_UPLOAD_TEMPLATE_HEADERS = [
   'DATE IN',
   'RR',
   'COST',
+  'ORIGIN',
+  'CLASSIFICATION',
 ]
 
 export function downloadItemUploadTemplate(): void {

@@ -101,7 +101,7 @@ const SAMPLE_ROWS: string[][] = [
 ]
 
 const RULES = [
-  'Each MODEL becomes one item, named “BRAND MODEL”; TYPE, GROUP and SUBGROUP are created if new. Models already in the catalog aren’t duplicated.',
+  'Each MODEL becomes one item, named “BRAND MODEL”; TYPE, CATEGORY and SUBGROUP are created if new. Models already in the catalog aren’t duplicated.',
   'Prices go to the list for the row’s PRICE USE — blank cells clear that value, and a live list goes back to pending approval.',
   'Leave the price cells or the unit cells blank on a row that only needs the other.',
 ]
@@ -121,8 +121,8 @@ const COLUMN_KEY: KeyGroup[] = [
     title: 'Item',
     when: 'Every row — MODEL is the only column always required.',
     required: ['MODEL'],
-    optional: ['BRAND', 'TYPE', 'GROUP', 'SUBGROUP'],
-    notes: ['SUBGROUP needs GROUP on the same row.'],
+    optional: ['BRAND', 'TYPE', 'CATEGORY', 'SUBGROUP'],
+    notes: ['SUBGROUP needs CATEGORY on the same row.'],
   },
   {
     title: 'Price (optional)',
@@ -135,8 +135,12 @@ const COLUMN_KEY: KeyGroup[] = [
     title: 'Unit (optional)',
     when: 'Skip it, or fill SERIAL — then BRANCH is required too.',
     required: ['SERIAL', 'BRANCH'],
-    optional: ['DATE IN', 'RR', 'COST'],
-    notes: ['Blank DATE IN = today; blank RR = one generated per branch.'],
+    optional: ['DATE IN', 'RR', 'COST', 'ORIGIN', 'CLASSIFICATION'],
+    notes: [
+      'Blank DATE IN = today; blank RR = one generated per branch.',
+      "ORIGIN is the supplier — blank, WHSE or the branch's own code means none.",
+      'CLASSIFICATION: Brand New (blank), Repair, Repo or Return.',
+    ],
   },
 ]
 

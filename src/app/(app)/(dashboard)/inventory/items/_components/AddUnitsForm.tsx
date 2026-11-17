@@ -1,13 +1,14 @@
 'use client'
 
-import { useEffect } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Controller, useForm, useWatch, type Control, type FieldErrors } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
-import { Loader2, PackagePlus, X } from 'lucide-react'
+import { Loader2, PackagePlus } from 'lucide-react'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { showToast } from '@/src/components/ui/toast'
-import { CONTROL_CHROME, PLEX } from '@/src/libs/design/plex'
+import { CONTROL_CHROME, MONO, PLEX } from '@/src/libs/design/plex'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import {
   AddUnitsFormSchema,
@@ -19,23 +20,30 @@ import {
   UnitClassificationSchema,
 } from '@/src/schema/inventory/reports'
 import { receiveInitialUnit } from '../_actions/receive-initial-unit'
-import { NumericInput } from './item-form-shared'
+import { FormSection, NumericInput } from './item-form-shared'
 import { errorClass, inputClass, labelClass } from './itemFormChrome'
 import { useOriginOptions, useReceivingWarehouses } from './item-create-fields'
 
 type Props = {
-  item: ItemSummary | null
-  onClose: () => void
+  item: ItemSummary
+  /** Arrived straight from Add Item's Create — offer to skip instead of
+   * going back. */
+  isNewItem?: boolean
 }
 
-const DEFAULTS: AddUnitsFormValues = {
-  warehouseId: '',
-  dateIn: '',
-  rr: '',
-  origin: 'WHSE',
-  classification: 'brand_new',
-  price: undefined,
-  serialsText: '',
+const ITEM_MASTER = '/inventory/items'
+
+function defaultsFor(item: ItemSummary): AddUnitsFormValues {
+  return {
+    warehouseId: '',
+    dateIn: '',
+    rr: '',
+    origin: 'WHSE',
+    classification: 'brand_new',
+    price: undefined,
+    serialsText: '',
+    isSerialTracked: item.isSerialTracked ?? false,
+  }
 }
 
 /** The backend's machine codes, said the way a custodian would read them. */
@@ -52,30 +60,10 @@ function humanizeAddUnitsError(message: string | undefined): string {
   return message
 }
 
-/** Item Master → Add units. Records units the beginning-balance upload missed
- * — serials at one branch under one RR #, with date in, origin, classification
- * and cost — the same provenance a beginning-balance unit carries. */
-export default function AddUnitsModal({ item, onClose }: Props): React.JSX.Element | null {
-  const isOpen = !!item
+function useSubmitUnits(item: ItemSummary): (data: AddUnitsFormValues) => Promise<void> {
+  const router = useRouter()
   const queryClient = useQueryClient()
-  const warehouses = useReceivingWarehouses(isOpen)
-  const originOptions = useOriginOptions(isOpen)
-  const {
-    control,
-    handleSubmit,
-    reset,
-    formState: { errors, isSubmitting },
-  } = useForm<AddUnitsFormValues>({
-    resolver: zodResolver(AddUnitsFormSchema),
-    defaultValues: DEFAULTS,
-  })
-
-  useEffect(() => {
-    if (isOpen) reset(DEFAULTS)
-  }, [isOpen, reset])
-
-  async function onSubmit(data: AddUnitsFormValues): Promise<void> {
-    if (!item) return
+  return async (data) => {
     const res = await receiveInitialUnit(item.id, {
       warehouseId: data.warehouseId,
       dateIn: data.dateIn || undefined,
@@ -83,7 +71,7 @@ export default function AddUnitsModal({ item, onClose }: Props): React.JSX.Eleme
       origin: data.origin || undefined,
       price: data.price,
       classification: data.classification,
-      serialNumbers: parseSerialList(data.serialsText),
+      serialNumbers: item.isSerialTracked ? parseSerialList(data.serialsText) : undefined,
     })
     if (!res.success) {
       showToast({
@@ -97,54 +85,75 @@ export default function AddUnitsModal({ item, onClose }: Props): React.JSX.Eleme
     queryClient.invalidateQueries({ queryKey: ['inventory-stock-balances'] })
     queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
     queryClient.invalidateQueries({ queryKey: ['inventory-serial-status-count'] })
-    onClose()
+    router.push(ITEM_MASTER)
   }
+}
 
-  if (!item) return null
+/** Item Master → Add units, and the step after Add Item's Create. Records
+ * units on hand at one branch under one RR # — date in, origin,
+ * classification and cost — with the same rules as the bulk sheet's unit
+ * columns (both go through the backend's one receipt writer). */
+export default function AddUnitsForm({ item, isNewItem = false }: Props): React.JSX.Element {
+  const warehouses = useReceivingWarehouses(true)
+  const originOptions = useOriginOptions(true)
+  const onSubmit = useSubmitUnits(item)
+  const {
+    control,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<AddUnitsFormValues>({
+    resolver: zodResolver(AddUnitsFormSchema),
+    defaultValues: defaultsFor(item),
+  })
 
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 ${PLEX}`}>
-      <form
-        onSubmit={handleSubmit(onSubmit)}
-        className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-xl"
-      >
-        <AddUnitsHeader item={item} onClose={onClose} />
-        <div className="grid gap-4 px-6 py-5 sm:grid-cols-2">
-          <BranchField control={control} errors={errors} warehouses={warehouses} />
-          <TextField
-            control={control}
-            errors={errors}
-            name="dateIn"
-            label="Date In (optional — today)"
-            type="date"
-          />
-          <TextField
-            control={control}
-            errors={errors}
-            name="rr"
-            label="RR # (optional — generated)"
-            placeholder="e.g. RR#163451S"
-          />
-          <SelectField
-            control={control}
-            name="origin"
-            label="Origin"
-            options={originOptions}
-            placeholder="Select supplier or WHSE…"
-          />
-          <SelectField
-            control={control}
-            name="classification"
-            label="Classification"
-            options={UnitClassificationSchema.options.map((c) => ({
-              value: c,
-              label: UNIT_CLASSIFICATION_LABELS[c],
-            }))}
-          />
-          <CostField control={control} />
-          <SerialsField control={control} errors={errors} />
+    <div
+      role="region"
+      aria-label="Add units"
+      className={`flex flex-1 flex-col bg-[#f2f2f3] ${PLEX}`}
+    >
+      <AddUnitsHeader item={item} isNewItem={isNewItem} />
+      <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-1 flex-col">
+        <div className="flex-1 px-6 py-5">
+          <div className="mx-auto flex max-w-[1400px] flex-col gap-4">
+            <FormSection variant="card" title="Units" errorCount={Object.keys(errors).length}>
+              <BranchField control={control} errors={errors} warehouses={warehouses} />
+              <TextField
+                control={control}
+                errors={errors}
+                name="dateIn"
+                label="Date In (optional — today)"
+                type="date"
+              />
+              <TextField
+                control={control}
+                errors={errors}
+                name="rr"
+                label="RR # (optional — generated)"
+                placeholder="e.g. RR#163451S"
+              />
+              <SelectField
+                control={control}
+                name="origin"
+                label="Origin"
+                options={originOptions}
+                placeholder="Select supplier or WHSE…"
+              />
+              <SelectField
+                control={control}
+                name="classification"
+                label="Classification"
+                options={UnitClassificationSchema.options.map((c) => ({
+                  value: c,
+                  label: UNIT_CLASSIFICATION_LABELS[c],
+                }))}
+              />
+              <CostField control={control} />
+              {item.isSerialTracked && <SerialsField control={control} errors={errors} />}
+            </FormSection>
+          </div>
         </div>
-        <AddUnitsFooter onClose={onClose} isSubmitting={isSubmitting} />
+        <AddUnitsFooter isNewItem={isNewItem} isSubmitting={isSubmitting} />
       </form>
     </div>
   )
@@ -152,30 +161,29 @@ export default function AddUnitsModal({ item, onClose }: Props): React.JSX.Eleme
 
 function AddUnitsHeader({
   item,
-  onClose,
+  isNewItem,
 }: {
   item: ItemSummary
-  onClose: () => void
+  isNewItem: boolean
 }): React.JSX.Element {
   return (
-    <div className="sticky top-0 flex items-start justify-between gap-3 border-b border-[#eeeef1] bg-white px-6 py-4">
+    <div className="shrink-0 border-b border-[#e4e4e9] bg-white px-6 py-4">
+      <p className={`${MONO} mb-1 text-[10.5px] uppercase tracking-[0.08em] text-ink-subtle`}>
+        Inventory &rsaquo; Item Master &rsaquo; Add units
+      </p>
       <div className="flex items-start gap-3">
-        <PackagePlus className="mt-0.5 h-5 w-5 shrink-0 text-[#5b21b6]" />
-        <div>
-          <h2 className="text-base font-semibold text-[#1d1d26]">Add units</h2>
-          <p className="mt-0.5 text-[13px] text-ink-muted">
-            {item.name} — record units on hand at a branch that the beginning balance missed.
+        <PackagePlus className="mt-1 h-5 w-5 shrink-0 text-[#5b21b6]" />
+        <div className="min-w-0">
+          <h2 className="text-[19px] font-semibold tracking-[-0.01em] text-[#17171c]">
+            Add units — {item.name}
+          </h2>
+          <p className="mt-1 text-[13px] text-ink-muted">
+            {isNewItem
+              ? 'Item created. Record the units already on hand, or skip if there is no stock yet.'
+              : 'Record units on hand at a branch, all under one RR #.'}
           </p>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="Close"
-        className="rounded-lg p-1.5 text-ink-subtle hover:bg-[#f0e9fc] hover:text-[#5b21b6]"
-      >
-        <X className="h-5 w-5" />
-      </button>
     </div>
   )
 }
@@ -191,7 +199,9 @@ function BranchField({
 }): React.JSX.Element {
   return (
     <div>
-      <label className={labelClass}>Branch</label>
+      <label className={labelClass}>
+        Branch <span className="text-[#b42318]">*</span>
+      </label>
       <Controller
         name="warehouseId"
         control={control}
@@ -301,7 +311,9 @@ function SerialsField({ control, errors }: FieldProps): React.JSX.Element {
   return (
     <div className="sm:col-span-2">
       <div className="mb-1.5 flex items-center justify-between">
-        <label className={labelClass.replace('mb-1.5 ', '')}>Serial numbers</label>
+        <label className={labelClass.replace('mb-1.5 ', '')}>
+          Serial Numbers <span className="text-[#b42318]">*</span>
+        </label>
         <span className="text-[12px] text-ink-subtle">
           {count} unit{count === 1 ? '' : 's'}
         </span>
@@ -324,30 +336,34 @@ function SerialsField({ control, errors }: FieldProps): React.JSX.Element {
 }
 
 function AddUnitsFooter({
-  onClose,
+  isNewItem,
   isSubmitting,
 }: {
-  onClose: () => void
+  isNewItem: boolean
   isSubmitting: boolean
 }): React.JSX.Element {
   return (
-    <div className="flex items-center justify-end gap-3 border-t border-[#eeeef1] px-6 py-4">
-      <button
-        type="button"
-        onClick={onClose}
-        disabled={isSubmitting}
-        className="rounded-lg px-4 py-2 text-sm font-medium text-ink-muted hover:bg-[#f0e9fc] disabled:opacity-50"
-      >
-        Cancel
-      </button>
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-sm font-medium text-white hover:bg-[#4c1a9b] disabled:opacity-60"
-      >
-        {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-        {isSubmitting ? 'Adding…' : 'Add units'}
-      </button>
+    <div className="sticky bottom-0 flex shrink-0 items-center justify-between gap-4 border-t border-[#e4e4e9] bg-white px-6 py-3.5">
+      <span className="hidden text-[12px] text-ink-muted sm:block">
+        Required fields are marked <span className="text-[#b42318]">*</span>
+      </span>
+      <div className="ml-auto flex items-center gap-3">
+        <Link
+          href={ITEM_MASTER}
+          aria-disabled={isSubmitting}
+          className={`rounded-lg px-4 py-2 text-[13px] font-medium text-ink-muted hover:bg-[#f1f1f4] ${isSubmitting ? 'pointer-events-none opacity-50' : ''}`}
+        >
+          {isNewItem ? 'Skip, no stock yet' : 'Back to Item Master'}
+        </Link>
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="flex items-center gap-2 rounded-lg bg-[#5b21b6] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#4a189b] disabled:opacity-60"
+        >
+          {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+          {isSubmitting ? 'Adding…' : 'Add units'}
+        </button>
+      </div>
     </div>
   )
 }
