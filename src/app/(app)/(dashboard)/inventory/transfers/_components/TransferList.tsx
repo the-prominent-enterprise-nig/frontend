@@ -1,5 +1,6 @@
 'use client'
 
+import { SeriesGapNotice } from '@/src/components/inventory/SeriesGapNotice'
 import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { useCallback, useEffect, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -397,7 +398,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Deep link into one transfer — `?transfer=TRF-…`, as the receiving report
+  // Deep link into one transfer — `?transfer=ST00001PMIB`, as the receiving report
   // that arrived on it links here. Transfers have no per-transfer route (the
   // detail is a modal over this list), so the number is resolved in two
   // steps: seed the search box on mount so the list actually contains the
@@ -468,6 +469,9 @@ export default function TransferList({ session }: { session: SessionUser }) {
             </p>
           </div>
         </div>
+
+        {/* Numbers missing from the branch's ST series (NIG, 2026-11-16). */}
+        <SeriesGapNotice doc="ST" />
 
         {/* Scenario 60 Part 3 — ended caravans still holding stock, for the
             people who can transfer it out. */}

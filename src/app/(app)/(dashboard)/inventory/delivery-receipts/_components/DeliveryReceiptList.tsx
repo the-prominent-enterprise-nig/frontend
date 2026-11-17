@@ -1,5 +1,6 @@
 'use client'
 
+import { SeriesGapNotice } from '@/src/components/inventory/SeriesGapNotice'
 import { useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
@@ -56,6 +57,8 @@ export default function DeliveryReceiptList({
     >
       <div className="mx-auto max-w-[1520px] space-y-5">
         <ListHeader canCreate={canCreate} />
+        {/* Numbers missing from the branch's DR series (NIG, 2026-11-16). */}
+        <SeriesGapNotice doc="DR" />
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[220px] flex-1 sm:max-w-md">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
