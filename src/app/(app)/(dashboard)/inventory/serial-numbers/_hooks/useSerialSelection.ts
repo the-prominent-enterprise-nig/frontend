@@ -41,14 +41,11 @@ function currentSelection(
 
 /**
  * Ticked serials on the General Stockbook, for "Stock Transfer" and "Consign
- * to Caravan". Ticks carry over across pages but are cleared when
- * `filterKey` changes; the header checkbox ticks or unticks only the rows on
- * the current page.
+ * to Caravan". Ticks carry over across pages, searches and filters, since
+ * the units to transfer rarely sit on one page; the header checkbox ticks or
+ * unticks only the rows currently shown. Clear empties the whole selection.
  */
-export function useSerialSelection(
-  serials: SerialNumberSummary[],
-  filterKey: string
-): {
+export function useSerialSelection(serials: SerialNumberSummary[]): {
   selected: SerialNumberSummary[]
   isSelected: (id: string) => boolean
   toggle: (id: string) => void
@@ -60,11 +57,6 @@ export function useSerialSelection(
   hasRepairUnits: boolean
 } {
   const [picked, setPicked] = useState<Map<string, SerialNumberSummary>>(new Map())
-  const [pickedUnder, setPickedUnder] = useState(filterKey)
-  if (pickedUnder !== filterKey) {
-    setPickedUnder(filterKey)
-    setPicked(new Map())
-  }
   const selectable = serials.filter(isTransferable)
   const selected = currentSelection(picked, serials)
   const selectedIds = new Set(selected.map((s) => s.id))
