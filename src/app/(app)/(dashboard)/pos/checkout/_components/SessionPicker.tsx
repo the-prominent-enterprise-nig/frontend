@@ -12,9 +12,10 @@ import { formatManilaDateTime } from '@/src/libs/format/manila-date'
  * to find Confirm would not go through. With two or more open sessions,
  * nothing was selected, and the only sign was a small "Select session…"
  * dropdown in the top bar. Checkout now asks first. The cart only opens once
- * a session is picked, and nothing is picked for the seller (developer,
- * 2026-11-16), not even when only one is open. Once picked, the top bar's
- * dropdown changes it.
+ * a session is picked, and nothing is guessed for the seller (developer,
+ * 2026-11-16), not even when only one is open. Once picked (or opened in
+ * POS → Sessions), it is kept for that login until it closes, so this only
+ * shows the first time and after a close. The top bar's dropdown changes it.
  *
  * Selling into another cashier's session stays allowed. An owner ringing up
  * on the branch's till is normal (Scenario 64 item 28). A sale keeps no

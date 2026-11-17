@@ -119,6 +119,11 @@ import SessionPicker, {
   OtherCashierSessionCheck,
   SessionSwitcher,
 } from './_components/SessionPicker'
+import {
+  keepCheckoutSession,
+  keptCheckoutSession,
+  readKeptCheckoutSession,
+} from '@/src/libs/pos/checkout-session-memory'
 import UnitDetails, { type OverrideUnit } from './_components/OverrideUnitDetails'
 import CheckoutCard, { CheckoutSteps, type CheckoutStep } from './_components/CheckoutCard'
 import TypedPlanPanel from './_components/TypedPlanPanel'
@@ -702,7 +707,12 @@ export default function CheckoutPage() {
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const { branchId: switcherBranchId } = usePosBranchContext()
-  const { data: sessionsData, isLoading: sessionsLoading } = useSessions({
+  const {
+    data: sessionsData,
+    isLoading: sessionsLoading,
+    isFetching: sessionsFetching,
+    isFetchedAfterMount: sessionsFreshSinceMount,
+  } = useSessions({
     status: 'open',
     ...(switcherBranchId ? { branchId: switcherBranchId } : {}),
   })
@@ -718,7 +728,8 @@ export default function CheckoutPage() {
     [rawSessions, switcherBranchId]
   )
 
-  // Session. Always picked by the seller, never for them: see SessionPicker.
+  // Session. Always one the seller chose, never a guess: see SessionPicker.
+  // The choice is kept until that session closes (checkout-session-memory.ts).
   const [sessionId, setSessionId] = useState('')
   // The session in use was closed while checkout was open, so the picker
   // says why it is back.
@@ -736,6 +747,8 @@ export default function CheckoutPage() {
     setSessionClosedNotice(false)
     setPendingSessionSwitch(null)
     setSessionId(id)
+    // Kept for the next visit, so it is not picked all over again.
+    if (currentUserId) keepCheckoutSession(currentUserId, id)
   }
   // The top-bar dropdown. Same rule as the picker: someone else's session asks first.
   function switchSession(id: string) {
@@ -744,6 +757,40 @@ export default function CheckoutPage() {
     if (currentUserId && target.cashierId !== currentUserId) setPendingSessionSwitch(target)
     else pickSession(id)
   }
+  // Start on the session kept for this login (last picked here, or just opened
+  // in POS → Sessions) while it is still open and listed. Once it closes, or
+  // the branch switcher moves off its branch, the picker asks. Re-checked
+  // whenever there is no session, so a cached list that does not have it yet
+  // is followed by the fresh one that does.
+  useEffect(() => {
+    if (sessionId || !sessionsData || !currentUserId) return
+    const keptId = keptCheckoutSession(currentUserId)
+    if (keptId && openSessions.some((s) => s.id === keptId)) pickSession(keptId)
+    // pickSession is redefined every render; only its effect matters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionsData, currentUserId, openSessions, sessionId])
+  // A kept session is about to be restored: wait for it rather than flash the
+  // picker (or "No Open Session") first. Covers the moments before the login
+  // is known, the cached session list shown until the first fresh one since
+  // opening Checkout (it can predate the session just opened), and the render
+  // before the effect above picks it. Gives up, and the picker asks, once a
+  // fresh list does not have it or the kept session belongs to another login.
+  // Later background refreshes never bring this back.
+  const restoringKeptSession = useMemo(() => {
+    if (sessionId || !sessionsData) return false
+    const kept = readKeptCheckoutSession()
+    if (!kept) return false
+    if (currentUserId && kept.userId !== currentUserId) return false
+    const awaitingFirstFreshList = sessionsFetching && !sessionsFreshSinceMount
+    return awaitingFirstFreshList || openSessions.some((s) => s.id === kept.sessionId)
+  }, [
+    sessionId,
+    sessionsData,
+    sessionsFetching,
+    sessionsFreshSinceMount,
+    openSessions,
+    currentUserId,
+  ])
 
   // Flat VAT rate applied to every checkout — no longer configurable.
   const activeTaxRate = DEFAULT_VAT_RATE
@@ -6107,6 +6154,20 @@ export default function CheckoutPage() {
   if (reservationSuccess) {
     return (
       <ReserveSuccessScreen reservationSuccess={reservationSuccess} onReset={resetSale} fmt={fmt} />
+    )
+  }
+
+  // ─── Restoring the kept session ────────────────────────────────────────────
+
+  if (restoringKeptSession) {
+    return (
+      <div
+        data-testid="checkout-session-restoring"
+        className="flex min-h-full items-center justify-center gap-2 bg-zinc-50 p-10 text-sm text-gray-500"
+      >
+        <Loader2 size={16} className="animate-spin text-purple-600" />
+        Opening your session…
+      </div>
     )
   }
 

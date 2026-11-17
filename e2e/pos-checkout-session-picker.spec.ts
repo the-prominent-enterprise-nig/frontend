@@ -244,6 +244,97 @@ test.describe('POS checkout — pick the session first', () => {
   })
 })
 
+// Checkout keeps the session this login picked (or opened in POS → Sessions)
+// until it closes (checkout-session-memory.ts), so it is not picked again on
+// every visit.
+test.describe('POS checkout — the picked session is kept until it closes', () => {
+  const KEPT_KEY = 'pos_checkout_session'
+
+  test('stays picked on later visits, and the picker comes back once it closes', async ({
+    page,
+    request,
+  }) => {
+    const own = await ensureOwnSessionAt(request, OTHER_BRANCH)
+    test.skip(!own, `no free ${OTHER_BRANCH} terminal for the owner's own session`)
+    const picker = page.getByTestId('checkout-session-picker')
+    const active = page.getByTestId('checkout-active-session')
+
+    await gotoReady(page, '/pos/checkout')
+    await expect(picker).toBeVisible({ timeout: 30_000 })
+    test.skip(
+      !(await picker
+        .getByTestId('checkout-session-option')
+        .filter({ hasText: OTHER_BRANCH })
+        .count()),
+      `the branch switcher is not on All Branches, so ${OTHER_BRANCH} is not offered`
+    )
+    await expect(async () => {
+      await picker
+        .getByTestId('checkout-session-option')
+        .filter({ hasText: OTHER_BRANCH })
+        .first()
+        .click({ timeout: 3_000 })
+      await expect(active).toHaveAttribute('data-session-id', own!.id, { timeout: 3_000 })
+    }).toPass({ timeout: 30_000 })
+
+    // Away and back, then a reload: still on it, never asked.
+    await gotoReady(page, '/pos/transactions')
+    await gotoReady(page, '/pos/checkout')
+    await expect(active).toHaveAttribute('data-session-id', own!.id, { timeout: 30_000 })
+    await expect(picker).toHaveCount(0)
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await expect(active).toHaveAttribute('data-session-id', own!.id, { timeout: 30_000 })
+
+    // Closed: nothing to keep, so Checkout asks again.
+    await closeAtExpected(request, own!.id)
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await expect(active).toHaveCount(0, { timeout: 30_000 })
+  })
+
+  test('a session just opened in POS → Sessions is the one Checkout starts on', async ({
+    page,
+    request,
+  }) => {
+    const own = await ensureOwnSessionAt(request, OTHER_BRANCH)
+    test.skip(!own, `no free ${OTHER_BRANCH} terminal for the owner's own session`)
+    const me = (await (await request.get('/api/users/me')).json()) as { id: string }
+    // Kept as the Sessions page keeps it on opening.
+    await gotoReady(page, '/pos/sessions')
+    await page.evaluate(
+      ([key, value]) => localStorage.setItem(key, value),
+      [KEPT_KEY, JSON.stringify({ userId: me.id, sessionId: own!.id })]
+    )
+
+    await gotoReady(page, '/pos/checkout')
+    await expect(page.getByTestId('checkout-active-session')).toHaveAttribute(
+      'data-session-id',
+      own!.id,
+      { timeout: 30_000 }
+    )
+    await expect(page.getByTestId('checkout-session-picker')).toHaveCount(0)
+  })
+
+  test("another login's kept session is not used", async ({ page, browser }) => {
+    const cashierContext = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
+    })
+    const cashierPage = await cashierContext.newPage()
+    await loginAs(cashierPage, CASHIER_EMAIL, DEV_PASSWORD)
+    const cashierSession = await ensureCashierBagoSession(cashierPage.request)
+    await cashierContext.close()
+    // Left behind on this browser by the cashier's login.
+    await gotoReady(page, '/pos/sessions')
+    await page.evaluate(
+      ([key, value]) => localStorage.setItem(key, value),
+      [KEPT_KEY, JSON.stringify({ userId: cashierSession.cashierId, sessionId: cashierSession.id })]
+    )
+
+    await gotoReady(page, '/pos/checkout')
+    await expect(page.getByTestId('checkout-session-picker')).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId('checkout-active-session')).toHaveCount(0)
+  })
+})
+
 /** An open session of the owner's own at `branchName` (`request` being the
  * owner): reused if there is one, else opened on a free terminal there. Null
  * when every terminal there is held by someone else. */
