@@ -18,6 +18,9 @@ export async function getWarehouses(params?: {
   // Scenario 27 — only the 2 real warehouses (branchId: null), excluding
   // the 41 per-branch stock locations.
   standaloneOnly?: boolean
+  // Only the caller's own warehouses — for a Warehouse Custodian, their
+  // region's standalone one, not every warehouse their pickers list (WH-07).
+  ownOnly?: boolean
 }): Promise<ApiResponse<WarehouseListResponse>> {
   try {
     const result = await api.get<WarehouseListResponse>(

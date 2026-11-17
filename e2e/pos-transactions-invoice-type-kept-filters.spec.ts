@@ -492,15 +492,24 @@ test('a cash sale opens with the same cards and columns as an installment one, "
     for (const title of ['Sale', 'Account details', 'Agent and credit']) {
       await expect(modal.getByText(title, { exact: true })).toBeVisible()
     }
-    for (const column of ['Price Used', 'Credit']) {
+    // Price Used, then the client's Credit, CM and SMI (Docket #49, Nov 16).
+    for (const column of ['Price Used', 'Credit', 'CM', 'SMI']) {
       await expect(modal.getByRole('columnheader', { name: column })).toBeVisible()
     }
     const lcp = modal.getByText('LCP', { exact: true }).locator('xpath=following-sibling::p')
     if (cash) await expect(lcp).toHaveText('—')
     else await expect(lcp).not.toHaveText('—')
-    // The same editable fields on both.
+    // The same editable fields on both: the date and agent, and each item
+    // row's Price Used, Credit, CM and SMI.
     await modal.getByRole('button', { name: 'Edit entry' }).click()
-    for (const name of ['Invoice Date', 'Agent', 'Credit', 'Commission', 'SMI']) {
+    for (const name of [
+      'Invoice Date',
+      'Agent',
+      'Price Used (item 1)',
+      'Credit (item 1)',
+      'CM (item 1)',
+      'SMI (item 1)',
+    ]) {
       await expect(modal.getByLabel(name, { exact: true })).toBeVisible()
     }
   }

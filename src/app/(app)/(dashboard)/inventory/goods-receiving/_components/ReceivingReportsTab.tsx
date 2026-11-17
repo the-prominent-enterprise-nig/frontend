@@ -1,5 +1,6 @@
 'use client'
 
+import { SeriesGapNotice } from '@/src/components/inventory/SeriesGapNotice'
 import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -556,6 +557,9 @@ export default function ReceivingReportsTab({
           )}
         </div>
       </div>
+
+      {/* Numbers missing from the branch's RR series (NIG, 2026-11-16). */}
+      <SeriesGapNotice doc="RR" />
 
       {/* KPI row */}
       <div className="grid grid-cols-2 divide-x divide-y divide-[#e4e4e9] overflow-hidden rounded-xl border border-[#e4e4e9] bg-white sm:grid-cols-4 sm:divide-y-0">

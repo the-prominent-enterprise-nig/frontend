@@ -15,6 +15,7 @@ import {
   deleteCustomers,
   openCustomSelect,
   pickCartPriceUse,
+  pickCheckoutSession,
 } from './utils'
 
 // POS Collections — a collection taken with several methods. Each payment is a
@@ -163,20 +164,6 @@ async function ensureOpenSession(request: APIRequestContext, branchId: string): 
   })
 }
 
-async function pickSessionIfAsked(page: Page): Promise<void> {
-  await expect(page.getByPlaceholder('Search by name or serial')).toBeVisible({ timeout: 15_000 })
-  const sessionSelect = page.locator('select').filter({ hasText: 'Select session' })
-  const autoSelected = page.getByText(/^Counter \d+$/).first()
-  await expect(sessionSelect.or(autoSelected)).toBeVisible({ timeout: 15_000 })
-  if (await sessionSelect.isVisible()) {
-    const value = await sessionSelect
-      .locator('option', { hasText: BRANCH })
-      .first()
-      .getAttribute('value')
-    await sessionSelect.selectOption(value!)
-  }
-}
-
 async function addItem(page: Page): Promise<void> {
   const search = page.getByPlaceholder('Search by name or serial')
   await expect(search).toBeVisible({ timeout: 15_000 })
@@ -201,7 +188,7 @@ async function selectCustomer(page: Page, name: string): Promise<void> {
 async function createInstallmentPlan(page: Page, label: string) {
   const customer = await createCustomer(page.request, label)
   await gotoReady(page, '/pos/checkout')
-  await pickSessionIfAsked(page)
+  await pickCheckoutSession(page, BRANCH)
   await addItem(page)
   await selectCustomer(page, customer.name)
 

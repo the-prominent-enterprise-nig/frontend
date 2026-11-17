@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady } from './utils'
+import { gotoReady, pickCheckoutSession } from './utils'
 
 // POS Checkout — Item Catalog. Full serialized-sale flows (branch-scoped
 // serials, dual-serial items, furniture sets) need seeded branch/warehouse/
@@ -12,6 +12,7 @@ test.describe('POS Checkout — Item Catalog', () => {
     await expect(page.getByRole('link', { name: 'Menu Items' })).toHaveCount(0)
 
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page)
     await expect(page.getByRole('button', { name: 'Menu Items' })).toHaveCount(0)
     await expect(page.getByPlaceholder('Search by name or serial')).toBeVisible()
   })

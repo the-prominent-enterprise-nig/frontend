@@ -12,9 +12,8 @@ import { money } from './SalesStatCards'
  * sales export". Paged server-side (a twelve-month range is thousands of
  * units); the totals cover every unit the filters match, not just this page.
  * The Excel export (header button) carries the full column set, including
- * the client's Credit and SMI columns, which are not yet defined (waiting on
- * NIG, 2026-11-09). Unit Cost is left out for a branch-tied user, who never
- * gets it from the API either (NIG UAT 2026-11-09).
+ * the client's Credit, Commission and SMI columns. Unit Cost is left out for a
+ * branch-tied user, who never gets it from the API either (NIG UAT 2026-11-09).
  */
 
 const PAGE_SIZE = 50
@@ -45,10 +44,11 @@ const COLUMNS: Column[] = [
   },
   { header: 'Price Used', cell: (l) => l.priceUseName },
   { header: 'Agent', cell: (l) => l.agentName },
-  { header: 'Commission', cell: (l) => (l.commission ? money(l.commission) : ''), numeric: true },
-  // What Edit entry set on the sale, else empty, like the Excel.
-  // FOLLOW-UP: NIG will add Credit and SMI to their price list.
+  // Credit, Commission, SMI — the client's order (Docket #49, Nov 16), like the
+  // Excel. Each is the item row's own figure: what Edit entry put on it, else the
+  // sale's recorded one (Credit posts by itself, like LCP).
   { header: 'Credit', cell: (l) => (l.credit == null ? '' : money(l.credit)), numeric: true },
+  { header: 'Commission', cell: (l) => (l.commission ? money(l.commission) : ''), numeric: true },
   { header: 'SMI', cell: (l) => (l.smi == null ? '' : money(l.smi)), numeric: true },
 ]
 

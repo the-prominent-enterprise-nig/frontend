@@ -732,3 +732,29 @@ export async function pickTransferSource(page: Page, sourceName: string): Promis
   await expect(option).toBeVisible({ timeout: 10_000 })
   await option.click()
 }
+
+/**
+ * Checkout asks which cashier session a sale is for before the cart opens,
+ * and never picks one itself, not even the only one open (2026-11-16). Picks
+ * the first listed session whose card matches `match` (a branch name, a
+ * terminal code, a cashier's name), or the first listed when none is given,
+ * and confirms when it belongs to another cashier. Returns once the picked
+ * session shows in the top bar, i.e. the cart is open.
+ *
+ * Retried as a unit: a click that lands before hydration does nothing.
+ */
+export async function pickCheckoutSession(page: Page, match?: string | RegExp): Promise<void> {
+  const picker = page.getByTestId('checkout-session-picker')
+  const active = page.getByTestId('checkout-active-session')
+  await expect(picker.or(active)).toBeVisible({ timeout: 30_000 })
+  let options = picker.getByTestId('checkout-session-option')
+  if (match) options = options.filter({ hasText: match })
+  await expect(async () => {
+    if (await picker.isVisible()) {
+      const confirm = picker.getByRole('button', { name: 'Use this session' })
+      if (await confirm.isVisible()) await confirm.click({ timeout: 3_000 })
+      else await options.first().click({ timeout: 3_000 })
+    }
+    await expect(active).toBeVisible({ timeout: 3_000 })
+  }).toPass({ timeout: 30_000 })
+}

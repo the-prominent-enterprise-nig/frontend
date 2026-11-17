@@ -9,6 +9,7 @@ import {
   submitPriceListForm,
   openAddItemsPanel,
   openCustomSelect,
+  pickCheckoutSession,
 } from './utils'
 
 // Scenario 15, Part 5 — a curated per-SKU down payment (from the admin's
@@ -117,13 +118,7 @@ test.describe('Inventory — Price List curated down payment at checkout', () =>
     await ensureOpenSession(page, 'Bago')
     await gotoReady(page, '/pos/checkout')
 
-    const sessionSelect = page.locator('select').filter({ hasText: 'Select session' })
-    if (await sessionSelect.isVisible().catch(() => false)) {
-      const sessionOptionValue = await sessionSelect
-        .locator('option', { hasText: 'Bago' })
-        .getAttribute('value')
-      await sessionSelect.selectOption(sessionOptionValue!)
-    }
+    await pickCheckoutSession(page, 'Bago')
 
     const searchInput = page.getByPlaceholder('Search by name or serial')
     await expect(searchInput).toBeVisible({ timeout: 15_000 })

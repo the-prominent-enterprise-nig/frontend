@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test'
-import { clickStable, fillStable, pickCartPriceUse } from './utils'
+import { clickStable, fillStable, gotoReady, pickCartPriceUse, pickCheckoutSession } from './utils'
 
 // Shared by the specs that take a credit application to the till
 // (credit-application-low-down-payment, credit-application-fmi-checkout).
@@ -61,6 +61,14 @@ export async function ensureOpenSession(page: Page, branchId: string): Promise<v
     data: { terminalId: terminal.id, openingCash: 1000 },
   })
   expect(opened.ok(), await opened.text()).toBeTruthy()
+}
+
+/** Opens checkout and picks a Bago session there. Checkout never picks one on
+ * its own, and every till here sells from Bago (the application's branch and
+ * where the items are stocked). */
+export async function gotoBagoCheckout(page: Page): Promise<void> {
+  await gotoReady(page, '/pos/checkout')
+  await pickCheckoutSession(page, 'Bago')
 }
 
 /** Makes sure Bago has an open till session, so checkout opens. */
@@ -148,15 +156,13 @@ export async function approvedApplication(
   await page.request.post(`/api/credit/applications/${application.id}/documents`, {
     data: { fileId: file.id, documentType: 'applicant_id' },
   })
-  await page.request.patch(`/api/credit/applications/${application.id}/submit`)
-  await page.request.post(`/api/credit/applications/${application.id}/investigation/start`)
-  await page.request.post(`/api/credit/applications/${application.id}/investigation`, {
-    data: { affordabilityOutcome: 'recommend_approve', notes: 'Looks fine' },
-  })
-  const decided = await page.request.patch(`/api/credit/applications/${application.id}/decide`, {
-    data: { approveItemIds: [application.items[0].id], declineItemIds: [] },
-  })
-  expect(decided.ok(), await decided.text()).toBeTruthy()
+  // Submitting approves the application and every item on it (UAT CA-01,
+  // 2026-11-05: no approval workflow). The investigation and decide steps this
+  // helper used to walk are gone for anything submitted since.
+  const submitted = await page.request.patch(`/api/credit/applications/${application.id}/submit`)
+  expect(submitted.ok(), await submitted.text()).toBeTruthy()
+  const submittedBody = await submitted.json()
+  expect((submittedBody.data ?? submittedBody).status).toBe('approved')
 
   await ensureOpenSession(page, branchId)
 
