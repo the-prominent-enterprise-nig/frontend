@@ -116,6 +116,8 @@ export function useSerialNumbers(
             region,
             search,
             classification,
+            // A search also reaches units this branch once held.
+            includePast: !!search,
           },
     [
       page,

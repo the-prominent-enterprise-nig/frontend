@@ -162,6 +162,17 @@ const SerialReceiptSchema = z
   .nullable()
   .optional()
 
+/** How a unit the viewer's branch once held left it (NIG 2026-11-17) — the
+ * last thing a branch may see of a unit that is no longer with it. */
+export const SerialPastUnitSchema = z.object({
+  leftAt: z.string().nullable(),
+  kind: z.enum(['transfer', 'received_elsewhere']).nullable(),
+  reference: z.string().nullable(),
+  /** The branch (or standalone warehouse) it went to. */
+  toName: z.string().nullable(),
+})
+export type SerialPastUnit = z.infer<typeof SerialPastUnitSchema>
+
 export const SerialNumberSummarySchema = z.object({
   id: z.string(),
   serialNumber: z.string(),
@@ -271,6 +282,9 @@ export const SerialNumberSummarySchema = z.object({
   locationSince: z.string().nullable().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
+  // Set on a search hit the viewer's branch once held but no longer does.
+  // Everything after the hand-off comes back cleared; show only this.
+  pastUnit: SerialPastUnitSchema.nullable().optional(),
 })
 
 // The backend nests pagination under `meta` (`{ data, meta: { total, page,
@@ -403,6 +417,9 @@ export const SerialHistoryHeaderSchema = z.object({
   item: z.object({ id: z.string(), sku: z.string(), name: z.string() }),
   location: z.string().nullable(),
   consignedToVenue: z.string().nullable().optional(),
+  // Set when the unit has left the viewer's branch: how it left, in place of
+  // where it is now.
+  left: SerialPastUnitSchema.nullable().optional(),
 })
 export type SerialHistoryHeader = z.infer<typeof SerialHistoryHeaderSchema>
 

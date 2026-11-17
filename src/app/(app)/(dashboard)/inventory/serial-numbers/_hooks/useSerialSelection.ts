@@ -14,7 +14,11 @@ export function isConsignable(serial: SerialNumberSummary): boolean {
  * A customer's unit in repair is refused by the server, which knows whose it is.
  */
 export function isTransferable(serial: SerialNumberSummary): boolean {
-  return (serial.status === 'in_stock' || serial.status === 'in_repair') && !serial.openTransfer
+  return (
+    !serial.pastUnit &&
+    (serial.status === 'in_stock' || serial.status === 'in_repair') &&
+    !serial.openTransfer
+  )
 }
 
 /** Where the unit physically sits — the transfer's source. */

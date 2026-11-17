@@ -51,6 +51,10 @@ type Params = {
   /** General Stockbook — also return `totalAmount` across every matching unit
    * (the backend sends it only to valuation holders). */
   withAmount?: boolean
+  /** Stockbook / Locator search — also find units the caller's branch once
+   * held (masked to their hand-off). The backend applies it to branch staff
+   * searching without a status or classification filter. */
+  includePast?: boolean
 }
 
 export async function getSerialNumbers(
@@ -79,6 +83,7 @@ export async function getSerialNumbers(
     itemSupplierId: params.itemSupplierId,
     repossessedFromCustomerId: params.repossessedFromCustomerId,
     withAmount: params.withAmount ? 'true' : undefined,
+    includePast: params.includePast ? 'true' : undefined,
   }
 
   const result = await api.get<SerialNumberListResponse>('/inventory/serial-numbers', query)
