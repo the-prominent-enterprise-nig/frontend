@@ -59,7 +59,7 @@ export async function getInventoryDashboard(): Promise<InventoryDashboardRead[]>
     getStockoutAlerts({ days: 30 }), // 4
     getExpiringBatches({ days: 30, limit: 20 }), // 5
     getStockBalances({ limit: 1 }), // 6 — only the pre-aggregated `summary` is used, not `data`
-    getWarehouses({ status: 'active', limit: 50 }), // 7
+    getWarehouses({ status: 'active', limit: 50, ownOnly: true }), // 7
     getReservations({ limit: 1 }), // 8 — only the pre-aggregated `summary` is used, not `data`
     getNegativeStockViolations({ limit: 50 }), // 9
     getActionQueue(), // 10 — open transfers/PRs/POs; the page keeps the ones waiting on the viewer
