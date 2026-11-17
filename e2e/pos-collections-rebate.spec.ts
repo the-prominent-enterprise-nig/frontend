@@ -5,6 +5,7 @@ import {
   createPlanFixtures,
   deletePlanFixtures,
   dueRow,
+  fillCrNumber,
   fillMoney,
   openCustomerOnCollections,
   pesos,
@@ -82,6 +83,7 @@ test.describe('POS Collections — rebate', () => {
     await expect.poll(async () => pesos(await netCell(page).innerText())).toBe(net)
 
     await fillMoney(page.getByTestId('collection-amount-0'), net)
+    await fillCrNumber(page, 'REBATE')
     await page.getByRole('button', { name: 'Collect payment' }).click()
     await expect(page.getByRole('heading', { name: 'Collect Payment' })).not.toBeVisible({
       timeout: 20_000,

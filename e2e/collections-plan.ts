@@ -228,6 +228,14 @@ export async function tickDue(page: Page, n: number): Promise<void> {
   ).toBeVisible({ timeout: 15_000 })
 }
 
+/** Types a CR number on the Collect Payment panel — required on every
+ * collection — and returns it. Unique per call, so a spec can find its row. */
+export async function fillCrNumber(page: Page, tag: string): Promise<string> {
+  const cr = `CR-${tag}-${Date.now()}`
+  await fillStable(page.getByTestId('collection-cr-number'), cr)
+  return cr
+}
+
 /** A peso amount as shown on screen (₱3,888.00, −₱120.00) as a number. */
 export const pesos = (text: string): number => Number(text.replace(/[^\d.]/g, ''))
 
