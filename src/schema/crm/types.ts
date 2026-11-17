@@ -432,7 +432,18 @@ export interface InstallmentAccount {
   dueAmount?: number | null
 }
 
-export interface InstallmentAccountDetail extends InstallmentAccount {
+/** The Existing customer ledger's "W/tax received" tick box (Docket NIG #38
+ * mockup) — a marker that the customer's withholding tax has been received.
+ * It posts nothing and moves no figure. At/By are whoever last ticked or
+ * unticked it; both null on a box never touched. */
+export interface WithholdingTaxReceivedMarker {
+  withholdingTaxReceived: boolean
+  withholdingTaxReceivedAt: string | null
+  withholdingTaxReceivedBy: { id: string; name: string | null } | null
+}
+
+export interface InstallmentAccountDetail
+  extends InstallmentAccount, Partial<WithholdingTaxReceivedMarker> {
   arInvoiceId?: string | null
   installmentScheduleId?: string | null
   // Scenario 32 item 2 — the financing scheme this account was sold under

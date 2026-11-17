@@ -28,6 +28,7 @@ import type {
   CustomerAccountType,
   InteractionType,
   InstallmentLedger,
+  WithholdingTaxReceivedMarker,
   CustomerLedger,
   CustomerLedgerScope,
   AgingReportResponse,
@@ -423,6 +424,12 @@ export const installmentAccountsApi = {
     ),
   updateLegalEscalation: (id: string, body: { status: LegalEscalationStatus; notes?: string }) =>
     api.patch<InstallmentAccountDetail>(`/crm/installment-accounts/${id}/legal-escalation`, body),
+  /** The ledger's "W/tax received" tick box — a marker only; posts nothing. */
+  setWithholdingTaxReceived: (id: string, received: boolean) =>
+    api.patch<WithholdingTaxReceivedMarker>(
+      `/crm/installment-accounts/${id}/withholding-tax-received`,
+      { received }
+    ),
   agingReport: (filters?: {
     asOf?: string
     branchId?: string

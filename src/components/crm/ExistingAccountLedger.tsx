@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useMe } from '@/src/hooks/useMe'
@@ -14,6 +14,8 @@ import { can } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { printCustomerLedgerDocument } from '@/src/libs/print/printInventoryDocument'
 import { XDealBadge } from '@/src/components/pos/XDealBadge'
+import { showToast } from '@/src/components/ui/toast'
+import { installmentAccountsApi } from '@/src/libs/api/crm'
 import {
   LEDGER_ACTION,
   LEDGER_CARD,
@@ -23,8 +25,10 @@ import {
 } from '@/src/components/crm/LedgerParts'
 import type {
   ExistingLedgerSummary,
+  InstallmentAccountDetail,
   InstallmentLedger,
   InstallmentLedgerRow,
+  WithholdingTaxReceivedMarker,
 } from '@/src/schema/crm/types'
 
 // Docket NIG #38 — "Interface for Existing customer ledger": the ledger of an
@@ -42,8 +46,15 @@ import type {
 // payment route (POS Collections), its X-Deal tags and one Unit box per item.
 //
 // Left off the mockup on purpose: the "Active" badge (an account being active
-// is not worth a badge — only a closed/settled state is shown) and the
-// "W/tax received" tick box (nothing defines what it does yet).
+// is not worth a badge — only a closed/settled state is shown).
+//
+// The "W/tax received" tick box, first left off because nothing defined it,
+// is a marker only: it tells staff the customer's withholding tax has been
+// received (lead dev, 2026-11-16). It posts nothing and moves no figure.
+
+/** Who sees the "W/tax received" tick box (ticket: "As a Branch Manager, I
+ * should have a withholding tax checkbox"; AR and the Business Owner too). */
+const WITHHOLDING_BOX_ROLES = ['Business Owner', 'Branch Manager', 'AR Head', 'AR Clerks']
 
 const NON_ACTIVE_STATUS: Record<string, { label: string; style: string }> = {
   closed: { label: 'Closed', style: 'bg-green-100 text-green-700' },
@@ -84,6 +95,11 @@ export default function ExistingAccountLedger({
   const searchParams = useSearchParams()
 
   const { account } = ledger
+  // The "W/tax received" marker, shared by the tick box and the pill beside the
+  // SI line. Kept with the account it belongs to, so picking another account in
+  // the Transaction list shows that account's marker, not this one's.
+  const [wtax, setWtax] = useState(() => ({ accountId, marker: markerOf(account) }))
+  const withholding = wtax.accountId === accountId ? wtax.marker : markerOf(account)
   // A closed X-Deal was settled by its memo, not by payments — the memo is the
   // ledger's own credit row, so its number comes from there.
   const xDealMemoRef =
@@ -151,6 +167,17 @@ export default function ExistingAccountLedger({
   // has no such rule: a Cashier's or Branch Manager's `crm:*:*` passed it, and
   // the Edit button showed on a page that then refused them (Docket NIG #44, QA).
   const canEdit = showAccountLink && !!me && can(me, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_UPDATE)
+  // The "W/tax received" box shows only to whoever can tick it: the Business
+  // Owner, Branch Managers and AR (by role name, as hasPermission reads the
+  // Business Owner — no role's grants changed for it), on their own branch's
+  // account or an unbranched one, like every change to an account. Nobody gets
+  // a greyed-out box — it would read as "not received". The pill beside the SI
+  // line tells everyone when it has been.
+  const canMarkWithholding =
+    !!me &&
+    WITHHOLDING_BOX_ROLES.some((r) => me.primaryRole === r || me.roles.includes(r)) &&
+    hasPermission(me, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_RECORD_PAYMENT) &&
+    listedInCollections
 
   return (
     <div data-testid="existing-ledger">
@@ -176,6 +203,14 @@ export default function ExistingAccountLedger({
             SI <span className="font-mono">{ledger.saleReference ?? '—'}</span>
             {' · '}
             <span className="font-mono">{account.accountNumber}</span>
+            {withholding.withholdingTaxReceived && (
+              <span
+                className="ml-2 inline-flex rounded-full bg-teal-50 px-2 py-0.5 align-middle text-xs font-medium text-teal-700"
+                data-testid="ledger-wtax-pill"
+              >
+                W/tax received
+              </span>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -186,6 +221,13 @@ export default function ExistingAccountLedger({
             >
               Record payment
             </Link>
+          )}
+          {canMarkWithholding && (
+            <WithholdingTaxReceivedBox
+              accountId={accountId}
+              marker={withholding}
+              onChange={(marker) => setWtax({ accountId, marker })}
+            />
           )}
           <button
             type="button"
@@ -221,6 +263,74 @@ export default function ExistingAccountLedger({
 
       <LedgerRows rows={ledger.rows} existing={existing} matured={matured} />
     </div>
+  )
+}
+
+function markerOf(account: InstallmentAccountDetail): WithholdingTaxReceivedMarker {
+  return {
+    withholdingTaxReceived: !!account.withholdingTaxReceived,
+    withholdingTaxReceivedAt: account.withholdingTaxReceivedAt ?? null,
+    withholdingTaxReceivedBy: account.withholdingTaxReceivedBy ?? null,
+  }
+}
+
+/** The mockup's "W/tax received" tick box, beside Record payment — a marker
+ * that the customer's withholding tax has been received; it posts nothing.
+ * Rendered only for whoever can tick it. Hovering names who last set it. */
+function WithholdingTaxReceivedBox({
+  accountId,
+  marker,
+  onChange,
+}: {
+  accountId: string
+  marker: WithholdingTaxReceivedMarker
+  onChange: (marker: WithholdingTaxReceivedMarker) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const received = marker.withholdingTaxReceived
+
+  async function toggle(next: boolean): Promise<void> {
+    // The tick shows at once; a refused save puts the box back as it was.
+    const previous = marker
+    onChange({ ...marker, withholdingTaxReceived: next })
+    setBusy(true)
+    const res = await installmentAccountsApi.setWithholdingTaxReceived(accountId, next)
+    setBusy(false)
+    if (!res.success || !res.data) {
+      onChange(previous)
+      showToast({
+        title: 'Could not save W/tax received',
+        description: res.message || res.error || undefined,
+        status: 'error',
+      })
+      return
+    }
+    onChange(res.data)
+    showToast({
+      title: next ? 'Marked W/tax received' : 'W/tax received unticked',
+      status: 'success',
+    })
+  }
+
+  const by = marker.withholdingTaxReceivedBy?.name
+  const at = marker.withholdingTaxReceivedAt
+  const who = by && at ? `${received ? 'Ticked' : 'Unticked'} by ${by} on ${fmtDate(at)}` : null
+
+  return (
+    <label
+      className={`${LEDGER_ACTION} ${busy ? 'cursor-wait' : 'cursor-pointer'}`}
+      title={who ?? undefined}
+      data-testid="ledger-wtax-received"
+    >
+      <input
+        type="checkbox"
+        checked={received}
+        disabled={busy}
+        onChange={(e) => void toggle(e.target.checked)}
+        className="h-4 w-4 rounded border-gray-300 text-prominent-purple-700 focus:ring-prominent-purple-500"
+      />
+      <span className="font-medium">W/tax received</span>
+    </label>
   )
 }
 
