@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useForm, Controller, useWatch } from 'react-hook-form'
-import { useQuery } from '@tanstack/react-query'
+import { useForm, Controller, useWatch, type Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { X, Loader2, PackagePlus } from 'lucide-react'
+import { X, Loader2, FileUp } from 'lucide-react'
 import { CreateItemFormSchema, CreateItemFormValues, UomOption } from '@/src/schema/inventory/items'
 import type { ClassificationOption } from '@/src/schema/inventory/items'
 import { NumericInput, FormSection } from './item-form-shared'
@@ -14,16 +13,18 @@ import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { showToast } from '@/src/components/ui/toast'
 import { checkItemDuplicates } from '../_actions/check-item-duplicates'
 import type { DuplicateCandidate } from '@/src/schema/inventory/items'
-import { receiveInitialUnit } from '../_actions/receive-initial-unit'
-import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import type { WarehouseSummary } from '@/src/schema/inventory/warehouses'
+import { setItemPrices } from '../_actions/set-item-prices'
+import ItemPricesSection, { type PricesFormValues } from './ItemPricesSection'
+import BulkImportItemsModal from './BulkImportItemsModal'
+import { PRIMARY_BUTTON } from '../../master-data/_components/masterDataChrome'
+import { useMe } from '@/src/hooks/useMe'
+import { hasPermission } from '@/src/hooks/usePermission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
+import { toItemPricePayload, type ItemPriceEntry } from '@/src/schema/inventory/items/item-prices'
 import { CONTROL_CHROME, MONO, PLEX } from '@/src/libs/design/plex'
-import {
-  UNIT_CLASSIFICATION_LABELS,
-  UnitClassificationSchema,
-} from '@/src/schema/inventory/reports'
 import { errorClass, inputClass, labelClass } from './itemFormChrome'
-import { CategorySubgroupFields, useAutoItemName, useOriginOptions } from './item-create-fields'
+import { quickAddAction, useQuickAddClassification } from './useQuickAddClassification'
+import { CategorySubgroupFields, useAutoItemName } from './item-create-fields'
 
 // Tracking checkboxes that don't apply to service items and get disabled + cleared
 // when "Service Item" is checked.
@@ -33,15 +34,6 @@ const TRACKING_FIELDS_DISABLED_BY_SERVICE = [
   'requiresSecondarySerial',
   'isExpiryTracked',
 ] as const
-
-/** Standalone warehouses (Panay, Negros) first, then the branch ones, deduped by id. */
-function mergeWarehouses(
-  standalone: WarehouseSummary[],
-  scoped: WarehouseSummary[]
-): WarehouseSummary[] {
-  const seen = new Set(standalone.map((w) => w.id))
-  return [...standalone, ...scoped.filter((w) => !seen.has(w.id))]
-}
 
 type Props = {
   isOpen: boolean
@@ -55,8 +47,8 @@ type Props = {
   /**
    * 'overlay' (default) covers the content area with its own close button.
    * 'page' renders in the flow of a hub tab — Master Data's Add Item, the
-   * Stock Request pattern — with no close/cancel; onClose then means "start
-   * a fresh form" and is called after a successful save.
+   * Stock Request pattern — with no close/cancel; onClose is then only
+   * called after a successful save (Add Item uses it to go to Item Master).
    */
   variant?: 'overlay' | 'page'
 }
@@ -79,6 +71,7 @@ export default function CreateItemModal({
     reset,
     setError,
     setValue,
+    getValues,
     setFocus,
     formState: { errors, isDirty, submitCount },
   } = useForm<CreateItemFormValues>({
@@ -97,13 +90,7 @@ export default function CreateItemModal({
       isExpiryTracked: false,
       isBundle: false,
       isService: false,
-      initialWarehouseId: '',
-      initialDateIn: '',
-      initialRr: '',
-      initialOrigin: '',
-      initialPrice: undefined,
-      initialSerialNumber: '',
-      initialClassification: 'brand_new',
+      prices: [],
     },
   })
 
@@ -137,29 +124,37 @@ export default function CreateItemModal({
     return () => clearTimeout(timer)
   }, [isOpen, nameValue, brandIdValue])
 
-  const isSerialTrackedValue = useWatch({ control, name: 'isSerialTracked' })
+  // UOM isn't on the form — every new item is PCS (the unit nearly the whole
+  // catalogue uses), falling back to the first base unit if PCS is missing.
+  const baseUnitIdValue = useWatch({ control, name: 'baseUnitId' })
+  useEffect(() => {
+    if (baseUnitIdValue) return
+    const defaultUnit = pickDefaultUnit(uomOptions)
+    if (defaultUnit) setValue('baseUnitId', defaultUnit.id)
+  }, [baseUnitIdValue, uomOptions, setValue])
 
-  const warehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-lookup'],
-    queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
-    enabled: isOpen,
-    staleTime: 5 * 60 * 1000,
-  })
-  // The 2 real warehouses (Panay, Negros) are standalone (branchId: null), so a
-  // branch-scoped user's list above leaves them out — fetch them on their own.
-  const standaloneWarehousesQuery = useQuery({
-    queryKey: ['inventory-warehouses-standalone-lookup'],
-    queryFn: () => getWarehouses({ limit: 200, status: 'active', standaloneOnly: true }),
-    enabled: isOpen,
-    staleTime: 5 * 60 * 1000,
-  })
-  const warehouses = mergeWarehouses(
-    standaloneWarehousesQuery.data?.data?.data ?? [],
-    warehousesQuery.data?.data?.data ?? []
-  )
-  const originOptions = useOriginOptions(isOpen)
+  const { data: me } = useMe()
+  const canSetPrices = hasPermission(me ?? null, INVENTORY_PERMISSIONS.PRICE_LISTS_UPDATE)
+  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false)
 
   const [categoryName, setCategoryName] = useState('')
+  const addBrand = useQuickAddClassification('brand')
+  const addType = useQuickAddClassification('type')
+  // A quick-added brand/type is picked at once; its toast's Undo lets go of
+  // it again — unless something else has been picked since.
+  const pick = { shouldDirty: true, shouldValidate: submitCount > 0 }
+  const brandAction = quickAddAction(
+    addBrand,
+    'brand',
+    ({ id }) => setValue('brandId', id, pick),
+    (id) => getValues('brandId') === id && setValue('brandId', undefined, pick)
+  )
+  const typeAction = quickAddAction(
+    addType,
+    'type',
+    ({ id }) => setValue('typeId', id, pick),
+    (id) => getValues('typeId') === id && setValue('typeId', '', pick)
+  )
   const { onNameTyped } = useAutoItemName({
     control,
     setValue,
@@ -213,28 +208,31 @@ export default function CreateItemModal({
     }
 
     const newItemId = result.data?.id
-    if (newItemId) {
-      if (data.initialWarehouseId && data.initialDateIn && data.initialRr) {
-        const initialStockResult = await receiveInitialUnit(newItemId, {
-          warehouseId: data.initialWarehouseId,
-          dateIn: data.initialDateIn,
-          rr: data.initialRr,
-          origin: data.initialOrigin || undefined,
-          price: data.initialPrice,
-          serialNumber: data.initialSerialNumber || undefined,
-          classification: data.initialClassification,
-        })
-        if (!initialStockResult.success) {
-          showToast({
-            title: 'Item created, but initial stock failed',
-            description: initialStockResult.message,
-            status: 'error',
-          })
-        }
-      }
-    }
+    if (newItemId && data.prices?.length) await savePrices(newItemId, data.prices)
 
     onClose()
+  }
+
+  /** Prices are a second call once the item exists; a failure there keeps
+   * the item and says what didn't stick. */
+  async function savePrices(itemId: string, prices: ItemPriceEntry[]): Promise<void> {
+    const res = await setItemPrices(itemId, prices.map(toItemPricePayload))
+    if (!res.success || !res.data) {
+      showToast({
+        title: 'Item created, but prices failed',
+        description: res.message,
+        status: 'error',
+      })
+      return
+    }
+    const notSaved = res.data.rows.filter((r) => r.status !== 'create' && r.status !== 'update')
+    if (notSaved.length > 0) {
+      showToast({
+        title: 'Some prices were not saved',
+        description: notSaved.map((r) => r.message).join(' · '),
+        status: 'error',
+      })
+    }
   }
 
   const basicInfoErrors = [
@@ -247,7 +245,7 @@ export default function CreateItemModal({
     errors.modelNumber,
   ].filter(Boolean).length
 
-  const pricingErrors = [errors.costPrice, errors.sellingPrice].filter(Boolean).length
+  const pricingErrors = [errors.costPrice].filter(Boolean).length
 
   const hasSubmitErrors = submitCount > 0 && Object.keys(errors).length > 0
 
@@ -276,21 +274,38 @@ export default function CreateItemModal({
                 no Scenario 16 draft → accounting → approver chain. */}
             <p className="mt-1 text-[13px] text-[#4b4b5a]">
               Ready to use in PO, receiving and POS as soon as it&apos;s saved. It starts with no
-              stock unless you record initial stock below.
+              stock — add units from Item Master once it&apos;s created.
             </p>
           </div>
-          {!isPage && (
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Many items at once — the same sheet also prices them and
+                records their units (item upload template). */}
             <button
               type="button"
-              onClick={handleRequestClose}
-              aria-label="Close"
-              className="rounded-lg p-2 text-[#4b4b5a] hover:bg-[#f1f1f4]"
+              onClick={() => setIsBulkUploadOpen(true)}
+              className={PRIMARY_BUTTON}
             >
-              <X className="h-5 w-5" />
+              <FileUp className="h-4 w-4" />
+              Bulk Upload Items
             </button>
-          )}
+            {!isPage && (
+              <button
+                type="button"
+                onClick={handleRequestClose}
+                aria-label="Close"
+                className="rounded-lg p-2 text-[#4b4b5a] hover:bg-[#f1f1f4]"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
+      <BulkImportItemsModal
+        isOpen={isBulkUploadOpen}
+        onClose={() => setIsBulkUploadOpen(false)}
+        canSetPrices={canSetPrices}
+      />
       {confirmingClose && (
         <div className="flex shrink-0 items-center justify-between border-b border-[#f5dcb0] bg-[#fdf3e2] px-6 py-3">
           <p className="text-[13px] text-[#8a4b06]">You have unsaved changes. Discard them?</p>
@@ -390,33 +405,6 @@ export default function CreateItemModal({
                 {errors.sku && <p className={errorClass}>{errors.sku.message}</p>}
               </div>
 
-              {/* Unit of Measure */}
-              <div>
-                <label className={labelClass}>
-                  Unit of Measure <span className="text-[#b42318]">*</span>
-                </label>
-                <Controller
-                  name="baseUnitId"
-                  control={control}
-                  render={({ field }) => (
-                    <SearchableSelect
-                      chrome={CONTROL_CHROME}
-                      portal
-                      value={field.value ?? ''}
-                      onChange={field.onChange}
-                      options={uomOptions.map((uom) => ({
-                        value: uom.id,
-                        label: `${uom.code} – ${uom.name}`,
-                      }))}
-                      placeholder="Select unit…"
-                      loading={uomOptions.length === 0}
-                      loadingLabel="Loading units…"
-                    />
-                  )}
-                />
-                {errors.baseUnitId && <p className={errorClass}>{errors.baseUnitId.message}</p>}
-              </div>
-
               {/* Brand */}
               <div>
                 <label className={labelClass}>
@@ -434,6 +422,7 @@ export default function CreateItemModal({
                       options={brandOptions.map((b) => ({ value: b.id, label: b.name }))}
                       placeholder="Select brand…"
                       clearable
+                      emptyAction={brandAction}
                     />
                   )}
                 />
@@ -459,6 +448,7 @@ export default function CreateItemModal({
                       placeholder="Select type…"
                       loading={typeOptions.length === 0}
                       loadingLabel="Loading types…"
+                      emptyAction={typeAction}
                     />
                   )}
                 />
@@ -475,6 +465,7 @@ export default function CreateItemModal({
                     onChange={field.onChange}
                     categories={categories}
                     error={errors.primaryCategoryId?.message}
+                    getValue={() => getValues('primaryCategoryId') ?? ''}
                     onCategoryNameChange={setCategoryName}
                   />
                 )}
@@ -501,10 +492,10 @@ export default function CreateItemModal({
               </div>
             </FormSection>
 
-            {/* Pricing */}
+            {/* Cost — the selling price lives on the price lists (Prices section). */}
             <FormSection
               variant="card"
-              title="Pricing"
+              title="Cost"
               defaultOpen={true}
               errorCount={pricingErrors}
               forceOpen={hasSubmitErrors && pricingErrors > 0}
@@ -530,26 +521,6 @@ export default function CreateItemModal({
                 />
                 {errors.costPrice && <p className={errorClass}>{errors.costPrice.message}</p>}
               </div>
-
-              {/* Selling Price — Item Master's Price column. */}
-              <div>
-                <label className={labelClass}>Selling Price (₱)</label>
-                <Controller
-                  name="sellingPrice"
-                  control={control}
-                  render={({ field }) => (
-                    <NumericInput
-                      value={field.value}
-                      onChange={field.onChange}
-                      onBlur={field.onBlur}
-                      fieldRef={field.ref}
-                      placeholder="0.00"
-                      className={inputClass}
-                    />
-                  )}
-                />
-                {errors.sellingPrice && <p className={errorClass}>{errors.sellingPrice.message}</p>}
-              </div>
             </FormSection>
 
             {/* Tracking */}
@@ -558,8 +529,6 @@ export default function CreateItemModal({
                 {(
                   [
                     { name: 'isSerialTracked', label: 'Serial Tracking' },
-                    { name: 'requiresSecondarySerial', label: 'Dual Serial (Indoor + Outdoor)' },
-                    { name: 'isBundle', label: 'Bundle Item' },
                     { name: 'isService', label: 'Service Item (no stock/serial tracking)' },
                   ] as const
                 ).map(({ name, label }) => {
@@ -595,163 +564,19 @@ export default function CreateItemModal({
               </div>
             </FormSection>
 
-            {/* Initial Stock */}
-            <FormSection variant="card" title="Initial Stock (Optional)" defaultOpen={true}>
-              <div className="sm:col-span-2 -mt-1 mb-1 flex items-start gap-2 rounded-lg border border-[#eeeef1] bg-[#fbfbfc] px-3 py-2 text-[12px] text-[#4b4b5a]">
-                <PackagePlus className="h-4 w-4 shrink-0 text-ink-faint" />
-                Record one already-in-hand unit for this item right now — e.g. pasting in a single
-                row from a legacy stock sheet. Leave blank to create the item with no stock.
-              </div>
-
-              {/* Branch — a branch's warehouse, labelled by branch, plus the
-                  standalone Panay / Negros warehouses. */}
-              <div>
-                <label className={labelClass}>Branch</label>
-                <Controller
-                  name="initialWarehouseId"
-                  control={control}
-                  render={({ field }) => (
-                    <SearchableSelect
-                      chrome={CONTROL_CHROME}
-                      portal
-                      value={field.value ?? ''}
-                      onChange={field.onChange}
-                      options={warehouses.map((w) => ({
-                        value: w.id,
-                        label: w.branch?.name ?? w.name,
-                      }))}
-                      placeholder="Select branch…"
-                      clearable
-                    />
-                  )}
+            {canSetPrices && (
+              <FormSection
+                variant="card"
+                title="Prices (Optional)"
+                defaultOpen={true}
+                errorCount={errors.prices ? 1 : 0}
+              >
+                <ItemPricesSection
+                  control={control as unknown as Control<PricesFormValues>}
+                  errors={errors}
                 />
-                {errors.initialWarehouseId && (
-                  <p className={errorClass}>{errors.initialWarehouseId.message}</p>
-                )}
-              </div>
-
-              {/* Date In */}
-              <div>
-                <label className={labelClass}>Date In</label>
-                <Controller
-                  name="initialDateIn"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      value={field.value ?? ''}
-                      type="date"
-                      className={inputClass}
-                    />
-                  )}
-                />
-                {errors.initialDateIn && (
-                  <p className={errorClass}>{errors.initialDateIn.message}</p>
-                )}
-              </div>
-
-              {/* RR # */}
-              <div>
-                <label className={labelClass}>RR #</label>
-                <Controller
-                  name="initialRr"
-                  control={control}
-                  render={({ field }) => (
-                    <input
-                      {...field}
-                      value={field.value ?? ''}
-                      type="text"
-                      placeholder="e.g. RR#163451S"
-                      className={inputClass}
-                    />
-                  )}
-                />
-                {errors.initialRr && <p className={errorClass}>{errors.initialRr.message}</p>}
-              </div>
-
-              {/* Origin — a supplier on file, or WHSE for internal stock. */}
-              <div>
-                <label className={labelClass}>Origin</label>
-                <Controller
-                  name="initialOrigin"
-                  control={control}
-                  render={({ field }) => (
-                    <SearchableSelect
-                      chrome={CONTROL_CHROME}
-                      portal
-                      value={field.value ?? ''}
-                      onChange={field.onChange}
-                      options={originOptions}
-                      placeholder="Select supplier or WHSE…"
-                      clearable
-                    />
-                  )}
-                />
-              </div>
-
-              {/* Classification — the General Stockbook's Brand New / Repair / Repo / Return. */}
-              <div>
-                <label className={labelClass}>Classification</label>
-                <Controller
-                  name="initialClassification"
-                  control={control}
-                  render={({ field }) => (
-                    <SearchableSelect
-                      chrome={CONTROL_CHROME}
-                      portal
-                      value={field.value ?? 'brand_new'}
-                      onChange={(v) => field.onChange(v || 'brand_new')}
-                      options={UnitClassificationSchema.options.map((c) => ({
-                        value: c,
-                        label: UNIT_CLASSIFICATION_LABELS[c],
-                      }))}
-                    />
-                  )}
-                />
-              </div>
-
-              {/* Unit cost — the General Stockbook's Cost column. */}
-              <div>
-                <label className={labelClass}>Unit Cost (₱)</label>
-                <Controller
-                  name="initialPrice"
-                  control={control}
-                  render={({ field }) => (
-                    <NumericInput
-                      value={field.value}
-                      onChange={field.onChange}
-                      onBlur={field.onBlur}
-                      fieldRef={field.ref}
-                      placeholder="0.00"
-                      className={inputClass}
-                    />
-                  )}
-                />
-              </div>
-
-              {/* Serial Number — only when this item is serial-tracked */}
-              {isSerialTrackedValue && (
-                <div>
-                  <label className={labelClass}>Serial Number</label>
-                  <Controller
-                    name="initialSerialNumber"
-                    control={control}
-                    render={({ field }) => (
-                      <input
-                        {...field}
-                        value={field.value ?? ''}
-                        type="text"
-                        placeholder="e.g. GT248004"
-                        className={inputClass}
-                      />
-                    )}
-                  />
-                  {errors.initialSerialNumber && (
-                    <p className={errorClass}>{errors.initialSerialNumber.message}</p>
-                  )}
-                </div>
-              )}
-            </FormSection>
+              </FormSection>
+            )}
           </div>
         </div>
 
@@ -785,5 +610,13 @@ export default function CreateItemModal({
         </div>
       </form>
     </div>
+  )
+}
+
+function pickDefaultUnit(uomOptions: UomOption[]): UomOption | undefined {
+  return (
+    uomOptions.find((u) => u.code.toUpperCase() === 'PCS') ??
+    uomOptions.find((u) => u.isBaseUnit) ??
+    uomOptions[0]
   )
 }

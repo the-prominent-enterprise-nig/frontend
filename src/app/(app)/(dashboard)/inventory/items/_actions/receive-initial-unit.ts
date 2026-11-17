@@ -9,11 +9,16 @@ import type { UnitClassification } from '@/src/schema/inventory/reports'
 
 type ReceiveInitialUnitInput = {
   warehouseId: string
-  dateIn: string
-  rr: string
+  /** Blank = today. */
+  dateIn?: string
+  /** Blank = one is generated. */
+  rr?: string
   origin?: string
   price?: number
   serialNumber?: string
+  /** Several units of the item under the one RR # — Item Master's "Add
+   * units". Takes precedence over serialNumber. */
+  serialNumbers?: string[]
   /** General Stockbook Classification; the backend defaults to Brand New. */
   classification?: UnitClassification
 }
@@ -21,6 +26,9 @@ type ReceiveInitialUnitInput = {
 type ReceiveInitialUnitResult = {
   goodsReceiptId: string
   serialNumberId: string | null
+  serialNumberIds?: string[]
+  /** The RR # used — generated when none was given. */
+  rr?: string
 }
 
 export async function receiveInitialUnit(
@@ -53,9 +61,11 @@ export async function receiveInitialUnit(
   revalidatePath('/inventory/items')
   revalidatePath('/inventory/serial-numbers')
 
+  const count = input.serialNumbers?.length ?? 1
   return {
     success: true,
     data: result.data,
-    message: 'Initial stock recorded successfully',
+    message:
+      count > 1 ? `${count} units recorded successfully` : 'Initial stock recorded successfully',
   }
 }

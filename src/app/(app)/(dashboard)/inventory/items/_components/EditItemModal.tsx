@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useForm, Controller, useWatch } from 'react-hook-form'
+import { useForm, Controller, useWatch, type Control } from 'react-hook-form'
 import { useQuery } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2 } from 'lucide-react'
 import { CONTROL_CHROME, MONO, PLEX } from '@/src/libs/design/plex'
 import { errorClass, inputClass, labelClass } from './itemFormChrome'
 import { CategorySubgroupFields } from './item-create-fields'
+import { quickAddAction, useQuickAddClassification } from './useQuickAddClassification'
 import {
   UpdateItemFormSchema,
   UpdateItemFormValues,
@@ -18,20 +19,23 @@ import {
 import type { ApiResponse } from '@/src/libs/api/client'
 import type { CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
-import { getAccountOptions, type Account } from '@/src/libs/data/AccountingData'
 import { getAttributes } from '../../attributes/_actions/get-attributes'
 import { getItemAttributes } from '../_actions/get-item-attributes'
 import type { AttributeDefinition } from '@/src/schema/inventory/attributes'
-import { getItemTags, addItemTag, removeItemTag } from '../_actions/item-tags'
-import type { ItemTagLabel } from '@/src/schema/inventory/items'
+import { NumericInput, FormSection } from './item-form-shared'
+import ItemPricesSection, { type PricesFormValues } from './ItemPricesSection'
+import { getItemPriceGuide } from '../_actions/get-item-price-guide'
+import { setItemPrices } from '../_actions/set-item-prices'
 import {
-  ALL_TAGS,
-  DIMENSION_FIELDS,
-  normalizeTagList,
-  NumericInput,
-  FormSection,
-  AccountField,
-} from './item-form-shared'
+  changedPriceEntries,
+  fromPriceGuideEntry,
+  toItemPricePayload,
+  type ItemPriceEntry,
+} from '@/src/schema/inventory/items/item-prices'
+import { showToast } from '@/src/components/ui/toast'
+import { useMe } from '@/src/hooks/useMe'
+import { hasPermission } from '@/src/hooks/usePermission'
+import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { formatClassificationLabel } from '@/src/libs/format/text'
 
 // Tracking checkboxes that don't apply to service items and get disabled + cleared
@@ -65,27 +69,16 @@ export default function EditItemModal({
   onSubmit,
   isSubmitting,
   categories,
-  uomOptions,
   onAttributeSubmit,
   isAttributeSubmitting,
   canReadAttributes = true,
   brandOptions,
   typeOptions,
 }: Props) {
-  const [accounts, setAccounts] = useState<Account[]>([])
   const [attrValues, setAttrValues] = useState<Record<string, string>>({})
-  const [selectedTags, setSelectedTags] = useState<ItemTagLabel[]>([])
   const [confirmingClose, setConfirmingClose] = useState(false)
-
-  // ACC-21: lazy-load accounts for the revenue/COGS/inventory overrides
-  // when the modal opens — same pattern as CreateItemModal.
-  useEffect(() => {
-    if (!isOpen) return
-    getAccountOptions().then((res) => {
-      const data = res.data as { items?: Account[] } | Account[] | undefined
-      setAccounts(Array.isArray(data) ? data : (data?.items ?? []))
-    })
-  }, [isOpen])
+  const { data: me } = useMe()
+  const canSetPrices = hasPermission(me ?? null, INVENTORY_PERMISSIONS.PRICE_LISTS_UPDATE)
 
   const {
     control,
@@ -93,6 +86,7 @@ export default function EditItemModal({
     reset,
     setError,
     setValue,
+    getValues,
     setFocus,
     formState: { errors, isDirty, submitCount },
   } = useForm<UpdateItemFormValues>({
@@ -100,7 +94,6 @@ export default function EditItemModal({
     defaultValues: {
       name: '',
       sku: '',
-      description: '',
       primaryCategoryId: '',
       baseUnitId: '',
       costPrice: undefined,
@@ -112,17 +105,10 @@ export default function EditItemModal({
       isExpiryTracked: false,
       isBundle: false,
       isService: false,
-      revenueAccountId: undefined,
-      cogsAccountId: undefined,
-      inventoryAccountId: undefined,
-      lengthCm: undefined,
-      widthCm: undefined,
-      heightCm: undefined,
-      weightKg: undefined,
-      warrantyPeriodDays: undefined,
       brandId: undefined,
       typeId: '',
       modelNumber: '',
+      prices: [],
     },
   })
 
@@ -131,7 +117,6 @@ export default function EditItemModal({
       reset({
         name: item.name,
         sku: item.sku,
-        description: item.description ?? '',
         primaryCategoryId: item.primaryCategory?.id ?? undefined,
         baseUnitId: item.baseUnit?.id ?? undefined,
         costPrice: item.costPrice != null ? Number(item.costPrice) : undefined,
@@ -143,18 +128,10 @@ export default function EditItemModal({
         isExpiryTracked: item.isExpiryTracked ?? false,
         isBundle: item.isBundle ?? false,
         isService: item.isService ?? false,
-        revenueAccountId: item.revenueAccountId ?? undefined,
-        cogsAccountId: item.cogsAccountId ?? undefined,
-        inventoryAccountId: item.inventoryAccountId ?? undefined,
-        lengthCm: item.lengthCm != null ? Number(item.lengthCm) : undefined,
-        widthCm: item.widthCm != null ? Number(item.widthCm) : undefined,
-        heightCm: item.heightCm != null ? Number(item.heightCm) : undefined,
-        weightKg: item.weightKg != null ? Number(item.weightKg) : undefined,
-        warrantyPeriodDays:
-          item.warrantyPeriodDays != null ? Number(item.warrantyPeriodDays) : undefined,
         brandId: item.brand?.id ?? undefined,
         typeId: item.type?.id ?? '',
         modelNumber: item.modelNumber ?? '',
+        prices: [],
       })
     } else if (!isOpen) {
       reset()
@@ -165,6 +142,23 @@ export default function EditItemModal({
   }, [item?.id, isOpen, reset])
 
   const selectedCategoryId = useWatch({ control, name: 'primaryCategoryId' })
+  const addBrand = useQuickAddClassification('brand')
+  const addType = useQuickAddClassification('type')
+  // A quick-added brand/type is picked at once; its toast's Undo lets go of
+  // it again — unless something else has been picked since.
+  const pick = { shouldDirty: true, shouldValidate: submitCount > 0 }
+  const brandAction = quickAddAction(
+    addBrand,
+    'brand',
+    ({ id }) => setValue('brandId', id, pick),
+    (id) => getValues('brandId') === id && setValue('brandId', undefined, pick)
+  )
+  const typeAction = quickAddAction(
+    addType,
+    'type',
+    ({ id }) => setValue('typeId', id, pick),
+    (id) => getValues('typeId') === id && setValue('typeId', '', pick)
+  )
 
   // Service items never carry stock/serial tracking — force-clear + disable those
   // checkboxes whenever "Service Item" is checked.
@@ -199,22 +193,28 @@ export default function EditItemModal({
   useEffect(() => {
     if (!isOpen) {
       setAttrValues({})
-      setSelectedTags([])
     }
   }, [isOpen])
 
-  const { data: existingTagsData } = useQuery({
-    queryKey: ['item-tags', item?.id],
-    queryFn: () => getItemTags(item!.id),
-    enabled: isOpen && !!item?.id,
+  // The item's current prices, one entry per price use — the Add Item price
+  // section prefilled. Kept as the baseline so only edits get saved.
+  const { data: priceGuide } = useQuery({
+    queryKey: ['inventory-item-price-guide', item?.id],
+    queryFn: () => getItemPriceGuide(item!.id),
+    enabled: isOpen && !!item?.id && canSetPrices,
     staleTime: 30 * 1000,
   })
+  const originalPrices: ItemPriceEntry[] = (priceGuide?.data ?? []).map(fromPriceGuideEntry)
 
   useEffect(() => {
-    if (isOpen && existingTagsData) {
-      setSelectedTags(normalizeTagList(existingTagsData.data))
-    }
-  }, [isOpen, existingTagsData])
+    if (!isOpen || !priceGuide?.data) return
+    // reset (not resetField) so useFieldArray picks up the rows; dirty fields
+    // the user already touched are kept.
+    reset(
+      { ...getValues(), prices: priceGuide.data.map(fromPriceGuideEntry) },
+      { keepDirtyValues: true }
+    )
+  }, [isOpen, priceGuide, reset, getValues])
 
   useEffect(() => {
     if (submitCount === 0) return
@@ -245,7 +245,7 @@ export default function EditItemModal({
     onClose()
   }
 
-  async function handleFormSubmit(data: UpdateItemFormValues) {
+  async function handleFormSubmit({ prices, ...data }: UpdateItemFormValues) {
     const result = await onSubmit(data)
     if (!result.success) {
       if (result.error === 'duplicate_sku') {
@@ -256,16 +256,32 @@ export default function EditItemModal({
     if (attrDefs.length > 0) {
       await onAttributeSubmit(attrValues)
     }
-    if (item) {
-      const originalTags = normalizeTagList(existingTagsData?.data)
-      const toAdd = selectedTags.filter((t) => !originalTags.includes(t))
-      const toRemove = originalTags.filter((t) => !selectedTags.includes(t))
-      await Promise.all([
-        ...toAdd.map((t) => addItemTag(item.id, t)),
-        ...toRemove.map((t) => removeItemTag(item.id, t)),
-      ])
-    }
+    if (item && canSetPrices) await savePrices(item.id, prices ?? [])
     onClose()
+  }
+
+  /** Only new or changed price uses are sent; a failure keeps the item edits
+   * and says what didn't stick. */
+  async function savePrices(itemId: string, prices: ItemPriceEntry[]): Promise<void> {
+    const changed = changedPriceEntries(prices, originalPrices)
+    if (changed.length === 0) return
+    const res = await setItemPrices(itemId, changed.map(toItemPricePayload))
+    if (!res.success || !res.data) {
+      showToast({
+        title: 'Item saved, but prices failed',
+        description: res.message,
+        status: 'error',
+      })
+      return
+    }
+    const notSaved = res.data.rows.filter((r) => r.status !== 'create' && r.status !== 'update')
+    if (notSaved.length > 0) {
+      showToast({
+        title: 'Some prices were not saved',
+        description: notSaved.map((r) => r.message).join(' · '),
+        status: 'error',
+      })
+    }
   }
 
   const basicInfoErrors = [
@@ -278,7 +294,7 @@ export default function EditItemModal({
     errors.modelNumber,
   ].filter(Boolean).length
 
-  const pricingErrors = [errors.costPrice, errors.sellingPrice].filter(Boolean).length
+  const pricingErrors = [errors.costPrice].filter(Boolean).length
   const hasSubmitErrors = submitCount > 0 && Object.keys(errors).length > 0
   const isSaving = isSubmitting || isAttributeSubmitting
 
@@ -397,33 +413,6 @@ export default function EditItemModal({
                 {errors.sku && <p className={errorClass}>{errors.sku.message}</p>}
               </div>
 
-              {/* Unit of Measure */}
-              <div>
-                <label className={labelClass}>
-                  Unit of Measure <span className="text-[#b42318]">*</span>
-                </label>
-                <Controller
-                  name="baseUnitId"
-                  control={control}
-                  render={({ field }) => (
-                    <SearchableSelect
-                      chrome={CONTROL_CHROME}
-                      portal
-                      value={field.value ?? ''}
-                      onChange={field.onChange}
-                      options={uomOptions.map((uom) => ({
-                        value: uom.id,
-                        label: `${uom.code} – ${uom.name}`,
-                      }))}
-                      placeholder="Select unit…"
-                      loading={uomOptions.length === 0}
-                      loadingLabel="Loading units…"
-                    />
-                  )}
-                />
-                {errors.baseUnitId && <p className={errorClass}>{errors.baseUnitId.message}</p>}
-              </div>
-
               {/* Type */}
               <div>
                 <label className={labelClass}>
@@ -445,6 +434,7 @@ export default function EditItemModal({
                       placeholder="Select type…"
                       loading={typeOptions.length === 0}
                       loadingLabel="Loading types…"
+                      emptyAction={typeAction}
                     />
                   )}
                 />
@@ -461,6 +451,7 @@ export default function EditItemModal({
                     onChange={field.onChange}
                     categories={categories}
                     error={errors.primaryCategoryId?.message}
+                    getValue={() => getValues('primaryCategoryId') ?? ''}
                   />
                 )}
               />
@@ -482,6 +473,7 @@ export default function EditItemModal({
                       options={brandOptions.map((b) => ({ value: b.id, label: b.name }))}
                       placeholder="Select brand…"
                       clearable
+                      emptyAction={brandAction}
                     />
                   )}
                 />
@@ -513,36 +505,29 @@ export default function EditItemModal({
             {/* Pricing */}
             <FormSection
               variant="card"
-              title="Pricing"
+              title="Cost"
               defaultOpen={true}
               errorCount={pricingErrors}
               forceOpen={hasSubmitErrors && pricingErrors > 0}
             >
-              {(
-                [
-                  { name: 'costPrice', label: 'Cost Price (₱)' },
-                  { name: 'sellingPrice', label: 'Selling Price (₱)' },
-                ] as const
-              ).map(({ name, label }) => (
-                <div key={name}>
-                  <label className={labelClass}>{label}</label>
-                  <Controller
-                    name={name}
-                    control={control}
-                    render={({ field }) => (
-                      <NumericInput
-                        value={field.value}
-                        onChange={field.onChange}
-                        onBlur={field.onBlur}
-                        fieldRef={field.ref}
-                        placeholder="0.00"
-                        className={inputClass}
-                      />
-                    )}
-                  />
-                  {errors[name] && <p className={errorClass}>{errors[name]?.message}</p>}
-                </div>
-              ))}
+              <div>
+                <label className={labelClass}>Cost Price (₱)</label>
+                <Controller
+                  name="costPrice"
+                  control={control}
+                  render={({ field }) => (
+                    <NumericInput
+                      value={field.value}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      fieldRef={field.ref}
+                      placeholder="0.00"
+                      className={inputClass}
+                    />
+                  )}
+                />
+                {errors.costPrice && <p className={errorClass}>{errors.costPrice.message}</p>}
+              </div>
             </FormSection>
 
             {/* Tracking — the same four options Add New Item offers */}
@@ -551,8 +536,6 @@ export default function EditItemModal({
                 {(
                   [
                     { name: 'isSerialTracked', label: 'Serial Tracking' },
-                    { name: 'requiresSecondarySerial', label: 'Dual Serial (Indoor + Outdoor)' },
-                    { name: 'isBundle', label: 'Bundle Item' },
                     { name: 'isService', label: 'Service Item (no stock/serial tracking)' },
                   ] as const
                 ).map(({ name, label }) => {
@@ -588,72 +571,20 @@ export default function EditItemModal({
               </div>
             </FormSection>
 
-            {/* Physical & Tags */}
-            <FormSection variant="card" title="Physical & Tags" defaultOpen={false}>
-              <div className="sm:col-span-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {DIMENSION_FIELDS.map(({ name, label }) => (
-                  <div key={name}>
-                    <label className={labelClass}>{label}</label>
-                    <Controller
-                      name={name}
-                      control={control}
-                      render={({ field }) => (
-                        <NumericInput
-                          value={field.value}
-                          onChange={field.onChange}
-                          onBlur={field.onBlur}
-                          fieldRef={field.ref}
-                          className={inputClass}
-                        />
-                      )}
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <div>
-                <label className={labelClass}>Warranty (days)</label>
-                <Controller
-                  name="warrantyPeriodDays"
-                  control={control}
-                  render={({ field }) => (
-                    <NumericInput
-                      value={field.value}
-                      onChange={field.onChange}
-                      onBlur={field.onBlur}
-                      fieldRef={field.ref}
-                      integer
-                      placeholder="e.g. 365"
-                      className={inputClass}
-                    />
-                  )}
+            {canSetPrices && (
+              <FormSection
+                variant="card"
+                title="Prices (Optional)"
+                defaultOpen={true}
+                errorCount={errors.prices ? 1 : 0}
+                forceOpen={hasSubmitErrors && !!errors.prices}
+              >
+                <ItemPricesSection
+                  control={control as unknown as Control<PricesFormValues>}
+                  errors={errors}
                 />
-              </div>
-
-              <div className="sm:col-span-2">
-                <p className={labelClass}>Tags</p>
-                <div className="flex flex-wrap gap-3">
-                  {ALL_TAGS.map(({ value, label }) => (
-                    <label
-                      key={value}
-                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#e4e4e9] px-3 py-2 text-[13px] text-[#3d3d4a] hover:bg-[#fbfbfc]"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedTags.includes(value)}
-                        onChange={(e) => {
-                          setSelectedTags((prev) =>
-                            e.target.checked ? [...prev, value] : prev.filter((t) => t !== value)
-                          )
-                        }}
-                        className="accent-[#5b21b6]"
-                      />
-                      {label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </FormSection>
+              </FormSection>
+            )}
 
             {/* Custom Attributes — only rendered when attrDefs are present */}
             {attrDefs.length > 0 && (
@@ -675,34 +606,6 @@ export default function EditItemModal({
                 ))}
               </FormSection>
             )}
-
-            {/* ACC-21: Accounting overrides (optional) */}
-            <FormSection variant="card" title="Accounting (optional)" defaultOpen={false}>
-              <p className="sm:col-span-2 -mt-1 text-[12px] text-[#4b4b5a]">
-                Override the default revenue / COGS / inventory accounts for this item.
-              </p>
-              <AccountField
-                label="Revenue Account"
-                name="revenueAccountId"
-                control={control}
-                accounts={accounts}
-                filter="REVENUE"
-              />
-              <AccountField
-                label="COGS Account"
-                name="cogsAccountId"
-                control={control}
-                accounts={accounts}
-                filter="EXPENSE"
-              />
-              <AccountField
-                label="Inventory Account"
-                name="inventoryAccountId"
-                control={control}
-                accounts={accounts}
-                filter="ASSET"
-              />
-            </FormSection>
           </div>
         </div>
 

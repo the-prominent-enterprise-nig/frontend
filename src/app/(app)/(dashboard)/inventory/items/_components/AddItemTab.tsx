@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   useMutation,
   useQuery,
@@ -86,20 +86,19 @@ function useCreateItem(): UseMutationResult<CreateItemResult, Error, CreateItemF
 /**
  * Master Data's Add Item tab — the Add New Item form shown inline, the same
  * shape as Stock Transaction's Stock Request tab. Moved here from Item
- * Master's tab-strip button. A successful save remounts it blank so the next
- * item can be keyed straight in.
+ * Master's tab-strip button. A successful save (item + any initial stock and
+ * prices) lands on Item Master, where the new item shows in the list.
  */
 export default function AddItemTab(): React.JSX.Element {
-  const [formKey, setFormKey] = useState(0)
+  const router = useRouter()
   const lookups = useItemLookups()
   const create = useCreateItem()
 
   return (
     <CreateItemModal
-      key={formKey}
       variant="page"
       isOpen
-      onClose={() => setFormKey((k) => k + 1)}
+      onClose={() => router.push('/inventory/items')}
       onSubmit={(data) => create.mutateAsync(data)}
       isSubmitting={create.isPending}
       {...lookups}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, RefreshCw, Search, X, QrCode, Zap, Barcode, Trash2 } from 'lucide-react'
+import { Plus, Search, X, QrCode, Zap, Barcode, Trash2 } from 'lucide-react'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
@@ -15,7 +15,6 @@ import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { MONO, PLEX } from '@/src/libs/design/plex'
 import {
   EmptyState,
-  ICON_BUTTON,
   ListHeader,
   ListSearch,
   PAGE_INNER,
@@ -381,7 +380,6 @@ export default function BarcodesPageView({ session }: { session: SessionUser }) 
     isDeleting,
     bulkGenerate,
     isBulkGenerating,
-    refetch,
   } = useBarcodeManager()
 
   async function handleQuickGenerate(item: ItemSummary) {
@@ -420,17 +418,6 @@ export default function BarcodesPageView({ session }: { session: SessionUser }) 
           description="Generate and manage barcodes assigned to inventory items."
           actions={
             <>
-              <Tooltip label="Refresh">
-                <button
-                  type="button"
-                  onClick={() => refetch()}
-                  disabled={isFetching}
-                  aria-label="Refresh"
-                  className={`${ICON_BUTTON} disabled:opacity-50`}
-                >
-                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-                </button>
-              </Tooltip>
               {canManage && selectedIds.size > 0 && (
                 <button
                   type="button"
