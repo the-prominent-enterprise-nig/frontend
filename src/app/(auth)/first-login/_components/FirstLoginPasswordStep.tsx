@@ -7,7 +7,11 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { AlertCircle, ArrowLeft, Eye, EyeOff, Lock } from 'lucide-react'
 import { createFirstPassword } from '@/src/libs/auth/actions/first-login'
 import { clearClientSession } from '@/src/libs/auth/clear-client-session'
-import { FirstLoginSchema, type FirstLoginInput } from '@/src/schema/auth/first-login'
+import {
+  FIRST_LOGIN_MIN_PASSWORD_LENGTH,
+  FirstLoginSchema,
+  type FirstLoginInput,
+} from '@/src/schema/auth/first-login'
 import { cn } from '@/src/libs/tailwind-merge/utils'
 
 interface FirstLoginPasswordStepProps {
@@ -94,6 +98,7 @@ export default function FirstLoginPasswordStep({ email, onBack }: FirstLoginPass
                   type={showPassword ? 'text' : 'password'}
                   autoComplete="new-password"
                   placeholder="Create a password"
+                  aria-describedby="fl-password-rule"
                   className={inputClass(!!errors.password)}
                 />
                 <button
@@ -106,6 +111,10 @@ export default function FirstLoginPasswordStep({ email, onBack }: FirstLoginPass
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+              <p id="fl-password-rule" className="text-xs text-gray-500">
+                At least {FIRST_LOGIN_MIN_PASSWORD_LENGTH} characters, with an upper-case letter, a
+                lower-case letter, a number and a special character.
+              </p>
               {errors.password && (
                 <p className="flex items-center gap-1 text-xs text-red-600">
                   <AlertCircle className="h-3.5 w-3.5 shrink-0" />
