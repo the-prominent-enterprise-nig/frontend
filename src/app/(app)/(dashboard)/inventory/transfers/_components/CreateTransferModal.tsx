@@ -107,6 +107,10 @@ type Props = {
   // the two differ only in where the initial values come from and where the
   // submit goes.
   editing?: TransferSummary | null
+  /** With `editing`: the source custodian reshaping an incoming request before
+   * accepting it. Only the lines are editable; the route, dates and reason
+   * show read-only, and the request keeps its status and approvals. */
+  sourceEdit?: boolean
   // 'page' renders the form inline as a tab's content (Stock Transaction's
   // Stock Request tab) instead of over the list: no close button, Cancel
   // clears the form, and the footer sticks to the viewport bottom.
@@ -188,6 +192,40 @@ const EMPTY_DELIVERY: NonNullable<CreateTransferFormValues['delivery']> = {
   vehiclePlate: '',
   carrierName: '',
   notes: '',
+}
+
+/** The request's route, dates and reason, read-only for the source's edit. */
+function SourceEditRoute({
+  transfer,
+  from,
+  to,
+}: {
+  transfer: TransferSummary
+  from?: WarehouseSummary
+  to?: WarehouseSummary
+}): React.ReactElement {
+  const fields: [string, string][] = [
+    ['From', from ? branchLabel(from) : (transfer.fromWarehouse?.name ?? '—')],
+    ['To', to ? branchLabel(to) : (transfer.toWarehouse?.name ?? '—')],
+    ['Transfer date', (transfer.transferDate ?? '').slice(0, 10) || '—'],
+    ['Expected arrival', (transfer.expectedArrival ?? '').slice(0, 10) || '—'],
+    ['Reason', transfer.reason || '—'],
+  ]
+  return (
+    <div className="rounded-xl border border-[#e4e4e9] bg-white">
+      <div className="border-b border-[#eeeef1] px-[18px] py-[13px]">
+        <span className="text-[13.5px] font-semibold text-[#17171c]">Request details</span>
+      </div>
+      <dl className="grid grid-cols-1 gap-3 px-[18px] py-4 sm:grid-cols-2 lg:grid-cols-5">
+        {fields.map(([label, value]) => (
+          <div key={label} className="min-w-0">
+            <dt className={labelClass}>{label}</dt>
+            <dd className="truncate text-[13px] text-[#17171c]">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
 }
 
 type LineRowProps = {
@@ -398,10 +436,12 @@ export default function CreateTransferModal({
   isCreatingCaravan = false,
   canCreateCaravan = false,
   editing = null,
+  sourceEdit = false,
   variant = 'overlay',
 }: Props) {
   const today = manilaToday()
   const isEditing = !!editing
+  const isSourceEdit = isEditing && sourceEdit
   const isDispatchMode = !isEditing && !!initialDraft?.dispatchNow
   // Units already chosen where they sit (stockbook ticks, a repair ticket):
   // the source is fixed to that location and the destination is open, both
@@ -518,7 +558,9 @@ export default function CreateTransferModal({
               // Its details open editable to anyone who could have created
               // it; everyone else sees it as a fixed destination.
               newCaravan:
-                editingCaravan && canCreateCaravan ? caravanFormValues(editingCaravan) : undefined,
+                editingCaravan && canCreateCaravan && !sourceEdit
+                  ? caravanFormValues(editingCaravan)
+                  : undefined,
               lines: collapseLinesForEdit(editing.lines ?? []),
             }
           : {
@@ -566,7 +608,7 @@ export default function CreateTransferModal({
     // the open/close transition, not on every render while the modal stays
     // open (which would wipe in-progress edits if `warehouses` re-fetches).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, reset, today, initialDraft, editing])
+  }, [isOpen, reset, today, initialDraft, editing, sourceEdit])
 
   // `warehouses` (and therefore lockedToWarehouseId) resolves asynchronously
   // and can still be empty at the moment the effect above runs on open, so
@@ -758,11 +800,13 @@ export default function CreateTransferModal({
                   : 'New Stock Request'}
             </h2>
             <p className="mt-1 text-[13px] text-[#4b4b5a]">
-              {isEditing
-                ? 'Saving resubmits this request for approval from the start — any sign-off it already has is cleared.'
-                : isDispatchMode
-                  ? 'Sent straight away — the units go In Transit as soon as you dispatch. No request or approval.'
-                  : 'Submitted as a request — routed to the source branch, or to head office first if approval is required.'}
+              {isSourceEdit
+                ? 'Change what you will send — quantities, lines and items. The request stays with you to accept, and keeps its approvals.'
+                : isEditing
+                  ? 'Saving resubmits this request for approval from the start — any sign-off it already has is cleared.'
+                  : isDispatchMode
+                    ? 'Sent straight away — the units go In Transit as soon as you dispatch. No request or approval.'
+                    : 'Submitted as a request — routed to the source branch, or to head office first if approval is required.'}
             </p>
           </div>
           {!isPage && (
@@ -785,7 +829,10 @@ export default function CreateTransferModal({
       >
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <div className="mx-auto flex max-w-[1400px] flex-col gap-4">
-            <div className="grid grid-cols-1 gap-4">
+            {isSourceEdit && editing && (
+              <SourceEditRoute transfer={editing} from={fromWarehouse} to={toWarehouse} />
+            )}
+            <div className={`grid grid-cols-1 gap-4 ${isSourceEdit ? 'hidden' : ''}`}>
               {/* Request details */}
               <div className="rounded-xl border border-[#e4e4e9] bg-white">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeeef1] px-[18px] py-[13px]">
@@ -1230,11 +1277,13 @@ export default function CreateTransferModal({
                     : isDispatchMode
                       ? 'Dispatching…'
                       : 'Submitting…'
-                  : isEditing
-                    ? 'Save & Resubmit'
-                    : isDispatchMode
-                      ? 'Dispatch'
-                      : 'Submit Request'}
+                  : isSourceEdit
+                    ? 'Save Changes'
+                    : isEditing
+                      ? 'Save & Resubmit'
+                      : isDispatchMode
+                        ? 'Dispatch'
+                        : 'Submit Request'}
             </button>
           </div>
         </div>

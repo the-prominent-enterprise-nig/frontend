@@ -1164,6 +1164,8 @@ type Props = {
   // itself and say which transfer to load.
   canEdit?: boolean
   onEdit?: (transfer: TransferSummary) => void
+  /** The source custodian edits the lines before accepting (gated on accept). */
+  onSourceEdit?: (transfer: TransferSummary) => void
   onApproveHq: (id: string) => Promise<ApiResponse<unknown>>
   onRejectHq: (id: string, data: RejectHqTransferFormValues) => Promise<ApiResponse<unknown>>
   onApproveManager: (id: string) => Promise<ApiResponse<unknown>>
@@ -1213,6 +1215,7 @@ export default function TransferDetailModal({
   onCancel,
   canEdit = false,
   onEdit,
+  onSourceEdit,
   onApproveHq,
   onRejectHq,
   onApproveManager,
@@ -1430,6 +1433,12 @@ export default function TransferDetailModal({
     !isUdsPaired &&
     !hasPinnedSerial &&
     inScope(transfer?.toWarehouse)
+  // The source custodian may reshape a request waiting on them before
+  // accepting it — lines only, status and approvals kept. Takes precedence
+  // over the requester's edit for someone on both sides (head office), since
+  // it doesn't wipe the approvals the request already collected.
+  const canSourceEditThis =
+    canAcceptThis && status === 'requested' && !isUdsPaired && !hasPinnedSerial
 
   // Only worth a column when at least one line actually carries a serial —
   // otherwise every row just shows a distracting "—".
@@ -1817,15 +1826,29 @@ export default function TransferDetailModal({
           <div className="flex shrink-0 items-center gap-2">
             {/* Edit acts on the request itself (WH-02). Hidden while an
                 inline form is open, same as the footer. */}
-            {transfer && !inlineFormOpen && canEditThis && onEdit && (
+            {transfer && !inlineFormOpen && canSourceEditThis && onSourceEdit ? (
               <button
                 type="button"
-                onClick={() => onEdit(transfer)}
+                onClick={() => onSourceEdit(transfer)}
                 className="flex items-center gap-1.5 rounded-lg border border-[#ddd0f7] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-[#f5f0ff]"
               >
                 <Pencil className="h-3.5 w-3.5" />
                 Edit Request
               </button>
+            ) : (
+              transfer &&
+              !inlineFormOpen &&
+              canEditThis &&
+              onEdit && (
+                <button
+                  type="button"
+                  onClick={() => onEdit(transfer)}
+                  className="flex items-center gap-1.5 rounded-lg border border-[#ddd0f7] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-[#f5f0ff]"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit Request
+                </button>
+              )
             )}
             <button
               type="button"
