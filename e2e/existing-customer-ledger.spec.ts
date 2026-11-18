@@ -1,5 +1,5 @@
-import { test, expect, type Page } from '@playwright/test'
-import { gotoReady } from './utils'
+import { test, expect, type Browser, type Page } from '@playwright/test'
+import { gotoReady, loginAs } from './utils'
 import { AGING_TEMPLATE_HEADERS } from '../src/schema/crm/aging-load'
 
 // Docket NIG #38 — "Interface for Existing customer ledger". An account carried
@@ -16,6 +16,11 @@ const stamp = Date.now()
 const SI_PREFIX = `E2EEX${stamp}`
 const LETTERS = String(stamp).replace(/\d/g, (d) => 'ABCDEFGHIJ'[Number(d)])
 const CUSTOMER = `E2E EXISTING ${LETTERS} ALPHA`
+const PASSWORD = process.env.E2E_ROLE_PASSWORD ?? 'dev-prominent-enterprise-2026'
+// A Branch Manager of Bago; the fixture accounts are tagged Ajuy ('AJB').
+const BAGO_MANAGER = 'technova.b1.manager@test.com'
+// A Branch Cashier — not one of the roles the W/tax box is for.
+const CASHIER = 'technova.b1.cashier@test.com'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const now = new Date()
@@ -180,15 +185,15 @@ test('an account not yet matured: months-running band, Billing row at the cut-of
   await expect(text).toContainText(`${12 - billed} remaining`)
   await expect(text).toContainText(`7 were running at the ${mon(cutoffDay)} cut-off`)
 
-  // Header: the customer, the SI and account numbers, the three actions —
-  // no Active badge, and no W/tax tick box.
+  // Header: the customer, the SI and account numbers, the actions — no Active
+  // badge, and the W/tax received tick box, unticked on a freshly loaded account.
   const ledger = page.getByTestId('existing-ledger')
   await expect(ledger.getByRole('heading', { level: 1 })).toContainText(CUSTOMER)
   await expect(ledger).toContainText(`SI ${SI_PREFIX}-1`)
   await expect(ledger.getByRole('button', { name: 'Print' })).toBeVisible()
   await expect(ledger.getByRole('link', { name: 'Edit' })).toBeVisible()
   await expect(page.getByTestId('ledger-status')).toHaveCount(0)
-  await expect(ledger.getByText('W/tax received')).toHaveCount(0)
+  await expect(ledger.getByRole('checkbox', { name: 'W/tax received' })).not.toBeChecked()
 
   // Record payment opens POS Collections on this account (`aging:<account id>`):
   // that is where the open session is attached, so the cash counts in the
@@ -258,6 +263,92 @@ test('a matured account: all installments billed at once, nothing further to bil
     '3 of 3 installments billed · no further bills to post'
   )
   await expect(ledger).toContainText('Installments in arrears')
+})
+
+// The mockup's "W/tax received" tick box — a marker only: it tells staff the
+// customer's withholding tax has been received, and moves no figure.
+test('W/tax received: ticked and unticked from the header, kept on reload, figures untouched', async ({
+  page,
+}) => {
+  const a = await accountOf(page, '2')
+  await openLedger(page, a)
+  const box = page.getByRole('checkbox', { name: 'W/tax received' })
+  const outstanding = await page.getByTestId('total-amt-outstanding').textContent()
+  await expect(box).toBeEnabled()
+  await expect(box).not.toBeChecked()
+  const pill = page.getByTestId('ledger-wtax-pill')
+  await expect(pill).toHaveCount(0)
+
+  await box.check()
+  await expect(page.getByText('Marked W/tax received')).toBeVisible()
+  // The pill beside the SI line shows it at a glance, at once.
+  await expect(pill).toHaveText('W/tax received')
+  await openLedger(page, a)
+  await expect(box).toBeChecked()
+  await expect(pill).toBeVisible()
+  await expect(page.getByTestId('ledger-wtax-received')).toHaveAttribute('title', /^Ticked by /)
+  await expect(page.getByTestId('total-amt-outstanding')).toHaveText(outstanding ?? '')
+
+  await box.uncheck()
+  await expect(page.getByText('W/tax received unticked')).toBeVisible()
+  await expect(pill).toHaveCount(0)
+  await openLedger(page, a)
+  await expect(box).not.toBeChecked()
+  await expect(pill).toHaveCount(0)
+  await expect(page.getByTestId('ledger-wtax-received')).toHaveAttribute('title', /^Unticked by /)
+})
+
+test.describe('W/tax received for those who cannot tick it', () => {
+  test.use({ storageState: { cookies: [], origins: [] } })
+
+  // The fixture accounts are tagged Ajuy ('AJB'). The account list is
+  // branch-scoped, so the account is looked up — and ticked — as the Business
+  // Owner first.
+  async function tickedAsOwner(browser: Browser, baseURL: string | undefined): Promise<Fixture> {
+    const owner = await browser.newContext({
+      baseURL,
+      storageState: 'e2e/.auth/business-owner.json',
+    })
+    const ownerPage = await owner.newPage()
+    const a = await accountOf(ownerPage, '1')
+    const res = await ownerPage.request.patch(
+      `/api/crm/installment-accounts/${a.id}/withholding-tax-received`,
+      { data: { received: true } }
+    )
+    expect(res.ok()).toBeTruthy()
+    await owner.close()
+    return a
+  }
+
+  // A box that cannot be ticked is not shown at all — a greyed-out one reads
+  // as if it were not received. The pill still says that it was.
+  test('a Bago Branch Manager on an Ajuy account sees the pill but no box, and the server refuses it', async ({
+    page,
+    browser,
+  }, testInfo) => {
+    const a = await tickedAsOwner(browser, testInfo.project.use.baseURL)
+
+    await loginAs(page, BAGO_MANAGER, PASSWORD)
+    await openLedger(page, a)
+    await expect(page.getByTestId('ledger-wtax-pill')).toHaveText('W/tax received')
+    await expect(page.getByTestId('ledger-wtax-received')).toHaveCount(0)
+
+    const res = await page.request.patch(
+      `/api/crm/installment-accounts/${a.id}/withholding-tax-received`,
+      { data: { received: false } }
+    )
+    expect(res.status()).toBe(404)
+  })
+
+  // The box is for the Business Owner, Branch Managers and AR only.
+  test('a cashier sees the pill but no box', async ({ page, browser }, testInfo) => {
+    const a = await tickedAsOwner(browser, testInfo.project.use.baseURL)
+
+    await loginAs(page, CASHIER, PASSWORD)
+    await openLedger(page, a)
+    await expect(page.getByTestId('ledger-wtax-pill')).toHaveText('W/tax received')
+    await expect(page.getByTestId('ledger-wtax-received')).toHaveCount(0)
+  })
 })
 
 test('the Transaction picker sits beside the back link and the all-transactions view stays the multi-purchase summary', async ({
