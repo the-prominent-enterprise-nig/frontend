@@ -37,7 +37,13 @@ import { StatusBadge } from '@/src/components/ui/StatusBadge'
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { formatAge, formatShortDate } from '@/src/libs/format/date'
 import { originDate, originLabel, originRef } from '@/src/libs/format/serial-provenance'
-import { DestinationCell, LocationNote, ServiceCenterLocation } from './SerialWhereaboutsCells'
+import {
+  DestinationCell,
+  LocationNote,
+  PastUnitLocation,
+  PastUnitPill,
+  ServiceCenterLocation,
+} from './SerialWhereaboutsCells'
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { LocationFilters } from '@/src/components/inventory/LocationFilters'
@@ -342,8 +348,9 @@ export default function SerialNumberList({
     ? serials.find((x) => x.serialNumber.toLowerCase() === search.trim().toLowerCase())
     : undefined
   // The unit whose history is open under its row: the one clicked, or on the
-  // Locator the one an exact serial search matches.
-  const expandedSerial = isLocator ? (inlineSerial ?? exactSerial ?? null) : null
+  // Locator the one an exact serial search matches. On the stockbook only a
+  // unit that has left the branch opens one — its row has nothing else to say.
+  const expandedSerial = isLocator ? (inlineSerial ?? exactSerial ?? null) : inlineSerial
 
   const openCaravan = (id: string): void => {
     setCaravanView(true)
@@ -736,9 +743,10 @@ export default function SerialNumberList({
                         <Fragment key={serial.id}>
                           <tr
                             // On the Locator the whole row opens the unit's
-                            // history; the stock book has no movement history.
+                            // history; on the stock book, only a unit that has
+                            // left the branch does (what it saw of it).
                             onClick={
-                              isLocator
+                              isLocator || serial.pastUnit
                                 ? () =>
                                     openSerialHistory({
                                       id: serial.id,
@@ -746,7 +754,7 @@ export default function SerialNumberList({
                                     })
                                 : undefined
                             }
-                            className={`${isLocator ? 'cursor-pointer ' : ''}hover:bg-[#fcfcfd] ${
+                            className={`${isLocator || serial.pastUnit ? 'cursor-pointer ' : ''}hover:bg-[#fcfcfd] ${
                               selection.isSelected(serial.id) || inlineSerial?.id === serial.id
                                 ? 'bg-[#f8f4fd]'
                                 : ''
@@ -797,20 +805,30 @@ export default function SerialNumberList({
                               {serial.item?.modelNumber ?? '—'}
                             </td>
                             <td className="px-4 py-[11px] text-[13.5px] text-[#4b4b5a] hidden lg:table-cell">
-                              <div className="font-medium text-[#17171c]">
-                                {originLabel(serial)}
-                              </div>
-                              <div
-                                className={`${MONO} whitespace-nowrap text-[12.5px] text-[#5b21b6]`}
-                              >
-                                {originRef(serial) ?? '—'}
-                              </div>
-                              <div className="text-[12.5px] text-ink-muted">
-                                {originDate(serial) ? formatShortDate(originDate(serial)!) : '—'}
-                              </div>
+                              {serial.pastUnit ? (
+                                '—'
+                              ) : (
+                                <>
+                                  <div className="font-medium text-[#17171c]">
+                                    {originLabel(serial)}
+                                  </div>
+                                  <div
+                                    className={`${MONO} whitespace-nowrap text-[12.5px] text-[#5b21b6]`}
+                                  >
+                                    {originRef(serial) ?? '—'}
+                                  </div>
+                                  <div className="text-[12.5px] text-ink-muted">
+                                    {originDate(serial)
+                                      ? formatShortDate(originDate(serial)!)
+                                      : '—'}
+                                  </div>
+                                </>
+                              )}
                             </td>
                             <td className="px-4 py-[11px] text-[13.5px] text-[#4b4b5a] hidden sm:table-cell">
-                              {serial.consignedToSupplier ? (
+                              {serial.pastUnit ? (
+                                <PastUnitLocation pastUnit={serial.pastUnit} />
+                              ) : serial.consignedToSupplier ? (
                                 <ServiceCenterLocation serial={serial} />
                               ) : (
                                 <>
@@ -843,10 +861,12 @@ export default function SerialNumberList({
                               )}
                             </td>
                             <td className="px-4 py-[11px] text-[13.5px] text-[#4b4b5a] hidden md:table-cell">
-                              <DestinationCell serial={serial} />
+                              {serial.pastUnit ? '—' : <DestinationCell serial={serial} />}
                             </td>
                             <td className="px-4 py-[11px] text-[13.5px] text-[#4b4b5a] hidden md:table-cell">
-                              {serial.firstReceivedAt ? formatAge(serial.firstReceivedAt) : '—'}
+                              {serial.firstReceivedAt && !serial.pastUnit
+                                ? formatAge(serial.firstReceivedAt)
+                                : '—'}
                             </td>
                             <td className="px-4 py-[11px] text-[13.5px] text-[#4b4b5a] hidden md:table-cell">
                               {serial.locationSince ? formatAge(serial.locationSince) : '—'}
@@ -860,10 +880,14 @@ export default function SerialNumberList({
                             )}
                             <td className="px-4 py-[11px] text-center">
                               <div className="flex flex-col items-center gap-1">
-                                <SerialStatusPill
-                                  status={serial.status}
-                                  repossessed={serial.receivedAs === 'repo'}
-                                />
+                                {serial.pastUnit ? (
+                                  <PastUnitPill />
+                                ) : (
+                                  <SerialStatusPill
+                                    status={serial.status}
+                                    repossessed={serial.receivedAs === 'repo'}
+                                  />
+                                )}
                                 {serial.openTransfer && (
                                   <OpenTransferChip number={serial.openTransfer.transferNumber} />
                                 )}

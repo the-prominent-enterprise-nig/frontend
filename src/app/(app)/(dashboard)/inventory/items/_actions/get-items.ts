@@ -15,12 +15,14 @@ export async function getItems(params?: {
     | 'pending_approval'
     | 'approved'
     | 'rejected'
-  /** A Category (the sheet's GROUP) or Subgroup; a Category matches its Subgroups too. */
+  /** A Category or Subgroup (the sheet's CATEGORY / SUBGROUP); a Category matches its Subgroups too. */
   primaryCategoryId?: string
   /** The client sheet's TYPE — an item type. */
   typeId?: string
   /** Scenario 56 — only items with units on hand in this operation. */
   region?: 'panay' | 'negros'
+  /** Items with units on hand at this branch / warehouse. */
+  warehouseId?: string
 }): Promise<ApiResponse<ItemListResponse>> {
   try {
     const result = await api.get<ItemListResponse>(

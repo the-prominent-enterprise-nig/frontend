@@ -14,6 +14,7 @@ import {
   deleteCustomers,
   openCustomSelect,
   pickCartPriceUse,
+  pickCheckoutSession,
 } from './utils'
 
 // Mixed payment at POS checkout: one sale tendered with several methods. The
@@ -174,20 +175,6 @@ async function ensureOpenSession(request: APIRequestContext, branchId: string): 
   })
 }
 
-async function pickSessionIfAsked(page: Page): Promise<void> {
-  await expect(page.getByPlaceholder('Search by name or serial')).toBeVisible({ timeout: 15_000 })
-  const sessionSelect = page.locator('select').filter({ hasText: 'Select session' })
-  const autoSelected = page.getByText(/^Counter \d+$/).first()
-  await expect(sessionSelect.or(autoSelected)).toBeVisible({ timeout: 15_000 })
-  if (await sessionSelect.isVisible()) {
-    const value = await sessionSelect
-      .locator('option', { hasText: BRANCH })
-      .first()
-      .getAttribute('value')
-    await sessionSelect.selectOption(value!)
-  }
-}
-
 async function addItem(page: Page): Promise<void> {
   const search = page.getByPlaceholder('Search by name or serial')
   await expect(search).toBeVisible({ timeout: 15_000 })
@@ -211,7 +198,7 @@ async function selectCustomer(page: Page, name: string): Promise<void> {
 async function readyCashSale(page: Page, label: string, salesInvoiceNumber: string) {
   const customer = await createCustomer(page.request, label)
   await gotoReady(page, '/pos/checkout')
-  await pickSessionIfAsked(page)
+  await pickCheckoutSession(page, BRANCH)
   await addItem(page)
   await selectCustomer(page, customer.name)
   await fillStable(page.getByLabel('Sales Invoice No.'), salesInvoiceNumber)
@@ -560,7 +547,7 @@ test.describe('POS Checkout — Mixed payment', () => {
     const customer = await createCustomer(page.request, 'F11')
     const salesInvoiceNumber = `SI-MPF11-${Date.now()}`
     await gotoReady(page, '/pos/checkout')
-    await pickSessionIfAsked(page)
+    await pickCheckoutSession(page, BRANCH)
     await addItem(page)
     await selectCustomer(page, customer.name)
 

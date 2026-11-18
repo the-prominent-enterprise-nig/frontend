@@ -10,8 +10,9 @@ import {
   type ReactNode,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, Check, X } from 'lucide-react'
+import { ChevronDown, Check, Loader2, Plus, X } from 'lucide-react'
 import { watchForScan } from '@/src/libs/scanner/watchForScan'
+import { nearMatches } from '@/src/libs/format/near-match'
 
 /** Matches the in-flow dropdown's max-h-56; the portalled one shrinks below
  * this when the chosen side has less room. */
@@ -30,6 +31,16 @@ export type SearchableSelectOption = {
   /** Secondary text beside the label. Display only — never type-filtered,
    * so adding it can't change what any picker matches. */
   description?: React.ReactNode
+}
+
+/** What a picker offers when the typed text matches nothing — e.g. add it as
+ * a new brand. Options that look like a typo of the text are suggested above
+ * it first. Click only (never Enter), so nothing is added by accident.
+ * `onSelect` gets the typed text (trimmed); the list stays open showing a
+ * spinner until it settles, then closes. */
+export type SearchableSelectEmptyAction = {
+  label: (typed: string) => string
+  onSelect: (typed: string) => Promise<unknown> | void
 }
 
 /** Same label ignoring case; and for numbers, the same number ("09" = "9"). */
@@ -94,6 +105,10 @@ type BaseProps = {
   /** A small mark shown inside the box before the text, e.g. a tag for a
    * price category. */
   icon?: ReactNode
+  /** Shown under "No results" when the typed text matches nothing, so the
+   * user isn't stuck on an empty list — e.g. Add "Kolin" as a brand. Off by
+   * default so the existing usages are untouched. */
+  emptyAction?: SearchableSelectEmptyAction
 }
 
 /** Why a single-select changed: picked from the list (a click, or Enter), or
@@ -141,6 +156,7 @@ export default function SearchableSelect(props: Props) {
     inputMode,
     ariaLabel,
     icon,
+    emptyAction,
     chrome = {
       idle: 'border-gray-200',
       focused: 'border-prominent-purple-500 ring-1 ring-prominent-purple-500',
@@ -155,6 +171,7 @@ export default function SearchableSelect(props: Props) {
   // list down to that one option. Reopening should always show everything
   // until the user actually types.
   const [querySeeded, setQuerySeeded] = useState(false)
+  const [actionPending, setActionPending] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -268,6 +285,23 @@ export default function SearchableSelect(props: Props) {
     }
     return options.filter((o) => o.label.toLowerCase().includes(q))
   }, [options, query, querySeeded, matchFrom])
+
+  /** The typed text, when it matched nothing and emptyAction can take it. */
+  const unmatchedTyped =
+    emptyAction && !loading && !querySeeded && filtered.length === 0 ? query.trim() : ''
+
+  async function runEmptyAction(typed: string) {
+    if (!emptyAction || actionPending) return
+    setActionPending(true)
+    try {
+      await emptyAction.onSelect(typed)
+    } finally {
+      setActionPending(false)
+      setOpen(false)
+      setQuery('')
+      setQuerySeeded(false)
+    }
+  }
 
   /** The option the typed text unambiguously names, if any — see
    * commitOnBlur. Never for seeded text: that is the current selection
@@ -459,6 +493,47 @@ export default function SearchableSelect(props: Props) {
     </div>
   )
 
+  function renderEmptyAction(typed: string) {
+    const suggestions = nearMatches(typed, options)
+    return (
+      <div>
+        <p className="px-3 pb-1 pt-2 text-sm text-gray-400">No results for &ldquo;{typed}&rdquo;</p>
+        {suggestions.length > 0 && (
+          <div className="border-b border-gray-100 pb-1">
+            <p className="px-3 pb-1 pt-1 text-[10.5px] font-medium uppercase tracking-wide text-gray-400">
+              Did you mean
+            </p>
+            {suggestions.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                data-testid="searchable-select-suggestion"
+                onClick={() => toggle(opt.value)}
+                className="flex w-full px-3 py-2 text-left text-sm text-gray-800 transition-colors hover:bg-gray-50"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          disabled={actionPending}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => runEmptyAction(typed)}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-prominent-purple-700 transition-colors hover:bg-prominent-purple-50 disabled:cursor-wait disabled:opacity-60"
+        >
+          {actionPending ? (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+          ) : (
+            <Plus className="h-3.5 w-3.5 shrink-0" />
+          )}
+          {emptyAction?.label(typed)}
+        </button>
+      </div>
+    )
+  }
+
   function renderList() {
     const list = (
       <div
@@ -482,6 +557,8 @@ export default function SearchableSelect(props: Props) {
       >
         {loading ? (
           <p className="px-3 py-2 text-sm text-gray-400">{loadingLabel}</p>
+        ) : unmatchedTyped ? (
+          renderEmptyAction(unmatchedTyped)
         ) : filtered.length === 0 ? (
           <p className="px-3 py-2 text-sm text-gray-400">No matches</p>
         ) : (

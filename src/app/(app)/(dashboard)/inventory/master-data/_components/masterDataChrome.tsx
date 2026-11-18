@@ -66,13 +66,16 @@ export function ListSearch({
   value,
   onChange,
   placeholder,
+  className = 'min-w-[220px] flex-1 sm:max-w-md',
 }: {
   value: string
   onChange: (value: string) => void
   placeholder: string
+  /** Width classes — defaults to a capped search beside the filters. */
+  className?: string
 }): ReactNode {
   return (
-    <div className="relative min-w-[220px] flex-1 sm:max-w-md">
+    <div className={`relative ${className}`}>
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
       <input
         type="search"

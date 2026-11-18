@@ -80,8 +80,18 @@ function formatWhen(entry: { occurredAt: string; dateOnly?: boolean }): string {
   return `${formatDate(entry.occurredAt)} · ${formatTime(entry.occurredAt)}`
 }
 
+/** A unit that has left the viewer's branch: how it left, never where it
+ * is now (NIG 2026-11-17). */
+function howItLeft(left: NonNullable<SerialHistoryHeader['left']>): string {
+  const to = left.toName ? ` to ${left.toName}` : ''
+  const how = left.kind === 'transfer' ? `Transferred${to}` : `Left your branch${to}`
+  const ref = left.reference ? ` · ${left.reference}` : ''
+  return left.leftAt ? `${how}${ref} · ${formatDate(left.leftAt)}` : `${how}${ref}`
+}
+
 /** "Where is it now", in one line — the question the panel is opened for. */
 function whereNow(header: SerialHistoryHeader): string {
+  if (header.left) return howItLeft(header.left)
   const place = header.consignedToVenue ?? header.location
   if (header.status === 'sold') return place ? `Sold · last held at ${place}` : 'Sold'
   if (header.consignedToVenue) return `Out at ${header.consignedToVenue}`
@@ -120,7 +130,7 @@ function Header({
             <h2 className={`${MONO} text-[17px] leading-tight font-semibold text-[#17171c]`}>
               {header?.serialNumber ?? fallbackSerial ?? '—'}
             </h2>
-            {header && (
+            {header && !header.left && (
               <span
                 className={`inline-flex shrink-0 rounded-[5px] px-2 py-0.5 text-[11.5px] font-medium ${SERIAL_STATUS_COLORS[header.status]}`}
               >

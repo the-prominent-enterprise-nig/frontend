@@ -36,9 +36,19 @@ export function DrProceedToPos({
   }
 
   return (
-    <button type="button" onClick={proceed} disabled={!hasOpenSession} className={BTN_PRIMARY}>
+    <button
+      type="button"
+      onClick={proceed}
+      disabled={!hasOpenSession}
+      title={
+        hasOpenSession
+          ? "You'll pick the cashier session at checkout."
+          : 'No cashier session is open yet. Open one in Sessions first.'
+      }
+      className={BTN_PRIMARY}
+    >
       <ShoppingCart className="h-4 w-4" />
-      {hasOpenSession ? 'Proceed to POS' : 'No open POS session'}
+      {hasOpenSession ? 'Proceed to POS' : 'Open a session first'}
     </button>
   )
 }

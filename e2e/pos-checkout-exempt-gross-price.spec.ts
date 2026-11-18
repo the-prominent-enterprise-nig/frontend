@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, clickStable } from './utils'
-import { addItemToCart, ITEM_QUERY } from './credit-application-checkout'
+import { clickStable } from './utils'
+import { addItemToCart, gotoBagoCheckout, ITEM_QUERY } from './credit-application-checkout'
 
 // A VAT-exempt or zero-rated sale charges the listed price (the LCP) as it is.
 // The listed price is VAT-inclusive; a VATable sale takes the 12% out of it for
@@ -15,7 +15,7 @@ test.describe('POS checkout — the listed price on a VAT-exempt or zero-rated s
   test.describe.configure({ timeout: 90_000 })
 
   test('EX-G01: the total stays the listed price, as it is on a VATable sale', async ({ page }) => {
-    await gotoReady(page, '/pos/checkout')
+    await gotoBagoCheckout(page)
     await addItemToCart(page, ITEM_QUERY)
 
     const total = page.getByTestId('order-summary-total')

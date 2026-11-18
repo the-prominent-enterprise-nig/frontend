@@ -22,6 +22,7 @@ import {
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import LedgerTransactionActions from './LedgerTransactionActions'
 import {
+  buildCashSaleLedgerHtml,
   buildCustomerLedgerHtml,
   buildUnifiedCustomerLedgerHtml,
 } from '@/src/libs/print/printInventoryDocument'
@@ -240,6 +241,25 @@ export default function CustomerLedgerView({
         })
         if (res.success && res.data) {
           html = buildCustomerLedgerHtml(res.data, { showCommission: canViewCommission })
+        }
+      } catch {
+        // Fall through to the unified layout below.
+      }
+    }
+    // Docket #88 — a cash sale prints in the installment account's paper-form
+    // format too. Its boxes come off the sale (`cashSale`, sent with a ledger
+    // narrowed to it); a customer whose only purchase is this sale is not
+    // narrowed on screen, so the card is fetched for the print. The rows and
+    // totals stay the screen's own, so the paper says what the screen says.
+    if (!html && singlePlan?.kind === 'cash') {
+      try {
+        let cashSale = ledger.cashSale ?? null
+        if (!cashSale) {
+          const res = await customersApi.getLedger(customerId, scope, singlePlan.id)
+          cashSale = res.success ? (res.data?.cashSale ?? null) : null
+        }
+        if (cashSale) {
+          html = buildCashSaleLedgerHtml(ledger, cashSale, { showCommission: canViewCommission })
         }
       } catch {
         // Fall through to the unified layout below.

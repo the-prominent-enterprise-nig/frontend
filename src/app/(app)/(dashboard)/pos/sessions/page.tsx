@@ -48,6 +48,7 @@ import { can } from '@/src/libs/guards/permission'
 import SessionSummaryCard, { type CashRow } from './_components/SessionSummaryCard'
 import { methodLabel, tenderLabel } from './_components/tender-label'
 import { terminalPlaceId, terminalPlaceName } from '@/src/libs/format/locationLabel'
+import { keepCheckoutSession } from '@/src/libs/pos/checkout-session-memory'
 
 function formatCurrency(n: number) {
   // Coerced explicitly: Prisma Decimal fields arrive as strings over JSON, and
@@ -100,6 +101,8 @@ export default function SessionsPage() {
       setError(res.error ?? 'Failed to open session')
       return
     }
+    // Checkout keeps this session for them until it closes, instead of asking.
+    if (res.data?.id && res.data.cashierId) keepCheckoutSession(res.data.cashierId, res.data.id)
     setModal({ type: 'none' })
   }
 

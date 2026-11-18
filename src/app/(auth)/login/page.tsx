@@ -335,6 +335,16 @@ export default function LoginPage() {
             </button>
           </form>
 
+          <p className="mt-5 text-center text-sm text-gray-500">
+            First sign in?{' '}
+            <Link
+              href="/first-login"
+              className="font-semibold text-violet-600 transition-colors hover:text-violet-700"
+            >
+              Set up your password
+            </Link>
+          </p>
+
           <div className="mt-8 border-t border-gray-100 pt-6">
             <p className="text-center text-xs text-gray-400">
               Having trouble accessing your account?{' '}

@@ -1,6 +1,14 @@
 'use client'
 
-import { Archive, CheckCircle2, Layers, PauseCircle, Pencil, Trash2 } from 'lucide-react'
+import {
+  Archive,
+  CheckCircle2,
+  Layers,
+  PackagePlus,
+  PauseCircle,
+  Pencil,
+  Trash2,
+} from 'lucide-react'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import { useUIShell } from '@/src/stores/ui-shell.store'
 import { displayClassificationLabel } from '@/src/libs/format/text'
@@ -9,7 +17,7 @@ import Tooltip from '@/src/components/ui/Tooltip'
 import { isItemLockedForReview } from '@/src/libs/inventory/item-edit'
 import { ICON_BUTTON, TABLE_HEAD_ROW } from '../../master-data/_components/masterDataChrome'
 
-// Type / Category = the sheet's TYPE / GROUP / SUBGROUP: Type is
+// Type / Category = the sheet's TYPE / CATEGORY / SUBGROUP: Type is
 // the item type; Category/Subgroup is the category tree — primaryCategory is the Subgroup when it has a parent, else the Group.
 function groupName(item: ItemSummary): string | undefined {
   const name = item.primaryCategory?.parentCategory?.name ?? item.primaryCategory?.name
@@ -96,6 +104,8 @@ type Props = {
   onDelete: (item: ItemSummary) => void
   onLifecycleChange: (id: string, lifecycle: 'active' | 'discontinued' | 'archived') => void
   onViewBundle?: (item: ItemSummary) => void
+  /** Record serials the beginning balance missed (serial-tracked items only). */
+  onAddUnits?: (item: ItemSummary) => void
   // Scenario 16 — Item Master Governance
   canSubmitReview: boolean
   canConfirmAccounting: boolean
@@ -143,6 +153,7 @@ export default function ItemMasterTable({
   onDelete,
   onLifecycleChange,
   onViewBundle,
+  onAddUnits,
   canSubmitReview,
   canConfirmAccounting,
   canApproveItem,
@@ -158,6 +169,7 @@ export default function ItemMasterTable({
     canUpdate ||
     canDelete ||
     !!onViewBundle ||
+    !!onAddUnits ||
     canSubmitReview ||
     canConfirmAccounting ||
     canApproveItem ||
@@ -281,6 +293,15 @@ export default function ItemMasterTable({
                                 label: 'Components',
                                 icon: Layers,
                                 onClick: () => onViewBundle(item),
+                              },
+                            ]
+                          : []),
+                        ...(onAddUnits && item.isSerialTracked
+                          ? [
+                              {
+                                label: 'Add units',
+                                icon: PackagePlus,
+                                onClick: () => onAddUnits(item),
                               },
                             ]
                           : []),

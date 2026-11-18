@@ -116,6 +116,15 @@ import {
 } from '@/src/libs/pos/credit-override'
 import type { CreditApplicationOverrideSnapshot } from '@/src/schema/pos'
 import PriceOverrideDialog from './_components/PriceOverrideDialog'
+import SessionPicker, {
+  OtherCashierSessionCheck,
+  SessionSwitcher,
+} from './_components/SessionPicker'
+import {
+  keepCheckoutSession,
+  keptCheckoutSession,
+  readKeptCheckoutSession,
+} from '@/src/libs/pos/checkout-session-memory'
 import UnitDetails, { type OverrideUnit } from './_components/OverrideUnitDetails'
 import CheckoutCard, { CheckoutSteps, type CheckoutStep } from './_components/CheckoutCard'
 import TypedPlanPanel from './_components/TypedPlanPanel'
@@ -723,7 +732,12 @@ export default function CheckoutPage() {
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const { branchId: switcherBranchId } = usePosBranchContext()
-  const { data: sessionsData, isLoading: sessionsLoading } = useSessions({
+  const {
+    data: sessionsData,
+    isLoading: sessionsLoading,
+    isFetching: sessionsFetching,
+    isFetchedAfterMount: sessionsFreshSinceMount,
+  } = useSessions({
     status: 'open',
     ...(switcherBranchId ? { branchId: switcherBranchId } : {}),
   })
@@ -739,8 +753,69 @@ export default function CheckoutPage() {
     [rawSessions, switcherBranchId]
   )
 
-  // Session
+  // Session. Always one the seller chose, never a guess: see SessionPicker.
+  // The choice is kept until that session closes (checkout-session-memory.ts).
   const [sessionId, setSessionId] = useState('')
+  // The session in use was closed while checkout was open, so the picker
+  // says why it is back.
+  const [sessionClosedNotice, setSessionClosedNotice] = useState(false)
+  // The switcher's branch when the session was picked. A session that drops
+  // out of the list because the branch changed was not closed.
+  const sessionPickedBranchRef = useRef<string | null>(null)
+  // The logged-in user, to mark their own sessions in the picker.
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  // Another cashier's session chosen from the top-bar dropdown, waiting on
+  // the "whose drawer" check before it is used.
+  const [pendingSessionSwitch, setPendingSessionSwitch] = useState<PosSession | null>(null)
+  function pickSession(id: string) {
+    sessionPickedBranchRef.current = switcherBranchId ?? null
+    setSessionClosedNotice(false)
+    setPendingSessionSwitch(null)
+    setSessionId(id)
+    // Kept for the next visit, so it is not picked all over again.
+    if (currentUserId) keepCheckoutSession(currentUserId, id)
+  }
+  // The top-bar dropdown. Same rule as the picker: someone else's session asks first.
+  function switchSession(id: string) {
+    const target = openSessions.find((s) => s.id === id)
+    if (!target || id === sessionId) return
+    if (currentUserId && target.cashierId !== currentUserId) setPendingSessionSwitch(target)
+    else pickSession(id)
+  }
+  // Start on the session kept for this login (last picked here, or just opened
+  // in POS → Sessions) while it is still open and listed. Once it closes, or
+  // the branch switcher moves off its branch, the picker asks. Re-checked
+  // whenever there is no session, so a cached list that does not have it yet
+  // is followed by the fresh one that does.
+  useEffect(() => {
+    if (sessionId || !sessionsData || !currentUserId) return
+    const keptId = keptCheckoutSession(currentUserId)
+    if (keptId && openSessions.some((s) => s.id === keptId)) pickSession(keptId)
+    // pickSession is redefined every render; only its effect matters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionsData, currentUserId, openSessions, sessionId])
+  // A kept session is about to be restored: wait for it rather than flash the
+  // picker (or "No Open Session") first. Covers the moments before the login
+  // is known, the cached session list shown until the first fresh one since
+  // opening Checkout (it can predate the session just opened), and the render
+  // before the effect above picks it. Gives up, and the picker asks, once a
+  // fresh list does not have it or the kept session belongs to another login.
+  // Later background refreshes never bring this back.
+  const restoringKeptSession = useMemo(() => {
+    if (sessionId || !sessionsData) return false
+    const kept = readKeptCheckoutSession()
+    if (!kept) return false
+    if (currentUserId && kept.userId !== currentUserId) return false
+    const awaitingFirstFreshList = sessionsFetching && !sessionsFreshSinceMount
+    return awaitingFirstFreshList || openSessions.some((s) => s.id === kept.sessionId)
+  }, [
+    sessionId,
+    sessionsData,
+    sessionsFetching,
+    sessionsFreshSinceMount,
+    openSessions,
+    currentUserId,
+  ])
 
   // Flat VAT rate applied to every checkout — no longer configurable.
   const activeTaxRate = DEFAULT_VAT_RATE
@@ -813,6 +888,7 @@ export default function CheckoutPage() {
       }
       setIsBranchManager(managesOwnBranch(s))
       setAuthBranchId(s.branchId ?? null)
+      setCurrentUserId(s.id ?? null)
       setCanOverride(can(s, POS_PERMISSIONS.TRANSACTIONS_OVERRIDE))
       setCanSignPromissoryNote(can(s, CREDIT_PERMISSIONS.PROMISSORY_NOTE_SIGN))
     })
@@ -1441,9 +1517,13 @@ export default function CheckoutPage() {
     })
   }, [])
 
-  // Auto-select the only open session; clear stale sessionId when session is
-  // no longer open OR when it belongs to a different branch than the one
-  // currently selected in the switcher. The second check matters because
+  // No session is ever selected automatically, not even the only open one
+  // (developer, 2026-11-16): testers kept ringing up sales with none picked,
+  // so checkout asks first (SessionPicker).
+  //
+  // Clears a stale sessionId when the session is no longer open OR when it
+  // belongs to a different branch than the one currently selected in the
+  // switcher. Either way the picker comes back. The second check matters because
   // useSessions() keeps showing the previous branch's sessions (React
   // Query's placeholderData: keepPreviousData) for a moment after
   // switcherBranchId changes and before the refetch lands — without it, a
@@ -1451,20 +1531,24 @@ export default function CheckoutPage() {
   // from the branch you just left, with nothing afterward ever catching the
   // mismatch since it no longer looks "stale" once the refetch does land.
   useEffect(() => {
-    if (!sessionsData) return
+    if (!sessionsData || !sessionId) return
     const currentSession = openSessions.find((s) => s.id === sessionId)
     const currentSessionBranchId = currentSession ? sessionPlaceId(currentSession) : undefined
     const isStale =
-      sessionId &&
-      (!currentSession || (switcherBranchId && currentSessionBranchId !== switcherBranchId))
+      !currentSession || (switcherBranchId && currentSessionBranchId !== switcherBranchId)
     if (isStale) {
-      setSessionId(openSessions.length === 1 ? openSessions[0].id : '')
-    } else if (openSessions.length === 1 && !sessionId) {
-      setSessionId(openSessions[0].id)
+      // Gone from the list with the branch unchanged means it was closed.
+      const branchChanged = (switcherBranchId ?? null) !== sessionPickedBranchRef.current
+      setSessionClosedNotice(!branchChanged)
+      setSessionId('')
     }
   }, [openSessions, sessionsData, sessionId, switcherBranchId])
 
   // Catalog — the selected session's branch (its caravan, at a caravan till).
+  // Only once a session is picked. Nothing behind the session picker shows the
+  // catalogue, and loading the whole branchless one there (~5 MB) only to load
+  // the branch's after the pick held up every request queued behind it, a
+  // credit application's items among them.
   const catalogSession = openSessions.find((s) => s.id === sessionId)
   const catalogBranchId =
     catalogSession?.terminal?.caravanBranchId ??
@@ -1478,7 +1562,7 @@ export default function CheckoutPage() {
   // so stock received in Inventory only showed after a page reload.
   const catalogQuery = useQuery({
     ...posCatalogQueryOptions(catalogBranchId),
-    enabled: !!sessionsData,
+    enabled: !!sessionsData && !!sessionId,
   })
   const uomQuery = useQuery({
     queryKey: ['pos-checkout-uoms'],
@@ -3421,6 +3505,11 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!arrivingCreditApplication || arrivingCreditApplication.stage !== 'fetching') return
     if (!selectedCustomer || catalogItems.length === 0) return
+    // Not before a session is picked and its branch's catalogue is in: checkout
+    // asks for the session first now (it used to be picked automatically), and
+    // building from the branchless catalogue loaded behind the picker stranded
+    // the arrival on "Loading items…".
+    if (!sessionId || !catalogStockKnown) return
     // Once per application, and enforced with a ref rather than the `stage`
     // above, because `stage` only advances after the fetch resolves. The
     // customer and the catalogue both arrive asynchronously, so a dep landing
@@ -3558,7 +3647,7 @@ export default function CheckoutPage() {
     // cancelled an attempt that was already in flight. Only whether it has
     // loaded matters here —
     // anything missing from it is fetched by SKU above anyway.
-  }, [arrivingCreditApplication, selectedCustomer, catalogReady])
+  }, [arrivingCreditApplication, selectedCustomer, catalogReady, sessionId, catalogStockKnown])
 
   useEffect(() => {
     if (arrivingCreditApplication?.stage !== 'adding') return
@@ -3606,6 +3695,9 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!arrivingDr || arrivingDr.stage !== 'fetching') return
     if (!selectedCustomer || catalogItems.length === 0) return
+    // As for a credit application: not before a session and its branch's
+    // catalogue.
+    if (!sessionId || !catalogStockKnown) return
     if (drBuiltRef.current === arrivingDr.id) return
     drBuiltRef.current = arrivingDr.id
     let cancelled = false
@@ -3668,7 +3760,7 @@ export default function CheckoutPage() {
       if (!completed) drBuiltRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arrivingDr, selectedCustomer, catalogReady])
+  }, [arrivingDr, selectedCustomer, catalogReady, sessionId, catalogStockKnown])
 
   // The DR's held units went onto its lines as they were created (addToCart's
   // presetSerial); this puts the cart on cash — a DR sale is cash / charge
@@ -6071,6 +6163,20 @@ export default function CheckoutPage() {
     )
   }
 
+  // ─── Restoring the kept session ────────────────────────────────────────────
+
+  if (restoringKeptSession) {
+    return (
+      <div
+        data-testid="checkout-session-restoring"
+        className="flex min-h-full items-center justify-center gap-2 bg-zinc-50 p-10 text-sm text-gray-500"
+      >
+        <Loader2 size={16} className="animate-spin text-purple-600" />
+        Opening your session…
+      </div>
+    )
+  }
+
   // ─── No open sessions ──────────────────────────────────────────────────────
 
   if (sessionsData && openSessions.length === 0) {
@@ -6094,6 +6200,22 @@ export default function CheckoutPage() {
           </a>
         </div>
       </div>
+    )
+  }
+
+  // ─── Pick a session first ──────────────────────────────────────────────────
+  // The cart stays in state behind this, so a sale whose session closed comes
+  // back intact once another session is picked.
+
+  if (sessionsData && !sessionId) {
+    return (
+      <SessionPicker
+        sessions={openSessions}
+        currentUserId={currentUserId}
+        labelFor={sessionTerminalLabel}
+        closedNotice={sessionClosedNotice}
+        onPick={pickSession}
+      />
     )
   }
 
@@ -6316,31 +6438,17 @@ export default function CheckoutPage() {
 
         {sessionsLoading ? (
           <Skeleton className="h-7 w-40 rounded-lg" />
-        ) : openSessions.length > 1 ? (
-          <div className="relative">
-            <select
-              className="appearance-none cursor-pointer rounded-lg border border-gray-200 bg-white py-1.5 pl-3 pr-8 text-sm text-gray-700 outline-none transition-colors focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-              value={sessionId}
-              onChange={(e) => setSessionId(e.target.value)}
-            >
-              <option value="">Select session…</option>
-              {openSessions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {sessionTerminalLabel(s)} — {s.cashier?.name || 'Cashier'}
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              size={13}
-              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400"
-            />
-          </div>
         ) : activeSession ? (
-          <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
-            {activeSession.terminal?.caravanBranch
-              ? sessionTerminalLabel(activeSession)
-              : (activeSession.terminal?.name ?? activeSession.terminalId)}
-          </span>
+          // The picked session, always in view, with whose drawer it is. Picked
+          // already (the picker comes first), so there is no empty choice.
+          <SessionSwitcher
+            sessions={openSessions}
+            currentUserId={currentUserId}
+            labelFor={sessionTerminalLabel}
+            value={sessionId}
+            onChoose={switchSession}
+            disabled={submitting || !!cancellationReqId}
+          />
         ) : null}
 
         {cart.length > 0 && (
@@ -9122,52 +9230,54 @@ export default function CheckoutPage() {
 
               const label = submitting
                 ? 'Processing…'
-                : cart.length === 0
-                  ? 'Add items to continue'
-                  : anySerialMissing
-                    ? 'Select serial numbers to continue'
-                    : saleMode === 'reserve' && !selectedCustomer
-                      ? 'Select a customer to reserve'
-                      : saleMode === 'reserve' && cart.length !== 1
-                        ? 'Add one item to reserve'
-                        : saleMode === 'sale' && hasChargeOrInstallmentLine && !selectedCustomer
-                          ? 'Select a customer for this cart'
-                          : saleMode === 'sale' && anyInstallmentMissingTerm
-                            ? 'Select a financing term for every installment item'
-                            : saleMode === 'sale' && installmentMissingCreditApplication
-                              ? 'Select an approved credit application'
-                              : saleMode === 'sale' &&
-                                  installmentCartLines.length > 0 &&
-                                  !installmentPaymentMethod &&
-                                  !dpCollectsNothing
-                                ? xDealActive
-                                  ? 'Choose how the cash portion is paid'
-                                  : 'Choose a down payment method'
-                                : saleMode === 'sale' && tpfMissingReference
-                                  ? 'Select a TPF provider and enter a reference number'
-                                  : saleMode === 'sale' && missingHrLoanNumber
-                                    ? 'Enter the HR appliance loan application number'
-                                    : saleMode === 'sale' && missingXDealReference
-                                      ? 'Enter the X-Deal reference'
-                                      : saleMode === 'sale' &&
-                                          !hasChargeOrInstallmentLine &&
-                                          !selectedCustomer
-                                        ? 'Select a customer'
-                                        : saleMode === 'sale' && balance > 0.009
-                                          ? `Underpaid by ${fmt(balance)}`
-                                          : saleMode === 'sale' && loyaltyOverBalance
-                                            ? 'Insufficient loyalty points'
-                                            : needsManagerOverride && !managerOverrideApproved
-                                              ? 'Manager override required'
-                                              : cart.some((l) => l.isSerialTracked)
-                                                ? 'Checkout'
-                                                : saleMode === 'reserve'
-                                                  ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
-                                                  : allCharge
-                                                    ? 'Issue Charge Invoice'
-                                                    : allInstallment
-                                                      ? 'Create Installment Plan'
-                                                      : 'Confirm Sale'
+                : !sessionId
+                  ? 'Pick a session to continue'
+                  : cart.length === 0
+                    ? 'Add items to continue'
+                    : anySerialMissing
+                      ? 'Select serial numbers to continue'
+                      : saleMode === 'reserve' && !selectedCustomer
+                        ? 'Select a customer to reserve'
+                        : saleMode === 'reserve' && cart.length !== 1
+                          ? 'Add one item to reserve'
+                          : saleMode === 'sale' && hasChargeOrInstallmentLine && !selectedCustomer
+                            ? 'Select a customer for this cart'
+                            : saleMode === 'sale' && anyInstallmentMissingTerm
+                              ? 'Select a financing term for every installment item'
+                              : saleMode === 'sale' && installmentMissingCreditApplication
+                                ? 'Select an approved credit application'
+                                : saleMode === 'sale' &&
+                                    installmentCartLines.length > 0 &&
+                                    !installmentPaymentMethod &&
+                                    !dpCollectsNothing
+                                  ? xDealActive
+                                    ? 'Choose how the cash portion is paid'
+                                    : 'Choose a down payment method'
+                                  : saleMode === 'sale' && tpfMissingReference
+                                    ? 'Select a TPF provider and enter a reference number'
+                                    : saleMode === 'sale' && missingHrLoanNumber
+                                      ? 'Enter the HR appliance loan application number'
+                                      : saleMode === 'sale' && missingXDealReference
+                                        ? 'Enter the X-Deal reference'
+                                        : saleMode === 'sale' &&
+                                            !hasChargeOrInstallmentLine &&
+                                            !selectedCustomer
+                                          ? 'Select a customer'
+                                          : saleMode === 'sale' && balance > 0.009
+                                            ? `Underpaid by ${fmt(balance)}`
+                                            : saleMode === 'sale' && loyaltyOverBalance
+                                              ? 'Insufficient loyalty points'
+                                              : needsManagerOverride && !managerOverrideApproved
+                                                ? 'Manager override required'
+                                                : cart.some((l) => l.isSerialTracked)
+                                                  ? 'Checkout'
+                                                  : saleMode === 'reserve'
+                                                    ? `Reserve Item${totalPaid > 0 ? ` — Deposit ${fmt(totalPaid)}` : ''}`
+                                                    : allCharge
+                                                      ? 'Issue Charge Invoice'
+                                                      : allInstallment
+                                                        ? 'Create Installment Plan'
+                                                        : 'Confirm Sale'
 
               const colorClass =
                 saleMode === 'reserve'
@@ -9201,7 +9311,19 @@ export default function CheckoutPage() {
         </div>
       </div>
 
+      {/* Another cashier's session chosen from the top-bar dropdown */}
+      {pendingSessionSwitch && (
+        <Overlay onClose={() => setPendingSessionSwitch(null)}>
+          <OtherCashierSessionCheck
+            cashierName={pendingSessionSwitch.cashier?.name || 'another cashier'}
+            onBack={() => setPendingSessionSwitch(null)}
+            onConfirm={() => pickSession(pendingSessionSwitch.id)}
+          />
+        </Overlay>
+      )}
+
       {/* Park Sale Modal */}
+
       {showParkModal && (
         <Overlay onClose={() => setShowParkModal(false)}>
           <h2 className="mb-1 text-lg font-bold text-gray-900">Park Sale</h2>

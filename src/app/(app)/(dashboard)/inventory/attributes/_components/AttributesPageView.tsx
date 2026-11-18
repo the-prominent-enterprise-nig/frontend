@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Pencil, RefreshCw, Sliders } from 'lucide-react'
+import { Pencil, Sliders } from 'lucide-react'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { MONO, PLEX } from '@/src/libs/design/plex'
@@ -139,7 +139,6 @@ export default function AttributesPageView({ session }: { session: SessionUser }
     isCreating,
     updateAttribute,
     isUpdating,
-    refetch,
   } = useAttributes()
 
   function openCreate() {
@@ -169,22 +168,7 @@ export default function AttributesPageView({ session }: { session: SessionUser }
         <ListHeader
           title="Item Attributes"
           description="Create and manage custom attributes for inventory items."
-          actions={
-            <>
-              <Tooltip label="Refresh">
-                <button
-                  type="button"
-                  onClick={() => refetch()}
-                  disabled={isFetching}
-                  aria-label="Refresh"
-                  className={`${ICON_BUTTON} disabled:opacity-50`}
-                >
-                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-                </button>
-              </Tooltip>
-              {addButton}
-            </>
-          }
+          actions={<>{addButton}</>}
         />
 
         {error && <LoadError message="Failed to load attributes — try refreshing the page." />}

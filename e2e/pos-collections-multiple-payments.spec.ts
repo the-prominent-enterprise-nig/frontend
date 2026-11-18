@@ -15,6 +15,7 @@ import {
   deleteCustomers,
   openCustomSelect,
   pickCartPriceUse,
+  pickCheckoutSession,
 } from './utils'
 
 // POS Collections — a collection taken with several methods. Each payment is a
@@ -163,20 +164,6 @@ async function ensureOpenSession(request: APIRequestContext, branchId: string): 
   })
 }
 
-async function pickSessionIfAsked(page: Page): Promise<void> {
-  await expect(page.getByPlaceholder('Search by name or serial')).toBeVisible({ timeout: 15_000 })
-  const sessionSelect = page.locator('select').filter({ hasText: 'Select session' })
-  const autoSelected = page.getByText(/^Counter \d+$/).first()
-  await expect(sessionSelect.or(autoSelected)).toBeVisible({ timeout: 15_000 })
-  if (await sessionSelect.isVisible()) {
-    const value = await sessionSelect
-      .locator('option', { hasText: BRANCH })
-      .first()
-      .getAttribute('value')
-    await sessionSelect.selectOption(value!)
-  }
-}
-
 async function addItem(page: Page): Promise<void> {
   const search = page.getByPlaceholder('Search by name or serial')
   await expect(search).toBeVisible({ timeout: 15_000 })
@@ -201,7 +188,7 @@ async function selectCustomer(page: Page, name: string): Promise<void> {
 async function createInstallmentPlan(page: Page, label: string) {
   const customer = await createCustomer(page.request, label)
   await gotoReady(page, '/pos/checkout')
-  await pickSessionIfAsked(page)
+  await pickCheckoutSession(page, BRANCH)
   await addItem(page)
   await selectCustomer(page, customer.name)
 
@@ -346,14 +333,18 @@ test.describe('POS Collections — several payments in one collection', () => {
     const issues = page.getByTestId('collection-issues')
     await expect(issues).toContainText("You're missing:")
     await expect(issues).toContainText('Amount received')
-    // The CR number is optional (Scenario 80, Oct 29 UAT POS-14 / CC-01).
-    await expect(issues).not.toContainText('CR number')
+    // The CR number is required again (Nov 17): every collection comes off an
+    // Office or Field stub.
+    await expect(issues).toContainText('CR number')
     await expect(amount(page, 0)).toHaveClass(/border-red-400/)
-    await expect(page.getByTestId('collection-cr-number')).not.toHaveClass(/border-red-400/)
+    await expect(page.getByTestId('collection-cr-number')).toHaveClass(/border-red-400/)
 
-    // Filling the amount clears the list live; nothing was recorded by the
+    // Filling each clears it from the list live; nothing was recorded by the
     // refused click.
     await fillMoney(amount(page, 0), '100')
+    await expect(issues).not.toContainText('Amount received')
+    await expect(issues).toContainText('CR number')
+    await fillStable(page.getByTestId('collection-cr-number'), 'CR-CM-F01')
     await expect(issues).toHaveCount(0)
     expect((await paymentsOf(page.request, customer.id)).length).toBe(before)
   })

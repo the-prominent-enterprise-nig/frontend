@@ -8,7 +8,7 @@ export const UPLOAD_TEMPLATE_HEADERS = [
   'BRAND',
   'MODEL',
   'TYPE',
-  'GROUP',
+  'CATEGORY',
   'SUBGROUP',
   'PRICE USE',
   'PRICE',

@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { RefreshCw, Search, Shapes, Pencil, Trash2 } from 'lucide-react'
+import { Search, Shapes, Pencil, Trash2 } from 'lucide-react'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import type { SessionUser } from '@/src/libs/guards/permission'
@@ -44,7 +44,6 @@ export default function TypesPageView({ session }: { session: SessionUser }) {
     isLoading,
     isFetching,
     error,
-    refetch,
     createType,
     isCreating,
     updateType,
@@ -106,22 +105,7 @@ export default function TypesPageView({ session }: { session: SessionUser }) {
         <ListHeader
           title="Types"
           description="Manage the item types used to classify inventory items."
-          actions={
-            <>
-              <Tooltip label="Refresh">
-                <button
-                  type="button"
-                  onClick={() => refetch()}
-                  disabled={isFetching}
-                  aria-label="Refresh"
-                  className={`${ICON_BUTTON} disabled:opacity-50`}
-                >
-                  <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-                </button>
-              </Tooltip>
-              {addButton}
-            </>
-          }
+          actions={<>{addButton}</>}
         />
 
         <div className="flex flex-wrap items-center gap-2">

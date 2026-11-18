@@ -3,10 +3,10 @@ import { gotoReady } from './utils'
 
 // Scenario 62 Part 2 — Item Master (the former Catalog hub). Tabs: Brands,
 // Types, Categories (developer-requested 2026-11-05), the other onboarding
-// lists, then Barcodes. Items is hidden (moves to POS). Business Owner
+// lists. Barcodes was removed. Items is hidden (moves to POS). Business Owner
 // storage state; the URL stays /inventory/catalog until the Part 6 redirects.
 
-const TAB_ORDER = ['Brands', 'Types', 'Categories', 'Attributes', 'Units of Measure', 'Barcodes']
+const TAB_ORDER = ['Brands', 'Types', 'Categories', 'Attributes', 'Units of Measure']
 
 test.describe('Scenario 62 Part 2 — Item Master', () => {
   test('tabs appear in order and Brands is the default', async ({ page }) => {
@@ -23,7 +23,7 @@ test.describe('Scenario 62 Part 2 — Item Master', () => {
   })
 
   test('each tab renders under the Item Master page', async ({ page }) => {
-    for (const tab of ['brands', 'types', 'categories', 'attributes', 'units', 'barcodes']) {
+    for (const tab of ['brands', 'types', 'categories', 'attributes', 'units']) {
       await gotoReady(page, `/inventory/catalog?tab=${tab}`)
       await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible()
     }

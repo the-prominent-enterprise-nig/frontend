@@ -1,5 +1,11 @@
 import { test, expect, type Page, type Locator } from '@playwright/test'
-import { gotoReady, loginAs, openCustomSelect, pickCartPriceUse } from './utils'
+import {
+  gotoReady,
+  loginAs,
+  openCustomSelect,
+  pickCartPriceUse,
+  pickCheckoutSession,
+} from './utils'
 
 // PR #199 review (Chloe, 2026-10-02), point 5 at the till: "Calculation are
 // currently wrong". The till showed "30% min" and ₱4,614 on her SHARP while
@@ -25,6 +31,7 @@ const FAN = 'STF3238'
 
 async function openCheckout(page: Page) {
   await gotoReady(page, '/pos/checkout')
+  await pickCheckoutSession(page, 'Bago')
   const newSale = page.getByRole('button', { name: 'Start New Sale' })
   if (await newSale.isVisible().catch(() => false)) await newSale.click()
   await expect(page.getByPlaceholder('Search by name or serial')).toBeVisible({ timeout: 20_000 })

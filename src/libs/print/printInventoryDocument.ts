@@ -1,4 +1,10 @@
-import type { InstallmentLedger, CustomerLedger, AgingReportResponse } from '@/src/schema/crm/types'
+import type {
+  InstallmentLedger,
+  InstallmentLedgerRow,
+  CustomerLedger,
+  CashSaleCard,
+  AgingReportResponse,
+} from '@/src/schema/crm/types'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { ledgerScheme } from '@/src/libs/format/ledgerScheme'
 import { ledgerNoteSuffix } from '@/src/libs/format/ledgerNote'
@@ -545,6 +551,22 @@ function transferReceipts(
     .sort((a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime())
 }
 
+/** The picking sheet lists one row per model: a serial-tracked item requested
+ * as several units arrives as several lines (one per unit), so they're folded
+ * into a single row with the quantities summed, in first-seen order. */
+function groupLinesByItem(lines: Record<string, unknown>[]): Record<string, unknown>[] {
+  const groups = new Map<string, Record<string, unknown>>()
+  lines.forEach((l, i) => {
+    const item = l.item as { id?: string; sku?: string; name?: string } | undefined
+    const key = String(l.itemId ?? item?.id ?? item?.sku ?? item?.name ?? `line-${i}`)
+    const existing = groups.get(key)
+    const qty = Number(l.quantity ?? 0)
+    if (existing) existing.quantity = Number(existing.quantity ?? 0) + qty
+    else groups.set(key, { ...l, quantity: qty })
+  })
+  return [...groups.values()]
+}
+
 type TransferSheet = { title: string; noun: string; picking: boolean; signatures: string[] }
 
 const STOCK_TRANSFER_SHEET: TransferSheet = {
@@ -573,20 +595,15 @@ export function buildStockTransferHtml(data: unknown): string {
   const fromWarehouse = transfer.fromWarehouse as TransferParty | undefined
   const toWarehouse = transfer.toWarehouse as TransferParty | undefined
   const enterprise = doc.enterprise
-  const lines = Array.isArray(transfer.lines) ? (transfer.lines as Record<string, unknown>[]) : []
+  const rawLines = Array.isArray(transfer.lines)
+    ? (transfer.lines as Record<string, unknown>[])
+    : []
 
   const fmtDate = (v: unknown) =>
     v ? new Date(v as string).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
-  // Shown for any serial-tracked line (Scenario 71 item 19), not only once a
-  // serial is assigned — a pre-dispatch sheet reads "Assigned at dispatch".
-  const hasSerialLine = lines.some(
-    (l) =>
-      (l.serialNumber as Record<string, unknown> | null)?.serialNumber ||
-      (l.item as { isSerialTracked?: boolean } | undefined)?.isSerialTracked
-  )
   // Only a not-yet-dispatched transfer's empty serial is "to come".
   const awaitingDispatch = [
     'pending_manager_approval',
@@ -595,9 +612,20 @@ export function buildStockTransferHtml(data: unknown): string {
     'draft',
   ].includes(String(transfer.status))
   // Before dispatch the sheet is the warehouse's picking list: titled Stock
-  // Request, with SKUs and a blank Picked box per line for whoever prepares
-  // the stock, and prepare/check signatures instead of dispatch/receive.
+  // Request, one row per model with its SKU and a blank Picked box for whoever
+  // prepares the stock, no serials (none are assigned yet), and prepare/check
+  // signatures instead of dispatch/receive.
   const sheet = awaitingDispatch ? STOCK_REQUEST_SHEET : STOCK_TRANSFER_SHEET
+  const lines = sheet.picking ? groupLinesByItem(rawLines) : rawLines
+  // The transfer sheet shows the serial column for any serial-tracked line
+  // (Scenario 71 item 19), not only once a serial is assigned.
+  const hasSerialLine =
+    !sheet.picking &&
+    lines.some(
+      (l) =>
+        (l.serialNumber as Record<string, unknown> | null)?.serialNumber ||
+        (l.item as { isSerialTracked?: boolean } | undefined)?.isSerialTracked
+    )
   // Blank (—) until the transfer is received.
   const receipts = transferReceipts(transfer)
 
@@ -607,12 +635,8 @@ export function buildStockTransferHtml(data: unknown): string {
   // the unit that arrived, so the dispatched serial is read back from
   // receiptCorrectedFromSerialNumber.
   const serialCell = (l: Record<string, unknown>, serial?: string): string => {
-    const item = l.item as { isSerialTracked?: boolean } | undefined
     const dispatched = (l.receiptCorrectedFromSerialNumber as string | null | undefined) || serial
-    return (
-      esc(dispatched) ||
-      (item?.isSerialTracked && awaitingDispatch ? '<em>Assigned at dispatch</em>' : '—')
-    )
+    return esc(dispatched) || '—'
   }
 
   // Once anything has been received, a line still short gets a note under
@@ -1101,25 +1125,201 @@ export function buildCustomerLedgerHtml(
   options: { showCommission?: boolean } = {}
 ): string {
   const { account, rows } = ledger
-  const showCommission = options.showCommission === true
+  const fmt = paperFormMoney
+  const fmtDate = paperFormDate
 
-  const fmt = (n: number | string) =>
-    Number(n).toLocaleString('en-PH', {
-      style: 'currency',
-      currency: 'PHP',
-      minimumFractionDigits: 2,
-    })
-  const fmtDate = (v: string | null | undefined) =>
-    v ? new Date(v).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
+  return buildPaperFormLedgerHtml({
+    documentRef: account.accountNumber,
+    lastName: account.customer.lastName ?? account.customer.name,
+    firstName: account.customer.firstName ?? '—',
+    middleName: account.customer.middleName ?? '—',
+    salesInvoiceNo: ledger.saleReference ?? '—',
+    siDate: fmtDate(ledger.saleDate),
+    // One row per item: a sale of several items is one ledger, and the paper
+    // card lists every one of them.
+    units: account.unitItems.map((unitItem) => ({
+      brand: unitItem.brand ?? '—',
+      type: unitItem.itemType ?? '—',
+      model: unitItem.modelNumber ?? '—',
+      serial: unitItem.serialNumber ?? '—',
+    })),
+    agent: account.sellingAgent?.name ?? '—',
+    commission:
+      options.showCommission === true
+        ? {
+            salesCommission: Number(account.salesCommission ?? 0)
+              ? fmt(account.salesCommission ?? 0)
+              : '—',
+            smi: Number(account.salesSmi ?? 0) ? fmt(account.salesSmi ?? 0) : '—',
+          }
+        : null,
+    collector: account.collector
+      ? `${account.collector.stubNumber} — ${account.collector.name}`
+      : 'Unassigned',
+    fmi: fmtDate(ledger.firstInstallmentDate),
+    lcp: fmt(account.listedCashPrice),
+    down: fmt(account.downPayment),
+    amtFinanced: fmt(account.amountFinanced),
+    instDiff: fmt(account.interestDifferential),
+    // WIP / SSC / … — or "Price Override" when the sale's price was overridden.
+    scheme: ledgerScheme(ledger),
+    mi: fmt(account.monthlyInstallment),
+    term: `${account.termMonths} months`,
+    branch: account.branch?.name ?? '—',
+    pn: fmt(account.pnv),
+    ic: fmt(account.insuranceCharge ?? 0),
+    totalPrice: fmt(account.totalPrice),
+    // Oct 29 UAT CL-01 — the customer's phone on the printed ledger.
+    phone: account.customer?.phone || '—',
+    totals: {
+      totalPayments: fmt(account.totalPayments),
+      totalPenalty: '—',
+      penaltyBalance: fmt(account.penalty),
+      totalRebates: fmt(account.totalRebates),
+      totalBilling: fmt(account.totalBilling),
+      requiredDp: fmt(account.downPayment),
+      dpBalance: fmt(account.dpBalance),
+      totAmtDue: fmt(account.totalDue),
+      totAmtOut: fmt(account.currentBalance),
+    },
+    rows,
+  })
+}
+
+/**
+ * Docket #88 — "As Credit & Collection staff, I must be able to print a
+ * cash-sale ledger in the installment account format". The same paper form
+ * as buildCustomerLedgerHtml(), its boxes read off the cash sale itself
+ * (CustomerLedger.cashSale, sent when the ledger is narrowed to one cash
+ * sale). What only an installment account has — down payment, amount
+ * financed, MI, term, PN, IC, collector, FMI, required DP, DP balance — reads
+ * "—", the way the on-screen account cards read them on a cash sale. Rows and
+ * totals are the cash sale's own, as the screen shows them.
+ */
+export function buildCashSaleLedgerHtml(
+  ledger: CustomerLedger,
+  cashSale: CashSaleCard,
+  options: { showCommission?: boolean } = {}
+): string {
+  const { customer, rows, totals } = ledger
+  const fmt = paperFormMoney
+  const none = '—'
+  const sale = fmt(cashSale.listedCashPrice)
+
+  return buildPaperFormLedgerHtml({
+    documentRef: cashSale.salesInvoiceNumber,
+    lastName: cashSale.customerName.lastName ?? customer.name,
+    firstName: cashSale.customerName.firstName ?? none,
+    middleName: cashSale.customerName.middleName ?? none,
+    salesInvoiceNo: cashSale.salesInvoiceNumber,
+    siDate: paperFormDate(cashSale.saleDate),
+    units: cashSale.units.map((unit) => ({
+      brand: unit.brand ?? none,
+      type: unit.itemType ?? none,
+      model: unit.modelNumber ?? none,
+      serial: unit.serialNumber ?? none,
+    })),
+    agent: cashSale.agent ?? none,
+    commission:
+      options.showCommission === true
+        ? {
+            salesCommission: Number(cashSale.salesCommission ?? 0)
+              ? fmt(cashSale.salesCommission ?? 0)
+              : none,
+            smi: Number(cashSale.salesSmi ?? 0) ? fmt(cashSale.salesSmi ?? 0) : none,
+          }
+        : null,
+    collector: none,
+    fmi: none,
+    lcp: sale,
+    down: none,
+    amtFinanced: none,
+    instDiff: none,
+    scheme: cashSale.scheme ?? none,
+    mi: none,
+    term: none,
+    branch: cashSale.branch ?? none,
+    pn: none,
+    ic: none,
+    totalPrice: sale,
+    phone: customer.phone || none,
+    totals: {
+      totalPayments: fmt(totals.totalPaid),
+      totalPenalty: none,
+      penaltyBalance: none,
+      totalRebates: fmt(totals.totalRebates),
+      totalBilling: fmt(totals.totalBilled),
+      requiredDp: none,
+      dpBalance: none,
+      totAmtDue: fmt(totals.totalDue ?? 0),
+      totAmtOut: fmt(totals.outstanding),
+    },
+    rows,
+  })
+}
+
+const paperFormMoney = (n: number | string) =>
+  Number(n).toLocaleString('en-PH', {
+    style: 'currency',
+    currency: 'PHP',
+    minimumFractionDigits: 2,
+  })
+const paperFormDate = (v: string | null | undefined) =>
+  v ? new Date(v).toLocaleDateString('en-PH', { timeZone: MANILA_TZ }) : '—'
+
+/** Every box of the paper "Customer Ledger" form, already formatted — what
+ * buildPaperFormLedgerHtml() lays out. An installment account fills it from
+ * the account (buildCustomerLedgerHtml), a cash sale from the sale
+ * (buildCashSaleLedgerHtml, Docket #88). */
+interface PaperFormLedger {
+  /** In the window title: the account number, or the cash sale's SI. */
+  documentRef: string
+  lastName: string
+  firstName: string
+  middleName: string
+  salesInvoiceNo: string
+  siDate: string
+  units: { brand: string; type: string; model: string; serial: string }[]
+  agent: string
+  /** The agent's pay, only for a viewer who may see it; null leaves it off. */
+  commission: { salesCommission: string; smi: string } | null
+  collector: string
+  fmi: string
+  lcp: string
+  down: string
+  amtFinanced: string
+  instDiff: string
+  scheme: string
+  mi: string
+  term: string
+  branch: string
+  pn: string
+  ic: string
+  totalPrice: string
+  phone: string
+  totals: {
+    totalPayments: string
+    totalPenalty: string
+    penaltyBalance: string
+    totalRebates: string
+    totalBilling: string
+    requiredDp: string
+    dpBalance: string
+    totAmtDue: string
+    totAmtOut: string
+  }
+  rows: InstallmentLedgerRow[]
+}
+
+function buildPaperFormLedgerHtml(form: PaperFormLedger): string {
+  const { rows } = form
+  const fmt = paperFormMoney
+  const fmtDate = paperFormDate
   const esc = (v: unknown) =>
     String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
 
   const cell = (label: string, value: string, colspan = 1) =>
     `<td colspan="${colspan}"><p class="cell-value">${esc(value)}</p><p class="cell-label">${esc(label)}</p></td>`
-
-  const collectorLabel = account.collector
-    ? `${account.collector.stubNumber} — ${account.collector.name}`
-    : 'Unassigned'
 
   // The paper form's Total Payments/Penalty/Rebates/Billing/etc. block is
   // plain italic "Label : value" text below the bordered grid, not more
@@ -1128,8 +1328,6 @@ export function buildCustomerLedgerHtml(
   const totalLine = (label: string, value: string) =>
     `<p class="totals-line"><span class="totals-label">${esc(label)}</span> : <span class="totals-value">${esc(value)}</span></p>`
 
-  // WIP / SSC / … — or "Price Override" when the sale's price was overridden.
-  const schemeLabel = ledgerScheme(ledger)
   const ledgerRows = rows
     .map(
       (r) => `<tr>
@@ -1160,7 +1358,7 @@ export function buildCustomerLedgerHtml(
       </tr>`
       : ''
 
-  return `<!DOCTYPE html><html><head><title>Customer Ledger — ${esc(account.accountNumber)}</title><style>
+  return `<!DOCTYPE html><html><head><title>Customer Ledger — ${esc(form.documentRef)}</title><style>
     body { font-family: Arial, sans-serif; padding: 18px; color: #111; font-size: 11px; }
     .letterhead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
     .letterhead h1 { font-size: 16px; margin: 0; text-decoration: underline; }
@@ -1192,94 +1390,84 @@ export function buildCustomerLedgerHtml(
 
     <table class="form-grid">
       <tr>
-        ${cell('Lastname', account.customer.lastName ?? account.customer.name)}
-        ${cell('Firstname', account.customer.firstName ?? '—')}
-        ${cell('Middle', account.customer.middleName ?? '—')}
+        ${cell('Lastname', form.lastName)}
+        ${cell('Firstname', form.firstName)}
+        ${cell('Middle', form.middleName)}
         <td>
           <div class="split-cell">
             <div>
-              <p class="cell-value">${esc(ledger.saleReference ?? '—')}</p>
+              <p class="cell-value">${esc(form.salesInvoiceNo)}</p>
               <p class="cell-label">Sales Invoice No.</p>
             </div>
             <div class="split-cell-divider">
-              <p class="cell-value">${esc(fmtDate(ledger.saleDate))}</p>
+              <p class="cell-value">${esc(form.siDate)}</p>
               <p class="cell-label">SI Date</p>
             </div>
           </div>
         </td>
       </tr>
-      ${
-        // One row per item: a sale of several items is one ledger, and the
-        // paper card lists every one of them.
-        account.unitItems
-          .map(
-            (unitItem) => `<tr>
-        ${cell('Brand', unitItem.brand ?? '—')}
-        ${cell('Type', unitItem.itemType ?? '—')}
-        ${cell('Model', unitItem.modelNumber ?? '—')}
-        ${cell('Serial', unitItem.serialNumber ?? '—')}
+      ${form.units
+        .map(
+          (unit) => `<tr>
+        ${cell('Brand', unit.brand)}
+        ${cell('Type', unit.type)}
+        ${cell('Model', unit.model)}
+        ${cell('Serial', unit.serial)}
       </tr>`
-          )
-          .join('')
-      }
+        )
+        .join('')}
       ${
-        showCommission
+        form.commission
           ? `<tr>
-        ${cell('Agent', account.sellingAgent?.name ?? '—', 2)}
-        ${cell(
-          'Sales Commission',
-          Number(account.salesCommission ?? 0) ? fmt(account.salesCommission ?? 0) : '—'
-        )}
-        ${cell('SMI', Number(account.salesSmi ?? 0) ? fmt(account.salesSmi ?? 0) : '—')}
+        ${cell('Agent', form.agent, 2)}
+        ${cell('Sales Commission', form.commission.salesCommission)}
+        ${cell('SMI', form.commission.smi)}
       </tr>
       <tr>
-        ${cell('Collector', collectorLabel, 2)}
-        ${cell('FMI', fmtDate(ledger.firstInstallmentDate), 2)}
+        ${cell('Collector', form.collector, 2)}
+        ${cell('FMI', form.fmi, 2)}
       </tr>`
           : `<tr>
-        ${cell('Agent', account.sellingAgent?.name ?? '—')}
-        ${cell('Collector', collectorLabel, 2)}
-        ${cell('FMI', fmtDate(ledger.firstInstallmentDate))}
+        ${cell('Agent', form.agent)}
+        ${cell('Collector', form.collector, 2)}
+        ${cell('FMI', form.fmi)}
       </tr>`
       }
       <tr>
-        ${cell('LCP', fmt(account.listedCashPrice))}
-        ${cell('Down', fmt(account.downPayment))}
-        ${cell('Amt. Financed', fmt(account.amountFinanced))}
-        ${cell('Inst. Diff.', fmt(account.interestDifferential))}
+        ${cell('LCP', form.lcp)}
+        ${cell('Down', form.down)}
+        ${cell('Amt. Financed', form.amtFinanced)}
+        ${cell('Inst. Diff.', form.instDiff)}
       </tr>
       <tr>
-        ${cell('Scheme', schemeLabel)}
-        ${cell('MI', fmt(account.monthlyInstallment))}
-        ${cell('Term', `${account.termMonths} months`)}
-        ${cell('Branch', account.branch?.name ?? '—')}
+        ${cell('Scheme', form.scheme)}
+        ${cell('MI', form.mi)}
+        ${cell('Term', form.term)}
+        ${cell('Branch', form.branch)}
       </tr>
       <tr>
-        ${cell('PN', fmt(account.pnv))}
-        ${cell('IC', fmt(account.insuranceCharge ?? 0))}
-        ${cell('Total Price', fmt(account.totalPrice))}
-        ${
-          // Oct 29 UAT CL-01 — the customer's phone on the printed ledger.
-          cell('Phone', account.customer?.phone || '—')
-        }
+        ${cell('PN', form.pn)}
+        ${cell('IC', form.ic)}
+        ${cell('Total Price', form.totalPrice)}
+        ${cell('Phone', form.phone)}
       </tr>
     </table>
 
     <div class="totals">
       <div class="totals-col">
-        ${totalLine('Total Payments', fmt(account.totalPayments))}
-        ${totalLine('Total Penalty', '—')}
-        ${totalLine('Penalty Balance', fmt(account.penalty))}
+        ${totalLine('Total Payments', form.totals.totalPayments)}
+        ${totalLine('Total Penalty', form.totals.totalPenalty)}
+        ${totalLine('Penalty Balance', form.totals.penaltyBalance)}
       </div>
       <div class="totals-col">
-        ${totalLine('Total Rebates', fmt(account.totalRebates))}
-        ${totalLine('Total Billing', fmt(account.totalBilling))}
-        ${totalLine('Required DP', fmt(account.downPayment))}
+        ${totalLine('Total Rebates', form.totals.totalRebates)}
+        ${totalLine('Total Billing', form.totals.totalBilling)}
+        ${totalLine('Required DP', form.totals.requiredDp)}
       </div>
       <div class="totals-col">
-        ${totalLine('DP Balance', fmt(account.dpBalance))}
-        ${totalLine('Tot. Amt. Due', fmt(account.totalDue))}
-        ${totalLine('Tot. Amt. Out', fmt(account.currentBalance))}
+        ${totalLine('DP Balance', form.totals.dpBalance)}
+        ${totalLine('Tot. Amt. Due', form.totals.totAmtDue)}
+        ${totalLine('Tot. Amt. Out', form.totals.totAmtOut)}
       </div>
     </div>
 
