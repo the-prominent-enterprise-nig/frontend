@@ -9779,7 +9779,8 @@ export default function CheckoutPage() {
             ? parsedQty * measuredItem.price * (1 + (measuredItem.taxRate ?? 0) / 100)
             : 0
           const uom = measuredItem.uomCode?.toUpperCase() ?? ''
-          const presets = [0.1, 0.25, 0.5, 1]
+          // Rice is commonly sold in 5 kg packs, so KG items get a one-tap pack preset.
+          const presets = uom === 'KG' ? [0.1, 0.25, 0.5, 1, 5] : [0.1, 0.25, 0.5, 1]
           const availableStock = measuredItem.stockQty
           const noStock = availableStock !== undefined && availableStock <= 0
           const exceedsStock =
@@ -9826,7 +9827,9 @@ export default function CheckoutPage() {
               </div>
 
               {/* Quick presets */}
-              <div className="mb-3 grid grid-cols-4 gap-2">
+              <div
+                className={`mb-3 grid gap-2 ${presets.length > 4 ? 'grid-cols-5' : 'grid-cols-4'}`}
+              >
                 {presets.map((p) => (
                   <button
                     key={p}
