@@ -189,6 +189,34 @@ const CANCELLABLE_STATUSES = new Set([
 // can still fix instead. If one list moves, both must.
 const EDITABLE_STATUSES = CANCELLABLE_STATUSES
 
+/**
+ * Why a request the viewer could otherwise edit has no Edit button, and what
+ * they can do instead — the same refusals the backend gives, said up front
+ * rather than leaving the button silently missing. Null when nothing blocks
+ * it (or the viewer couldn't edit it anyway).
+ */
+function editLockNote(opts: {
+  couldEdit: boolean
+  isUdsPaired: boolean
+  hasPinnedSerial: boolean
+  asSource: boolean
+  status: string
+}): string | null {
+  if (!opts.couldEdit) return null
+  if (opts.isUdsPaired) {
+    return 'This transfer belongs to a Unit Document Sheet, so its lines can’t be edited here. Change it on the UDS instead.'
+  }
+  if (!opts.hasPinnedSerial) return null
+  const lead = 'This request is for a specific unit, so its lines can’t be edited.'
+  if (opts.asSource && opts.status === 'requested') {
+    return `${lead} Reject it or propose a substitution instead.`
+  }
+  if (opts.asSource && opts.status === 'draft') {
+    return `${lead} Dispatch it as requested, or ask the requesting branch to cancel and raise a new one.`
+  }
+  return `${lead} Cancel it and raise a new request instead.`
+}
+
 function formatDate(iso?: string | null) {
   if (!iso) return '—'
   return formatManilaDateTime(iso, {
@@ -1136,6 +1164,9 @@ type Props = {
   // The Business Owner and the Branch Manager are exempt from that rule: they
   // may receive a transfer they dispatched themselves.
   currentUserExemptFromDispatcherRule?: boolean
+  // The Business Owner may edit a request's lines (keeping its approvals) at
+  // any status before dispatch, not only once it reaches the source.
+  currentUserIsOwner?: boolean
   // The region of the caller's own warehouse branch — drives whether they can
   // act on a transfer touching a real standalone warehouse (branchId: null,
   // Scenario 27), which exact branch-ownership can never match. null/
@@ -1164,6 +1195,8 @@ type Props = {
   // itself and say which transfer to load.
   canEdit?: boolean
   onEdit?: (transfer: TransferSummary) => void
+  /** The source custodian edits the lines before accepting (gated on accept). */
+  onSourceEdit?: (transfer: TransferSummary) => void
   onApproveHq: (id: string) => Promise<ApiResponse<unknown>>
   onRejectHq: (id: string, data: RejectHqTransferFormValues) => Promise<ApiResponse<unknown>>
   onApproveManager: (id: string) => Promise<ApiResponse<unknown>>
@@ -1201,6 +1234,7 @@ export default function TransferDetailModal({
   currentUserBranchId,
   currentUserId,
   currentUserExemptFromDispatcherRule = false,
+  currentUserIsOwner = false,
   currentUserRegion,
   onAccept,
   onReject,
@@ -1213,6 +1247,7 @@ export default function TransferDetailModal({
   onCancel,
   canEdit = false,
   onEdit,
+  onSourceEdit,
   onApproveHq,
   onRejectHq,
   onApproveManager,
@@ -1430,6 +1465,28 @@ export default function TransferDetailModal({
     !isUdsPaired &&
     !hasPinnedSerial &&
     inScope(transfer?.toWarehouse)
+  // The source custodian may reshape a request while it is still theirs —
+  // waiting on them, or accepted and not yet dispatched — lines only, status
+  // and approvals kept, no confirmation from the requester. The Business
+  // Owner may do the same at any status before dispatch, approvals pending
+  // included. Takes precedence over the requester's edit for someone on both
+  // sides (head office), since it doesn't wipe the approvals the request
+  // already collected.
+  const sourceEditableStatus = currentUserIsOwner
+    ? EDITABLE_STATUSES.has(status)
+    : status === 'requested' || status === 'draft'
+  const canSourceEditThis =
+    canAcceptThis && sourceEditableStatus && !isUdsPaired && !hasPinnedSerial
+  const sourceCouldEdit = canAcceptThis && sourceEditableStatus
+  const lockNote = editLockNote({
+    couldEdit:
+      sourceCouldEdit ||
+      (canEdit && EDITABLE_STATUSES.has(status) && inScope(transfer?.toWarehouse)),
+    isUdsPaired,
+    hasPinnedSerial,
+    asSource: sourceCouldEdit && !currentUserIsOwner,
+    status,
+  })
 
   // Only worth a column when at least one line actually carries a serial —
   // otherwise every row just shows a distracting "—".
@@ -1817,15 +1874,38 @@ export default function TransferDetailModal({
           <div className="flex shrink-0 items-center gap-2">
             {/* Edit acts on the request itself (WH-02). Hidden while an
                 inline form is open, same as the footer. */}
-            {transfer && !inlineFormOpen && canEditThis && onEdit && (
+            {transfer && !inlineFormOpen && canSourceEditThis && onSourceEdit ? (
               <button
                 type="button"
-                onClick={() => onEdit(transfer)}
+                onClick={() => onSourceEdit(transfer)}
                 className="flex items-center gap-1.5 rounded-lg border border-[#ddd0f7] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-[#f5f0ff]"
               >
                 <Pencil className="h-3.5 w-3.5" />
                 Edit Request
               </button>
+            ) : (
+              transfer &&
+              !inlineFormOpen &&
+              canEditThis &&
+              onEdit && (
+                <button
+                  type="button"
+                  onClick={() => onEdit(transfer)}
+                  className="flex items-center gap-1.5 rounded-lg border border-[#ddd0f7] bg-white px-3 py-1.5 text-[12.5px] font-medium text-[#5b21b6] hover:bg-[#f5f0ff]"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit Request
+                </button>
+              )
+            )}
+            {transfer && !inlineFormOpen && lockNote && (
+              <p
+                data-testid="transfer-edit-lock-note"
+                className="flex max-w-90 items-start gap-1.5 text-[11.5px] leading-snug text-ink-muted"
+              >
+                <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                {lockNote}
+              </p>
             )}
             <button
               type="button"

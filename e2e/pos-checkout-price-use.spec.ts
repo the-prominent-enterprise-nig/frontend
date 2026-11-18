@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, clickStable, sweepE2EPriceUseTypes, pickCartPriceUse } from './utils'
+import {
+  gotoReady,
+  clickStable,
+  sweepE2EPriceUseTypes,
+  pickCartPriceUse,
+  pickCheckoutSession,
+} from './utils'
 
 const NAME_PREFIX = 'E2E Checkout Active Type — '
 
@@ -49,18 +55,8 @@ async function ensureManilaSession(page: import('@playwright/test').Page) {
     await gotoReady(page, '/pos/checkout')
   }
 
-  const sessionSelect = page.getByRole('combobox').first()
-  if (await sessionSelect.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    const options = await sessionSelect.locator('option').all()
-    for (const option of options) {
-      const text = (await option.textContent()) ?? ''
-      if (text.includes('TN-B1-01')) {
-        const value = await option.getAttribute('value')
-        if (value) await sessionSelect.selectOption(value)
-        break
-      }
-    }
-  }
+  // Checkout never picks a session on its own, even when only one is open.
+  await pickCheckoutSession(page, 'TN-B1-01')
 }
 
 test.describe('POS Checkout — Price Use', () => {
@@ -149,6 +145,7 @@ test.describe('POS Checkout — Price Use', () => {
     expect(toggledOff.ok()).toBeTruthy()
 
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page, 'TN-B1-01')
     await expect(priceUseSelect.locator('option', { hasText: name })).toHaveCount(0, {
       timeout: 10_000,
     })
@@ -159,6 +156,7 @@ test.describe('POS Checkout — Price Use', () => {
     expect(toggledOn.ok()).toBeTruthy()
 
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page, 'TN-B1-01')
     await expect(priceUseSelect.locator('option', { hasText: name })).toHaveCount(1, {
       timeout: 10_000,
     })

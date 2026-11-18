@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
-import { gotoReady, fillStable } from './utils'
+import { gotoReady, fillStable, pickCheckoutSession } from './utils'
 
 // The checkout's document number is typed off a paper booklet, under a Sales
 // Invoice / Delivery Receipt toggle. A number that carries its own prefix is
@@ -33,26 +33,10 @@ const numberInput = (page: Page) => page.getByTestId('document-number-input')
 const radio = (page: Page, type: 'sales_invoice' | 'delivery_receipt') =>
   page.getByTestId(`document-type-${type}`)
 
-/** An owner sees every branch's open sessions: with several open the checkout asks
- * which one to ring on, with exactly one it simply picks it. Handles both. */
-async function pickSessionIfAsked(page: Page): Promise<void> {
-  const sessionSelect = page.locator('select').filter({ hasText: 'Select session' })
-  const autoSelected = page.getByText(/^Counter \d+$/).first()
-  await expect(sessionSelect.or(autoSelected)).toBeVisible({ timeout: 20_000 })
-  if (await sessionSelect.isVisible()) {
-    const value = await sessionSelect
-      .locator('option', { hasText: BRANCH })
-      .first()
-      .getAttribute('value')
-    await sessionSelect.selectOption(value!)
-  }
-}
-
 /** Typed until the toggle has caught up: a value typed before hydration shows in
  * the box without reaching the page's state, so it is emptied and typed again. */
 async function typeNumber(page: Page, value: string): Promise<void> {
   const input = numberInput(page)
-  await pickSessionIfAsked(page)
   await expect(async () => {
     await input.fill('')
     await fillStable(input, value)
@@ -76,6 +60,7 @@ test.describe('POS Checkout — the document type follows the number', () => {
     page,
   }) => {
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page, BRANCH)
     await expect(radio(page, 'sales_invoice')).toHaveAttribute('aria-checked', 'true', {
       timeout: 20_000,
     })
@@ -94,6 +79,7 @@ test.describe('POS Checkout — the document type follows the number', () => {
     page,
   }) => {
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page, BRANCH)
     await expect(radio(page, 'sales_invoice')).toBeVisible({ timeout: 20_000 })
     // A click before hydration changes nothing, so it is repeated until it takes
     // (picking the document already selected does nothing, so repeating is safe).
@@ -114,6 +100,7 @@ test.describe('POS Checkout — the document type follows the number', () => {
     page,
   }) => {
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page, BRANCH)
     await expect(radio(page, 'sales_invoice')).toHaveAttribute('aria-checked', 'true', {
       timeout: 20_000,
     })
@@ -130,6 +117,7 @@ test.describe('POS Checkout — the document type follows the number', () => {
     page,
   }) => {
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page, BRANCH)
     await typeNumber(page, 'DR-77')
     await expect(radio(page, 'delivery_receipt')).toHaveAttribute('aria-checked', 'true')
 

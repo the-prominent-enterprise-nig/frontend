@@ -265,7 +265,6 @@ const navItemsBySegment: Record<string, NavConfig> = {
         href: '/inventory/master-data',
         icon: Layers,
         requiredPermission: [
-          INVENTORY_PERMISSIONS.WAREHOUSES_READ,
           INVENTORY_PERMISSIONS.ITEMS_CREATE,
           INVENTORY_PERMISSIONS.COSTING_READ,
           INVENTORY_PERMISSIONS.COSTING_CONFIGURE,

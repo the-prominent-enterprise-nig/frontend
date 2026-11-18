@@ -1,6 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady, fillStable, openCustomSelect } from './utils'
-import { addInstallmentLine, addItemToCart, ensureBagoSession } from './credit-application-checkout'
+import { fillStable, openCustomSelect } from './utils'
+import {
+  addInstallmentLine,
+  addItemToCart,
+  ensureBagoSession,
+  gotoBagoCheckout,
+} from './credit-application-checkout'
 
 // Client notes 2026-10-28: an installment sale is ONE plan — one provider, one
 // term, one down payment, one ledger — however many items are in the cart. The
@@ -33,7 +38,7 @@ async function pickTerm(page: Page, months: number) {
 
 /** The fan, then `second`, both in the cart as installment. */
 async function twoItems(page: Page, second: string) {
-  await gotoReady(page, '/pos/checkout')
+  await gotoBagoCheckout(page)
   await addInstallmentLine(page)
   await addItemToCart(page, second, 1)
   await expect(page.getByTestId('installment-plan')).toHaveCount(1, { timeout: 15_000 })

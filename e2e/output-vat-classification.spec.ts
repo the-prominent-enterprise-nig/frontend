@@ -15,7 +15,7 @@
  * Needs the Part F migration applied to the DB the stack runs against.
  */
 import { test, expect, type Locator, type Page } from '@playwright/test'
-import { fillStable, gotoReady } from './utils'
+import { fillStable, gotoReady, pickCheckoutSession } from './utils'
 
 const createdCustomerIds: string[] = []
 const createdInvoiceIds: string[] = []
@@ -57,6 +57,7 @@ test.describe('POS checkout — VAT treatment', () => {
     page,
   }) => {
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page)
     const treatment = page.getByTestId('vat-treatment')
     await expect(treatment).toBeVisible({ timeout: 30_000 })
 
@@ -93,6 +94,7 @@ test.describe('POS checkout — VAT treatment', () => {
 
   test('approving opens the manager PIN prompt, which says why', async ({ page }) => {
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page)
     const treatment = page.getByTestId('vat-treatment')
     await expect(treatment).toBeVisible({ timeout: 30_000 })
 
@@ -116,6 +118,7 @@ test.describe('POS checkout — VAT treatment', () => {
     })
 
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page)
     const treatment = page.getByTestId('vat-treatment')
     await expect(treatment).toBeVisible({ timeout: 30_000 })
 

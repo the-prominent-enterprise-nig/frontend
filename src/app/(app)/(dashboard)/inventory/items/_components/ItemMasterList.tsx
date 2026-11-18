@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Search, X, Package } from 'lucide-react'
 import { useItemMaster } from '../_hooks/useItemMaster'
 import EditItemModal from './EditItemModal'
@@ -8,6 +9,7 @@ import ItemMasterTable from './ItemMasterTable'
 import ItemApprovalActionModal from './ItemApprovalActionModal'
 import ItemRejectModal from './ItemRejectModal'
 import BundleDetailModal from '../../bundles/_components/BundleDetailModal'
+import { useReceivingWarehouses } from './item-create-fields'
 import type { ItemSummary, UpdateItemFormValues } from '@/src/schema/inventory/items'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
@@ -30,24 +32,12 @@ import {
   TableCard,
 } from '../../master-data/_components/masterDataChrome'
 
-const LIFECYCLE_OPTIONS = [
-  { value: 'active', label: 'Active' },
-  { value: 'discontinued', label: 'Discontinued' },
-  { value: 'archived', label: 'Archived' },
-]
-
-const REGION_OPTIONS = [
-  { value: 'panay', label: 'Panay (in stock)' },
-  { value: 'negros', label: 'Negros (in stock)' },
-]
-
-const APPROVAL_OPTIONS = [
-  { value: 'draft', label: 'Draft' },
-  { value: 'pending_accounting_confirmation', label: 'Pending Accounting' },
-  { value: 'pending_approval', label: 'Pending Approval' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Rejected' },
-]
+/** Branches filter: every branch plus the standalone warehouses (Panay,
+ * Negros), each labelled by name. */
+function useBranchFilterOptions(): { value: string; label: string }[] {
+  const warehouses = useReceivingWarehouses(true)
+  return warehouses.map((w) => ({ value: w.id, label: w.branch?.name ?? w.name }))
+}
 
 const SORT_OPTIONS = [
   { value: 'createdAt:desc', label: 'Newest first' },
@@ -58,6 +48,7 @@ const SORT_OPTIONS = [
 ]
 
 export default function ItemMasterList({ session }: { session: SessionUser }) {
+  const canCreate = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_CREATE)
   const canUpdate = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_UPDATE)
   const canDelete = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_DELETE)
   const canManageLifecycle = hasPermission(session, INVENTORY_PERMISSIONS.ITEMS_MANAGE_LIFECYCLE)
@@ -85,16 +76,12 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     error,
     search,
     setSearch,
-    lifecycle,
-    setLifecycle,
-    approvalStatus,
-    setApprovalStatus,
     primaryCategoryId,
     setPrimaryCategoryId,
     typeId,
     setTypeId,
-    region,
-    setRegion,
+    warehouseId,
+    setWarehouseId,
     resetFilters,
     sortBy,
     sortOrder,
@@ -132,6 +119,7 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     isRejectingItem,
   } = useItemMaster()
 
+  const router = useRouter()
   const [editTarget, setEditTarget] = useState<ItemSummary | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ItemSummary | null>(null)
   // Scenario 16 — Item Master Governance
@@ -150,14 +138,9 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     setDeleteTarget(null)
   }
 
-  const filtered = !!(
-    search ||
-    lifecycle ||
-    approvalStatus ||
-    primaryCategoryId ||
-    typeId ||
-    region
-  )
+  const branchOptions = useBranchFilterOptions()
+
+  const filtered = !!(search || primaryCategoryId || typeId || warehouseId)
   const showClear = filtered || sortBy !== 'name' || sortOrder !== 'asc'
 
   return (
@@ -168,93 +151,77 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
           description="Create and manage product records across the system."
         />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <ListSearch
-            value={search}
-            onChange={setSearch}
-            placeholder="Search by name, brand, model, type, category or serial number…"
-          />
-          <SearchableSelect
-            className="min-w-[150px]"
-            value={lifecycle ?? ''}
-            onChange={(v) => setLifecycle((v || undefined) as typeof lifecycle)}
-            placeholder="All Statuses"
-            ariaLabel="Status"
-            chrome={CONTROL_CHROME}
-            clearable
-            options={LIFECYCLE_OPTIONS}
-          />
-          {/* Scenario 56 — Operations: items with units on hand there. */}
-          <SearchableSelect
-            className="min-w-[170px]"
-            value={region ?? ''}
-            onChange={(v) => setRegion((v || undefined) as typeof region)}
-            placeholder="All Operations"
-            ariaLabel="Operations"
-            chrome={CONTROL_CHROME}
-            clearable
-            options={REGION_OPTIONS}
-          />
-          {(canSubmitReview || canConfirmAccounting || canApproveItem) && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <ListSearch
+              value={search}
+              onChange={setSearch}
+              placeholder="Search by name, brand, model, type, category or serial number…"
+              className="flex-1"
+            />
+            {showClear && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg px-3 py-2 text-[13px] text-ink-muted hover:bg-[#f0e9fc] hover:text-[#5b21b6]"
+              >
+                <X className="h-4 w-4" />
+                Clear
+              </button>
+            )}
+          </div>
+          {/* Filters share one row, each stretching to fill it. */}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:auto-cols-fr lg:grid-flow-col lg:grid-cols-none">
+            {/* Scenario 56 — items with units on hand at that branch. */}
             <SearchableSelect
-              className="min-w-[190px]"
-              value={approvalStatus ?? ''}
-              onChange={(v) => setApprovalStatus((v || undefined) as typeof approvalStatus)}
-              placeholder="All Approval Statuses"
-              ariaLabel="Approval status"
+              className="w-full"
+              value={warehouseId ?? ''}
+              onChange={(v) => setWarehouseId(v || undefined)}
+              placeholder="All Branches"
+              ariaLabel="Branches"
               chrome={CONTROL_CHROME}
               clearable
-              options={APPROVAL_OPTIONS}
+              options={branchOptions}
             />
-          )}
-          {/* Type / Category = the sheet's TYPE / GROUP / SUBGROUP:
+            {/* Type / Category = the sheet's TYPE / CATEGORY / SUBGROUP:
               Type is the item type, Category/Subgroup the category tree. */}
-          <SearchableSelect
-            className="min-w-[170px]"
-            value={typeId ?? ''}
-            onChange={(v) => setTypeId(v || undefined)}
-            placeholder="All Types"
-            ariaLabel="Type"
-            chrome={CONTROL_CHROME}
-            clearable
-            options={typeOptions.map((t) => ({
-              value: t.id,
-              label: displayClassificationLabel(t.name) ?? t.name,
-            }))}
-          />
-          {categories.length > 0 && (
-            <CategorySelect
-              value={primaryCategoryId}
-              onChange={setPrimaryCategoryId}
-              options={categories}
-              placeholder="All Categories"
-              aria-label="Category or subgroup"
-              className="min-w-[180px]"
+            <SearchableSelect
+              className="w-full"
+              value={typeId ?? ''}
+              onChange={(v) => setTypeId(v || undefined)}
+              placeholder="All Types"
+              ariaLabel="Type"
+              chrome={CONTROL_CHROME}
+              clearable
+              options={typeOptions.map((t) => ({
+                value: t.id,
+                label: displayClassificationLabel(t.name) ?? t.name,
+              }))}
             />
-          )}
-          <SearchableSelect
-            className="min-w-[160px]"
-            value={`${sortBy}:${sortOrder}`}
-            onChange={(v) => {
-              if (!v) return
-              const [field, order] = v.split(':') as [typeof sortBy, typeof sortOrder]
-              setSortBy(field)
-              setSortOrder(order)
-            }}
-            ariaLabel="Sort by"
-            chrome={CONTROL_CHROME}
-            options={SORT_OPTIONS}
-          />
-          {showClear && (
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-[13px] text-ink-muted hover:bg-[#f0e9fc] hover:text-[#5b21b6]"
-            >
-              <X className="h-4 w-4" />
-              Clear
-            </button>
-          )}
+            {categories.length > 0 && (
+              <CategorySelect
+                value={primaryCategoryId}
+                onChange={setPrimaryCategoryId}
+                options={categories}
+                placeholder="All Categories"
+                aria-label="Category or subgroup"
+                className="w-full"
+              />
+            )}
+            <SearchableSelect
+              className="w-full"
+              value={`${sortBy}:${sortOrder}`}
+              onChange={(v) => {
+                if (!v) return
+                const [field, order] = v.split(':') as [typeof sortBy, typeof sortOrder]
+                setSortBy(field)
+                setSortOrder(order)
+              }}
+              ariaLabel="Sort by"
+              chrome={CONTROL_CHROME}
+              options={SORT_OPTIONS}
+            />
+          </div>
         </div>
 
         {error && <LoadError message="Failed to load items — try refreshing the page." />}
@@ -279,6 +246,11 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
                 onDelete={handleDelete}
                 onLifecycleChange={(id, lc) => updateLifecycle(id, lc)}
                 onViewBundle={(item) => setSelectedBundleItem(item)}
+                onAddUnits={
+                  canCreate
+                    ? (item) => router.push(`/inventory/items/${item.id}/add-units`)
+                    : undefined
+                }
                 canSubmitReview={canSubmitReview}
                 canConfirmAccounting={canConfirmAccounting}
                 canApproveItem={canApproveItem}

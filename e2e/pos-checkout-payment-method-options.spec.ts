@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, clickStable, pickCartPriceUse } from './utils'
+import { gotoReady, clickStable, pickCartPriceUse, pickCheckoutSession } from './utils'
 
 // Scenario 37 — Item Payment Mode (Cash / Installment / Credit-Debit Card,
 // one dropdown, Cash default) is the single real source for the POS
@@ -47,18 +47,8 @@ async function ensureManilaSession(page: import('@playwright/test').Page) {
     await gotoReady(page, '/pos/checkout')
   }
 
-  const sessionSelect = page.getByRole('combobox').first()
-  if (await sessionSelect.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    const options = await sessionSelect.locator('option').all()
-    for (const option of options) {
-      const text = (await option.textContent()) ?? ''
-      if (text.includes('TN-B1-01')) {
-        const value = await option.getAttribute('value')
-        if (value) await sessionSelect.selectOption(value)
-        break
-      }
-    }
-  }
+  // Checkout never picks a session on its own, even when only one is open.
+  await pickCheckoutSession(page, 'TN-B1-01')
 }
 
 async function addAnyItemToCart(page: import('@playwright/test').Page) {

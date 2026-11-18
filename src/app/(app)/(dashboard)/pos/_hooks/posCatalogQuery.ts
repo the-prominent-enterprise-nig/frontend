@@ -9,10 +9,15 @@ import { itemLookup } from '../_actions/pos-actions'
  * it through this one cache entry, so coming back to either within the window
  * costs nothing instead of another full download.
  *
- * Stock can be up to STALE.LOOKUP old on a revisit. Checkout invalidates this
- * key after a sale it posts, so the cashier's own sales are never missing from
- * the next visit; prices are re-resolved at checkout (/pos/catalog/resolve-prices),
- * not read from here.
+ * Stock changes underneath an open till, though — a stock request received,
+ * a unit registered or transferred, often by the same person in another tab —
+ * and a cashier must not have to reload the page to see it. So the copy goes
+ * stale after STALE.REALTIME and is re-read when the till is opened again or
+ * its browser tab regains focus (the cashier coming back from Inventory). No
+ * interval polling: at ~5 MB a load, re-reading on a timer while a till sits
+ * idle is exactly the transfer this cache exists to save. Checkout also
+ * invalidates this key after a sale it posts; prices are re-resolved at
+ * checkout (/pos/catalog/resolve-prices), not read from here.
  */
 export const POS_CATALOG_KEY = 'pos-product-catalog'
 
@@ -24,8 +29,11 @@ export function posCatalogQueryOptions(branchId: string | null | undefined) {
       if (!res.success) throw new Error(res.error ?? 'Failed to load catalog')
       return res.data ?? []
     },
-    staleTime: STALE.LOOKUP,
-    // Must outlive staleTime, or the entry is collected before it can be reused.
+    staleTime: STALE.REALTIME,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    // Kept around well past staleTime so a revisit paints the last copy at
+    // once and refreshes it in the background, instead of a blank list.
     gcTime: 2 * STALE.LOOKUP,
   })
 }

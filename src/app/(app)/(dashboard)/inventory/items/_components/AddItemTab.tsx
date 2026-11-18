@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   useMutation,
   useQuery,
@@ -21,6 +21,7 @@ import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat
 import CreateItemModal from './CreateItemModal'
 
 const LOOKUP_STALE = 10 * 60 * 1000
+const ITEM_MASTER = '/inventory/items'
 
 type CreateItemResult = Awaited<ReturnType<typeof createItem>>
 
@@ -65,8 +66,7 @@ function useItemLookups(): ItemLookups {
   }
 }
 
-/** A new item refreshes the catalog and Stock Balance (initial stock may
- * have been recorded with it). */
+/** A new item refreshes the catalog. */
 function useCreateItem(): UseMutationResult<CreateItemResult, Error, CreateItemFormValues> {
   const queryClient = useQueryClient()
   return useMutation({
@@ -78,7 +78,6 @@ function useCreateItem(): UseMutationResult<CreateItemResult, Error, CreateItemF
       }
       showToast({ title: 'Item created', description: result.message, status: 'success' })
       queryClient.invalidateQueries({ queryKey: ['inventory-items'] })
-      queryClient.invalidateQueries({ queryKey: ['inventory-stock-balances'] })
     },
   })
 }
@@ -86,20 +85,24 @@ function useCreateItem(): UseMutationResult<CreateItemResult, Error, CreateItemF
 /**
  * Master Data's Add Item tab — the Add New Item form shown inline, the same
  * shape as Stock Transaction's Stock Request tab. Moved here from Item
- * Master's tab-strip button. A successful save remounts it blank so the next
- * item can be keyed straight in.
+ * Master's tab-strip button. Add Item only creates the item (and its
+ * prices); a successful save goes on to that item's Add units, which can be
+ * skipped back to Item Master. A service item has no stock, so it goes
+ * straight to Item Master.
  */
 export default function AddItemTab(): React.JSX.Element {
-  const [formKey, setFormKey] = useState(0)
+  const router = useRouter()
   const lookups = useItemLookups()
   const create = useCreateItem()
 
   return (
     <CreateItemModal
-      key={formKey}
       variant="page"
       isOpen
-      onClose={() => setFormKey((k) => k + 1)}
+      onClose={() => router.push(ITEM_MASTER)}
+      onSaved={({ id, isService }) =>
+        router.push(id && !isService ? `${ITEM_MASTER}/${id}/add-units?new=1` : ITEM_MASTER)
+      }
       onSubmit={(data) => create.mutateAsync(data)}
       isSubmitting={create.isPending}
       {...lookups}

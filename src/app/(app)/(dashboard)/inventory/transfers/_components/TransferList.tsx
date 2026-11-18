@@ -1,5 +1,6 @@
 'use client'
 
+import { SeriesGapNotice } from '@/src/components/inventory/SeriesGapNotice'
 import { ListFooterPager } from '@/src/components/inventory/ListFooterPager'
 import { useCallback, useEffect, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -9,7 +10,12 @@ import { useTransferManager } from '../_hooks/useTransferManager'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { hasRole, type SessionUser } from '@/src/libs/guards/permission'
-import type { TransferStatus, TransferSummary } from '@/src/schema/inventory/transfers'
+import type {
+  CreateTransferFormValues,
+  TransferStatus,
+  TransferSummary,
+} from '@/src/schema/inventory/transfers'
+import type { ApiResponse } from '@/src/libs/api/client'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { CONTROL_CHROME, MONO, PLEX } from '../../purchase-orders/_components/procurementTokens'
 import CreateTransferModal from './CreateTransferModal'
@@ -220,6 +226,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
     totalCount,
     createTransfer,
     updateTransfer,
+    editSourceLines,
+    isEditingSourceLines,
     isUpdating,
     createCaravan,
     isCreatingCaravan,
@@ -263,8 +271,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
   // resolveActorRegion).
   // The Business Owner and the Branch Manager are exempt from the
   // dispatcher-is-never-the-receiver rule (mirrors the backend's receive()).
-  const exemptFromDispatcherRule =
-    hasRole(session, 'Business Owner') || hasRole(session, 'Branch Manager')
+  const isOwner = hasRole(session, 'Business Owner')
+  const exemptFromDispatcherRule = isOwner || hasRole(session, 'Branch Manager')
   const ownBranch = branchOptions.find((b) => b.id === session.branchId)
   const currentUserRegion = ownBranch?.type === 'warehouse' ? (ownBranch.region ?? null) : null
   // A caravan the user's branch hosts counts as theirs (see TransferDetailModal).
@@ -309,6 +317,19 @@ export default function TransferList({ session }: { session: SessionUser }) {
   // edit of this request — the two build the identical payload, so they share
   // one form rather than keeping a near-duplicate of a 1300-line component.
   const [editingTransfer, setEditingTransfer] = useState<TransferSummary | null>(null)
+  // Set when the source custodian opened the edit (lines only, before dispatch).
+  const [isSourceEdit, setIsSourceEdit] = useState(false)
+  // After the source's edit the request is still theirs to accept or
+  // dispatch, so its detail panel comes straight back (and refetches the new
+  // lines).
+  async function reopenAfterSourceEdit(
+    transfer: TransferSummary,
+    data: CreateTransferFormValues
+  ): Promise<ApiResponse<unknown>> {
+    const result = await editSourceLines(transfer.id, data)
+    if (result.success) setSelectedTransfer(transfer)
+    return result
+  }
   const [searchFocused, setSearchFocused] = useState(false)
   const [createDraft, setCreateDraft] = useState<{
     fromWarehouseId?: string
@@ -397,7 +418,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Deep link into one transfer — `?transfer=TRF-…`, as the receiving report
+  // Deep link into one transfer — `?transfer=ST00001PMIB`, as the receiving report
   // that arrived on it links here. Transfers have no per-transfer route (the
   // detail is a modal over this list), so the number is resolved in two
   // steps: seed the search box on mount so the list actually contains the
@@ -468,6 +489,9 @@ export default function TransferList({ session }: { session: SessionUser }) {
             </p>
           </div>
         </div>
+
+        {/* Numbers missing from the branch's ST series (NIG, 2026-11-16). */}
+        <SeriesGapNotice doc="ST" />
 
         {/* Scenario 60 Part 3 — ended caravans still holding stock, for the
             people who can transfer it out. */}
@@ -804,21 +828,30 @@ export default function TransferList({ session }: { session: SessionUser }) {
           setIsCreateOpen(false)
           setCreateDraft(null)
           setEditingTransfer(null)
+          setIsSourceEdit(false)
         }}
         // One screen, two destinations: the form produces the same complete
         // request either way, so which endpoint it goes to is the only thing
         // that changes. The modal itself stays unaware of the difference.
         onSubmit={
           editingTransfer
-            ? (data) => updateTransfer(editingTransfer.id, data)
+            ? (data) =>
+                isSourceEdit
+                  ? reopenAfterSourceEdit(editingTransfer, data)
+                  : updateTransfer(editingTransfer.id, data)
             : createDraft?.dispatchNow
               ? createAndDispatch
               : createTransfer
         }
         isSubmitting={
-          editingTransfer ? isUpdating : createDraft?.dispatchNow ? isDispatchingNow : isCreating
+          editingTransfer
+            ? isUpdating || isEditingSourceLines
+            : createDraft?.dispatchNow
+              ? isDispatchingNow
+              : isCreating
         }
         editing={editingTransfer}
+        sourceEdit={isSourceEdit}
         onCreateCaravan={createCaravan}
         onUpdateCaravan={updateCaravan}
         isCreatingCaravan={isCreatingCaravan || isUpdatingCaravan}
@@ -848,6 +881,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         currentUserBranchId={session.branchId}
         currentUserId={session.id}
         currentUserExemptFromDispatcherRule={exemptFromDispatcherRule}
+        currentUserIsOwner={isOwner}
         currentUserRegion={currentUserRegion}
         onAccept={acceptTransfer}
         onReject={rejectTransfer}
@@ -866,6 +900,12 @@ export default function TransferList({ session }: { session: SessionUser }) {
           // full-content sheet, and leaving both mounted would stack two of
           // them over the page area.
           setSelectedTransfer(null)
+          setIsSourceEdit(false)
+          setEditingTransfer(tr)
+        }}
+        onSourceEdit={(tr) => {
+          setSelectedTransfer(null)
+          setIsSourceEdit(true)
           setEditingTransfer(tr)
         }}
         onApproveHq={approveHqTransfer}

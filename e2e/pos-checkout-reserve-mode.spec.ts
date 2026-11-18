@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, clickStable } from './utils'
+import { gotoReady, clickStable, pickCheckoutSession } from './utils'
 
 // Scenario 03, Part 3 — "Reserve" checkout mode. This spec sticks to
 // UI-surface checks (mode selector, deposit-labelled payment section, the
@@ -12,6 +12,7 @@ test.describe('POS Checkout — Reserve Mode', () => {
     page,
   }) => {
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page)
 
     const depositHeading = page.getByText('Deposit (optional)', { exact: true })
     await clickStable(page.getByRole('button', { name: /^Reserve/ }), depositHeading)
@@ -29,6 +30,7 @@ test.describe('POS Checkout — Reserve Mode', () => {
 
   test('other modes do not show the Reserve-only notices', async ({ page }) => {
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page)
 
     await expect(page.getByText('Deposit (optional)', { exact: true })).toHaveCount(0)
     await expect(page.getByText('A customer must be selected to reserve an item.')).toHaveCount(0)

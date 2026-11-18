@@ -14,6 +14,7 @@ import {
   deleteCustomers,
   openCustomSelect,
   pickCartPriceUse,
+  pickCheckoutSession,
 } from './utils'
 
 // Scenario 71 Part 5 — overriding the credit application. A cashier can sell on
@@ -149,17 +150,7 @@ async function ensureOpenSession(request: APIRequestContext, branchId: string): 
 
 async function openCheckout(page: Page): Promise<void> {
   await gotoReady(page, '/pos/checkout')
-  await expect(page.getByPlaceholder('Search by name or serial')).toBeVisible({ timeout: 15_000 })
-  const sessionSelect = page.locator('select').filter({ hasText: 'Select session' })
-  const autoSelected = page.getByText(/^Counter \d+$/).first()
-  await expect(sessionSelect.or(autoSelected)).toBeVisible({ timeout: 15_000 })
-  if (await sessionSelect.isVisible()) {
-    const value = await sessionSelect
-      .locator('option', { hasText: BRANCH })
-      .first()
-      .getAttribute('value')
-    await sessionSelect.selectOption(value!)
-  }
+  await pickCheckoutSession(page, BRANCH)
 }
 
 /** Puts the fixture item on the cart as line `index` and prices it under the fixture Price Use. */

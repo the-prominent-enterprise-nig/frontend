@@ -1,8 +1,8 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady } from './utils'
 import {
   addInstallmentLine,
   approvedApplication,
+  gotoBagoCheckout,
   pickCustomer,
 } from './credit-application-checkout'
 
@@ -38,7 +38,7 @@ test.describe('Credit application — the FMI date at the till', () => {
 
   async function openWithApplication(page: Page, firstDueDate?: string) {
     const app = await approvedApplication(page, { percent: 0.1, firstDueDate })
-    await gotoReady(page, '/pos/checkout')
+    await gotoBagoCheckout(page)
     await addInstallmentLine(page)
     await pickCustomer(page, app.name)
     await expect(

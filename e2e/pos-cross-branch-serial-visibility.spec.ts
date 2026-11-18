@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, clickStable } from './utils'
+import { gotoReady, clickStable, pickCheckoutSession } from './utils'
 
 // Scenario 04, Parts 1-3 — POS cross-branch serial visibility + one-tap
 // request. Refrigerator
@@ -9,11 +9,10 @@ import { gotoReady, clickStable } from './utils'
 // needed to actually exercise the "Also Available Elsewhere" grouping.
 //
 // Defers to checkout's own session-state handling (No Open Session prompt /
-// multi-session dropdown / single auto-selected session) rather than
-// re-parsing the sessions table, since checkout already resolves that
-// unambiguously. Matches the item by its exact display name ("Refrigerator")
-// rather than SKU, since "Refrigerator Deodorizer" also matches a substring
-// search and SKU prefixes can drift between seed runs.
+// session picker) rather than re-parsing the sessions table, since checkout
+// already resolves that unambiguously. Matches the item by its exact display
+// name ("Refrigerator") rather than SKU, since "Refrigerator Deodorizer" also
+// matches a substring search and SKU prefixes can drift between seed runs.
 //
 // FIXED, 2026-08-14: this file previously hardcoded the old placeholder
 // branch/warehouse names (Manila HQ / Cebu Office / Davao Branch), which no
@@ -84,34 +83,9 @@ test.describe('POS Checkout — Cross-Branch Serial Visibility', () => {
       await gotoReady(page, '/pos/checkout')
     }
 
-    // Multiple open sessions render a <select> in the top bar — explicitly
-    // pick Bago rather than relying on whatever sorts first. Scoped to
-    // the select that actually CONTAINS a TN-B1-01 option (there's also an
-    // unrelated branch-context combobox elsewhere on the page that a bare
-    // getByRole('combobox').first() can accidentally match instead).
-    // isVisible() checks the CURRENT state with no retry — the sessions
-    // query hasn't necessarily resolved yet right after navigation, so wait
-    // for it properly (and accept that it may legitimately never appear, if
-    // there's only one open session and it auto-selected).
-    const sessionSelect = page
-      .locator('select')
-      .filter({ has: page.locator('option', { hasText: 'TN-B1-01' }) })
-    const sessionSelectAppeared = await sessionSelect
-      .waitFor({ state: 'visible', timeout: 10_000 })
-      .then(() => true)
-      .catch(() => false)
-    if (sessionSelectAppeared) {
-      const bagoOption = sessionSelect.locator('option', { hasText: 'TN-B1-01' })
-      const value = await bagoOption.getAttribute('value')
-      if (value) {
-        // Same hydration race fillStable/clickStable guard against elsewhere
-        // in this suite — retry the select until the value actually sticks.
-        await expect(async () => {
-          await sessionSelect.selectOption(value)
-          await expect(sessionSelect).toHaveValue(value)
-        }).toPass({ timeout: 10_000 })
-      }
-    }
+    // Checkout never picks a session on its own, so pick a Bago one (TN-B1-01)
+    // rather than whatever sorts first: "In this branch" below is Bago's.
+    await pickCheckoutSession(page, 'TN-B1-01')
 
     const searchInput = page.getByPlaceholder('Search by name or serial')
     await expect(searchInput).toBeVisible({ timeout: 15_000 })

@@ -7,6 +7,7 @@ import {
   gotoReady,
   openCustomSelect,
   pickCartPriceUse,
+  pickCheckoutSession,
   sweepE2ECustomers,
   sweepE2EPriceLists,
   sweepE2EPriceUseTypes,
@@ -139,20 +140,6 @@ async function createCustomer(request: APIRequestContext, fx: PlanFixtures, labe
   return { id: customer.id, name }
 }
 
-async function pickSessionIfAsked(page: Page): Promise<void> {
-  await expect(page.getByPlaceholder('Search by name or serial')).toBeVisible({ timeout: 15_000 })
-  const sessionSelect = page.locator('select').filter({ hasText: 'Select session' })
-  const autoSelected = page.getByText(/^Counter \d+$/).first()
-  await expect(sessionSelect.or(autoSelected)).toBeVisible({ timeout: 15_000 })
-  if (await sessionSelect.isVisible()) {
-    const value = await sessionSelect
-      .locator('option', { hasText: PLAN_BRANCH })
-      .first()
-      .getAttribute('value')
-    await sessionSelect.selectOption(value!)
-  }
-}
-
 async function addItemAndCustomer(page: Page, fx: PlanFixtures, customerName: string) {
   const search = page.getByPlaceholder('Search by name or serial')
   await expect(search).toBeVisible({ timeout: 15_000 })
@@ -205,7 +192,7 @@ export async function createInstallmentPlan(
   const customer = await createCustomer(page.request, fx, label)
   const tag = label.replace(/\W/g, '').toUpperCase()
   await gotoReady(page, '/pos/checkout')
-  await pickSessionIfAsked(page)
+  await pickCheckoutSession(page, PLAN_BRANCH)
   await addItemAndCustomer(page, fx, customer.name)
   await fillInstallmentTerms(page)
   await fillStable(page.getByLabel('Sales Invoice No.'), `SI-${tag}-${Date.now()}`)
@@ -239,6 +226,14 @@ export async function tickDue(page: Page, n: number): Promise<void> {
   await expect(
     page.getByTestId('collection-method-0').getByRole('button', { name: 'Debit/Credit Card' })
   ).toBeVisible({ timeout: 15_000 })
+}
+
+/** Types a CR number on the Collect Payment panel — required on every
+ * collection — and returns it. Unique per call, so a spec can find its row. */
+export async function fillCrNumber(page: Page, tag: string): Promise<string> {
+  const cr = `CR-${tag}-${Date.now()}`
+  await fillStable(page.getByTestId('collection-cr-number'), cr)
+  return cr
 }
 
 /** A peso amount as shown on screen (₱3,888.00, −₱120.00) as a number. */

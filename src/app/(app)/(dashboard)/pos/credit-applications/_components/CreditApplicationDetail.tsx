@@ -375,13 +375,11 @@ export default function CreditApplicationDetail({
       customerId: sellableCustomerId,
       creditApplicationId: sellableApplicationId,
       creditApplicationNumber: sellableApplicationNumber,
-      // Named only when there is exactly one session it could mean. With
-      // several open, picking one would be guessing which till the seller is
-      // standing at; checkout asks instead.
-      // This user's own, and only when there is exactly one of them. Naming
-      // someone else's would hand over a till whose drawer and attribution
-      // belong to them; naming one of several would be guessing which counter
-      // this person is standing at. Left unset, checkout asks.
+      // Checkout never selects a session from this; it always asks (developer,
+      // 2026-11-16). The id only lets checkout drop this stash if the session
+      // has closed by the time it is read. Named only when it is this user's
+      // own and the only one, since someone else's till is not theirs to vouch
+      // for.
       sessionId: mySessions.length === 1 ? mySessions[0].id : undefined,
     })
     router.push('/pos/checkout')
@@ -493,8 +491,8 @@ export default function CreditApplicationDetail({
               <p className="text-sm font-medium text-prominent-purple-900">Ready to sell</p>
               <p className="mt-0.5 text-sm text-prominent-purple-700">
                 {hasOpenSession
-                  ? 'Opens the till with this customer, these items and this application already selected.'
-                  : 'No till is open. Open a POS session at a terminal — this cannot open one for you.'}
+                  ? "Opens checkout with this customer, these items and this application ready. You'll pick the cashier session there first."
+                  : 'No cashier session is open yet. Open one in Sessions first, then pick it at checkout.'}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
@@ -508,7 +506,7 @@ export default function CreditApplicationDetail({
                 disabled={!hasOpenSession}
                 className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {hasOpenSession ? 'Continue to sale' : 'No open POS session'}
+                {hasOpenSession ? 'Continue to sale' : 'Open a session first'}
               </button>
             </div>
           </div>
@@ -1312,15 +1310,20 @@ export default function CreditApplicationDetail({
             and is looking for what to do next. Same condition, same handler,
             same disabled state — it is the one action, offered twice. */}
         {canSell && (
-          <div className="flex justify-end">
+          <div className="flex flex-col items-end gap-1">
             <button
               type="button"
               onClick={continueToSale}
               disabled={!hasOpenSession}
               className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white hover:bg-prominent-purple-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {hasOpenSession ? 'Continue to sale' : 'No open POS session'}
+              {hasOpenSession ? 'Continue to sale' : 'Open a session first'}
             </button>
+            <p className="text-xs text-zinc-500">
+              {hasOpenSession
+                ? "You'll pick the cashier session at checkout."
+                : 'No cashier session is open yet. Open one in Sessions first.'}
+            </p>
           </div>
         )}
       </div>

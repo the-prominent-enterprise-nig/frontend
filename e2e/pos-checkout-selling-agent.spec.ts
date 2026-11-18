@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { gotoReady } from './utils'
+import { gotoReady, pickCheckoutSession } from './utils'
 
 // POS Checkout — Selling Agent (Scenario 57, Part 1).
 //
@@ -36,6 +36,7 @@ test.describe('POS Checkout — Selling Agent', () => {
   // where Scenario 57 had it optional.
   test('requires a Selling Agent and starts on OFFICE', async ({ page }) => {
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page)
 
     await expect(page.getByText('Selling Agent *', { exact: false })).toBeVisible()
     await expect(page.getByText('— OFFICE for a walk-in', { exact: false })).toBeVisible()
@@ -50,6 +51,7 @@ test.describe('POS Checkout — Selling Agent', () => {
 
   test('offers OFFICE first, and never a resigned agent', async ({ page }) => {
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page)
     const block = agentBlock(page)
     await block.getByRole('button', { name: 'OFFICE', exact: true }).click({ timeout: 15_000 })
 
@@ -70,6 +72,7 @@ test.describe('POS Checkout — Selling Agent', () => {
     createdAgentId = (await res.json()).id
 
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page)
     const block = agentBlock(page)
     await block.getByRole('button', { name: 'OFFICE', exact: true }).click({ timeout: 15_000 })
     await page.getByPlaceholder('OFFICE').fill(name)
@@ -80,6 +83,7 @@ test.describe('POS Checkout — Selling Agent', () => {
 
   test('cannot be cleared to nothing', async ({ page }) => {
     await gotoReady(page, '/pos/checkout')
+    await pickCheckoutSession(page)
     const block = agentBlock(page)
     await expect(block.getByRole('button', { name: 'OFFICE', exact: true })).toBeVisible({
       timeout: 15_000,

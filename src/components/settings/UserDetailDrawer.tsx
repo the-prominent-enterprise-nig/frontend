@@ -52,6 +52,7 @@ export default function UserDetailDrawer({
     'Unknown User'
 
   const branchAccess = user.userBranches.map((ub) => ub.branch)
+  const scopeBranch = user.employee?.branch ?? null
   const roles = user.userRoles.map((ur) => ur.role)
   const isProtectedFounder = user.isFounder && !isSelf
 
@@ -196,14 +197,26 @@ export default function UserDetailDrawer({
             </Section>
           )}
 
+          {/* Branch — the employee branch, which is what scopes the login
+              (dashboards, Stockbook, reports). Set from Edit User. */}
+          <Section title="Branch">
+            {scopeBranch ? (
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-prominent-purple-50 px-3 py-1 text-sm text-prominent-purple-700">
+                <Building2 className="h-3.5 w-3.5" />
+                {scopeBranch.name}
+                <span className="text-xs text-ink-muted">· sees only this branch</span>
+              </span>
+            ) : (
+              <p className="text-sm text-ink-muted">Head Office — sees all branches.</p>
+            )}
+          </Section>
+
           {/* Branch Access */}
           <Section
             title={`Branch Access${branchAccess.length > 0 ? ` (${branchAccess.length})` : ''}`}
           >
             {branchAccess.length === 0 ? (
-              <p className="text-sm text-zinc-500">
-                No branch access assigned — Head Office (all branches).
-              </p>
+              <p className="text-sm text-ink-muted">No additional branch access.</p>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {branchAccess.map((branch) => (

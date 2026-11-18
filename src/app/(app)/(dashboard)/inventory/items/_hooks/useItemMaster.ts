@@ -52,6 +52,8 @@ export function useItemMaster() {
   const [typeId, setTypeId] = useState<string | undefined>(undefined)
   // Scenario 56 — Operations: items with stock on hand in that region.
   const [region, setRegion] = useState<'panay' | 'negros' | undefined>(undefined)
+  // Branches filter: one branch's (or standalone warehouse's) stock instead.
+  const [warehouseId, setWarehouseId] = useState<string | undefined>(undefined)
   const [sortBy, setSortBy] = useState<'name' | 'sku' | 'createdAt' | 'costPrice' | 'sellingPrice'>(
     'name'
   )
@@ -73,6 +75,7 @@ export function useItemMaster() {
       primaryCategoryId,
       typeId,
       region,
+      warehouseId,
       sortBy,
       sortOrder,
     }),
@@ -85,6 +88,7 @@ export function useItemMaster() {
       primaryCategoryId,
       typeId,
       region,
+      warehouseId,
       sortBy,
       sortOrder,
     ]
@@ -356,6 +360,7 @@ export function useItemMaster() {
     setPrimaryCategoryId(undefined)
     setTypeId(undefined)
     setRegion(undefined)
+    setWarehouseId(undefined)
     setSortBy('name')
     setSortOrder('asc')
     setPage(1)
@@ -410,6 +415,11 @@ export function useItemMaster() {
     region,
     setRegion: (val: 'panay' | 'negros' | undefined) => {
       setRegion(val)
+      setPage(1)
+    },
+    warehouseId,
+    setWarehouseId: (val: string | undefined) => {
+      setWarehouseId(val)
       setPage(1)
     },
     sortBy,

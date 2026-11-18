@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { gotoReady, clickStable } from './utils'
+import { gotoReady, clickStable, pickCheckoutSession } from './utils'
 
 // A serial-tracked item can now hold multiple units in one cart row instead
 // of being capped at quantity 1 — each unit still needs its own distinct
@@ -42,18 +42,8 @@ async function ensureManilaSession(page: import('@playwright/test').Page) {
     await gotoReady(page, '/pos/checkout')
   }
 
-  const sessionSelect = page.getByRole('combobox').first()
-  if (await sessionSelect.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    const options = await sessionSelect.locator('option').all()
-    for (const option of options) {
-      const text = (await option.textContent()) ?? ''
-      if (text.includes('TN-B1-01')) {
-        const value = await option.getAttribute('value')
-        if (value) await sessionSelect.selectOption(value)
-        break
-      }
-    }
-  }
+  // Checkout never picks a session on its own, even when only one is open.
+  await pickCheckoutSession(page, 'TN-B1-01')
 }
 
 test.describe('POS Checkout — Multi-Serial Cart Line', () => {

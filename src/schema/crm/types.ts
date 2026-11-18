@@ -432,7 +432,18 @@ export interface InstallmentAccount {
   dueAmount?: number | null
 }
 
-export interface InstallmentAccountDetail extends InstallmentAccount {
+/** The Existing customer ledger's "W/tax received" tick box (Docket NIG #38
+ * mockup) — a marker that the customer's withholding tax has been received.
+ * It posts nothing and moves no figure. At/By are whoever last ticked or
+ * unticked it; both null on a box never touched. */
+export interface WithholdingTaxReceivedMarker {
+  withholdingTaxReceived: boolean
+  withholdingTaxReceivedAt: string | null
+  withholdingTaxReceivedBy: { id: string; name: string | null } | null
+}
+
+export interface InstallmentAccountDetail
+  extends InstallmentAccount, Partial<WithholdingTaxReceivedMarker> {
   arInvoiceId?: string | null
   installmentScheduleId?: string | null
   // Scenario 32 item 2 — the financing scheme this account was sold under
@@ -745,6 +756,36 @@ export interface CustomerLedger {
      * column's rule as at today). Optional for a backend without it. */
     totalDue?: number
   }
+  /** Docket #88 — set only when the ledger is narrowed to one cash sale: what
+   * its printout needs to read like an installment account's paper form.
+   * Absent on any other ledger, and on a backend without it. */
+  cashSale?: CashSaleCard | null
+}
+
+/** Docket #88 — a cash sale's own figures for the installment-format printout
+ * (the paper form's boxes). What only an installment account has — down
+ * payment, term, MI, collector… — is not here; the printout shows "—". */
+export interface CashSaleCard {
+  saleId: string
+  /** The SI number (or the sale's own number), as the Cash Sale row shows it. */
+  salesInvoiceNumber: string
+  saleDate: string
+  customerName: { lastName: string | null; firstName: string | null; middleName: string | null }
+  branch: string | null
+  agent: string | null
+  /** WIP / SSC / … or "Price Override", as the ledger's Scheme column reads. */
+  scheme: string | null
+  /** The sale's total — a cash sale's LCP and Total Price. */
+  listedCashPrice: number
+  units: {
+    brand: string | null
+    itemType: string | null
+    modelNumber: string | null
+    serialNumber: string | null
+  }[]
+  /** Null when the viewer may not read agents. */
+  salesCommission: number | null
+  salesSmi: number | null
 }
 
 // AR Aging Report — replicates a legacy "AGING OF ACCOUNTS RECEIVABLE" sheet,
