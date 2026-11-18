@@ -226,6 +226,9 @@ export interface CustomerExtraFieldsValues {
   facebookName: string
   address: string
   barangayCode: string
+  /** Town and province of the current address, from the picker. */
+  town?: string
+  province?: string
   homeAddress: string
   homeBarangayCode: string
   /** "Home address is same as current address" (PR #199 review). Ticked, the
@@ -477,7 +480,14 @@ export default function CustomerExtraFields({
       <div className="sm:col-span-2">
         <label className="mb-1 block text-[13px] font-medium text-gray-700">Current address</label>
         <PhilippineAddressPicker
-          onChange={(v) => onChange({ address: v.address, barangayCode: v.barangayCode })}
+          onChange={(v) =>
+            onChange({
+              address: v.address,
+              barangayCode: v.barangayCode,
+              town: v.town,
+              province: v.province,
+            })
+          }
           initialBarangayCode={values.barangayCode || undefined}
           initialAddress={values.address || undefined}
         />

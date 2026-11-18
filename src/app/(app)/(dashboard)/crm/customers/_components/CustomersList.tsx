@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { BellPlus, GitMerge, Plus, Search } from 'lucide-react'
 import { customersApi } from '@/src/libs/api/crm'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
-import { BranchesApi, type BranchLite } from '@/src/libs/data/OrgStructureData'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { CUSTOMER_TYPE_LABELS } from '@/src/schema/crm/types'
 import type { Customer, CustomerAccountType } from '@/src/schema/crm/types'
 
@@ -41,10 +41,13 @@ export default function CustomersList({
   // Status and source filters were removed at the client's request — the
   // API still accepts both (the CRM dashboard summaries use them), they're
   // just not how anyone narrows this list.
-  const [branchFilter, setBranchFilter] = useState('')
+  // The town the list is narrowed to, as "Town|Province" (a name like San Jose
+  // exists in two provinces). Replaces the Branch filter: a loaded customer
+  // never has a branch, but every customer has an address.
+  const [townFilter, setTownFilter] = useState('')
   const [accountTypeFilter, setAccountTypeFilter] = useState('')
   const [groupIdFilter, setGroupIdFilter] = useState('')
-  const [branches, setBranches] = useState<BranchLite[]>([])
+  const [towns, setTowns] = useState<{ town: string; province?: string; count: number }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reminderForCustomerId, setReminderForCustomerId] = useState<string | null>(null)
@@ -55,7 +58,8 @@ export default function CustomersList({
       setError(null)
       const res = await customersApi.list({
         search: search || undefined,
-        branchId: branchFilter || undefined,
+        town: townFilter ? townFilter.split('|')[0] : undefined,
+        province: townFilter ? townFilter.split('|')[1] || undefined : undefined,
         accountType: (accountTypeFilter || undefined) as CustomerAccountType | undefined,
         groupId: groupIdFilter || undefined,
         limit: 50,
@@ -65,10 +69,10 @@ export default function CustomersList({
       setLoading(false)
     }, 250)
     return () => clearTimeout(t)
-  }, [search, branchFilter, accountTypeFilter, groupIdFilter])
+  }, [search, townFilter, accountTypeFilter, groupIdFilter])
 
   useEffect(() => {
-    BranchesApi.list().then((r) => setBranches(r.data?.data ?? []))
+    customersApi.towns().then((r) => setTowns(r.data ?? []))
   }, [])
 
   return (
@@ -112,19 +116,20 @@ export default function CustomersList({
             className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm placeholder:text-gray-400 focus:border-prominent-orange-400 focus:outline-none"
           />
         </div>
-        <select
-          value={branchFilter}
-          onChange={(e) => setBranchFilter(e.target.value)}
-          aria-label="Filter by branch"
-          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">All branches</option>
-          {branches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
+        <div className="w-[240px]">
+          <SearchableSelect
+            value={townFilter}
+            onChange={(v) => setTownFilter(v)}
+            options={towns.map((t) => ({
+              value: `${t.town}|${t.province ?? ''}`,
+              label: t.province ? `${t.town}, ${t.province}` : t.town,
+              description: t.count.toLocaleString(),
+            }))}
+            placeholder="All towns"
+            ariaLabel="Filter by town"
+            clearable
+          />
+        </div>
         <select
           value={accountTypeFilter}
           onChange={(e) => setAccountTypeFilter(e.target.value)}
@@ -150,7 +155,7 @@ export default function CustomersList({
               <th className="px-4 py-3">Code</th>
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Email / Phone</th>
-              <th className="px-4 py-3">Branch</th>
+              <th className="px-4 py-3">Town</th>
               {canScheduleReminder && <th className="px-4 py-3"></th>}
             </tr>
           </thead>
@@ -222,7 +227,15 @@ export default function CustomersList({
                     <div className="text-[12px] text-gray-500">{c.phone ?? '—'}</div>
                   </td>
                   <td className="px-4 py-3 text-[13px] text-gray-700">
-                    {c.branch?.name ?? <span className="text-gray-400">—</span>}
+                    {c.town ? (
+                      c.province ? (
+                        `${c.town}, ${c.province}`
+                      ) : (
+                        c.town
+                      )
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
                   </td>
                   {canScheduleReminder && (
                     <td className="px-4 py-3">

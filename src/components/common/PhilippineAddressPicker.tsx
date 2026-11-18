@@ -29,7 +29,14 @@ export default function PhilippineAddressPicker({
   initialAddress,
   defaultRegionCode = PH_DEFAULT_REGION_CODE,
 }: {
-  onChange: (value: { address: string; barangayCode: string }) => void
+  /** `town` / `province` are the picked city and province names (empty until
+   * chosen) — what the CRM Customers Town filter reads. */
+  onChange: (value: {
+    address: string
+    barangayCode: string
+    town?: string
+    province?: string
+  }) => void
   /** Edit-only: the customer's already-saved barangay code. Resolved once
    * (client-side, from the same cached datasets used for normal picking)
    * up through city/province/region so an editor sees where the customer
@@ -214,6 +221,8 @@ export default function PhilippineAddressPicker({
     onChange({
       address: enteredParts.length === 0 ? '' : [...realParts, 'Philippines'].join(', '),
       barangayCode,
+      town: city ?? '',
+      province: province ?? '',
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [street, regionCode, provinceCode, cityCode, barangayCode])

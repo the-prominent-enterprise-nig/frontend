@@ -52,6 +52,8 @@ type FormState = {
   phone: string
   address: string
   barangayCode: string
+  town: string
+  province: string
   homeAddress: string
   homeBarangayCode: string
   homeSameAsCurrent: boolean
@@ -102,6 +104,8 @@ const empty: FormState = {
   phone: '',
   address: '',
   barangayCode: '',
+  town: '',
+  province: '',
   homeAddress: '',
   homeBarangayCode: '',
   // Most customers live where they are — the box starts ticked.
@@ -233,6 +237,8 @@ export default function CustomerForm({
           phone: c.phone ?? '',
           address: c.address ?? '',
           barangayCode: c.barangayCode ?? '',
+          town: c.town ?? '',
+          province: c.province ?? '',
           homeAddress: c.homeAddress ?? '',
           homeBarangayCode: c.homeBarangayCode ?? '',
           // Ticked when there is no separate home address, or the one on file
@@ -359,6 +365,11 @@ export default function CustomerForm({
       phone: form.phone.trim() || undefined,
       address: form.address || undefined,
       barangayCode: form.barangayCode || undefined,
+      // Left out when empty, like the address: an untouched picker on a loaded
+      // customer (one with no barangay) reports nothing and must not wipe the
+      // town the customer already has.
+      town: form.town || undefined,
+      province: form.province || undefined,
       // Ticked sends '' rather than leaving the fields out: an update only
       // touches the fields it is sent, so omitting them could never clear a
       // home address already on file. Every reader treats '' as "same as

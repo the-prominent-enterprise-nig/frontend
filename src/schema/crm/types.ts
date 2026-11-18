@@ -201,6 +201,10 @@ export interface Customer {
    *  now. Home is the pair below, null before 2026-09-30. */
   address?: string | null
   barangayCode?: string | null
+  /** Town / city and province of the current address, as plain names (the
+   *  CRM Customers list filters on them). Null when unknown. */
+  town?: string | null
+  province?: string | null
   homeAddress?: string | null
   homeBarangayCode?: string | null
   paymentTerms?: string | null
