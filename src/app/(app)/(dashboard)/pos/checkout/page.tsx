@@ -45,7 +45,8 @@ import { getSessionStateWithRetry } from '@/src/libs/auth/session-client'
 import { SessionUnavailableError } from '@/src/libs/auth/session-unavailable-error'
 import { can, managesOwnBranch } from '@/src/libs/guards/permission'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { STALE } from '@/src/libs/query/stale-times'
 import { useSessions } from '../_hooks/usePos'
 import { POS_CATALOG_KEY, posCatalogQueryOptions } from '../_hooks/posCatalogQuery'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
@@ -680,6 +681,30 @@ const DECIMAL_CODES = new Set([
   'milligrams',
 ])
 
+type CatalogUom = { id: string; code: string; allowDecimal?: boolean | null }
+
+/** Catalog rows as Checkout reads them: the brand flattened to brandName and
+ * each item's unit (code, whether it sells in fractions) filled in from the
+ * units of measure. Rows already carrying those are left as they are. */
+function enrichCatalogRows(
+  rows: unknown[] | undefined,
+  uoms: CatalogUom[] | undefined
+): LookupItem[] {
+  if (!rows) return []
+  const uomMap = new Map((uoms ?? []).map((u) => [u.id, u]))
+  return (rows as LookupItem[]).map((item) => {
+    const withBrand =
+      item.brandName === undefined ? { ...item, brandName: item.brand?.name ?? null } : item
+    if (withBrand.uomCode || withBrand.allowDecimal) return withBrand
+    const uom = withBrand.baseUnitId ? uomMap.get(withBrand.baseUnitId) : undefined
+    if (!uom) return withBrand
+    const allowDecimal =
+      uom.allowDecimal === true ||
+      (uom.allowDecimal !== false && DECIMAL_CODES.has(uom.code.toLowerCase()))
+    return { ...withBrand, uomCode: uom.code, allowDecimal }
+  })
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 /** Scenario 72 Part 6 — the backend's Delivery Receipt sale guards, in
@@ -719,17 +744,6 @@ export default function CheckoutPage() {
 
   // Flat VAT rate applied to every checkout — no longer configurable.
   const activeTaxRate = DEFAULT_VAT_RATE
-
-  // Catalog
-  const [catalogItems, setCatalogItems] = useState<LookupItem[]>([])
-  const [catalogLoading, setCatalogLoading] = useState(false)
-  const [catalogError, setCatalogError] = useState('')
-  // Whether the currently-loaded catalogItems reflect a real, branch-scoped
-  // stock count. Without a resolved branch (e.g. multiple open sessions and
-  // none picked yet), the backend can't compute per-branch stock and every
-  // item's stockQty defaults to 0 — that 0 must never be treated as "genuinely
-  // out of stock" until this is true.
-  const [catalogStockKnown, setCatalogStockKnown] = useState(false)
 
   // Enabled payment methods for the active branch
   const [enabledPaymentMethods, setEnabledPaymentMethods] = useState<PosPaymentMethod[]>(
@@ -1450,49 +1464,47 @@ export default function CheckoutPage() {
     }
   }, [openSessions, sessionsData, sessionId, switcherBranchId])
 
-  // Load catalog when session is selected, then enrich with UOM data
-  useEffect(() => {
-    if (!sessionsData) return
-    const session = openSessions.find((s) => s.id === sessionId)
-    const branchId =
-      session?.terminal?.caravanBranchId ??
-      session?.terminal?.branchId ??
-      session?.terminal?.branch?.id
-    setCatalogLoading(true)
-    setCatalogError('')
+  // Catalog — the selected session's branch (its caravan, at a caravan till).
+  const catalogSession = openSessions.find((s) => s.id === sessionId)
+  const catalogBranchId =
+    catalogSession?.terminal?.caravanBranchId ??
+    catalogSession?.terminal?.branchId ??
+    catalogSession?.terminal?.branch?.id
 
-    // One cached copy per branch, shared with the Product Catalog page — the
-    // full catalog is ~5 MB, so coming back to Checkout shouldn't re-download it.
-    Promise.all([
-      queryClient.fetchQuery(posCatalogQueryOptions(branchId)),
-      getUnitsOfMeasure().catch(() => ({ success: false, data: null })),
-    ])
-      .then(([catalogRows, uomRes]) => {
-        const raw = catalogRows as LookupItem[]
-
-        const uomMap = Object.fromEntries((uomRes.data?.data ?? []).map((u) => [u.id, u]))
-
-        const enriched = raw.map((item) => {
-          const withBrand =
-            item.brandName === undefined ? { ...item, brandName: item.brand?.name ?? null } : item
-          if (withBrand.uomCode || withBrand.allowDecimal) return withBrand
-          const uom = withBrand.baseUnitId ? uomMap[withBrand.baseUnitId] : undefined
-          if (!uom) return withBrand
-          const uomCode = uom.code
-          const allowDecimal =
-            uom.allowDecimal === true ||
-            (uom.allowDecimal !== false && DECIMAL_CODES.has(uomCode.toLowerCase()))
-          return { ...withBrand, uomCode, allowDecimal }
-        })
-
-        setCatalogItems(enriched)
-        setCatalogStockKnown(!!branchId)
-      })
-      .catch((err) =>
-        setCatalogError(err instanceof Error && err.message ? err.message : 'Failed to load items')
-      )
-      .finally(() => setCatalogLoading(false))
-  }, [sessionId, openSessions, sessionsData, queryClient])
+  // Subscribed, not fetched once into state: one cached copy per branch,
+  // shared with the Product Catalog page, that re-reads itself when the till
+  // regains focus or is reopened (see posCatalogQueryOptions). Before, the
+  // list was copied into state when the session was picked and never again,
+  // so stock received in Inventory only showed after a page reload.
+  const catalogQuery = useQuery({
+    ...posCatalogQueryOptions(catalogBranchId),
+    enabled: !!sessionsData,
+  })
+  const uomQuery = useQuery({
+    queryKey: ['pos-checkout-uoms'],
+    queryFn: () => getUnitsOfMeasure().catch(() => ({ success: false, data: null })),
+    staleTime: STALE.REFERENCE,
+  })
+  const catalogItems = useMemo(
+    () => enrichCatalogRows(catalogQuery.data, uomQuery.data?.data?.data),
+    [catalogQuery.data, uomQuery.data]
+  )
+  // Only the first load shows the spinner; a background refresh keeps the
+  // current list on screen and swaps it in when it lands.
+  // Whether the catalog has loaded at all — what the cart-building arrivals
+  // wait on. A boolean, so a background refresh never re-runs them.
+  const catalogReady = catalogItems.length > 0
+  const catalogLoading = catalogQuery.isPending && catalogQuery.fetchStatus !== 'idle'
+  const catalogError =
+    catalogQuery.isError && !catalogQuery.data
+      ? catalogQuery.error.message || 'Failed to load items'
+      : ''
+  // Whether the loaded catalogItems reflect a real, branch-scoped stock
+  // count. Without a resolved branch (e.g. multiple open sessions and none
+  // picked yet), the backend can't compute per-branch stock and every item's
+  // stockQty defaults to 0 — that 0 must never be treated as "genuinely out of
+  // stock" until this is true.
+  const catalogStockKnown = !!catalogBranchId && !!catalogQuery.data
 
   // Fetch enabled payment methods whenever the active branch changes
   useEffect(() => {
@@ -3541,11 +3553,12 @@ export default function CheckoutPage() {
     // addToCart is stable enough for this one-shot arrival; re-running on every
     // cart change would re-add the lines it just added.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    // Deliberately catalogItems.length, not catalogItems: the array's identity
-    // changes on every catalogue reload, and each change cancelled an attempt
-    // that was already in flight. Only whether it has loaded matters here —
+    // Deliberately catalogReady, not catalogItems (or its length): the list
+    // refreshes in the background while the till is open, and each change
+    // cancelled an attempt that was already in flight. Only whether it has
+    // loaded matters here —
     // anything missing from it is fetched by SKU above anyway.
-  }, [arrivingCreditApplication, selectedCustomer, catalogItems.length])
+  }, [arrivingCreditApplication, selectedCustomer, catalogReady])
 
   useEffect(() => {
     if (arrivingCreditApplication?.stage !== 'adding') return
@@ -3655,7 +3668,7 @@ export default function CheckoutPage() {
       if (!completed) drBuiltRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arrivingDr, selectedCustomer, catalogItems.length])
+  }, [arrivingDr, selectedCustomer, catalogReady])
 
   // The DR's held units went onto its lines as they were created (addToCart's
   // presetSerial); this puts the cart on cash — a DR sale is cash / charge

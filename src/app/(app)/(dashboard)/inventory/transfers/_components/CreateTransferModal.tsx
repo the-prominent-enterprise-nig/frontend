@@ -108,7 +108,7 @@ type Props = {
   // submit goes.
   editing?: TransferSummary | null
   /** With `editing`: the source custodian reshaping an incoming request before
-   * accepting it. Only the lines are editable; the route, dates and reason
+   * dispatching it (requested or accepted). Only the lines are editable; the route, dates and reason
    * show read-only, and the request keeps its status and approvals. */
   sourceEdit?: boolean
   // 'page' renders the form inline as a tab's content (Stock Transaction's
@@ -801,7 +801,11 @@ export default function CreateTransferModal({
             </h2>
             <p className="mt-1 text-[13px] text-[#4b4b5a]">
               {isSourceEdit
-                ? 'Change what you will send — quantities, lines and items. The request stays with you to accept, and keeps its approvals.'
+                ? editing?.status === 'draft'
+                  ? 'Change what you will send — quantities, lines and items. The request stays accepted, ready to dispatch, and keeps its approvals.'
+                  : editing?.status === 'requested'
+                    ? 'Change what you will send — quantities, lines and items. The request stays with you to accept, and keeps its approvals.'
+                    : 'Change the lines — quantities and items. The request keeps its status and the approvals it already has.'
                 : isEditing
                   ? 'Saving resubmits this request for approval from the start — any sign-off it already has is cleared.'
                   : isDispatchMode

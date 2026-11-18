@@ -270,8 +270,8 @@ export default function TransferList({ session }: { session: SessionUser }) {
   // resolveActorRegion).
   // The Business Owner and the Branch Manager are exempt from the
   // dispatcher-is-never-the-receiver rule (mirrors the backend's receive()).
-  const exemptFromDispatcherRule =
-    hasRole(session, 'Business Owner') || hasRole(session, 'Branch Manager')
+  const isOwner = hasRole(session, 'Business Owner')
+  const exemptFromDispatcherRule = isOwner || hasRole(session, 'Branch Manager')
   const ownBranch = branchOptions.find((b) => b.id === session.branchId)
   const currentUserRegion = ownBranch?.type === 'warehouse' ? (ownBranch.region ?? null) : null
   // A caravan the user's branch hosts counts as theirs (see TransferDetailModal).
@@ -316,10 +316,11 @@ export default function TransferList({ session }: { session: SessionUser }) {
   // edit of this request — the two build the identical payload, so they share
   // one form rather than keeping a near-duplicate of a 1300-line component.
   const [editingTransfer, setEditingTransfer] = useState<TransferSummary | null>(null)
-  // Set when the source custodian opened the edit (lines only, before accept).
+  // Set when the source custodian opened the edit (lines only, before dispatch).
   const [isSourceEdit, setIsSourceEdit] = useState(false)
-  // After the source's edit the request is still theirs to accept, so its
-  // detail panel comes straight back (and refetches the new lines).
+  // After the source's edit the request is still theirs to accept or
+  // dispatch, so its detail panel comes straight back (and refetches the new
+  // lines).
   async function reopenAfterSourceEdit(
     transfer: TransferSummary,
     data: CreateTransferFormValues
@@ -876,6 +877,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
         currentUserBranchId={session.branchId}
         currentUserId={session.id}
         currentUserExemptFromDispatcherRule={exemptFromDispatcherRule}
+        currentUserIsOwner={isOwner}
         currentUserRegion={currentUserRegion}
         onAccept={acceptTransfer}
         onReject={rejectTransfer}
