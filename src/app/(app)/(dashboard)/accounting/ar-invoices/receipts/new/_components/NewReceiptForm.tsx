@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Search, User, Loader2, AlertTriangle } from 'lucide-react'
+import { ConfirmDialog } from '@/src/components/ui/Modal'
 import {
   ARInvoices,
   BankAccounts,
@@ -79,6 +80,8 @@ export default function NewReceiptForm({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Docket #47 — "a confirmation prompt appears before anything is saved".
+  const [confirming, setConfirming] = useState(false)
   const [overpaymentResult, setOverpaymentResult] = useState<{
     overpaidAmount: number
     wasClosedAccount: boolean
@@ -136,7 +139,9 @@ export default function NewReceiptForm({
   const wouldOverpay = !!invoice && totalApplied > outstanding + 0.01
   const requiresBankAccount = form.method !== 'CASH'
 
-  const submit = async (e: React.FormEvent) => {
+  // Record Receipt checks the form, then asks before anything is saved
+  // (Docket #47): confirming records it, cancelling records nothing.
+  const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!invoice) {
       setError('Pick a customer and an invoice first.')
@@ -146,6 +151,12 @@ export default function NewReceiptForm({
       setError(`Deposited To is required for ${form.method.replace('_', ' ')} payments.`)
       return
     }
+    setError(null)
+    setConfirming(true)
+  }
+
+  const record = async () => {
+    if (!invoice) return
     setSaving(true)
     setError(null)
     const res = await ARInvoices.recordPayment(invoice.id, {
@@ -157,6 +168,7 @@ export default function NewReceiptForm({
       bankAccountId: form.bankAccountId || undefined,
     })
     setSaving(false)
+    setConfirming(false)
     if (!res.success) {
       setError(res.message || res.error || 'Save failed')
       return
@@ -447,6 +459,16 @@ export default function NewReceiptForm({
           </button>
         </div>
       </form>
+
+      <ConfirmDialog
+        open={confirming}
+        title="Record this receipt?"
+        message="This posts the payment to the customer's account."
+        confirmLabel="Record receipt"
+        loading={saving}
+        onConfirm={() => void record()}
+        onCancel={() => setConfirming(false)}
+      />
     </div>
   )
 }
