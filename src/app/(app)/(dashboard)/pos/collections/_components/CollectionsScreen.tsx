@@ -27,6 +27,7 @@ import { getSessionIfAvailable } from '@/src/libs/auth/actions/get-session'
 import { useMe } from '@/src/hooks/useMe'
 import { BranchSearchCombobox } from './BranchSearchCombobox'
 import CollectionPaymentBlock from './CollectionPaymentBlock'
+import StubOwnerField, { type StubOwner } from './StubOwnerField'
 import { nextTender } from '../../checkout/_utils/mixed-payment'
 import CopyAmountButton from '../../checkout/_components/CopyAmountButton'
 import {
@@ -933,6 +934,10 @@ function PaymentPanel({
     reference: '',
     notes: '',
     branchId: '',
+    // Whose booklet the CR came off. A Field stub names the collector, and the
+    // Daily Collection Report prints its CR under FIELD instead of OFFICE.
+    stubOwner: 'office' as StubOwner,
+    collectorId: '',
   })
 
   // Live per-due preview, recomputed on every render against form.paymentDate
@@ -1200,8 +1205,11 @@ function PaymentPanel({
           ? { label: TILE_OPTION_LABEL[r.tile]!, chosen: !!r.optionId }
           : null,
     })),
+    crNumber: form.reference,
+    fieldStubWithoutCollector: form.stubOwner === 'field' && !form.collectorId,
   })
   const shownIssues = showIssues ? issues : []
+  const crNumberInvalid = shownIssues.some((i) => i.field === 'crNumber')
   const invalidFieldsOf = (row: number): ReadonlySet<CollectionIssueField> =>
     new Set(shownIssues.filter((i) => i.row === row).map((i) => i.field))
 
@@ -1268,6 +1276,8 @@ function PaymentPanel({
     // ONE payment carrying what the bulk would have: the cash, the rebates and
     // the penalties the months earned. The server walks the same months to
     // judge them (ARInvoicesService loadedAccountOf).
+    // Only a Field stub carries a collector; an Office stub sends none.
+    const stubCollectorId = form.stubOwner === 'field' ? form.collectorId || undefined : undefined
     const asOnePayment = liveLines.length > 0 && liveLines.every((l) => l.line.isAgingAccount)
     const sumOf = (pick: (a: (typeof bulkAllocated)[number]) => number) =>
       Math.round(bulkAllocated.reduce((n, a) => n + pick(a), 0) * 100) / 100
@@ -1287,6 +1297,7 @@ function PaymentPanel({
         tenders: tendersPayload,
         notes: form.notes || undefined,
         branchId: form.branchId || undefined,
+        collectorId: stubCollectorId,
         posSessionId: openSessionId,
       })
       if (!res.success) {
@@ -1321,6 +1332,7 @@ function PaymentPanel({
         tenders: tendersPayload,
         notes: form.notes || undefined,
         branchId: form.branchId || undefined,
+        collectorId: stubCollectorId,
         posSessionId: openSessionId,
       })
       if (!res.success) {
@@ -1665,7 +1677,8 @@ function PaymentPanel({
               <BranchSearchCombobox
                 key={branchDefault?.id ?? 'no-default'}
                 value={form.branchId}
-                onChange={(id) => setForm({ ...form, branchId: id })}
+                // Collectors are per branch, so a new branch clears the pick.
+                onChange={(id) => setForm({ ...form, branchId: id, collectorId: '' })}
                 initialLabel={branchDefault?.name}
                 placeholder="Search branch…"
               />
@@ -1753,22 +1766,32 @@ function PaymentPanel({
             </div>
           )}
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-zinc-700">
-              CR number <span className="font-normal text-zinc-400">(optional)</span>
-            </label>
-            <input
-              data-testid="collection-cr-number"
-              value={form.reference}
-              onChange={(e) => setForm({ ...form, reference: e.target.value })}
-              placeholder="CR number"
-              className={fieldClass}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                CR number <span className="text-red-500">*</span>
+              </label>
+              <input
+                data-testid="collection-cr-number"
+                value={form.reference}
+                onChange={(e) => setForm({ ...form, reference: e.target.value })}
+                placeholder="CR number"
+                aria-invalid={crNumberInvalid}
+                className={`${fieldClass} ${crNumberInvalid ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : ''}`}
+              />
+              <p className="mt-1 text-[12px] text-zinc-400">
+                {several
+                  ? 'One CR number for the whole collection — every payment’s receipt carries it.'
+                  : 'The CR number on the collection receipt issued for this payment.'}
+              </p>
+            </div>
+            <StubOwnerField
+              stubOwner={form.stubOwner}
+              collectorId={form.collectorId}
+              branchId={form.branchId}
+              invalid={shownIssues.some((i) => i.field === 'collector')}
+              onChange={(next) => setForm({ ...form, ...next })}
             />
-            <p className="mt-1 text-[12px] text-zinc-400">
-              {several
-                ? 'One CR number for the whole collection, if a CR was issued — every payment’s receipt carries it.'
-                : 'The CR number on the collection receipt issued for this payment, if one was issued.'}
-            </p>
           </div>
 
           <div>

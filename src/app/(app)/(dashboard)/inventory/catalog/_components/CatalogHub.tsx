@@ -10,7 +10,6 @@ import ItemMasterList from '../../items/_components/ItemMasterList'
 import CategoryManager from '../../categories/_components/CategoryManager'
 import AttributesPageView from '../../attributes/_components/AttributesPageView'
 import UomList from '../../uom/_components/UomList'
-import BarcodesPageView from '../../barcodes/_components/BarcodesPageView'
 import { BrandsPageView } from '../../brands/_components'
 import { TypesPageView } from '../../types/_components'
 import type { SessionUser } from '@/src/libs/guards/permission'
@@ -18,10 +17,10 @@ import type { SessionUser } from '@/src/libs/guards/permission'
 // Serial Numbers moved to Stock (StockHub) — it's operational data (physical
 // units on hand), not a product definition like the rest of this hub's tabs.
 // Order: Items first (the hub opens on it), then Brands, Types, Categories
-// (the client sheet's BRAND / TYPE / GROUP), the other onboarding lists, then
-// Barcodes. Items is back:
-// it's the only place an existing item can be found and edited (NIG asked
-// where to fix an item's model, description or brand).
+// (the client sheet's BRAND / TYPE / GROUP), then the other onboarding lists.
+// Barcodes was removed. Items is back: it's the only place an existing item
+// can be found and edited (NIG asked where to fix an item's model,
+// description or brand).
 const TABS: (NavTab & { hidden?: boolean })[] = [
   { id: 'items', label: 'Items' },
   { id: 'brands', label: 'Brands' },
@@ -29,7 +28,6 @@ const TABS: (NavTab & { hidden?: boolean })[] = [
   { id: 'categories', label: 'Categories' },
   { id: 'attributes', label: 'Attributes' },
   { id: 'units', label: 'Units of Measure' },
-  { id: 'barcodes', label: 'Barcodes' },
 ]
 
 export function CatalogHub({ session }: { session: SessionUser }) {
@@ -59,8 +57,6 @@ export function CatalogHub({ session }: { session: SessionUser }) {
         <UomList session={session} />
       ) : tab === 'items' ? (
         <ItemMasterList session={session} />
-      ) : tab === 'barcodes' ? (
-        <BarcodesPageView session={session} />
       ) : tab === 'categories' ? (
         <CategoryManager session={session} />
       ) : (

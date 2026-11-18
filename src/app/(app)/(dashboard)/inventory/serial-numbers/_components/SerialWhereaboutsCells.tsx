@@ -2,7 +2,8 @@
  * and where it is going — a branch, a service center, a transfer, a DR's
  * recipient, a buyer, or whatever is holding it. */
 
-import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
+import type { SerialNumberSummary, SerialPastUnit } from '@/src/schema/inventory/serial-numbers'
+import { StatusBadge } from '@/src/components/ui/StatusBadge'
 import { UDS_REASON_LABELS, type UdsReason } from '@/src/schema/inventory/uds'
 import { DR_PURPOSE_CONFIG } from '@/src/libs/inventory/delivery-receipt-purposes'
 import type { DrPurpose } from '@/src/schema/inventory/delivery-receipts'
@@ -166,4 +167,29 @@ export function DestinationCell({ serial }: { serial: Serial }): React.JSX.Eleme
     transferDestination(serial, here) ??
     ticketDestination(serial, here) ?? { name: here, date: serial.locationSince }
   return <CellLines {...lines} />
+}
+
+/** A unit the branch once held: how it left, and nothing after (NIG
+ * 2026-11-17). Stands in for the Location cell. */
+export function PastUnitLocation({ pastUnit }: { pastUnit: SerialPastUnit }): React.JSX.Element {
+  const how = pastUnit.kind === 'transfer' ? 'Transferred out' : 'Received elsewhere'
+  return (
+    <CellLines
+      name={pastUnit.toName ? `To ${pastUnit.toName}` : 'Left your branch'}
+      tag={pastUnit.kind ? how : undefined}
+      reference={pastUnit.reference}
+      date={pastUnit.leftAt}
+    />
+  )
+}
+
+/** Stands in for the Status pill: its status now is not the branch's to see. */
+export function PastUnitPill(): React.JSX.Element {
+  return (
+    <StatusBadge
+      label="Left branch"
+      colorClassName="bg-zinc-100 text-ink-muted"
+      dotClassName="bg-ink-faint"
+    />
+  )
 }

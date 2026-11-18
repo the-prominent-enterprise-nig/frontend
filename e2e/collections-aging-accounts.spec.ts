@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { fillStable, gotoReady, loginAs } from './utils'
-import { fillMoney, openCustomerOnCollections } from './collections-plan'
+import { fillCrNumber, fillMoney, openCustomerOnCollections } from './collections-plan'
 import { AGING_TEMPLATE_HEADERS } from '../src/schema/crm/aging-load'
 
 // Customers loaded from the client's aging sheet were findable in CRM and had a
@@ -234,6 +234,7 @@ test('a customer from the aging upload is listed in Collections and can be colle
 
   // What is handed over is the month plus its penalty.
   await fillMoney(page.getByTestId('collection-amount-0'), 1050)
+  await fillCrNumber(page, 'AGING')
   await page.getByRole('button', { name: 'Collect payment' }).click()
   await expect(page.getByRole('heading', { name: 'Collect Payment' })).not.toBeVisible({
     timeout: 20_000,
@@ -454,7 +455,9 @@ test('two months collected together are one payment, and fill the months oldest 
 
   // ₱2,000 of dues and the 5% penalty on each late month: ₱100.
   await fillMoney(page.getByTestId('collection-amount-0'), 2100)
-  await page.getByRole('button', { name: 'Collect payment' }).click()
+  await fillCrNumber(page, 'AGING')
+  // Several dues ticked: the button reads the total, not "Collect payment".
+  await page.getByRole('button', { name: 'Pay ₱2,100.00' }).click()
   await expect(page.getByRole('heading', { name: 'Pay Selected Dues' })).not.toBeVisible({
     timeout: 20_000,
   })
@@ -489,6 +492,7 @@ test('a month can take its rebate when the payment clears it in full', async ({ 
   await expect(previewRow).toContainText('+₱50.00')
   // ₱1,000 − ₱75 rebate + ₱50 penalty.
   await fillMoney(page.getByTestId('collection-amount-0'), 975)
+  await fillCrNumber(page, 'AGING')
   await page.getByRole('button', { name: 'Collect payment' }).click()
   await expect(page.getByRole('heading', { name: 'Collect Payment' })).not.toBeVisible({
     timeout: 20_000,

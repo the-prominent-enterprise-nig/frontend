@@ -198,8 +198,15 @@ function WideLedger({
                   <PaymentMode mode={line.mode} />
                 </td>
               )}
-              <td className={`${CELL} text-center font-mono text-gray-600`}>{line.office}</td>
-              <td className={`${CELL} text-center text-gray-600`}>{line.field}</td>
+              <td
+                data-testid="ledger-office"
+                className={`${CELL} text-center font-mono text-gray-600`}
+              >
+                {line.office}
+              </td>
+              <td data-testid="ledger-field" className={`${CELL} text-center text-gray-600`}>
+                {line.field}
+              </td>
               <td className={`${CELL} text-center text-gray-600`}>{line.others}</td>
               <td className={`${CELL} text-center font-mono text-gray-600`}>{line.cashInvoice}</td>
               <td className={`${NUM} text-gray-500`}>{line.ppd ? peso(line.ppd) : ''}</td>
@@ -223,10 +230,10 @@ function CardLedger({ lines }: { lines: FormLine[] }): React.JSX.Element {
   return (
     <div className="lg:hidden">
       {lines.map((line, i) => {
-        // Only the columns that actually hold a number. `field` is the
-        // collector and `others` the counter now, so including them here
-        // would label an agent's name "CR".
-        const receipt = line.office || line.cashInvoice
+        // An Office stub's CR (or the cash invoice); a Field stub's CR is
+        // tagged Field below, as its own column is on the full table.
+        // `others` is the counter, never a number, so it stays out.
+        const receipt = line.office || (line.field ? '' : line.cashInvoice)
         const isDeposit = line.type === 'deposit'
 
         return (
@@ -250,7 +257,9 @@ function CardLedger({ lines }: { lines: FormLine[] }): React.JSX.Element {
                 {receipt && (
                   <span className="font-mono text-[11px] text-gray-500">CR {receipt}</span>
                 )}
-                {line.field && <span className="text-[11px] text-gray-500">{line.field}</span>}
+                {line.field && (
+                  <span className="font-mono text-[11px] text-ink-muted">Field {line.field}</span>
+                )}
                 {line.desc && <DescChip desc={line.desc} />}
                 {line.mode && <span className="text-[11px] text-ink-muted">{line.mode}</span>}
               </div>
