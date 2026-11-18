@@ -745,6 +745,36 @@ export interface CustomerLedger {
      * column's rule as at today). Optional for a backend without it. */
     totalDue?: number
   }
+  /** Docket #88 — set only when the ledger is narrowed to one cash sale: what
+   * its printout needs to read like an installment account's paper form.
+   * Absent on any other ledger, and on a backend without it. */
+  cashSale?: CashSaleCard | null
+}
+
+/** Docket #88 — a cash sale's own figures for the installment-format printout
+ * (the paper form's boxes). What only an installment account has — down
+ * payment, term, MI, collector… — is not here; the printout shows "—". */
+export interface CashSaleCard {
+  saleId: string
+  /** The SI number (or the sale's own number), as the Cash Sale row shows it. */
+  salesInvoiceNumber: string
+  saleDate: string
+  customerName: { lastName: string | null; firstName: string | null; middleName: string | null }
+  branch: string | null
+  agent: string | null
+  /** WIP / SSC / … or "Price Override", as the ledger's Scheme column reads. */
+  scheme: string | null
+  /** The sale's total — a cash sale's LCP and Total Price. */
+  listedCashPrice: number
+  units: {
+    brand: string | null
+    itemType: string | null
+    modelNumber: string | null
+    serialNumber: string | null
+  }[]
+  /** Null when the viewer may not read agents. */
+  salesCommission: number | null
+  salesSmi: number | null
 }
 
 // AR Aging Report — replicates a legacy "AGING OF ACCOUNTS RECEIVABLE" sheet,
