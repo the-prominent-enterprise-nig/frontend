@@ -10689,12 +10689,17 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
 <button class="no-print" onclick="window.print()" style="display:block;margin:12px auto;padding:6px 20px;cursor:pointer;font-size:12px">Print</button>
 </body></html>`
 
-  const w = window.open('', '_blank', 'width=440,height=680,scrollbars=yes')
+  const blobUrl = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+  const w = window.open(blobUrl, '_blank', 'width=440,height=680,scrollbars=yes')
   if (w) {
-    w.document.write(html)
-    w.document.close()
-    w.focus()
-    setTimeout(() => w.print(), 400)
+    w.addEventListener('load', () => {
+      w.focus()
+      setTimeout(() => w.print(), 400)
+    })
+    // Release the object URL once the window has it; revoking too early aborts
+    // the load, so wait for pagehide (the tab was closed) or a timeout.
+    w.addEventListener('pagehide', () => URL.revokeObjectURL(blobUrl))
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
   }
 }
 
