@@ -263,6 +263,8 @@ const PAYMENT_ERROR_MESSAGES: Record<string, string> = {
     'A rebate can only be given on an installment plan. This invoice has no linked installment account.',
   penalty_exceeds_assessed:
     "The penalty is more than what's actually assessed — 5% of the part of a due being paid, and only for a due at least 15 days past its due date.",
+  session_not_at_collection_branch:
+    'The open drawer belongs to a different branch from the one picked. Check the Branch — the payment is filed under the branch it was collected at.',
 }
 
 // The server names the missing field as "Source of Fund (bankAccountId)" —
@@ -1168,7 +1170,17 @@ function PaymentPanel({
   const { data: openSessions } = useSessions(
     form.branchId ? { branchId: form.branchId, status: 'open' } : { status: 'open' }
   )
-  const openSessionList = openSessions?.success ? (openSessions.data ?? []) : []
+  // Only a drawer AT the picked branch can take this cash. The backend files
+  // the receipt under the session's terminal over the picked branch, so a
+  // session from elsewhere silently moved the collection onto another
+  // branch's Collection Report. Two ways one got here: the query keeps the
+  // previous branch's list on screen while the new one loads, and the
+  // sessions API pins a branch-assigned caller to their own branch whatever
+  // branchId is asked for. A caravan's terminal is stored on its host, the
+  // same branch the picker offers.
+  const openSessionList = (openSessions?.success ? (openSessions.data ?? []) : []).filter(
+    (s) => !form.branchId || s.terminal?.branchId === form.branchId
+  )
   const ownOpenSession = me ? openSessionList.find((s) => s.cashierId === me.id) : undefined
   const openSessionId =
     ownOpenSession?.id ?? (openSessionList.length === 1 ? openSessionList[0].id : undefined)

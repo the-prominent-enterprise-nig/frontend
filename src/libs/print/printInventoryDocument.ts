@@ -525,10 +525,16 @@ function partyName(wh: TransferParty | undefined): string {
 function partyAddress(wh: TransferParty | undefined): string {
   // A branch with no street address on file falls back to the warehouse's
   // own address rather than printing blank (Scenario 69 item 25).
-  const branchAddress = wh?.branch
-    ? [wh.branch.addressLine1, wh.branch.city].filter(Boolean).join(', ')
-    : ''
+  const branchAddress = wh?.branch ? joinAddress(wh.branch.addressLine1, wh.branch.city) : ''
   return branchAddress || wh?.address || ''
+}
+
+/** Line 1 often already ends in the city ("…, Pandan, Antique"), so the city is
+ * appended only when line 1 doesn't contain it — no "Pandan, Antique, Pandan, Antique". */
+function joinAddress(line1?: string | null, city?: string | null): string {
+  if (!line1) return city ?? ''
+  if (!city || line1.toLowerCase().includes(city.toLowerCase())) return line1
+  return `${line1}, ${city}`
 }
 
 /** The receipts a transfer arrived on, oldest first. A reopened, partially
@@ -686,7 +692,7 @@ export function buildStockTransferHtml(data: unknown): string {
     h1 { font-size: 26px; margin: 0; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
     .brand-logo { height: 160px; width: auto; object-fit: contain; }
-    .head-grid { display: grid; grid-template-columns: 1fr auto 1fr; column-gap: 28px; }
+    .head-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1fr); column-gap: 28px; }
     .info, .logistics { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; margin-bottom: 20px; }
     .info .enterprise { border-left: 1px solid #ccc; padding-left: 28px; }
     .party-name { font-weight: 700; margin: 0 0 4px; }
@@ -694,7 +700,7 @@ export function buildStockTransferHtml(data: unknown): string {
     .meta-label { font-weight: 700; margin: 0 0 2px; }
     .party-dir { font-weight: 700; }
     .party .party-to { margin-top: 12px; }
-    .meta-value { margin: 0 0 12px; }
+    .meta-value { margin: 0 0 12px; overflow-wrap: anywhere; }
     .logistics > div:nth-child(odd) { grid-column: 1; }
     .logistics > div:nth-child(even) { grid-column: 2 / span 2; }
     table { width: 100%; border-collapse: collapse; }
