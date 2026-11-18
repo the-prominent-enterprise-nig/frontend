@@ -17,6 +17,7 @@ import { dispatchTransfer } from '../_actions/dispatch-transfer'
 import { receiveTransfer } from '../_actions/receive-transfer'
 import { cancelTransfer } from '../_actions/cancel-transfer'
 import { updateTransfer } from '../_actions/update-transfer'
+import { editSourceLines } from '../_actions/edit-source-lines'
 import { approveHqTransfer } from '../_actions/approve-hq-transfer'
 import { rejectHqTransfer } from '../_actions/reject-hq-transfer'
 import { acceptTransfer } from '../_actions/accept-transfer'
@@ -184,6 +185,26 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
           status: 'error',
         })
       }
+    },
+  })
+
+  // The source custodian's edit before accepting: only the lines change, and
+  // the request stays Requested, so the toast says so rather than "resubmitted".
+  const sourceEditMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: CreateTransferFormValues }) =>
+      editSourceLines(id, { lines: data.lines }),
+    onSuccess: (result) => {
+      if (!result.success) {
+        showToast({
+          title: 'Failed to update request',
+          description: result.message,
+          status: 'error',
+        })
+        return
+      }
+      showToast({ title: 'Request updated', description: result.message, status: 'success' })
+      queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-transfer'] })
     },
   })
 
@@ -577,6 +598,10 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
     updateTransfer: (id: string, data: CreateTransferFormValues) =>
       updateMutation.mutateAsync({ id, data }),
     isUpdating: updateMutation.isPending,
+
+    editSourceLines: (id: string, data: CreateTransferFormValues) =>
+      sourceEditMutation.mutateAsync({ id, data }),
+    isEditingSourceLines: sourceEditMutation.isPending,
 
     createCaravan: creation.createCaravan,
     isCreatingCaravan: creation.isCreatingCaravan,
