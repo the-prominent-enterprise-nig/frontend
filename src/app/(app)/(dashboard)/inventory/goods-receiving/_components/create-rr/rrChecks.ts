@@ -41,7 +41,9 @@ export function toIssueLines(
     quantityReceived: line.quantityReceived || 0,
     isSerialTracked: context(index).isSerialTracked,
     serialNumbers:
-      reason === 'repossession' || reason === 'repair_return' || reason === 'customer_return'
+      // A hand-entered repair unit carries its typed serial instead.
+      (reason === 'repossession' || reason === 'repair_return' || reason === 'customer_return') &&
+      !line.manualKey
         ? line.existingSerialNumberIds
         : line.serialNumbers,
     qualityHold: line.qualityHold ?? false,
