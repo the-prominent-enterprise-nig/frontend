@@ -28,7 +28,10 @@ export async function updateBranch(id: string, input: unknown): Promise<ApiRespo
       return {
         success: false,
         error: response.error || 'Failed to update branch',
-        message: response.message,
+        message:
+          response.message === 'BRANCH_CODE_TAKEN'
+            ? 'Another branch already uses that code.'
+            : response.message,
       }
     }
 
