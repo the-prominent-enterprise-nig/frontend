@@ -71,6 +71,7 @@ const CreateItemFormBaseSchema = z.object({
   isExpiryTracked: z.boolean(),
   isBundle: z.boolean(),
   isService: z.boolean(),
+  isFreebie: z.boolean(),
   revenueAccountId: z.string().optional(),
   cogsAccountId: z.string().optional(),
   inventoryAccountId: z.string().optional(),
@@ -132,6 +133,7 @@ const UpdateItemFormBaseSchema = z.object({
   isExpiryTracked: z.boolean(),
   isBundle: z.boolean(),
   isService: z.boolean(),
+  isFreebie: z.boolean(),
   revenueAccountId: z.string().optional(),
   cogsAccountId: z.string().optional(),
   inventoryAccountId: z.string().optional(),
@@ -260,6 +262,8 @@ export const ItemSummarySchema = z.object({
     if (v === false || v === 'false' || v === 0) return false
     return undefined
   }, z.boolean().optional()),
+  // Added to a POS sale as a ₱0 freebie line by default.
+  isFreebie: z.boolean().optional(),
   lengthCm: z.coerce.number().nullable().optional(),
   widthCm: z.coerce.number().nullable().optional(),
   heightCm: z.coerce.number().nullable().optional(),

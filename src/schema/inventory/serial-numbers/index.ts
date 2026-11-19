@@ -153,7 +153,13 @@ const SerialReceiptSchema = z
         stockTransferId: z.string().nullable().optional(),
         // Scenario 50 Gap 6 — the ST number itself, not just the id. Real
         // Prisma relation on the backend, so this is one nested select away.
-        stockTransfer: z.object({ transferNumber: z.string() }).nullable().optional(),
+        stockTransfer: z
+          .object({
+            transferNumber: z.string(),
+            fromWarehouse: z.object({ name: z.string() }).nullable().optional(),
+          })
+          .nullable()
+          .optional(),
         supplier: z.object({ name: z.string() }).nullable().optional(),
       })
       .nullable()

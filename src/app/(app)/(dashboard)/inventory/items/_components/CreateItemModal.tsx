@@ -94,6 +94,7 @@ export default function CreateItemModal({
       isExpiryTracked: false,
       isBundle: false,
       isService: false,
+      isFreebie: false,
       prices: [],
     },
   })
@@ -358,6 +359,7 @@ export default function CreateItemModal({
                   [
                     { name: 'isSerialTracked', label: 'Serial Tracking' },
                     { name: 'isService', label: 'Service Item (no stock/serial tracking)' },
+                    { name: 'isFreebie', label: 'Freebie' },
                   ] as const
                 ).map(({ name, label }) => {
                   const isDisabled =

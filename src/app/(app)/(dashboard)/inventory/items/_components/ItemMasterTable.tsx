@@ -235,6 +235,11 @@ export default function ItemMasterTable({
                       Service
                     </span>
                   )}
+                  {item.isFreebie === true && (
+                    <span className="rounded-full bg-[#e8f6ee] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#1f7a45]">
+                      Freebie
+                    </span>
+                  )}
                   <ItemStateTag item={item} />
                   {(item._count?.serialNumbers ?? 0) > 0 && (
                     <span className="rounded-full bg-[#f1f1f4] px-2 py-0.5 text-[10px] font-semibold tabular-nums text-[#3d3d4a]">

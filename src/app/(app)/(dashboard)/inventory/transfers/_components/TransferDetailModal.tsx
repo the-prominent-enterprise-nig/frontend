@@ -97,13 +97,10 @@ const PRE_DISPATCH_STATUSES: string[] = [
   'draft',
 ]
 
-// Nothing to hand to the warehouse: the request is dead (rejected/cancelled),
-// or its lines are still being renegotiated (a pending substitution).
-const UNPRINTABLE_STATUSES: readonly string[] = [
-  'rejected',
-  'cancelled',
-  'pending_substitution_confirmation',
-]
+// Nothing to hand to the warehouse: the request was rejected, or its lines are
+// still being renegotiated (a pending substitution). A cancelled transfer
+// still prints, so its paper trail can be filed.
+const UNPRINTABLE_STATUSES: readonly string[] = ['rejected', 'pending_substitution_confirmation']
 
 function LineSerial({
   line,

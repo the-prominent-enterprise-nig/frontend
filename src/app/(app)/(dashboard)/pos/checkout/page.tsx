@@ -230,6 +230,9 @@ interface LookupItem {
   pricingMode?: 'inclusive' | 'exclusive' | null
   isSerialTracked?: boolean
   requiresSecondarySerial?: boolean
+  /** Marked a freebie on the item master: added as a ₱0 freebie line by
+   * default when the cart already has a sold item (see freebieDefaults). */
+  isFreebie?: boolean
   /** Raw shape from GET /pos/catalog — flattened into brandName below. */
   brand?: { id: string; name: string } | null
   brandName?: string | null
@@ -695,6 +698,25 @@ type CatalogUom = { id: string; code: string; allowDecimal?: boolean | null }
 /** Catalog rows as Checkout reads them: the brand flattened to brandName and
  * each item's unit (code, whether it sells in fractions) filled in from the
  * units of measure. Rows already carrying those are left as they are. */
+/** A freebie-marked item comes in as a ₱0 freebie line tied to the cart's
+ * first sold line — the same fields setPromoTag sets. Nothing changes when
+ * the item isn't marked, or nothing in the cart is sold yet (a freebie has to
+ * go with something sold); the cashier can still tag or untag it by hand. */
+function freebieDefaults(item: LookupItem, cart: CartLine[]): Partial<CartLine> {
+  if (!item.isFreebie) return {}
+  const core = cart.find((l) => !l.promoTag && l.itemId !== item.id)
+  if (!core) return {}
+  return {
+    promoTag: 'freebie',
+    tiedToItemId: core.itemId,
+    unitPrice: 0,
+    priceResolved: true,
+    priceListItemId: null,
+    // A freebie is never financed.
+    invoiceType: 'cash',
+  }
+}
+
 function enrichCatalogRows(
   rows: unknown[] | undefined,
   uoms: CatalogUom[] | undefined
@@ -3846,6 +3868,7 @@ export default function CheckoutPage() {
             priceResolved: false,
             priceListItemId: null,
             priceUseTypeId: defaultPriceUseTypeId,
+            ...freebieDefaults(item, prev),
           }
           return [...prev, siblingLine]
         }
@@ -3885,6 +3908,7 @@ export default function CheckoutPage() {
         priceResolved: isReserveMode,
         priceListItemId: null,
         priceUseTypeId: defaultPriceUseTypeId,
+        ...(isReserveMode ? {} : freebieDefaults(item, prev)),
       }
       return isReserveMode ? [newLine] : [...prev, newLine]
     })
