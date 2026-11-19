@@ -147,12 +147,34 @@ test("New Receipt records a payment against a customer's invoice without going t
 
   const reference = `CR#E2E-NEW-${Date.now()}`
   await fillStable(page.getByLabel('Reference'), reference)
-  await page.getByRole('button', { name: 'Record Receipt' }).click()
+
+  // Docket #47 — Record Receipt asks first. Cancelling closes the prompt and
+  // records nothing: still on the form, the invoice still owes its ₱750.
+  await page.getByRole('button', { name: 'Record Receipt', exact: true }).click()
+  const prompt = page.getByRole('heading', { name: 'Record this receipt?' })
+  await expect(prompt).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await expect(prompt).toHaveCount(0)
+  await expect(page).toHaveURL('/accounting/ar-invoices/receipts/new')
+  const untouched = await (await page.request.get(`/api/ar-invoices/${invoice.id}`)).json()
+  expect(Number(untouched.amountPaid)).toBe(0)
+
+  // Confirming records it.
+  await page.getByRole('button', { name: 'Record Receipt', exact: true }).click()
+  await page.getByRole('button', { name: 'Record receipt', exact: true }).click()
 
   await expect(page).toHaveURL('/accounting/ar-invoices')
-  const row = page.locator('table tbody tr', { hasText: reference })
-  await expect(row).toBeVisible({ timeout: 10_000 })
-  await expect(row.getByText('₱750.00')).toBeVisible()
+  // The landing page is a per-customer rollup now (d3f34d30), not a register
+  // of receipts, so the receipt is read off the invoice itself: paid in full.
+  await expect
+    .poll(
+      async () =>
+        Number(
+          (await (await page.request.get(`/api/ar-invoices/${invoice.id}`)).json()).amountPaid
+        ),
+      { timeout: 10_000 }
+    )
+    .toBe(750)
 })
 
 test('searching the landing page filters receipts by reference', async ({ page }) => {
@@ -188,4 +210,50 @@ test('searching the landing page filters receipts by reference', async ({ page }
   await expect(row).toBeVisible({ timeout: 10_000 })
   const rowCount = await page.locator('table tbody tr').count()
   expect(rowCount).toBe(1)
+})
+
+// Docket #47 — the invoice row's Record Payment dialog asks first too.
+test("an invoice row's Record Payment asks before recording: Cancel records nothing, confirming records it", async ({
+  page,
+}) => {
+  const customerName = `E2E Confirm Receipt ${Date.now()}`
+  const customerRes = await page.request.post('/api/crm/customers', {
+    data: { name: customerName, customerType: 'individual', phone: '09170006622' },
+  })
+  const customer = await customerRes.json()
+  createdCustomerId = customer.id
+
+  const invoiceRes = await page.request.post('/api/ar-invoices', {
+    data: {
+      customerId: customer.id,
+      invoiceDate: new Date().toISOString().slice(0, 10),
+      dueDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+      subtotal: 640,
+      taxAmount: 0,
+    },
+  })
+  const invoice = await invoiceRes.json()
+  await page.request.post(`/api/ar-invoices/${invoice.id}/send`)
+  const amountPaid = async () =>
+    Number((await (await page.request.get(`/api/ar-invoices/${invoice.id}`)).json()).amountPaid)
+
+  await gotoReady(page, `/accounting/ar-invoices?customerId=${customer.id}`)
+  // Clicked until the dialog opens: a click before the page hydrates is lost.
+  const dialog = page.getByRole('heading', { name: 'Record Payment' })
+  await clickStable(page.getByRole('button', { name: 'Record payment' }).first(), dialog)
+
+  const prompt = page.getByRole('heading', { name: 'Record this receipt?' })
+  await page.getByRole('button', { name: 'Record Payment', exact: true }).click()
+  await expect(prompt).toBeVisible()
+  // The prompt is drawn after the dialog, so its Cancel is the last one.
+  await page.getByRole('button', { name: 'Cancel', exact: true }).last().click()
+  await expect(prompt).toHaveCount(0)
+  // The dialog stays open, and nothing was recorded.
+  await expect(dialog).toBeVisible()
+  expect(await amountPaid()).toBe(0)
+
+  await page.getByRole('button', { name: 'Record Payment', exact: true }).click()
+  await page.getByRole('button', { name: 'Record receipt', exact: true }).click()
+  await expect(dialog).toHaveCount(0, { timeout: 10_000 })
+  await expect.poll(amountPaid, { timeout: 10_000 }).toBe(640)
 })

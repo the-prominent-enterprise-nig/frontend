@@ -6,7 +6,11 @@ import { useQuery } from '@tanstack/react-query'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import type { CategorySelectOption } from '@/src/components/ui/CategorySelect'
 import { CONTROL_CHROME } from '@/src/libs/design/plex'
-import type { ClassificationOption, CreateItemFormValues } from '@/src/schema/inventory/items'
+import type {
+  ClassificationOption,
+  CreateItemFormValues,
+  UomOption,
+} from '@/src/schema/inventory/items'
 import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import type { WarehouseSummary } from '@/src/schema/inventory/warehouses'
@@ -227,5 +231,37 @@ export function useReceivingWarehouses(enabled: boolean): WarehouseSummary[] {
   return useMemo(
     () => mergeWarehouses(standalone.data?.data?.data ?? [], scoped.data?.data?.data ?? []),
     [standalone.data, scoped.data]
+  )
+}
+
+/** The unit a non-serial item is stocked and sold in — KG for rice, a
+ * SACK, a LITER… Shown on Add / Edit Item only when Serial Tracking is
+ * off; a serial item is one PCS per serial. */
+export function UnitOfMeasureField({
+  value,
+  onChange,
+  uomOptions,
+  error,
+}: {
+  value: string | undefined
+  onChange: (value: string) => void
+  uomOptions: UomOption[]
+  error?: string
+}): React.JSX.Element {
+  return (
+    <div>
+      <label className={labelClass}>
+        Unit of Measure <span className="text-[#b42318]">*</span>
+      </label>
+      <SearchableSelect
+        chrome={CONTROL_CHROME}
+        portal
+        value={value ?? ''}
+        onChange={onChange}
+        options={uomOptions.map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` }))}
+        placeholder="Select unit…"
+      />
+      {error && <p className={errorClass}>{error}</p>}
+    </div>
   )
 }

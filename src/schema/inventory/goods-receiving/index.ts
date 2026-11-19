@@ -61,6 +61,18 @@ const ReceiveStockLineSchema = z
     // on, picked by its Sales Invoice No.; installmentAccountId is the
     // repossession link.
     salesTransactionId: z.string().optional(),
+    // Repair only — a unit never sold through this system (an existing
+    // customer's): whose it is. Goes with a typed serialNumbers entry.
+    customerId: z.string().optional(),
+    // With customerId only — the number off the customer's old receipt.
+    legacyInvoiceNumber: z.string().max(60).optional(),
+    // With customerId, in place of itemId — the brand picked and the model
+    // typed off a unit never sold here; the server resolves the item.
+    manualBrandId: z.string().optional(),
+    manualModel: z.string().max(100).optional(),
+    // Form-only: the Returned-units block a hand-entered repair unit belongs
+    // to. Never posted.
+    manualKey: z.string().optional(),
   })
   .refine(
     (line) =>
@@ -82,7 +94,7 @@ const ReceiveStockLineSchema = z
       path: ['existingSerialNumberIds'],
     }
   )
-  .refine((line) => !!line.itemId || !!line.newItemName?.trim(), {
+  .refine((line) => !!line.itemId || !!line.newItemName?.trim() || !!line.manualModel?.trim(), {
     message: 'Pick a catalog item or mark it "Non-catalog items".',
     path: ['itemId'],
   })

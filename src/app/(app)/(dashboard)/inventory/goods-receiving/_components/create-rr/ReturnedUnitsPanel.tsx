@@ -21,6 +21,8 @@ import { RepairIntakeSaleSearchCombobox } from './RepairIntakeSaleSearchCombobox
 import type { RepairIntakeSale } from '../../_actions/get-repair-intake-sales'
 import type { RrReturnDisposition } from '../../_actions/record-customer-return'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { ManualRepairUnit } from './ManualRepairUnit'
+import { DISPOSITION_OPTIONS, ManualUnitExtras } from './ManualUnitExtras'
 
 /** One invoice the units are coming back from. Its checked units are the
  * receipt's lines (linked through invoiceKeyOf), so this holds only what the
@@ -42,6 +44,24 @@ export type ReturnBlock = {
   /** Every unit on this invoice has already been taken back. */
   exhausted: boolean
   fallbackSerialLabel?: string
+  /** Any mode: an existing customer's unit never sold through this system —
+   * entered by hand (Brand, Model, typed serial) instead of off an invoice. */
+  manualUnit?: boolean
+  manualBrandId?: string
+  /** The number off the customer's old (pre-system) receipt, as typed. */
+  manualInvoice?: string
+}
+
+/** The hand-entered unit's handlers, by block key. */
+export type ManualUnitHandlers = {
+  start: (key: string) => void
+  cancel: (key: string) => void
+  brand: (key: string, brandId: string) => void
+  model: (key: string, value: string) => void
+  serial: (key: string, value: string) => void
+  invoice: (key: string, value: string) => void
+  /** A return's price paid, or a repossession's Repo Cost. */
+  amount: (key: string, value: number | undefined) => void
 }
 
 type Props = {
@@ -66,16 +86,12 @@ type Props = {
   onUnitCost: (key: string, serialNumberId: string | undefined, value: number | undefined) => void
   onAddBlock: () => void
   onRemoveBlock: (key: string) => void
+  /** A unit never sold through this system, typed in — every mode. */
+  manual?: ManualUnitHandlers
 }
 
 /** What can happen to a returned unit from Create RR — exchange stays on the
  * POS Returns screen (it needs a replacement unit). */
-const DISPOSITION_OPTIONS: { value: RrReturnDisposition; label: string }[] = [
-  { value: 'restock', label: 'Back on the shelf' },
-  { value: 'quarantine', label: 'On hold (not sellable)' },
-  { value: 'scrap', label: 'Written off' },
-]
-
 const CAPTION = `${MONO} mb-1 block text-[9.5px] uppercase tracking-[.09em] text-[#3f1490]`
 
 /**
@@ -102,10 +118,13 @@ export function ReturnedUnitsPanel({
   onUnitCost,
   onAddBlock,
   onRemoveBlock,
+  manual,
 }: Props): React.ReactElement {
   const isRepo = mode === 'repossession'
   const isReturn = mode === 'customer_return'
-  const checkedCount = lines.filter((l) => l?.itemId && l.existingSerialNumberIds?.[0]).length
+  const checkedCount = lines.filter(
+    (l) => (l?.itemId && l.existingSerialNumberIds?.[0]) || (l?.manualKey && l.manualModel?.trim())
+  ).length
   const noneChecked = checkedCount === 0
   const totalCost = lines.reduce((sum, line) => sum + (Number(line?.unitCost) || 0), 0)
 
@@ -169,6 +188,7 @@ export function ReturnedUnitsPanel({
           onFallbackSerial={onFallbackSerial}
           onUnitCost={onUnitCost}
           onRemoveBlock={onRemoveBlock}
+          manualEntry={manual}
         />
       ))}
 
@@ -206,6 +226,7 @@ function Block({
   onFallbackSerial,
   onUnitCost,
   onRemoveBlock,
+  manualEntry,
 }: {
   block: ReturnBlock
   isRepo: boolean
@@ -225,8 +246,10 @@ function Block({
   onFallbackSerial: Props['onFallbackSerial']
   onUnitCost: Props['onUnitCost']
   onRemoveBlock: Props['onRemoveBlock']
+  manualEntry?: ManualUnitHandlers
 }): React.ReactElement {
   const hasInvoice = !!block.accountId
+  const manualUnitLine = block.manualUnit ? lines.find((l) => l.manualKey === block.key) : undefined
   const units = block.units ?? []
   // No linked sale to list units from (hand-entered/imported account, or every
   // unit already taken back): the item + serial are searched by hand instead.
@@ -244,11 +267,11 @@ function Block({
     <div className="border-t border-[#f1f1f4] bg-white px-4.5 py-3.5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <span className={CAPTION}>Invoice #</span>
+          {!block.manualUnit && <span className={CAPTION}>Invoice #</span>}
           {/* Repossession takes back a financed unit, so it searches
               installment accounts; a repair can be any sale, cash or
               financed, found by its Sales Invoice No. */}
-          {isRepo ? (
+          {block.manualUnit ? null : isRepo ? (
             <InstallmentAccountSearchCombobox
               key={block.accountId || 'none'}
               value={block.accountId}
@@ -290,7 +313,7 @@ function Block({
           )}
 
           <div
-            className={`mt-2.5 grid grid-cols-1 gap-x-4 gap-y-2.5 ${
+            className={`${block.manualUnit ? '' : 'mt-2.5'} grid grid-cols-1 gap-x-4 gap-y-2.5 ${
               isRepo ? 'sm:grid-cols-2' : 'sm:grid-cols-3'
             }`}
           >
@@ -342,7 +365,10 @@ function Block({
                     block.soldAtBranch ? 'text-[#17171c]' : 'text-ink-subtle'
                   }`}
                 >
-                  {block.soldAtBranch ?? 'Fills in from the invoice'}
+                  {block.soldAtBranch ??
+                    (block.manualUnit
+                      ? 'Not sold through the system'
+                      : 'Fills in from the invoice')}
                 </div>
               </div>
             )}
@@ -362,6 +388,43 @@ function Block({
           </Tooltip>
         )}
       </div>
+
+      {manualEntry && !hasInvoice && !block.manualUnit && block.customerId && (
+        <button
+          type="button"
+          onClick={() => manualEntry.start(block.key)}
+          className="mt-2.5 text-[11.5px] font-medium text-[#3f1490] hover:underline"
+        >
+          Unit not in the system? Enter it manually
+        </button>
+      )}
+
+      {manualEntry && block.manualUnit && (
+        <ManualRepairUnit
+          brandId={block.manualBrandId}
+          model={manualUnitLine?.manualModel ?? ''}
+          serial={manualUnitLine?.serialNumbers?.[0] ?? ''}
+          showErrors={showErrors}
+          onBrand={(brandId) => manualEntry.brand(block.key, brandId)}
+          onModel={(value) => manualEntry.model(block.key, value)}
+          onSerial={(value) => manualEntry.serial(block.key, value)}
+          invoice={block.manualInvoice ?? ''}
+          onInvoice={(value) => manualEntry.invoice(block.key, value)}
+          onCancel={() => manualEntry.cancel(block.key)}
+          allowUnlisted={!isRepo && !isReturn}
+        >
+          {(isReturn || (isRepo && canViewCost)) && (
+            <ManualUnitExtras
+              mode={isReturn ? 'customer_return' : 'repossession'}
+              amount={manualUnitLine?.unitCost}
+              onAmount={(value) => manualEntry.amount(block.key, value)}
+              disposition={dispositions?.[block.key]}
+              onDisposition={(value) => onDisposition?.(block.key, value)}
+              showErrors={showErrors}
+            />
+          )}
+        </ManualRepairUnit>
+      )}
 
       {hasInvoice && block.loading && (
         <div className="mt-2.5 text-[11px] text-ink-muted">Loading this invoice&rsquo;s units…</div>

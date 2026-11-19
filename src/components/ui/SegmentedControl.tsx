@@ -16,17 +16,22 @@ export default function SegmentedControl<T extends string>({
   onChange,
   options,
   name,
+  size = 'md',
 }: {
   value: T
   onChange: (value: T) => void
   options: SegmentedControlOption<T>[]
   name?: string
+  /** 'md' fills its container (forms); 'sm' shrinks to its options, for a card header. */
+  size?: 'sm' | 'md'
 }) {
+  const track = size === 'sm' ? 'p-0.5' : 'w-full p-1'
+  const segment = size === 'sm' ? 'px-2.5 py-1 text-xs' : 'flex-1 px-3 py-2 text-sm'
   return (
     <div
       role="radiogroup"
       aria-label={name}
-      className="inline-flex w-full rounded-lg bg-gray-100 p-1"
+      className={`inline-flex rounded-lg bg-gray-100 ${track}`}
     >
       {options.map((opt) => {
         const active = opt.value === value
@@ -37,7 +42,7 @@ export default function SegmentedControl<T extends string>({
             role="radio"
             aria-checked={active}
             onClick={() => onChange(opt.value)}
-            className={`flex-1 rounded-md px-3 py-2 text-center text-sm font-medium transition-colors ${
+            className={`rounded-md text-center font-medium transition-colors ${segment} ${
               active
                 ? 'bg-white text-prominent-purple-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'

@@ -39,6 +39,7 @@ import {
 } from '@/src/libs/data/AccountingV2Data'
 import { validateManagerByPin } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import Tooltip from '@/src/components/ui/Tooltip'
+import { ConfirmDialog } from '@/src/components/ui/Modal'
 import { useMe } from '@/src/hooks/useMe'
 import { can } from '@/src/libs/guards/permission'
 import Field from '../../_shared/Field'
@@ -808,6 +809,8 @@ function PaymentDialog({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Docket #47 — "a confirmation prompt appears before anything is saved".
+  const [confirming, setConfirming] = useState(false)
   const [overpaymentResult, setOverpaymentResult] = useState<{
     overpaidAmount: number
     wasClosedAccount: boolean
@@ -823,14 +826,20 @@ function PaymentDialog({
   // Cash stays untracked (an actual cash drawer, not a bank account).
   const requiresBankAccount = form.method !== 'CASH'
 
-  const submit = async (e: React.FormEvent) => {
+  // Record Payment checks the form, then asks before anything is saved
+  // (Docket #47): confirming records it, cancelling records nothing.
+  const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (requiresBankAccount && !form.bankAccountId) {
       setError(`Deposited To is required for ${form.method.replace('_', ' ')} payments.`)
       return
     }
-    setSaving(true)
     setError(null)
+    setConfirming(true)
+  }
+
+  const record = async () => {
+    setSaving(true)
     const res = await ARInvoices.recordPayment(invoice.id, {
       ...form,
       amount: Number(form.amount),
@@ -840,6 +849,7 @@ function PaymentDialog({
       bankAccountId: form.bankAccountId || undefined,
     })
     setSaving(false)
+    setConfirming(false)
     if (!res.success) {
       setError(res.message || res.error || 'Save failed')
       return
@@ -1025,6 +1035,16 @@ function PaymentDialog({
           </div>
         </form>
       </div>
+      {/* Drawn after the dialog, so it sits on top of it. */}
+      <ConfirmDialog
+        open={confirming}
+        title="Record this receipt?"
+        message="This posts the payment to the customer's account."
+        confirmLabel="Record receipt"
+        loading={saving}
+        onConfirm={() => void record()}
+        onCancel={() => setConfirming(false)}
+      />
     </div>
   )
 }

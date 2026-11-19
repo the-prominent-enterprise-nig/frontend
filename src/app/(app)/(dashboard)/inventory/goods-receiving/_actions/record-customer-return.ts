@@ -10,18 +10,33 @@ export type RrReturnDisposition = 'restock' | 'quarantine' | 'scrap'
 export interface RecordCustomerReturnInput {
   warehouseId: string
   customerId?: string
-  originalSaleId: string
+  /** Left out on a hand-entered return — there is no sale behind it. */
+  originalSaleId?: string
   arInvoiceId?: string
   salesInvoiceNumber?: string
   notes?: string
-  lines: {
-    itemId: string
-    serialNumberId: string
-    unitPrice: number
-    disposition: RrReturnDisposition
-    sourcePosTransactionLineId: string
-    sourceLedgerId?: string
-  }[]
+  lines: (RecordCustomerReturnSaleLine | RecordCustomerReturnManualLine)[]
+}
+
+/** A unit checked off the invoice it was sold on. */
+export interface RecordCustomerReturnSaleLine {
+  itemId: string
+  serialNumberId: string
+  unitPrice: number
+  disposition: RrReturnDisposition
+  sourcePosTransactionLineId: string
+  sourceLedgerId?: string
+}
+
+/** A unit never sold through this system: typed Brand + Model + Serial. The
+ * server matches the model to the brand's catalog item. */
+export interface RecordCustomerReturnManualLine {
+  manualBrandId: string
+  manualModel: string
+  manualSerialNumber: string
+  legacyInvoiceNumber?: string
+  unitPrice: number
+  disposition: RrReturnDisposition
 }
 
 /** Ticket #27 — a Return on Create RR records the POS customer return itself

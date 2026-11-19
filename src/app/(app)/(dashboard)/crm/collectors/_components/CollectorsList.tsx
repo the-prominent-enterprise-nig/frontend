@@ -12,29 +12,11 @@ import TablePagination from '@/src/components/common/TablePagination'
 
 const PAGE_SIZE = 20
 
-const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  inactive: 'bg-gray-100 text-gray-600 ring-gray-200',
-}
-
-function StatusBadge({ status }: { status: string }) {
-  return (
-    <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${
-        STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-600 ring-gray-200'
-      }`}
-    >
-      {status}
-    </span>
-  )
-}
-
 export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
   const router = useRouter()
   const [collectors, setCollectors] = useState<Collector[]>([])
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([])
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
   const [branchFilter, setBranchFilter] = useState('')
   const [page, setPage] = useState(1)
   const [meta, setMeta] = useState({ total: 0, lastPage: 1 })
@@ -54,7 +36,6 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
       setError(null)
       const res = await collectorsApi.list({
         search: search || undefined,
-        status: statusFilter || undefined,
         branchId: branchFilter || undefined,
         page,
         limit: PAGE_SIZE,
@@ -70,7 +51,7 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
       controller.abort()
       clearTimeout(t)
     }
-  }, [search, statusFilter, branchFilter, page])
+  }, [search, branchFilter, page])
 
   // A new search or filter starts back on page 1 — the page it was on may
   // not exist in the narrower result.
@@ -111,15 +92,6 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
             className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm placeholder:text-gray-400 focus:border-prominent-orange-400 focus:outline-none"
           />
         </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => onFilter(setStatusFilter)(e.target.value)}
-          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-        </select>
         <select
           value={branchFilter}
           onChange={(e) => onFilter(setBranchFilter)(e.target.value)}
@@ -166,7 +138,6 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate font-medium text-gray-900">{c.name}</span>
-                      <StatusBadge status={c.status} />
                     </div>
                     <div className="mt-0.5 truncate text-[12px] text-gray-500">
                       {c.stubNumber}
@@ -191,7 +162,6 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
                     <th className="px-4 py-3">Area</th>
                     <th className="px-4 py-3">Supervisor</th>
                     <th className="px-4 py-3">Branch</th>
-                    <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Created</th>
                   </tr>
                 </thead>
@@ -215,9 +185,6 @@ export default function CollectorsList({ canCreate }: { canCreate: boolean }) {
                       </td>
                       <td className="px-4 py-3 text-[13px] text-gray-600">
                         {branchName(c.branchId) ?? <span className="text-gray-400">—</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge status={c.status} />
                       </td>
                       <td className="px-4 py-3 text-[12px] text-gray-500">
                         {new Date(c.createdAt).toLocaleDateString(undefined, {

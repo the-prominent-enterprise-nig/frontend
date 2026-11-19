@@ -1,6 +1,14 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import {
+  type ReactElement,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useUIShell } from '@/src/stores/ui-shell.store'
@@ -14,14 +22,18 @@ import {
   Layers,
   Truck,
   ShieldAlert,
+  ChevronLeft,
   ChevronRight,
   ClipboardCheck,
   PieChart,
   LayoutGrid,
+  X,
 } from 'lucide-react'
 
 import { getInventoryDashboard } from '@/src/app/(app)/(dashboard)/inventory/_actions/get-inventory-dashboard'
 import { useMe } from '@/src/hooks/useMe'
+import Tooltip from '@/src/components/ui/Tooltip'
+import SegmentedControl from '@/src/components/ui/SegmentedControl'
 import { can, canAny } from '@/src/libs/guards/permission'
 import {
   INVENTORY_PERMISSIONS as P,
@@ -34,6 +46,9 @@ import {
 } from '@/src/app/(app)/(dashboard)/inventory/_lib/action-queue'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
+
+/** Action Queue cards per page. */
+const QUEUE_PAGE_SIZE = 10
 
 function fmtMoney(n: number) {
   if (!Number.isFinite(n)) return '₱0'
@@ -85,25 +100,205 @@ const COLORS = [
   '#ec4899',
 ]
 
+type DonutMember = { label: string; value: number }
+
+/** One slice, with the rows inside it (the level below, or what "Others" folds in). */
+type DonutSegment = DonutMember & {
+  color: string
+  members?: DonutMember[]
+  /** What the members are called, e.g. "subgroups". */
+  membersNoun?: string
+}
+
+type ClassificationLevel = 'type' | 'category' | 'subgroup'
+type BreakdownEntry = { name: string; value: number; members: { name: string; value: number }[] }
+type ClassificationBreakdown = Record<ClassificationLevel, BreakdownEntry[]>
+
+const EMPTY_BREAKDOWN: ClassificationBreakdown = { type: [], category: [], subgroup: [] }
+
+/** Each donut level: its switch label, what its slices are called, and what's inside one. */
+const LEVELS: Record<ClassificationLevel, { label: string; noun: string; childNoun?: string }> = {
+  type: { label: 'Type', noun: 'types', childNoun: 'categories' },
+  category: { label: 'Category', noun: 'categories', childNoun: 'subgroups' },
+  subgroup: { label: 'Subgroup', noun: 'subgroups' },
+}
+
+const LEVEL_OPTIONS = (Object.keys(LEVELS) as ClassificationLevel[]).map((value) => ({
+  value,
+  label: LEVELS[value].label,
+}))
+
+const OTHERS_COLOR = '#cbd5e1'
+
+/** Rows the breakdown card shows before its list scrolls (its height fits exactly these). */
+const BREAKDOWN_VISIBLE_ROWS = 10
+
+/** How much thicker (px) a hovered donut slice draws. */
+const DONUT_HOVER_GROW = 4
+
+const toMembers = (rows: { name: string; value: number }[]): DonutMember[] =>
+  rows.map((r) => ({ label: r.name, value: r.value }))
+
+/**
+ * One level of the breakdown as donut slices: the largest `keep` on their own
+ * (each carrying the level below it) and the rest as one "Others" slice, so
+ * every share is of the full total, not of the slices that happen to be shown.
+ */
+function levelSegments(
+  entries: BreakdownEntry[],
+  level: ClassificationLevel,
+  keep = 7
+): DonutSegment[] {
+  const { noun, childNoun } = LEVELS[level]
+  const sorted = [...entries].filter((e) => e.value > 0).sort((a, b) => b.value - a.value)
+  const top: DonutSegment[] = sorted.slice(0, keep).map((e, i) => ({
+    label: e.name,
+    value: e.value,
+    color: COLORS[i % COLORS.length],
+    ...(childNoun && e.members.length > 0
+      ? { members: toMembers(e.members), membersNoun: childNoun }
+      : {}),
+  }))
+  const folded = toMembers(sorted.slice(keep))
+  const rest = folded.reduce((sum, m) => sum + m.value, 0)
+  if (rest <= 0) return top
+  return [
+    ...top,
+    { label: 'Others', value: rest, color: OTHERS_COLOR, members: folded, membersNoun: noun },
+  ]
+}
+
+/**
+ * A summary's Type / Category / Subgroup totals. A backend without
+ * `byClassification` yet still fills the Subgroup level from `byCategory`.
+ */
+function breakdownFrom(
+  summary: { byClassification?: ClassificationBreakdown; byCategory?: unknown } | undefined,
+  valueKey: 'totalValue' | 'totalOnHandQty'
+): ClassificationBreakdown {
+  if (summary?.byClassification) return summary.byClassification
+  const rows = (summary?.byCategory ?? []) as ({ category: string } & Record<string, number>)[]
+  return {
+    ...EMPTY_BREAKDOWN,
+    subgroup: rows.map((r) => ({ name: r.category, value: r[valueKey] ?? 0, members: [] })),
+  }
+}
+
+/**
+ * The rows inside one slice, largest first, each with its share of the whole
+ * chart. Hovering a slice previews it; clicking pins it open so the list can
+ * be scrolled without the pointer having to stay on the slice.
+ */
+function SliceBreakdown({
+  segment,
+  total,
+  formatValue,
+  pinned,
+  onClose,
+}: {
+  segment: DonutSegment
+  total: number
+  formatValue: (n: number) => string
+  pinned: boolean
+  onClose: () => void
+}): ReactElement {
+  const members = segment.members ?? []
+  return (
+    <div className="absolute right-0 top-full z-20 w-72 pt-2">
+      <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="min-w-0 truncate text-[11px] font-semibold text-gray-900">
+            In {segment.label} · {members.length} {segment.membersNoun}
+          </p>
+          {pinned ? (
+            <Tooltip label="Close" side="top" align="end">
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="rounded p-0.5 text-ink-muted hover:bg-gray-100 hover:text-gray-900"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
+          ) : (
+            <span className="shrink-0 text-[10px] text-ink-faint">Click to keep open</span>
+          )}
+        </div>
+        {/* Exactly 10 whole rows (10 × 16px + 9 × 6px gaps = 214px), so the
+            list never ends on a half-cut row; the rest scrolls. */}
+        <ul className="max-h-[214px] space-y-1.5 overflow-y-auto pr-1">
+          {members.map((m) => (
+            <li key={m.label} className="flex h-4 items-center gap-2 text-xs">
+              <span className="min-w-0 flex-1 truncate text-gray-600">{m.label}</span>
+              <span className="shrink-0 tabular-nums text-ink-muted">{formatValue(m.value)}</span>
+              <span className="w-9 shrink-0 text-right font-semibold tabular-nums text-gray-900">
+                {total > 0 ? ((m.value / total) * 100).toFixed(1) : '0.0'}%
+              </span>
+            </li>
+          ))}
+        </ul>
+        {members.length > BREAKDOWN_VISIBLE_ROWS && (
+          <p className="mt-2 border-t border-gray-100 pt-2 text-[11px] text-ink-muted">
+            Showing {BREAKDOWN_VISIBLE_ROWS} of {members.length} · scroll for more
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Calls `onClose` on a click outside `ref` or on Escape, while `open`. */
+function useCloseOnOutside(
+  ref: RefObject<HTMLElement | null>,
+  open: boolean,
+  onClose: () => void
+): void {
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent): void => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [ref, open, onClose])
+}
+
 // ── DonutChart ────────────────────────────────────────────────────────────────
 
 function DonutChart({
   segments,
   formatValue,
+  formatCenter = formatValue,
   size = 148,
   stroke = 22,
 }: {
-  segments: { label: string; value: number; color: string }[]
-  /** How a hovered segment's value reads in the ring's centre. */
+  segments: DonutSegment[]
+  /** How a hovered segment's exact value reads on its legend row. */
   formatValue: (n: number) => string
+  /** The same value in the ring's centre — short enough to fit the hole. */
+  formatCenter?: (n: number) => string
   size?: number
   stroke?: number
 }) {
   // The segment under the pointer (a slice or its legend row) shows its
-  // exact figure in the centre of the ring.
+  // figure in the centre of the ring, and its exact figure on its legend row.
   const [hovered, setHovered] = useState<number | null>(null)
+  // A clicked slice keeps its breakdown card open until closed or clicked again.
+  const [pinned, setPinned] = useState<number | null>(null)
+  const chartRef = useRef<HTMLDivElement>(null)
+  useCloseOnOutside(chartRef, pinned != null, () => setPinned(null))
   const total = useMemo(() => segments.reduce((s, x) => s + x.value, 0), [segments])
-  const r = (size - stroke) / 2
+  // The hovered slice thickens by DONUT_HOVER_GROW; leave room for it inside
+  // the SVG so the ring isn't clipped at its edges.
+  const r = (size - stroke - DONUT_HOVER_GROW) / 2
   const C = 2 * Math.PI * r
   const cx = size / 2
 
@@ -127,9 +322,15 @@ function DonutChart({
   const active = hovered != null ? arcs[hovered] : null
   const dim = (i: number): string =>
     hovered != null && hovered !== i ? 'opacity-35' : 'opacity-100'
+  const hasBreakdown = (i: number): boolean => (arcs[i]?.members?.length ?? 0) > 0
+  const shown = pinned ?? hovered
+  const breakdown = shown != null && hasBreakdown(shown) ? arcs[shown] : null
+  const togglePin = (i: number): void => {
+    if (hasBreakdown(i)) setPinned((p) => (p === i ? null : i))
+  }
 
   return (
-    <div className="flex items-center gap-5" onMouseLeave={() => setHovered(null)}>
+    <div ref={chartRef} className="flex items-center gap-5" onMouseLeave={() => setHovered(null)}>
       <div className="relative shrink-0" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
           <circle cx={cx} cy={cx} r={r} fill="none" stroke="#f1f5f9" strokeWidth={stroke} />
@@ -142,10 +343,11 @@ function DonutChart({
                 r={r}
                 fill="none"
                 stroke={arc.color}
-                strokeWidth={hovered === i ? stroke + 4 : stroke}
+                strokeWidth={hovered === i ? stroke + DONUT_HOVER_GROW : stroke}
                 strokeDasharray={`${arc.len} ${C}`}
                 strokeDashoffset={arc.offset}
                 onMouseEnter={() => setHovered(i)}
+                onClick={() => togglePin(i)}
                 className={`cursor-pointer transition-opacity ${dim(i)}`}
                 style={{ transition: 'stroke-dasharray 0.7s ease-out, stroke-width 0.15s' }}
               />
@@ -155,18 +357,28 @@ function DonutChart({
         {active && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-7 text-center">
             <span className="w-full truncate text-[10px] text-ink-muted">{active.label}</span>
-            <span className="text-xs font-semibold text-gray-900 tabular-nums">
-              {formatValue(active.value)}
+            <span className="w-full truncate text-xs font-semibold text-gray-900 tabular-nums">
+              {formatCenter(active.value)}
             </span>
           </div>
         )}
       </div>
-      <div className="min-w-0 flex-1 space-y-2">
+      <div className="relative min-w-0 flex-1 space-y-2">
+        {breakdown && (
+          <SliceBreakdown
+            segment={breakdown}
+            total={total}
+            formatValue={formatValue}
+            pinned={pinned != null}
+            onClose={() => setPinned(null)}
+          />
+        )}
         {arcs.map((arc, i) => (
           <div
             key={i}
             onMouseEnter={() => setHovered(i)}
-            className={`flex cursor-default items-center gap-2 min-w-0 transition-opacity ${dim(i)}`}
+            onClick={() => togglePin(i)}
+            className={`flex ${hasBreakdown(i) ? 'cursor-pointer' : 'cursor-default'} items-center gap-2 min-w-0 transition-opacity ${dim(i)}`}
           >
             <div
               className="h-2.5 w-2.5 shrink-0 rounded-sm"
@@ -284,8 +496,8 @@ const INIT = {
   returnsCount: 0,
   openPrCount: 0,
   openPoCount: 0,
-  valuationByCategory: [] as { label: string; value: number; color: string }[],
-  unitsByCategory: [] as { label: string; value: number; color: string }[],
+  valuationBreakdown: EMPTY_BREAKDOWN,
+  unitsBreakdown: EMPTY_BREAKDOWN,
   unitsByWarehouse: [] as { label: string; value: number; color: string; display: string }[],
   valuationByWarehouse: [] as { label: string; value: number; color: string; display?: string }[],
   agingBreakdown: [] as { label: string; value: number; color: string; display?: string }[],
@@ -360,11 +572,7 @@ export default function InventoryPage() {
     const valuationRaw = pick(1)
     const totalValue = valuationRaw?.summary?.totalValue ?? valuationRaw?.grandTotal ?? 0
 
-    const valuationByCategory = ((valuationRaw?.summary?.byCategory ?? []) as any[])
-      .slice()
-      .sort((a, b) => b.totalValue - a.totalValue)
-      .slice(0, 8)
-      .map((c, i) => ({ label: c.category, value: c.totalValue, color: COLORS[i % COLORS.length] }))
+    const valuationBreakdown = breakdownFrom(valuationRaw?.summary, 'totalValue')
     const valuationByWarehouse = ((valuationRaw?.summary?.byWarehouse ?? []) as any[])
       .slice()
       .sort((a, b) => b.totalValue - a.totalValue)
@@ -438,17 +646,7 @@ export default function InventoryPage() {
         display: fmtUnits(w.totalOnHandQty),
       }))
     // Cost-free breakdown for roles without valuation (Branch Custodian).
-    const unitsByCategory = (
-      (balanceRaw?.summary?.byCategory ?? []) as { category: string; totalOnHandQty: number }[]
-    )
-      .slice()
-      .sort((a, b) => b.totalOnHandQty - a.totalOnHandQty)
-      .slice(0, 8)
-      .map((c, i) => ({
-        label: c.category,
-        value: c.totalOnHandQty,
-        color: COLORS[i % COLORS.length],
-      }))
+    const unitsBreakdown = breakdownFrom(balanceRaw?.summary, 'totalOnHandQty')
 
     // Warehouses
     const warehouseList = arr(7)
@@ -521,8 +719,8 @@ export default function InventoryPage() {
       returnsCount,
       openPrCount: openPrList.length,
       openPoCount: openPoList.length,
-      valuationByCategory,
-      unitsByCategory,
+      valuationBreakdown,
+      unitsBreakdown,
       unitsByWarehouse,
       valuationByWarehouse,
       agingBreakdown,
@@ -557,6 +755,13 @@ export default function InventoryPage() {
     [me, s.actionQueueSource]
   )
   const queueLoading = loading || !me
+  const [queuePageRaw, setQueuePage] = useState(0)
+  // The category donut's level: Type, Category (the default) or Subgroup.
+  const [donutLevel, setDonutLevel] = useState<ClassificationLevel>('category')
+  const queuePages = Math.max(1, Math.ceil(queue.total / QUEUE_PAGE_SIZE))
+  // Clamp — a 30s refetch can shrink the queue under the current page
+  const queuePage = Math.min(queuePageRaw, queuePages - 1)
+  const queueStart = queuePage * QUEUE_PAGE_SIZE
 
   return (
     <div className="min-h-full bg-zinc-50">
@@ -653,24 +858,33 @@ export default function InventoryPage() {
           </div>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div className="lg:col-span-2 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="text-sm font-semibold text-gray-900">
-                    {showValue ? 'Inventory Value by Category' : 'Inventory by Category'}
+                    {showValue ? 'Inventory Value' : 'Inventory'} by {LEVELS[donutLevel].label}
                   </h2>
                   <p className="text-xs text-gray-400">
                     {showValue
-                      ? 'Distribution of total stock value across product categories'
-                      : 'Distribution of units on hand across product categories'}
+                      ? `Distribution of total stock value across ${LEVELS[donutLevel].noun}`
+                      : `Distribution of units on hand across ${LEVELS[donutLevel].noun}`}
                   </p>
                 </div>
-                <span className="shrink-0 text-xs font-semibold text-violet-700 bg-violet-50 px-2.5 py-0.5 rounded-full border border-violet-100">
-                  {loading
-                    ? '…'
-                    : showValue
-                      ? fmtMoney(s.totalValue)
-                      : `${s.totalOnHand.toLocaleString('en-PH')} units`}
-                </span>
+                <div className="flex items-center gap-2">
+                  <SegmentedControl
+                    size="sm"
+                    name="Group the donut by"
+                    value={donutLevel}
+                    onChange={setDonutLevel}
+                    options={LEVEL_OPTIONS}
+                  />
+                  <span className="shrink-0 text-xs font-semibold text-violet-700 bg-violet-50 px-2.5 py-0.5 rounded-full border border-violet-100">
+                    {loading
+                      ? '…'
+                      : showValue
+                        ? fmtMoney(s.totalValue)
+                        : `${s.totalOnHand.toLocaleString('en-PH')} units`}
+                  </span>
+                </div>
               </div>
               {loading ? (
                 <div className="flex items-center gap-6">
@@ -683,8 +897,14 @@ export default function InventoryPage() {
                 </div>
               ) : (
                 <DonutChart
-                  segments={showValue ? s.valuationByCategory : s.unitsByCategory}
+                  // Remount on a level switch so a pinned breakdown doesn't carry over.
+                  key={donutLevel}
+                  segments={levelSegments(
+                    (showValue ? s.valuationBreakdown : s.unitsBreakdown)[donutLevel],
+                    donutLevel
+                  )}
                   formatValue={showValue ? fmtPeso : fmtUnits}
+                  formatCenter={showValue ? fmtMoney : fmtUnits}
                 />
               )}
             </div>
@@ -1275,7 +1495,7 @@ export default function InventoryPage() {
                   ))}
                 </div>
                 <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                  {queue.items.slice(0, 10).map((item) => (
+                  {queue.items.slice(queueStart, queueStart + QUEUE_PAGE_SIZE).map((item) => (
                     <Link key={`${item.ruleKey}-${item.doc.id}`} href={item.href} className="block">
                       <AlertRow
                         urgency={
@@ -1309,10 +1529,40 @@ export default function InventoryPage() {
                     </Link>
                   ))}
                 </div>
-                {queue.total > 10 && (
-                  <p className="mt-3 text-[11px] text-gray-400">
-                    Showing the 10 oldest of {queue.total}.
-                  </p>
+                {queue.total > QUEUE_PAGE_SIZE && (
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <p className="text-[11px] text-gray-400 tabular-nums">
+                      Showing {queueStart + 1}–{Math.min(queueStart + QUEUE_PAGE_SIZE, queue.total)}{' '}
+                      of {queue.total}, oldest first.
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <Tooltip label="Previous page">
+                        <button
+                          type="button"
+                          aria-label="Previous page"
+                          onClick={() => setQueuePage(queuePage - 1)}
+                          disabled={queuePage === 0}
+                          className="rounded-md border border-gray-200 p-1 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                      </Tooltip>
+                      <span className="px-1 text-[11px] text-gray-500 tabular-nums">
+                        {queuePage + 1} / {queuePages}
+                      </span>
+                      <Tooltip label="Next page">
+                        <button
+                          type="button"
+                          aria-label="Next page"
+                          onClick={() => setQueuePage(queuePage + 1)}
+                          disabled={queuePage >= queuePages - 1}
+                          className="rounded-md border border-gray-200 p-1 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </Tooltip>
+                    </div>
+                  </div>
                 )}
               </>
             )}
