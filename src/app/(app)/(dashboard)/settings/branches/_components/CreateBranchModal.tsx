@@ -126,7 +126,9 @@ export default function CreateBranchModal({ isOpen, onClose }: Props) {
           {/* Code — system-generated display */}
           <div>
             <p className="mb-0.5 text-sm font-medium text-zinc-700">Branch Code</p>
-            <p className="text-sm text-zinc-500">BR-001</p>
+            <p className="text-sm text-zinc-500">
+              Auto-generated — you can change it on the branch page after creating.
+            </p>
           </div>
 
           {/* Name */}

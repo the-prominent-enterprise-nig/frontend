@@ -40,6 +40,13 @@ const BRANCH_TYPE_LABELS: Record<string, string> = {
   warehouse: 'Warehouse',
   office: 'Office',
   mixed: 'Mixed',
+  caravan: 'Caravan',
+}
+
+// A caravan's type is paired with its caravan setup (isTemporary, host,
+// dates), so it isn't editable here — and it isn't one of BRANCH_TYPES.
+function isEditableType(type: string): type is (typeof BRANCH_TYPES)[number] {
+  return (BRANCH_TYPES as readonly string[]).includes(type)
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -113,12 +120,14 @@ export default function BranchDetailClient({
   const [changingStatus, setChangingStatus] = useState(false)
 
   const [name, setName] = useState(branch.name)
+  const [code, setCode] = useState(branch.code ?? '')
   const [type, setType] = useState(branch.type)
   const [address, setAddress] = useState(branch.addressLine1 ?? '')
   const [city, setCity] = useState(branch.city ?? '')
 
   const isDirty =
     name !== branch.name ||
+    code !== (branch.code ?? '') ||
     type !== branch.type ||
     address !== (branch.addressLine1 ?? '') ||
     city !== (branch.city ?? '')
@@ -154,6 +163,7 @@ export default function BranchDetailClient({
 
   const handleCancel = () => {
     setName(branch.name)
+    setCode(branch.code ?? '')
     setType(branch.type)
     setAddress(branch.addressLine1 ?? '')
     setCity(branch.city ?? '')
@@ -179,7 +189,9 @@ export default function BranchDetailClient({
     setSaving(true)
     const result = await updateBranch(branch.id, {
       name: name.trim(),
-      type: type as (typeof BRANCH_TYPES)[number],
+      code: code.trim() !== (branch.code ?? '') ? code.trim() : undefined,
+      // Only when changed: a caravan's 'caravan' type would fail validation.
+      type: type !== branch.type && isEditableType(type) ? type : undefined,
       address: address.trim() || undefined,
       city: city.trim() || undefined,
     })
@@ -233,7 +245,23 @@ export default function BranchDetailClient({
                 <h1 className="text-2xl font-semibold text-zinc-900">{name}</h1>
               )}
               <div className="mt-1 flex items-center gap-2">
-                <span className="text-sm text-zinc-400">{branch.code}</span>
+                {editing ? (
+                  <input
+                    type="text"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.toUpperCase())}
+                    maxLength={20}
+                    aria-label="Branch code"
+                    className="w-32 rounded-lg border border-zinc-300 px-2 py-0.5 text-sm text-zinc-700 outline-none focus:border-prominent-purple-500"
+                  />
+                ) : (
+                  <span className="text-sm text-zinc-400">{branch.code}</span>
+                )}
+                {editing && code.trim() !== (branch.code ?? '') && (
+                  <span className="text-xs text-ink-muted">
+                    New documents will be numbered with this code.
+                  </span>
+                )}
                 <span
                   className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${STATUS_STYLES[branch.status] ?? 'bg-zinc-100 text-zinc-500'}`}
                 >
@@ -246,17 +274,23 @@ export default function BranchDetailClient({
                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-zinc-400">Type</label>
-                    <select
-                      value={type}
-                      onChange={(e) => setType(e.target.value)}
-                      className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
-                    >
-                      {BRANCH_TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {BRANCH_TYPE_LABELS[t]}
-                        </option>
-                      ))}
-                    </select>
+                    {isEditableType(branch.type) ? (
+                      <select
+                        value={type}
+                        onChange={(e) => setType(e.target.value)}
+                        className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+                      >
+                        {BRANCH_TYPES.map((t) => (
+                          <option key={t} value={t}>
+                            {BRANCH_TYPE_LABELS[t]}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-ink-muted">
+                        {BRANCH_TYPE_LABELS[branch.type] ?? branch.type}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-zinc-400">
@@ -338,7 +372,7 @@ export default function BranchDetailClient({
                   <button
                     type="button"
                     onClick={handleSave}
-                    disabled={saving || !isDirty || !name.trim()}
+                    disabled={saving || !isDirty || !name.trim() || (!!branch.code && !code.trim())}
                     className="flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-prominent-purple-800 disabled:opacity-50"
                   >
                     <Check className="h-4 w-4" />
