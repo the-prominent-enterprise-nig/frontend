@@ -5,7 +5,10 @@ import { useRouter } from 'next/navigation'
 import { X } from 'lucide-react'
 import { toast } from 'sonner'
 import { createBranch } from '../../_actions/create-branch'
-import { BRANCH_TYPES } from '@/src/schema/settings/create-branch'
+import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { BRANCH_REGIONS, BRANCH_TYPES } from '@/src/schema/settings/create-branch'
+
+type BranchRegion = (typeof BRANCH_REGIONS)[number]
 
 const BRANCH_TYPE_LABELS: Record<(typeof BRANCH_TYPES)[number], string> = {
   retail: 'Retail',
@@ -13,6 +16,11 @@ const BRANCH_TYPE_LABELS: Record<(typeof BRANCH_TYPES)[number], string> = {
   office: 'Office',
   mixed: 'Mixed',
 }
+
+const REGION_OPTIONS: { value: BranchRegion; label: string }[] = [
+  { value: 'panay', label: 'Panay' },
+  { value: 'negros', label: 'Negros' },
+]
 
 type Props = {
   isOpen: boolean
@@ -24,8 +32,16 @@ export default function CreateBranchModal({ isOpen, onClose }: Props) {
   const [name, setName] = useState('')
   const [type, setType] = useState<(typeof BRANCH_TYPES)[number] | ''>('')
   const [address, setAddress] = useState('')
+  const [region, setRegion] = useState<BranchRegion | ''>('')
   const [loading, setLoading] = useState(false)
-  const [errors, setErrors] = useState<{ name?: string; type?: string; general?: string }>({})
+  const [errors, setErrors] = useState<{
+    name?: string
+    type?: string
+    region?: string
+    general?: string
+  }>({})
+  // A 'warehouse'-type branch is the region's own warehouse, so it has none.
+  const needsRegion = type !== '' && type !== 'warehouse'
 
   if (!isOpen) return null
 
@@ -33,6 +49,7 @@ export default function CreateBranchModal({ isOpen, onClose }: Props) {
     setName('')
     setType('')
     setAddress('')
+    setRegion('')
     setErrors({})
   }
 
@@ -45,6 +62,7 @@ export default function CreateBranchModal({ isOpen, onClose }: Props) {
     const next: typeof errors = {}
     if (!name.trim()) next.name = 'Branch name is required'
     if (!type) next.type = 'Branch type is required'
+    if (needsRegion && !region) next.region = 'Region is required'
     return next
   }
 
@@ -62,6 +80,7 @@ export default function CreateBranchModal({ isOpen, onClose }: Props) {
       name: name.trim(),
       type,
       address: address.trim() || undefined,
+      region: needsRegion && region ? region : undefined,
     })
 
     setLoading(false)
@@ -160,6 +179,25 @@ export default function CreateBranchModal({ isOpen, onClose }: Props) {
             {errors.type && <p className="mt-1 text-xs text-red-500">{errors.type}</p>}
           </div>
 
+          {/* Region — decides which regional warehouse serves the branch */}
+          {needsRegion && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Region <span className="text-red-500">*</span>
+              </label>
+              <SearchableSelect
+                options={REGION_OPTIONS}
+                value={region}
+                onChange={(v) => {
+                  setRegion(v as BranchRegion | '')
+                  if (errors.region) setErrors((p) => ({ ...p, region: undefined }))
+                }}
+                placeholder="Select region…"
+              />
+              {errors.region && <p className="mt-1 text-xs text-red-500">{errors.region}</p>}
+            </div>
+          )}
+
           {/* Address */}
           <div>
             <label className="mb-1 block text-sm font-medium text-zinc-700">Address</label>
@@ -187,7 +225,7 @@ export default function CreateBranchModal({ isOpen, onClose }: Props) {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={loading || !name.trim() || !type}
+            disabled={loading || !name.trim() || !type || (needsRegion && !region)}
             className="rounded-lg bg-prominent-purple-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-prominent-purple-800 disabled:opacity-50"
           >
             {loading ? 'Creating…' : 'Create Branch'}
