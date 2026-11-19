@@ -1,14 +1,15 @@
 import type { SerialNumberSummary } from '@/src/schema/inventory/serial-numbers'
 
 /** Resolves a serial's origin for display: the supplier name when receipt was
- * supplier-sourced, "WHSE" when it arrived via an internal stock transfer, or
+ * supplier-sourced, the source warehouse's name when it arrived via an internal
+ * stock transfer ("WHSE" if that name is missing), or
  * the customer it came back from on a repair/return or repossession. */
 export function originLabel(serial: SerialNumberSummary): string {
   const receipt = serial.goodsReceiptLine?.goodsReceipt
   // A customer return came back on an RRC, with no RR receipt line behind it.
   if (!receipt) return serial.returnOrigin?.customerName ?? '—'
   if (receipt.supplier?.name) return receipt.supplier.name
-  if (receipt.stockTransferId) return 'WHSE'
+  if (receipt.stockTransferId) return receipt.stockTransfer?.fromWarehouse?.name ?? 'WHSE'
   return serial.returnOrigin?.customerName ?? '—'
 }
 
