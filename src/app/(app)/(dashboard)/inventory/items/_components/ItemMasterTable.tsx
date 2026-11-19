@@ -10,7 +10,6 @@ import {
   Trash2,
 } from 'lucide-react'
 import type { ItemSummary } from '@/src/schema/inventory/items'
-import { useUIShell } from '@/src/stores/ui-shell.store'
 import { displayClassificationLabel } from '@/src/libs/format/text'
 import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
 import Tooltip from '@/src/components/ui/Tooltip'
@@ -144,6 +143,34 @@ function EditItemButton({
   )
 }
 
+function rowEditable(item: ItemSummary, canUpdate: boolean): boolean {
+  return canUpdate && !isItemLockedForReview(item)
+}
+
+/** Add units sits beside Edit, on the row, for any stocked item — serial
+ * (listed by serial) or not (rice: a quantity per branch). Service items
+ * carry no stock, so they get none. */
+function AddUnitsButton({
+  item,
+  onAddUnits,
+}: {
+  item: ItemSummary
+  onAddUnits: (item: ItemSummary) => void
+}): React.JSX.Element {
+  return (
+    <Tooltip label="Add units" align="end">
+      <button
+        type="button"
+        aria-label="Add units"
+        onClick={() => onAddUnits(item)}
+        className={ICON_BUTTON}
+      >
+        <PackagePlus className="h-4 w-4" />
+      </button>
+    </Tooltip>
+  )
+}
+
 export default function ItemMasterTable({
   items,
   canUpdate,
@@ -164,7 +191,6 @@ export default function ItemMasterTable({
   onApproveItem,
   onRejectItem,
 }: Props) {
-  const { pushPanel } = useUIShell()
   const showActionsColumn =
     canUpdate ||
     canDelete ||
@@ -191,16 +217,10 @@ export default function ItemMasterTable({
           {items.map((item) => (
             <tr
               key={item.id}
-              className="cursor-pointer hover:bg-[#fbfbfc]"
-              onClick={() =>
-                pushPanel({
-                  type: 'item360',
-                  itemId: item.id,
-                  itemName: item.name,
-                  context: 'catalog',
-                  onEdit: canUpdate ? () => onEdit(item) : undefined,
-                })
-              }
+              // A row opens the item's Edit form — the same as its pencil —
+              // when the viewer can edit it and it isn't locked in review.
+              className={rowEditable(item, canUpdate) ? 'cursor-pointer hover:bg-[#fbfbfc]' : ''}
+              onClick={rowEditable(item, canUpdate) ? () => onEdit(item) : undefined}
             >
               <td className="px-4 py-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -285,6 +305,9 @@ export default function ItemMasterTable({
                       </>
                     )}
                     {canUpdate && <EditItemButton item={item} onEdit={onEdit} />}
+                    {onAddUnits && !item.isService && (
+                      <AddUnitsButton item={item} onAddUnits={onAddUnits} />
+                    )}
                     <RowActionsMenu
                       items={[
                         ...(item.isBundle === true && onViewBundle
@@ -293,15 +316,6 @@ export default function ItemMasterTable({
                                 label: 'Components',
                                 icon: Layers,
                                 onClick: () => onViewBundle(item),
-                              },
-                            ]
-                          : []),
-                        ...(onAddUnits && item.isSerialTracked
-                          ? [
-                              {
-                                label: 'Add units',
-                                icon: PackagePlus,
-                                onClick: () => onAddUnits(item),
                               },
                             ]
                           : []),
