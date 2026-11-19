@@ -14,6 +14,7 @@ import {
   Layers,
   Truck,
   ShieldAlert,
+  ChevronLeft,
   ChevronRight,
   ClipboardCheck,
   PieChart,
@@ -22,6 +23,7 @@ import {
 
 import { getInventoryDashboard } from '@/src/app/(app)/(dashboard)/inventory/_actions/get-inventory-dashboard'
 import { useMe } from '@/src/hooks/useMe'
+import Tooltip from '@/src/components/ui/Tooltip'
 import { can, canAny } from '@/src/libs/guards/permission'
 import {
   INVENTORY_PERMISSIONS as P,
@@ -34,6 +36,9 @@ import {
 } from '@/src/app/(app)/(dashboard)/inventory/_lib/action-queue'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
+
+/** Action Queue cards per page. */
+const QUEUE_PAGE_SIZE = 10
 
 function fmtMoney(n: number) {
   if (!Number.isFinite(n)) return '₱0'
@@ -557,6 +562,11 @@ export default function InventoryPage() {
     [me, s.actionQueueSource]
   )
   const queueLoading = loading || !me
+  const [queuePageRaw, setQueuePage] = useState(0)
+  const queuePages = Math.max(1, Math.ceil(queue.total / QUEUE_PAGE_SIZE))
+  // Clamp — a 30s refetch can shrink the queue under the current page
+  const queuePage = Math.min(queuePageRaw, queuePages - 1)
+  const queueStart = queuePage * QUEUE_PAGE_SIZE
 
   return (
     <div className="min-h-full bg-zinc-50">
@@ -1275,7 +1285,7 @@ export default function InventoryPage() {
                   ))}
                 </div>
                 <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                  {queue.items.slice(0, 10).map((item) => (
+                  {queue.items.slice(queueStart, queueStart + QUEUE_PAGE_SIZE).map((item) => (
                     <Link key={`${item.ruleKey}-${item.doc.id}`} href={item.href} className="block">
                       <AlertRow
                         urgency={
@@ -1309,10 +1319,40 @@ export default function InventoryPage() {
                     </Link>
                   ))}
                 </div>
-                {queue.total > 10 && (
-                  <p className="mt-3 text-[11px] text-gray-400">
-                    Showing the 10 oldest of {queue.total}.
-                  </p>
+                {queue.total > QUEUE_PAGE_SIZE && (
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <p className="text-[11px] text-gray-400 tabular-nums">
+                      Showing {queueStart + 1}–{Math.min(queueStart + QUEUE_PAGE_SIZE, queue.total)}{' '}
+                      of {queue.total}, oldest first.
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <Tooltip label="Previous page">
+                        <button
+                          type="button"
+                          aria-label="Previous page"
+                          onClick={() => setQueuePage(queuePage - 1)}
+                          disabled={queuePage === 0}
+                          className="rounded-md border border-gray-200 p-1 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                      </Tooltip>
+                      <span className="px-1 text-[11px] text-gray-500 tabular-nums">
+                        {queuePage + 1} / {queuePages}
+                      </span>
+                      <Tooltip label="Next page">
+                        <button
+                          type="button"
+                          aria-label="Next page"
+                          onClick={() => setQueuePage(queuePage + 1)}
+                          disabled={queuePage >= queuePages - 1}
+                          className="rounded-md border border-gray-200 p-1 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </Tooltip>
+                    </div>
+                  </div>
                 )}
               </>
             )}
