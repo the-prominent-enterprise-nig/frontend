@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2 } from 'lucide-react'
 import { CONTROL_CHROME, MONO, PLEX } from '@/src/libs/design/plex'
 import { errorClass, inputClass, labelClass } from './itemFormChrome'
-import { CategorySubgroupFields } from './item-create-fields'
+import { CategorySubgroupFields, UnitOfMeasureField } from './item-create-fields'
 import { quickAddAction, useQuickAddClassification } from './useQuickAddClassification'
 import {
   UpdateItemFormSchema,
@@ -69,6 +69,7 @@ export default function EditItemModal({
   onSubmit,
   isSubmitting,
   categories,
+  uomOptions,
   onAttributeSubmit,
   isAttributeSubmitting,
   canReadAttributes = true,
@@ -169,6 +170,10 @@ export default function EditItemModal({
     if (!isServiceValue) return
     TRACKING_FIELDS_DISABLED_BY_SERVICE.forEach((name) => setValue(name, false))
   }, [isServiceValue, setValue])
+
+  // Unticking Serial Tracking (rice, by the KG) shows the Unit of Measure
+  // picker. Never auto-changed here — an existing item keeps its own unit.
+  const isSerialValue = useWatch({ control, name: 'isSerialTracked' })
 
   const { data: attrDefsData } = useQuery({
     queryKey: ['inventory-attribute-definitions', selectedCategoryId],
@@ -364,6 +369,63 @@ export default function EditItemModal({
       >
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <div className="mx-auto flex max-w-[1400px] flex-col gap-4">
+            {/* Tracking first — whether the item is serial-tracked decides
+                what Basic Info asks for (brand and model are serial-only). */}
+            <FormSection variant="card" title="Tracking" defaultOpen={true}>
+              <div className="sm:col-span-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {(
+                  [
+                    { name: 'isSerialTracked', label: 'Serial Tracking' },
+                    { name: 'isService', label: 'Service Item (no stock/serial tracking)' },
+                    { name: 'isFreebie', label: 'Freebie' },
+                  ] as const
+                ).map(({ name, label }) => {
+                  const isDisabled =
+                    isServiceValue &&
+                    (TRACKING_FIELDS_DISABLED_BY_SERVICE as readonly string[]).includes(name)
+                  return (
+                    <Controller
+                      key={name}
+                      name={name}
+                      control={control}
+                      render={({ field }) => (
+                        <label
+                          className={`flex items-center gap-2 rounded-lg border border-[#e4e4e9] px-3 py-2 text-[13px] text-[#3d3d4a] ${
+                            isDisabled
+                              ? 'cursor-not-allowed opacity-50'
+                              : 'cursor-pointer hover:bg-[#fbfbfc]'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={field.value}
+                            disabled={isDisabled}
+                            onChange={(e) => field.onChange(e.target.checked)}
+                            className="accent-[#5b21b6]"
+                          />
+                          {label}
+                        </label>
+                      )}
+                    />
+                  )
+                })}
+              </div>
+              {!isSerialValue && !isServiceValue && (
+                <Controller
+                  name="baseUnitId"
+                  control={control}
+                  render={({ field }) => (
+                    <UnitOfMeasureField
+                      value={field.value}
+                      onChange={field.onChange}
+                      uomOptions={uomOptions}
+                      error={errors.baseUnitId?.message}
+                    />
+                  )}
+                />
+              )}
+            </FormSection>
+
             {/* Basic Info — same fields, order and rules as Add New Item */}
             <FormSection
               variant="card"
@@ -461,7 +523,8 @@ export default function EditItemModal({
               {/* Brand */}
               <div>
                 <label className={labelClass}>
-                  Brand {!isServiceValue && <span className="text-[#b42318]">*</span>}
+                  Brand{' '}
+                  {isSerialValue && !isServiceValue && <span className="text-[#b42318]">*</span>}
                 </label>
                 <Controller
                   name="brandId"
@@ -485,7 +548,8 @@ export default function EditItemModal({
               {/* Model Number — shares a row with Brand. */}
               <div>
                 <label className={labelClass}>
-                  Model Number {!isServiceValue && <span className="text-[#b42318]">*</span>}
+                  Model Number{' '}
+                  {isSerialValue && !isServiceValue && <span className="text-[#b42318]">*</span>}
                 </label>
                 <Controller
                   name="modelNumber"
@@ -529,48 +593,6 @@ export default function EditItemModal({
                   )}
                 />
                 {errors.costPrice && <p className={errorClass}>{errors.costPrice.message}</p>}
-              </div>
-            </FormSection>
-
-            {/* Tracking — the same four options Add New Item offers */}
-            <FormSection variant="card" title="Tracking" defaultOpen={true}>
-              <div className="sm:col-span-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {(
-                  [
-                    { name: 'isSerialTracked', label: 'Serial Tracking' },
-                    { name: 'isService', label: 'Service Item (no stock/serial tracking)' },
-                    { name: 'isFreebie', label: 'Freebie' },
-                  ] as const
-                ).map(({ name, label }) => {
-                  const isDisabled =
-                    isServiceValue &&
-                    (TRACKING_FIELDS_DISABLED_BY_SERVICE as readonly string[]).includes(name)
-                  return (
-                    <Controller
-                      key={name}
-                      name={name}
-                      control={control}
-                      render={({ field }) => (
-                        <label
-                          className={`flex items-center gap-2 rounded-lg border border-[#e4e4e9] px-3 py-2 text-[13px] text-[#3d3d4a] ${
-                            isDisabled
-                              ? 'cursor-not-allowed opacity-50'
-                              : 'cursor-pointer hover:bg-[#fbfbfc]'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={field.value}
-                            disabled={isDisabled}
-                            onChange={(e) => field.onChange(e.target.checked)}
-                            className="accent-[#5b21b6]"
-                          />
-                          {label}
-                        </label>
-                      )}
-                    />
-                  )
-                })}
               </div>
             </FormSection>
 

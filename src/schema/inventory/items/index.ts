@@ -93,11 +93,14 @@ const CreateItemFormBaseSchema = z.object({
 
 /** Brand + Model are how Item Master and both ledgers name an item (Brand ·
  * Category · Model), so a stocked item needs both. Service items have neither. */
+/** Brand and model number identify a serial-tracked unit (an aircon's
+ * KFM36E0W). A non-serial good — rice by the KG — or a service has neither,
+ * so they're asked only of serial items. */
 function refineIdentity(
-  data: { isService: boolean; brandId?: string; modelNumber?: string },
+  data: { isService: boolean; isSerialTracked: boolean; brandId?: string; modelNumber?: string },
   ctx: z.RefinementCtx
 ): void {
-  if (data.isService) return
+  if (data.isService || !data.isSerialTracked) return
   if (!data.brandId) {
     ctx.addIssue({ code: 'custom', path: ['brandId'], message: 'Brand is required' })
   }

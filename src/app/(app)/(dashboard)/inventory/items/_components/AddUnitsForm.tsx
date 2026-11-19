@@ -2,26 +2,23 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Controller, useForm, useWatch, type Control, type FieldErrors } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
 import { Loader2, PackagePlus } from 'lucide-react'
-import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { showToast } from '@/src/components/ui/toast'
-import { CONTROL_CHROME, MONO, PLEX } from '@/src/libs/design/plex'
+import { MONO, PLEX } from '@/src/libs/design/plex'
 import type { ItemSummary } from '@/src/schema/inventory/items'
 import {
   AddUnitsFormSchema,
+  EMPTY_BRANCH_ROW,
   parseSerialList,
   type AddUnitsFormValues,
+  type BranchRow,
 } from '@/src/schema/inventory/items/add-units'
-import {
-  UNIT_CLASSIFICATION_LABELS,
-  UnitClassificationSchema,
-} from '@/src/schema/inventory/reports'
-import { receiveInitialUnit } from '../_actions/receive-initial-unit'
-import { FormSection, NumericInput } from './item-form-shared'
-import { errorClass, inputClass, labelClass } from './itemFormChrome'
+import { receiveInitialAtBranches, type BranchInput } from '../_actions/receive-initial-unit'
+import BranchQuantitiesTable from './BranchQuantitiesTable'
+import { FormSection } from './item-form-shared'
 import { useOriginOptions, useReceivingWarehouses } from './item-create-fields'
 
 type Props = {
@@ -35,13 +32,7 @@ const ITEM_MASTER = '/inventory/items'
 
 function defaultsFor(item: ItemSummary): AddUnitsFormValues {
   return {
-    warehouseId: '',
-    dateIn: '',
-    rr: '',
-    origin: 'WHSE',
-    classification: 'brand_new',
-    price: undefined,
-    serialsText: '',
+    branches: [{ ...EMPTY_BRANCH_ROW }],
     isSerialTracked: item.isSerialTracked ?? false,
   }
 }
@@ -56,22 +47,39 @@ function humanizeAddUnitsError(message: string | undefined): string {
     return 'That RR # is already on another receiving report — use a different RR #.'
   }
   if (message.startsWith('duplicate_serial_in_request')) return 'A serial is listed more than once.'
+  if (message.startsWith('rr_repeated_in_request')) return 'Two branches have the same RR #.'
+  if (message.startsWith('branch_repeated')) return 'A branch is listed more than once.'
+  if (message === 'warehouse_not_found') return 'One of the branches no longer exists.'
   if (message === 'unparseable_date') return 'Date in is not a valid date.'
   return message
+}
+
+/** One row as the backend takes it — serials for a serial item, a quantity
+ * (and the unit it was counted in) for a non-serial one. */
+function toBranchInput(row: BranchRow, isSerialTracked: boolean): BranchInput {
+  const common = {
+    warehouseId: row.warehouseId,
+    rr: row.rr || undefined,
+    // Blank date = today, blank origin = WHSE.
+    dateIn: row.dateIn || undefined,
+    origin: row.origin || undefined,
+    price: row.price,
+  }
+  return isSerialTracked
+    ? {
+        ...common,
+        serialNumbers: parseSerialList(row.serialsText),
+        classification: row.classification,
+      }
+    : { ...common, quantity: row.quantity ?? 0, unitId: row.unitId || undefined }
 }
 
 function useSubmitUnits(item: ItemSummary): (data: AddUnitsFormValues) => Promise<void> {
   const router = useRouter()
   const queryClient = useQueryClient()
   return async (data) => {
-    const res = await receiveInitialUnit(item.id, {
-      warehouseId: data.warehouseId,
-      dateIn: data.dateIn || undefined,
-      rr: data.rr || undefined,
-      origin: data.origin || undefined,
-      price: data.price,
-      classification: data.classification,
-      serialNumbers: item.isSerialTracked ? parseSerialList(data.serialsText) : undefined,
+    const res = await receiveInitialAtBranches(item.id, {
+      branches: data.branches.map((row) => toBranchInput(row, data.isSerialTracked)),
     })
     if (!res.success) {
       showToast({
@@ -90,9 +98,9 @@ function useSubmitUnits(item: ItemSummary): (data: AddUnitsFormValues) => Promis
 }
 
 /** Item Master → Add units, and the step after Add Item's Create. Records
- * units on hand at one branch under one RR # — date in, origin,
- * classification and cost — with the same rules as the bulk sheet's unit
- * columns (both go through the backend's one receipt writer). */
+ * units on hand at one or more branches — a row per branch, each its own
+ * receipt — with the same rules as the bulk sheet's unit columns (both go
+ * through the backend's one receipt writer). */
 export default function AddUnitsForm({ item, isNewItem = false }: Props): React.JSX.Element {
   const warehouses = useReceivingWarehouses(true)
   const originOptions = useOriginOptions(true)
@@ -116,40 +124,19 @@ export default function AddUnitsForm({ item, isNewItem = false }: Props): React.
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-1 flex-col">
         <div className="flex-1 px-6 py-5">
           <div className="mx-auto flex max-w-[1400px] flex-col gap-4">
-            <FormSection variant="card" title="Units" errorCount={Object.keys(errors).length}>
-              <BranchField control={control} errors={errors} warehouses={warehouses} />
-              <TextField
+            <FormSection
+              variant="card"
+              title={item.isSerialTracked ? 'Units per branch' : 'Stock per branch'}
+              errorCount={Object.keys(errors).length}
+            >
+              <BranchQuantitiesTable
                 control={control}
                 errors={errors}
-                name="dateIn"
-                label="Date In (optional — today)"
-                type="date"
+                warehouses={warehouses}
+                baseUnit={item.baseUnit ?? null}
+                originOptions={originOptions}
+                isSerialTracked={item.isSerialTracked ?? false}
               />
-              <TextField
-                control={control}
-                errors={errors}
-                name="rr"
-                label="RR # (optional — generated)"
-                placeholder="e.g. RR#163451S"
-              />
-              <SelectField
-                control={control}
-                name="origin"
-                label="Origin"
-                options={originOptions}
-                placeholder="Select supplier or WHSE…"
-              />
-              <SelectField
-                control={control}
-                name="classification"
-                label="Classification"
-                options={UnitClassificationSchema.options.map((c) => ({
-                  value: c,
-                  label: UNIT_CLASSIFICATION_LABELS[c],
-                }))}
-              />
-              <CostField control={control} />
-              {item.isSerialTracked && <SerialsField control={control} errors={errors} />}
             </FormSection>
           </div>
         </div>
@@ -180,157 +167,10 @@ function AddUnitsHeader({
           <p className="mt-1 text-[13px] text-ink-muted">
             {isNewItem
               ? 'Item created. Record the units already on hand, or skip if there is no stock yet.'
-              : 'Record units on hand at a branch, all under one RR #.'}
+              : 'Record units on hand at one or more branches — each branch gets its own RR #.'}
           </p>
         </div>
       </div>
-    </div>
-  )
-}
-
-type FieldProps = { control: Control<AddUnitsFormValues>; errors: FieldErrors<AddUnitsFormValues> }
-
-function BranchField({
-  control,
-  errors,
-  warehouses,
-}: FieldProps & {
-  warehouses: { id: string; name: string; branch?: { name: string } | null }[]
-}): React.JSX.Element {
-  return (
-    <div>
-      <label className={labelClass}>
-        Branch <span className="text-[#b42318]">*</span>
-      </label>
-      <Controller
-        name="warehouseId"
-        control={control}
-        render={({ field }) => (
-          <SearchableSelect
-            chrome={CONTROL_CHROME}
-            portal
-            value={field.value}
-            onChange={field.onChange}
-            options={warehouses.map((w) => ({ value: w.id, label: w.branch?.name ?? w.name }))}
-            placeholder="Select branch…"
-          />
-        )}
-      />
-      {errors.warehouseId && <p className={errorClass}>{errors.warehouseId.message}</p>}
-    </div>
-  )
-}
-
-function TextField({
-  control,
-  errors,
-  name,
-  label,
-  type = 'text',
-  placeholder,
-}: FieldProps & {
-  name: 'dateIn' | 'rr'
-  label: string
-  type?: 'text' | 'date'
-  placeholder?: string
-}): React.JSX.Element {
-  return (
-    <div>
-      <label className={labelClass}>{label}</label>
-      <Controller
-        name={name}
-        control={control}
-        render={({ field }) => (
-          <input {...field} type={type} placeholder={placeholder} className={inputClass} />
-        )}
-      />
-      {errors[name] && <p className={errorClass}>{errors[name]?.message}</p>}
-    </div>
-  )
-}
-
-function SelectField({
-  control,
-  name,
-  label,
-  options,
-  placeholder,
-}: {
-  control: Control<AddUnitsFormValues>
-  name: 'origin' | 'classification'
-  label: string
-  options: { value: string; label: string }[]
-  placeholder?: string
-}): React.JSX.Element {
-  return (
-    <div>
-      <label className={labelClass}>{label}</label>
-      <Controller
-        name={name}
-        control={control}
-        render={({ field }) => (
-          <SearchableSelect
-            chrome={CONTROL_CHROME}
-            portal
-            value={field.value ?? ''}
-            onChange={(v) => field.onChange(v || (name === 'classification' ? 'brand_new' : ''))}
-            options={options}
-            placeholder={placeholder}
-          />
-        )}
-      />
-    </div>
-  )
-}
-
-function CostField({ control }: { control: Control<AddUnitsFormValues> }): React.JSX.Element {
-  return (
-    <div>
-      <label className={labelClass}>Unit Cost (₱)</label>
-      <Controller
-        name="price"
-        control={control}
-        render={({ field }) => (
-          <NumericInput
-            value={field.value}
-            onChange={field.onChange}
-            onBlur={field.onBlur}
-            fieldRef={field.ref}
-            placeholder="0.00"
-            className={inputClass}
-          />
-        )}
-      />
-    </div>
-  )
-}
-
-function SerialsField({ control, errors }: FieldProps): React.JSX.Element {
-  const text = useWatch({ control, name: 'serialsText' })
-  const count = parseSerialList(text ?? '').length
-  return (
-    <div className="sm:col-span-2">
-      <div className="mb-1.5 flex items-center justify-between">
-        <label className={labelClass.replace('mb-1.5 ', '')}>
-          Serial Numbers <span className="text-[#b42318]">*</span>
-        </label>
-        <span className="text-[12px] text-ink-subtle">
-          {count} unit{count === 1 ? '' : 's'}
-        </span>
-      </div>
-      <Controller
-        name="serialsText"
-        control={control}
-        render={({ field }) => (
-          <textarea
-            {...field}
-            rows={5}
-            placeholder={'One per line, or comma-separated\nSN-001\nSN-002'}
-            className={`${inputClass} font-mono`}
-          />
-        )}
-      />
-      {errors.serialsText && <p className={errorClass}>{errors.serialsText.message}</p>}
     </div>
   )
 }
@@ -353,7 +193,7 @@ function AddUnitsFooter({
           aria-disabled={isSubmitting}
           className={`rounded-lg px-4 py-2 text-[13px] font-medium text-ink-muted hover:bg-[#f1f1f4] ${isSubmitting ? 'pointer-events-none opacity-50' : ''}`}
         >
-          {isNewItem ? 'Skip, no stock yet' : 'Back to Item Master'}
+          {isNewItem ? 'Skip, no stock yet' : 'Back'}
         </Link>
         <button
           type="submit"
