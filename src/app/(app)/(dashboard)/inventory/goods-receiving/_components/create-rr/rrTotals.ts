@@ -21,9 +21,10 @@ export type Discount = NonNullable<RrLine['discounts']>[number]
 
 /** The invoice a returned unit's line belongs to — the installment account
  * for a repossession, the sale for a repair/return. Matches a ReturnBlock's
- * accountId either way. */
+ * accountId either way. A repair unit entered by hand (no invoice) is keyed
+ * by its block instead, so it is still treated as a returned unit's line. */
 export function invoiceKeyOf(line: RrLine | undefined): string | undefined {
-  return line?.installmentAccountId || line?.salesTransactionId
+  return line?.installmentAccountId || line?.salesTransactionId || line?.manualKey
 }
 
 /** Unit cost as the supplier's own pricing produces it: SRP walked through the

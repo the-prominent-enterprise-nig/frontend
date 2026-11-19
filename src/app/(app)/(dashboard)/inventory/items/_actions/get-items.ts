@@ -19,6 +19,8 @@ export async function getItems(params?: {
   primaryCategoryId?: string
   /** The client sheet's TYPE — an item type. */
   typeId?: string
+  /** Only items of this brand. */
+  brandId?: string
   /** Scenario 56 — only items with units on hand in this operation. */
   region?: 'panay' | 'negros'
   /** Items with units on hand at this branch / warehouse. */
