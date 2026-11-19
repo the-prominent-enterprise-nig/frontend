@@ -22,6 +22,7 @@ import type { RepairIntakeSale } from '../../_actions/get-repair-intake-sales'
 import type { RrReturnDisposition } from '../../_actions/record-customer-return'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { ManualRepairUnit } from './ManualRepairUnit'
+import { DISPOSITION_OPTIONS, ManualUnitExtras } from './ManualUnitExtras'
 
 /** One invoice the units are coming back from. Its checked units are the
  * receipt's lines (linked through invoiceKeyOf), so this holds only what the
@@ -43,7 +44,7 @@ export type ReturnBlock = {
   /** Every unit on this invoice has already been taken back. */
   exhausted: boolean
   fallbackSerialLabel?: string
-  /** Repair: an existing customer's unit never sold through this system —
+  /** Any mode: an existing customer's unit never sold through this system —
    * entered by hand (Brand, Model, typed serial) instead of off an invoice. */
   manualUnit?: boolean
   manualBrandId?: string
@@ -51,7 +52,7 @@ export type ReturnBlock = {
   manualInvoice?: string
 }
 
-/** The hand-entered repair unit's handlers, by block key. */
+/** The hand-entered unit's handlers, by block key. */
 export type ManualUnitHandlers = {
   start: (key: string) => void
   cancel: (key: string) => void
@@ -59,6 +60,8 @@ export type ManualUnitHandlers = {
   model: (key: string, value: string) => void
   serial: (key: string, value: string) => void
   invoice: (key: string, value: string) => void
+  /** A return's price paid, or a repossession's Repo Cost. */
+  amount: (key: string, value: number | undefined) => void
 }
 
 type Props = {
@@ -83,18 +86,12 @@ type Props = {
   onUnitCost: (key: string, serialNumberId: string | undefined, value: number | undefined) => void
   onAddBlock: () => void
   onRemoveBlock: (key: string) => void
-  /** Repair only. */
+  /** A unit never sold through this system, typed in — every mode. */
   manual?: ManualUnitHandlers
 }
 
 /** What can happen to a returned unit from Create RR — exchange stays on the
  * POS Returns screen (it needs a replacement unit). */
-const DISPOSITION_OPTIONS: { value: RrReturnDisposition; label: string }[] = [
-  { value: 'restock', label: 'Back on the shelf' },
-  { value: 'quarantine', label: 'On hold (not sellable)' },
-  { value: 'scrap', label: 'Written off' },
-]
-
 const CAPTION = `${MONO} mb-1 block text-[9.5px] uppercase tracking-[.09em] text-[#3f1490]`
 
 /**
@@ -191,7 +188,7 @@ export function ReturnedUnitsPanel({
           onFallbackSerial={onFallbackSerial}
           onUnitCost={onUnitCost}
           onRemoveBlock={onRemoveBlock}
-          manualEntry={isRepo || isReturn ? undefined : manual}
+          manualEntry={manual}
         />
       ))}
 
@@ -414,7 +411,19 @@ function Block({
           invoice={block.manualInvoice ?? ''}
           onInvoice={(value) => manualEntry.invoice(block.key, value)}
           onCancel={() => manualEntry.cancel(block.key)}
-        />
+          allowUnlisted={!isRepo && !isReturn}
+        >
+          {(isReturn || (isRepo && canViewCost)) && (
+            <ManualUnitExtras
+              mode={isReturn ? 'customer_return' : 'repossession'}
+              amount={manualUnitLine?.unitCost}
+              onAmount={(value) => manualEntry.amount(block.key, value)}
+              disposition={dispositions?.[block.key]}
+              onDisposition={(value) => onDisposition?.(block.key, value)}
+              showErrors={showErrors}
+            />
+          )}
+        </ManualRepairUnit>
       )}
 
       {hasInvoice && block.loading && (

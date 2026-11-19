@@ -40,7 +40,11 @@ import {
 } from '../../purchase-orders/_components/receive-po/receiveIssues'
 import { PoLinkPicker, outstandingOf } from './create-rr/PoLinkPicker'
 import { customerReturnPayload } from './create-rr/customerReturnPayload'
-import { recordCustomerReturn, type RrReturnDisposition } from '../_actions/record-customer-return'
+import {
+  recordCustomerReturn,
+  type RecordCustomerReturnInput,
+  type RrReturnDisposition,
+} from '../_actions/record-customer-return'
 import { useMe } from '@/src/hooks/useMe'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { useQueryClient } from '@tanstack/react-query'
@@ -417,7 +421,7 @@ export default function ReceiveStockModal({
     // Scenario 55 (Stock-side Manual RR parity) — a "Something else" line
     // has no catalog meta to read a title from; its typed name is the title.
     if (!line.itemId && line.newItemName) return line.newItemName
-    if (line.manualKey) return line.manualModel?.trim() || 'Repair unit'
+    if (line.manualKey) return line.manualModel?.trim() || 'Hand-entered unit'
     const meta = metaFor(line.itemId)
     return itemTitle(meta) || meta?.name || 'Line'
   }
@@ -483,12 +487,23 @@ export default function ReceiveStockModal({
       key: `manual-model-${index}`,
       kind: 'error',
       lineIndex: index,
-      text: 'Type the model of the repair unit.',
+      text: 'Pick the model of the hand-entered unit.',
     } satisfies Blocker)
   })
+  if (customerReturn) {
+    lines.forEach((line, index) => {
+      if (!line.manualKey || line.unitCost != null) return
+      blockers.push({
+        key: `manual-price-${index}`,
+        kind: 'error',
+        lineIndex: index,
+        text: `${labelFor(index)}: type the price the customer paid.`,
+      } satisfies Blocker)
+    })
+  }
   if (watched.reason === 'repossession') {
     lines.forEach((line, index) => {
-      if (!line.itemId || Number(line.unitCost) > 0) return
+      if ((!line.itemId && !line.manualKey) || Number(line.unitCost) > 0) return
       blockers.push({
         key: `repossession-cost-${index}`,
         kind: 'error',
@@ -897,8 +912,8 @@ export default function ReceiveStockModal({
   }
 
   /** Picking the brand starts the unit's line (the server resolves its item
-   * from Brand + typed Model); clearing it drops the line. The typed model and
-   * serial carry over a brand change. */
+   * from Brand + typed Model); clearing it drops the line. The typed serial
+   * carries over a brand change; the model is cleared. */
   function pickManualBrand(key: string, brandId: string): void {
     const block = returnBlocks.find((b) => b.key === key)
     if (!block?.customerId) return
@@ -910,6 +925,9 @@ export default function ReceiveStockModal({
     }
     if (idx >= 0) {
       setValue(`lines.${idx}.manualBrandId`, brandId, { shouldValidate: false })
+      // Models are picked from the brand's own list, so one from the old
+      // brand no longer applies.
+      setValue(`lines.${idx}.manualModel`, '', { shouldValidate: false })
       return
     }
     append({
@@ -924,6 +942,13 @@ export default function ReceiveStockModal({
     const idx = manualUnitIndex(key)
     if (idx < 0) return
     setValue(`lines.${idx}.manualModel`, value, { shouldValidate: showErrors })
+  }
+
+  /** A hand-entered return's price paid, or a repossession's Repo Cost. */
+  function setManualAmount(key: string, value: number | undefined): void {
+    const idx = manualUnitIndex(key)
+    if (idx < 0) return
+    setValue(`lines.${idx}.unitCost`, value, { shouldValidate: false })
   }
 
   function setManualSerial(key: string, value: string): void {
@@ -1314,21 +1339,53 @@ export default function ReceiveStockModal({
 
   /** Ticket #27 — Return: posts the POS customer return for the checked
    * units (one record — stock back, customer credited, RRC # issued). */
-  async function postCustomerReturn(data: ReceiveStockFormValues): Promise<void> {
+  /** The old receipt number typed on a hand-entered unit's block. */
+  function manualInvoiceOf(key: string): string | undefined {
+    return returnBlocks.find((b) => b.key === key)?.manualInvoice?.trim() || undefined
+  }
+
+  /** A return of hand-entered units — no sale behind it, so no credit memo. */
+  function manualReturnPayload(
+    data: ReceiveStockFormValues,
+    warehouseId: string
+  ): RecordCustomerReturnInput {
+    const manual = data.lines.filter((l) => !!l.manualKey)
+    return {
+      warehouseId,
+      customerId: manual[0]?.customerId,
+      notes: data.notes?.trim() || undefined,
+      lines: manual.map((l) => ({
+        manualBrandId: l.manualBrandId ?? '',
+        manualModel: l.manualModel?.trim() ?? '',
+        manualSerialNumber: l.serialNumbers?.[0]?.trim() ?? '',
+        legacyInvoiceNumber: manualInvoiceOf(l.manualKey as string),
+        unitPrice: Number(l.unitCost) || 0,
+        disposition: dispositions[l.manualKey as string] ?? 'restock',
+      })),
+    }
+  }
+
+  function returnPayloadOf(data: ReceiveStockFormValues): RecordCustomerReturnInput | null {
+    if (!data.warehouseId) return null
+    if (data.lines.some((l) => l.manualKey)) return manualReturnPayload(data, data.warehouseId)
     const serialNumberIds = data.lines
       .map((l) => l.existingSerialNumberIds?.[0])
       .filter((id): id is string => !!id)
     const sale = salesById.current.get(data.lines[0]?.salesTransactionId ?? '')
-    if (!sale || !data.warehouseId) return
-    const res = await recordCustomerReturn(
-      customerReturnPayload({
-        sale,
-        serialNumberIds,
-        dispositions,
-        warehouseId: data.warehouseId,
-        notes: data.notes,
-      })
-    )
+    if (!sale) return null
+    return customerReturnPayload({
+      sale,
+      serialNumberIds,
+      dispositions,
+      warehouseId: data.warehouseId,
+      notes: data.notes,
+    })
+  }
+
+  async function postCustomerReturn(data: ReceiveStockFormValues): Promise<void> {
+    const payload = returnPayloadOf(data)
+    if (!payload) return
+    const res = await recordCustomerReturn(payload)
     if (!res.success || !res.data) {
       showToast({ title: 'Could not record the return', description: res.message, status: 'error' })
       return
@@ -1408,15 +1465,24 @@ export default function ReceiveStockModal({
         // The sale a repair/return unit was sold on — repair/return only.
         salesTransactionId:
           reason === 'repair_return' ? line.salesTransactionId || undefined : undefined,
-        // A repair unit never sold here names whose it is.
+        // A unit never sold here names whose it was.
         customerId:
-          reason === 'repair_return' && !scReturn && line.manualKey
+          (reason === 'repossession' || (reason === 'repair_return' && !scReturn)) && line.manualKey
             ? line.customerId || undefined
             : undefined,
         legacyInvoiceNumber:
           reason === 'repair_return' && !scReturn && line.manualKey
-            ? returnBlocks.find((b) => b.key === line.manualKey)?.manualInvoice?.trim() || undefined
+            ? manualInvoiceOf(line.manualKey)
             : undefined,
+        // A repossession has no repair ticket to carry the old receipt's
+        // number, so it rides on the line's notes.
+        ...(reason === 'repossession' && line.manualKey && manualInvoiceOf(line.manualKey)
+          ? {
+              notes: [`Old invoice: ${manualInvoiceOf(line.manualKey)}`, line.notes?.trim()]
+                .filter(Boolean)
+                .join(' — '),
+            }
+          : {}),
         manualBrandId: line.manualKey ? line.manualBrandId : undefined,
         manualModel: line.manualKey ? line.manualModel?.trim() || undefined : undefined,
         manualKey: undefined,
@@ -1554,6 +1620,7 @@ export default function ReceiveStockModal({
                 model: setManualModel,
                 serial: setManualSerial,
                 invoice: (key, value) => patchBlock(key, { manualInvoice: value }),
+                amount: setManualAmount,
               }}
             />
             {requiredKinds.length > 0 && (

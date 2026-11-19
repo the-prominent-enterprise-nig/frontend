@@ -1,8 +1,9 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import SearchableSelect, { type SearchableSelectOption } from '@/src/components/ui/SearchableSelect'
 import { getBrands } from '../../../brands/_actions/get-brands'
+import { getItems } from '../../../items/_actions/get-items'
 import { MONO } from '../../../purchase-orders/_components/procurementTokens'
 
 const CAPTION = `${MONO} mb-1 block text-[9.5px] uppercase tracking-[.09em] text-[#3f1490]`
@@ -21,13 +22,53 @@ type Props = {
   invoice: string
   onInvoice: (value: string) => void
   onCancel: () => void
+  /** Repair only: a model missing from the catalog can still be typed (the
+   * server files it under the brand's Customer unit). A returned or
+   * repossessed unit goes back on the shelf, so it must be a catalog model. */
+  allowUnlisted?: boolean
+  /** Extra fields for this kind of receipt — a return's price and what
+   * happens to the unit, a repossession's Repo Cost. */
+  children?: React.ReactNode
+}
+
+/** The brand's serial-tracked model numbers — what the server matches the
+ * picked model against. A model typed in that isn't one of them is kept as an
+ * option so the box still shows it. */
+function useModelOptions(
+  brandId: string | undefined,
+  model: string
+): {
+  options: SearchableSelectOption[]
+  loading: boolean
+  /** The lookup failed — the list is empty because of that, not the brand. */
+  error?: string
+} {
+  const items = useQuery({
+    queryKey: ['inventory-items', 'brand-models', brandId],
+    queryFn: () => getItems({ brandId, limit: 500 }),
+    enabled: !!brandId,
+    staleTime: 30 * 1000,
+  })
+  const models = (items.data?.data?.data ?? [])
+    .filter((item) => item.isSerialTracked && item.modelNumber?.trim())
+    .map((item) => item.modelNumber!.trim())
+  const typed = model.trim()
+  if (typed && !models.some((m) => m.toLowerCase() === typed.toLowerCase())) models.push(typed)
+  const unique = [...new Set(models)].sort((a, b) => a.localeCompare(b))
+  const failed = items.isError || items.data?.success === false
+  return {
+    options: unique.map((m) => ({ value: m, label: m })),
+    loading: items.isLoading,
+    error: failed ? items.data?.message || items.data?.error || 'Request failed' : undefined,
+  }
 }
 
 /**
- * Repair intake for an existing customer's unit that was never sold through
- * this system, so there is no invoice to list it from: Brand is picked from
- * the catalog; Model and Serial are typed off the unit. The server matches the
- * model to that brand's item, else files it under the brand's Customer unit.
+ * A customer's unit that was never sold through this system, so there is no
+ * invoice to list it from — on a repair, return or repossession: Brand is
+ * picked from the catalog; Model from that brand's models (a repair may type
+ * one that isn't listed); Serial is typed off the unit. The server matches the
+ * model to that brand's item.
  */
 export function ManualRepairUnit({
   brandId,
@@ -40,6 +81,8 @@ export function ManualRepairUnit({
   invoice,
   onInvoice,
   onCancel,
+  allowUnlisted = true,
+  children,
 }: Props): React.ReactElement {
   const brands = useQuery({
     queryKey: ['inventory-item-brands'],
@@ -47,6 +90,7 @@ export function ManualRepairUnit({
     staleTime: 30 * 1000,
   })
   const brandOptions = (brands.data?.data ?? []).map((b) => ({ value: b.id, label: b.name }))
+  const models = useModelOptions(brandId, model)
   const modelMissing = showErrors && !!brandId && !model.trim()
   const serialMissing = showErrors && !!brandId && !serial.trim()
 
@@ -54,7 +98,7 @@ export function ManualRepairUnit({
     <div className="mt-3 flex flex-col gap-2.5 rounded-[9px] border border-[#ddd0f7] bg-[#faf7ff] px-3 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[11px] text-ink-muted">
-          Unit not in the system — pick its brand, then type the model and serial from the unit.
+          Unit not in the system — pick its brand and model, then type the serial from the unit.
         </span>
         <button
           type="button"
@@ -79,16 +123,39 @@ export function ManualRepairUnit({
         </div>
         <div className="min-w-0">
           <span className={CAPTION}>Model</span>
-          <input
-            type="text"
+          <SearchableSelect
+            portal
+            ariaLabel="Model"
             value={model}
-            onChange={(e) => onModel(e.target.value)}
+            onChange={(value) => onModel(value)}
+            options={models.options}
+            loading={models.loading}
             disabled={!brandId}
-            maxLength={100}
-            placeholder={brandId ? 'Type the model on the unit' : 'Pick the brand first'}
-            aria-label="Model"
-            className={`${INPUT} ${modelMissing ? 'border-[#b42318]' : 'border-[#d3d3db]'}`}
+            chrome={{
+              idle: modelMissing ? 'border-[#b42318]' : 'border-[#d3d3db]',
+              focused: 'border-[#5b21b6] ring-1 ring-[#5b21b6]',
+            }}
+            placeholder={brandId ? 'Pick the model…' : 'Pick the brand first'}
+            emptyAction={
+              allowUnlisted
+                ? {
+                    label: (typed) => `Use "${typed}" — not in the catalog`,
+                    onSelect: (typed) => onModel(typed.slice(0, 100)),
+                  }
+                : undefined
+            }
           />
+          {models.error && (
+            <span className="mt-1 block text-[11px] text-[#b42318]">
+              Couldn&apos;t load this brand&apos;s models ({models.error})
+              {allowUnlisted ? ' — type the model instead.' : '.'}
+            </span>
+          )}
+          {!allowUnlisted && !models.error && !!brandId && !models.loading && (
+            <span className="mt-1 block text-[11px] text-ink-subtle">
+              Not listed? Add the model in Item Master first.
+            </span>
+          )}
         </div>
         <div className="min-w-0">
           <span className={CAPTION}>Serial #</span>
@@ -117,6 +184,7 @@ export function ManualRepairUnit({
           />
         </div>
       </div>
+      {children}
     </div>
   )
 }
