@@ -521,6 +521,7 @@ function AccountInfo({
             <Row label="Collector code" value={account.collector?.stubNumber ?? '—'} />
           </Group>
           <Group title="Customer">
+            <Row label="Contact number" value={account.customer?.phone || '—'} />
             <Row label="Address" value={c.address ?? '—'} />
           </Group>
         </div>
@@ -533,13 +534,20 @@ function AccountInfo({
             <Row label="Rebate" value={fmtMoney(c.rebate)} />
             <Row label="Term" value={existing.term > 0 ? `${existing.term} months` : '—'} />
             <Row label="Months running" value={hasBilling ? existing.billed : '—'} />
-            <Row
-              label={matured ? 'Installments in arrears' : 'Installments with balance'}
-              value={hasBilling ? existing.installmentsWithBalance : '—'}
-            />
+            {/* C&C asked to drop "Installments with balance"; a matured
+                account still shows how many installments are in arrears. */}
+            {matured && (
+              <Row
+                label="Installments in arrears"
+                value={hasBilling ? existing.installmentsWithBalance : '—'}
+              />
+            )}
           </Group>
           <Group title="Financing (cont.)">
-            <Row label="PNV (amt. financed)" value={fmtMoney(c.pnv)} />
+            {/* C&C's own formulas: ID = Total price − LCP, AF = LCP − DP. */}
+            <Row label="ID (inst. diff.)" value={fmtMoney(c.totalPrice - c.listedCashPrice)} />
+            <Row label="AF (amt. financed)" value={fmtMoney(c.listedCashPrice - c.downPayment)} />
+            <Row label="PNV (promissory note value)" value={fmtMoney(c.pnv)} />
             <Row label="Total price" value={fmtMoney(c.totalPrice)} />
             <Row label="Paid vs. total price" value={`${existing.paidPercent}%`} />
           </Group>
