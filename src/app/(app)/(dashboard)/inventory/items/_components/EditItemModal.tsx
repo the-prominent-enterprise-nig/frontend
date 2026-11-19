@@ -105,6 +105,7 @@ export default function EditItemModal({
       isExpiryTracked: false,
       isBundle: false,
       isService: false,
+      isFreebie: false,
       brandId: undefined,
       typeId: '',
       modelNumber: '',
@@ -128,6 +129,7 @@ export default function EditItemModal({
         isExpiryTracked: item.isExpiryTracked ?? false,
         isBundle: item.isBundle ?? false,
         isService: item.isService ?? false,
+        isFreebie: item.isFreebie ?? false,
         brandId: item.brand?.id ?? undefined,
         typeId: item.type?.id ?? '',
         modelNumber: item.modelNumber ?? '',
@@ -537,6 +539,7 @@ export default function EditItemModal({
                   [
                     { name: 'isSerialTracked', label: 'Serial Tracking' },
                     { name: 'isService', label: 'Service Item (no stock/serial tracking)' },
+                    { name: 'isFreebie', label: 'Freebie' },
                   ] as const
                 ).map(({ name, label }) => {
                   const isDisabled =
