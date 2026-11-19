@@ -104,6 +104,8 @@ export const createCustomerSchema = z.object({
   // column names rather than being renamed.
   address: z.string().max(1000).optional().or(z.literal('')),
   barangayCode: z.string().max(20).optional().or(z.literal('')),
+  town: z.string().max(100).optional().or(z.literal('')),
+  province: z.string().max(100).optional().or(z.literal('')),
   homeAddress: z.string().max(1000).optional().or(z.literal('')),
   homeBarangayCode: z.string().max(20).optional().or(z.literal('')),
   paymentTerms: z.string().max(50).optional().or(z.literal('')),

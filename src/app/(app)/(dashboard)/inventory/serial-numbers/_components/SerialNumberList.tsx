@@ -842,7 +842,7 @@ export default function SerialNumberList({
                                   >
                                     {serial.goodsReceiptLine?.goodsReceipt ? (
                                       <Link
-                                        href={`/accounting/receiving-reports/${serial.goodsReceiptLine.goodsReceipt.id}`}
+                                        href={`/inventory/stock/reports/${serial.goodsReceiptLine.goodsReceipt.id}`}
                                         onClick={(e) => e.stopPropagation()}
                                         className="underline-offset-2 hover:underline"
                                       >

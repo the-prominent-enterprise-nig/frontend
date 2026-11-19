@@ -169,6 +169,14 @@ function branchLabel(wh: WarehouseSummary): string {
   return isCaravanEnded(wh.branch) ? `${label} (ended)` : label
 }
 
+/** A caravan hosted at the user's own branch — stock that branch answers for. */
+function isOwnCaravan(
+  wh: WarehouseSummary | undefined,
+  branchId: string | null | undefined
+): boolean {
+  return !!branchId && isCaravanBranch(wh?.branch) && wh?.branch?.hostBranch?.id === branchId
+}
+
 const EMPTY_NEW_CARAVAN: NewCaravanFormValues = {
   hostBranchId: '',
   eventName: '',
@@ -513,18 +521,30 @@ export default function CreateTransferModal({
   // theirs to choose. A Warehouse Custodian's destination is never locked. A
   // saved request keeps its route, so editing never flips it.
   const sendsDirect = !isEditing && canSkipApproval && !!watch('skipDestinationApproval')
+  // A caravan the user's branch hosts is that branch's own stock (the backend
+  // scopes it the same way), so sending out of it is a send: the destination
+  // is open to every branch, not only back to the host (NIG, 2026-11-18).
+  const fromOwnCaravan = isOwnCaravan(
+    warehouses.find((wh) => wh.id === fromId),
+    currentUserBranchId
+  )
   // A repair unit dispatched by whoever holds it starts on Main, but the
   // sender may pick another destination.
   const lockedWarehouse =
     (sendsChosenUnits ? undefined : mainWarehouse) ??
-    (!canPickAnyDestination && !sendsDirect && !sendsChosenUnits && ownWarehouseId
+    (!canPickAnyDestination &&
+    !sendsDirect &&
+    !sendsChosenUnits &&
+    !fromOwnCaravan &&
+    ownWarehouseId
       ? ownBranchWarehouses[0]
       : undefined)
   const lockedToWarehouseId = lockedWarehouse?.id
-  // A stockbook dispatch leaves from where the ticked units sit.
+  // A stockbook dispatch leaves from where the ticked units sit; a direct
+  // send out of the user's own caravan keeps the caravan as its source.
   const lockedFromWarehouseId = sendsChosenUnits
     ? initialDraft?.fromWarehouseId
-    : sendsDirect
+    : sendsDirect && !fromOwnCaravan
       ? ownWarehouseId
       : undefined
   const lockedFromWarehouse = warehouses.find((wh) => wh.id === lockedFromWarehouseId)
@@ -665,7 +685,7 @@ export default function CreateTransferModal({
   // destination is the user's own side, keeps to the caravans their branch
   // hosts.
   const caravanScope = caravanScopeBranchId(warehouses, currentUserBranchId)
-  const destinationOpen = canPickAnyDestination || sendsDirect || sendsChosenUnits
+  const destinationOpen = canPickAnyDestination || sendsDirect || sendsChosenUnits || fromOwnCaravan
   const runningCaravans = warehouses.filter(
     (wh) =>
       isCaravanBranch(wh.branch) &&

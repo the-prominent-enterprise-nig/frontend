@@ -133,6 +133,10 @@ export type CustomerFilters = {
   sourceChannel?: string
   groupId?: string
   branchId?: string
+  // The normalised town name from `towns()`, and its province (a name like
+  // San Jose exists in two).
+  town?: string
+  province?: string
   accountType?: CustomerAccountType
   page?: number
   limit?: number
@@ -143,6 +147,14 @@ export const customersApi = {
     api.get<PaginatedResponse<Customer>>('/crm/customers', filters, {
       tags: ['crm:customers'],
     }),
+  // The options of the Customers list's Town filter: every town that has a
+  // customer, with how many.
+  towns: () =>
+    api.get<{ town: string; province?: string; count: number }[]>(
+      '/crm/customers/towns',
+      undefined,
+      { tags: ['crm:customers'] }
+    ),
   // Scenario 29 (CRM dashboard) — real server-side counts per source
   // channel, not derived from the capped `list()` fetch.
   sourceSummary: () =>
