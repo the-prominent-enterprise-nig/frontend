@@ -1072,6 +1072,12 @@ export interface CreateAcknowledgementReceiptInput {
    * The credit goes to that partner's own receivable instead of the customer's
    * Accounts Receivable, and the receipt stays off the customer's ledger. */
   tpfProviderId?: string
+  /** Docket NIG #90 — what a customer's Collection receipt credits when it is
+   * not a Chart of Accounts pick: pay down one aging account
+   * (`installmentAccountId`, required with it) or hold the money as a customer
+   * deposit. Needs `customerId`; not combined with `accountId`. */
+  creditEntry?: 'MONTHLY_INSTALMENT' | 'CUSTOMER_DEPOSIT'
+  installmentAccountId?: string
   reason?: string
   amount: number
   paymentDate: string
@@ -1119,7 +1125,25 @@ export interface UpdateAcknowledgementReceiptInput {
   branchId?: string
   collectorId?: string
 }
+/** Docket NIG #90 — one of a customer's open aging accounts, as the New
+ * Receipt (Collection) form's Aging account pick lists it. */
+export interface AgingAccountOption {
+  id: string
+  accountNumber: string
+  /** The SI No. the customer holds — the account number without our `IA-`. */
+  siNo: string
+  branchName: string | null
+  /** What is still owed, with every collection and receipt laid over it. */
+  outstanding: number
+  nextDueDate: string
+}
 export const AcknowledgementReceipts = {
+  /** A customer's open aging accounts (every branch's), for the Collection
+   * form's Aging account pick when the credit entry is Monthly instalment. */
+  agingAccounts: (customerId: string) =>
+    api.get<AgingAccountOption[]>(
+      `/accounting/acknowledgement-receipts/customers/${customerId}/aging-accounts`
+    ),
   /** `unbanked: 'true'` asks for only what the branch still has to bank —
    * not cancelled, not already on a deposit (Scenario 70 G11). */
   list: (params?: {
