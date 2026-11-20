@@ -15,7 +15,7 @@ function failureMessage(result: ApiResponse<unknown>, fallback: string): string 
   return BACKEND_MESSAGES[text] ?? (text || fallback)
 }
 
-/** Business Owner / Head Office only — the backend refuses anyone else. */
+/** Business Owner / Inventory-EDP Head at Mabini only — the backend refuses anyone else. */
 export async function editSerialNumber(
   serialId: string,
   input: unknown
@@ -34,7 +34,7 @@ export async function editSerialNumber(
   return { success: true, data: result.data, message: 'Serial number updated' }
 }
 
-/** Business Owner / Head Office only; refused once the unit appears on any document. */
+/** Business Owner / Inventory-EDP Head at Mabini only; refused once the unit appears on any document. */
 export async function deleteSerialNumber(serialId: string): Promise<ApiResponse<unknown>> {
   const result = await api.delete(`/inventory/serial-numbers/${serialId}`)
   if (!result.success) {

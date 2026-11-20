@@ -30,7 +30,7 @@ function useRefreshSerials(): () => void {
   }
 }
 
-/** Edit and Delete on one stock book row — rendered for the Business Owner and Head Office. */
+/** Edit and Delete on one stock book row — rendered for the Business Owner and the Inventory/EDP Head at Mabini. */
 export default function SerialOwnerActions({ serial }: { serial: Serial }): React.JSX.Element {
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
