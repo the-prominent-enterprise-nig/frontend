@@ -52,6 +52,10 @@ const EMPTY_LINE = {
   isFreebie: false,
 }
 
+/** One shared empty chain, so a line with no discounts keeps a stable
+ * reference and the derive effect below doesn't re-run every render. */
+const NO_DISCOUNTS: CreatePoFormValues['lines'][number]['discounts'] = []
+
 const CARD = 'rounded-xl border border-[#e4e4e9] bg-white'
 const CARD_HEAD =
   'flex items-center justify-between gap-3.5 border-b border-[#eeeef1] px-[18px] py-[13px]'
@@ -650,7 +654,12 @@ function LineRow(props: LineRowProps): React.ReactElement {
 
   const itemId = useWatch({ control, name: `lines.${index}.itemId` })
   const srp = useWatch({ control, name: `lines.${index}.srp` })
-  const discounts = useWatch({ control, name: `lines.${index}.discounts` })
+  const watchedDiscounts = useWatch({ control, name: `lines.${index}.discounts` })
+  // Removing a line's last discount leaves the array empty, and useWatch then
+  // falls back to the form's default — the discounts the PO was saved with —
+  // so the −% and unit price stuck on the removed discount. The field array's
+  // own rows are the truth for whether any are left.
+  const discounts = discountFields.length === 0 ? NO_DISCOUNTS : watchedDiscounts
   const isFreebie = useWatch({ control, name: `lines.${index}.isFreebie` })
   const quantity = useWatch({ control, name: `lines.${index}.quantity` })
   const unitPrice = useWatch({ control, name: `lines.${index}.unitPrice` })

@@ -8,7 +8,6 @@ import { useQuery } from '@tanstack/react-query'
 import {
   Loader2,
   Send,
-  Archive,
   CheckCircle,
   ChevronDown,
   Download,
@@ -36,7 +35,10 @@ import {
   type PurchaseOrderSummary,
 } from '@/src/schema/inventory/purchase-orders'
 import { getSuppliers } from '../_actions/get-suppliers'
-import { getBranches } from '@/src/app/(app)/(dashboard)/pos/price-lists/_actions/get-branches'
+import {
+  getBranches,
+  type Branch,
+} from '@/src/app/(app)/(dashboard)/pos/price-lists/_actions/get-branches'
 import { getPurchaseOrder } from '../_actions/get-purchase-order'
 import { getPurchaseOrderDocument } from '../_actions/get-purchase-order-document'
 import { downloadReactNodeAsPdf } from '@/src/libs/print/htmlToPdf'
@@ -56,6 +58,8 @@ import {
 } from './procurementTokens'
 import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
 import { procurementHref } from '../_lib/procurementHref'
+import { canEditPoStatus } from '../_lib/poEditRules'
+import { locationLabel } from '@/src/libs/format/locationLabel'
 import {
   OpenRequestsTable,
   RequestCards,
@@ -80,26 +84,66 @@ const STATUS_FILTERS: { label: string; value: PoStatus | undefined }[] = [
   { label: 'Sent', value: 'sent' },
   { label: 'Partial', value: 'partially_received' },
   { label: 'Received', value: 'fully_received' },
-  { label: 'Closed', value: 'closed' },
   { label: 'Cancelled', value: 'cancelled' },
 ]
 
-/** The seven-column track the header, rows and skeletons all share. The last
+/** The eight-column track the header, rows and skeletons all share.
+ * Supplier is the only flexible track, so it takes all the spare width;
+ * Location is fixed at what "Panay Warehouse" needs. The last
  * track holds the row's action buttons and is sized for the widest run of
- * them — a partially-received order with an invoice: Download · Receive ·
- * Close · Receipts · Invoice, ~208px — so they never wrap to a second line.
+ * them — a partially-received order with an invoice, as Head Office sees it:
+ * Download · Edit · Receive · Close · Receipts · Invoice, ~240px — so they
+ * never wrap or spill into the Receiving column.
  * The data columns were trimmed to pay for it rather than letting the grid
  * overflow its card at the 1080px breakpoint. */
 const GRID =
-  'grid grid-cols-[154px_minmax(0,1fr)_98px_106px_114px_132px_216px] gap-x-3 items-center'
+  'grid grid-cols-[154px_minmax(0,1fr)_118px_84px_94px_114px_124px_248px] gap-x-3 items-center'
 /** The same grid without the Total track, for whoever may not see prices. */
 const GRID_NO_TOTAL =
-  'grid grid-cols-[154px_minmax(0,1fr)_98px_114px_132px_216px] gap-x-3 items-center'
+  'grid grid-cols-[154px_minmax(0,1fr)_118px_84px_114px_124px_248px] gap-x-3 items-center'
 
 const SORT_SELECT_CLASS =
   'h-[38px] cursor-pointer appearance-none rounded-lg border border-[#d3d3db] bg-white pl-[11px] pr-[30px] text-[12.5px] text-[#3d3d4a] transition-colors focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc] focus:outline-none'
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+/** The "All locations" choices: Panay and Negros Warehouse first — where
+ * Head Office orders are delivered — then every branch. The two warehouse
+ * branches (PWHSE, NWHSE) stand for the region's standalone warehouse; the
+ * backend maps them (PurchaseOrderService.locationWarehouseWhere). */
+function locationFilterOptions(branches: Branch[]): { value: string; label: string }[] {
+  const isWarehouse = (b: Branch): boolean => b.type === 'warehouse'
+  const warehouseName = (b: Branch): string =>
+    b.region === 'panay' ? 'Panay Warehouse' : b.region === 'negros' ? 'Negros Warehouse' : b.name
+  // Panay before Negros, as the two regions are listed elsewhere.
+  const regionOrder = (b: Branch): number => (b.region === 'panay' ? 0 : 1)
+  const warehouses = branches
+    .filter(isWarehouse)
+    .sort((a, b) => regionOrder(a) - regionOrder(b))
+    .map((b) => ({ value: b.id, label: warehouseName(b) }))
+  const stores = branches
+    .filter((b) => !isWarehouse(b))
+    .map((b) => ({ value: b.id, label: b.name }))
+  return [...warehouses, ...stores]
+}
+
+/** Where the order is headed. A drop-ship order has no Location of ours,
+ * only delivery instructions. */
+function PoLocation({ po }: { po: PurchaseOrderSummary }): React.ReactElement {
+  const label = po.warehouse
+    ? locationLabel(po.warehouse)
+    : po.deliveryInstructions?.trim()
+      ? 'Drop-ship'
+      : 'Not set'
+  return (
+    <span
+      title={label}
+      className={`block break-words text-[12px] ${po.warehouse ? 'text-[#3d3d4a]' : 'text-ink-subtle'}`}
+    >
+      {label}
+    </span>
+  )
+}
 
 function CopyButton({ code }: { code: string }): React.ReactElement {
   const copy = async (e: React.MouseEvent): Promise<void> => {
@@ -265,11 +309,11 @@ export function PurchaseOrderList({
   canApprove,
   canSend,
   canCancel,
-  canClose,
   canEdit,
   canReceive,
   canViewCost,
   canViewApBill,
+  isHeadOffice = false,
   currentUserBranchId,
   session,
 }: {
@@ -280,14 +324,15 @@ export function PurchaseOrderList({
   canApprove: boolean
   canSend: boolean
   canCancel: boolean
-  canClose: boolean
-  /** Scenario 29 PO-06/PO-08 — same PO_UPDATE permission as canClose. */
+  /** Scenario 29 PO-06/PO-08 — the PO_UPDATE permission. */
   canEdit: boolean
   canReceive: boolean
   canViewCost: boolean
   /** Scenario 41 Part 3 — gates "View Invoice" so a role without AP
    * Invoices access doesn't get a link into a page it'll then be denied on. */
   canViewApBill: boolean
+  /** Head Office may also edit or cancel a PO already sent to the supplier. */
+  isHeadOffice?: boolean
   /** Sent as branchId attribution on a created PR — the create modal has no
    * visible branch field (Scenario 27: destination is the Warehouse
    * field), this just flows through to the backend's own server-side
@@ -324,8 +369,6 @@ export function PurchaseOrderList({
     isApproving,
     sendPO,
     isSending,
-    closePO,
-    isClosing,
     cancelPO,
     isCancelling,
     updatePO,
@@ -340,7 +383,6 @@ export function PurchaseOrderList({
   const [cancelTarget, setCancelTarget] = useState<PurchaseOrderSummary | null>(null)
   const [approveTarget, setApproveTarget] = useState<PurchaseOrderSummary | null>(null)
   const [sendTarget, setSendTarget] = useState<PurchaseOrderSummary | null>(null)
-  const [closeTarget, setCloseTarget] = useState<PurchaseOrderSummary | null>(null)
   const [receiptsTarget, setReceiptsTarget] = useState<PurchaseOrderSummary | null>(null)
   const [poViewTarget, setPoViewTarget] = useState<PurchaseOrderSummary | null>(null)
   const [receiveTarget, setReceiveTarget] = useState<PurchaseOrderSummary | null>(null)
@@ -418,7 +460,7 @@ export function PurchaseOrderList({
    * document is still being fetched. */
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
-  const isActing = isApproving || isSending || isClosing || isCancelling || isUpdating
+  const isActing = isApproving || isSending || isCancelling || isUpdating
 
   const suppliersQuery = useQuery({
     queryKey: ['po-filter-suppliers'],
@@ -435,7 +477,7 @@ export function PurchaseOrderList({
     [suppliersQuery.data]
   )
   const branchOptions = useMemo(
-    () => (branchesQuery.data ?? []).map((b) => ({ value: b.id, label: b.name })),
+    () => locationFilterOptions(branchesQuery.data ?? []),
     [branchesQuery.data]
   )
 
@@ -492,8 +534,6 @@ export function PurchaseOrderList({
     // defensive allowance for edge cases, not the intended path), but the
     // UI only exposes it once the order has actually gone out the door.
     const receivable: PoStatus[] = ['sent', 'partially_received']
-    const closable: PoStatus[] = ['sent', 'partially_received', 'fully_received']
-    const editable: PoStatus[] = ['draft', 'approved']
     const receipted: PoStatus[] = ['partially_received', 'fully_received', 'closed']
     const downloading = downloadingId === po.id
     const icon = 'h-3.5 w-3.5'
@@ -509,7 +549,7 @@ export function PurchaseOrderList({
         disabled: downloading,
         run: () => void downloadPdf(po),
       },
-      ...(canEdit && editable.includes(po.status)
+      ...(canEdit && canEditPoStatus(po.status)
         ? [
             {
               key: 'edit',
@@ -559,23 +599,6 @@ export function PurchaseOrderList({
                       description: DESTINATION_REQUIRED_MESSAGE,
                       status: 'error',
                     }),
-            },
-          ]
-        : []),
-      ...(canClose && closable.includes(po.status)
-        ? [
-            {
-              key: 'close',
-              label: po.status === 'fully_received' ? 'Close' : 'Close order',
-              icon: isClosing ? (
-                <Loader2 className={`${icon} animate-spin`} />
-              ) : (
-                <Archive className={icon} />
-              ),
-              tone: 'green' as const,
-              variant: po.status === 'fully_received' ? ('primary' as const) : ('icon' as const),
-              disabled: isActing,
-              run: () => setCloseTarget(po),
             },
           ]
         : []),
@@ -841,6 +864,7 @@ export function PurchaseOrderList({
                 <span role="columnheader" className="pl-1.5">
                   Supplier
                 </span>
+                <span role="columnheader">Location</span>
                 <span role="columnheader">Status</span>
                 {showPrices && (
                   <span role="columnheader" className="text-right">
@@ -848,7 +872,9 @@ export function PurchaseOrderList({
                   </span>
                 )}
                 <span role="columnheader">Source</span>
-                <span role="columnheader">Receiving</span>
+                <span role="columnheader" className="pl-4">
+                  Receiving
+                </span>
                 <span role="columnheader" className="text-right">
                   Actions
                 </span>
@@ -882,19 +908,15 @@ export function PurchaseOrderList({
                         <span className="text-[11px] text-ink-muted">{fmtDate(po.createdAt)}</span>
                       </div>
 
-                      <div role="cell" className="flex min-w-0 items-center gap-[9px] pl-1.5">
-                        <SupplierAvatar name={po.supplier.name} />
-                        <div className="flex min-w-0 flex-col gap-px">
-                          <span className="truncate text-[12.5px] font-medium">
-                            {po.supplier.name}
-                          </span>
-                          {po.supplier.taxId && (
-                            <span className={`${MONO} truncate text-[10.5px] text-ink-muted`}>
-                              TIN {po.supplier.taxId}
-                            </span>
-                          )}
-                        </div>
+                      <div role="cell" className="flex min-w-0 items-center pl-1.5">
+                        <span className="min-w-0 break-words text-[12.5px] font-medium">
+                          {po.supplier.name}
+                        </span>
                       </div>
+
+                      <span role="cell" className="min-w-0">
+                        <PoLocation po={po} />
+                      </span>
 
                       <div role="cell" className="flex flex-col items-start gap-[3px]">
                         <StatusBadge status={po.status} />
@@ -936,7 +958,7 @@ export function PurchaseOrderList({
                         )}
                       </span>
 
-                      <span role="cell" className="min-w-0">
+                      <span role="cell" className="min-w-0 pl-4">
                         <ReceivingCell po={po} />
                       </span>
 
@@ -1005,19 +1027,19 @@ export function PurchaseOrderList({
 
                     <div className="flex min-w-0 items-center gap-[9px]">
                       <SupplierAvatar name={po.supplier.name} />
-                      <div className="flex min-w-0 flex-col gap-px">
-                        <span className="truncate text-[13px] font-medium">{po.supplier.name}</span>
-                        {po.supplier.taxId && (
-                          <span className={`${MONO} text-[10.5px] text-ink-muted`}>
-                            TIN {po.supplier.taxId}
-                          </span>
-                        )}
-                      </div>
+                      <span className="min-w-0 truncate text-[13px] font-medium">
+                        {po.supplier.name}
+                      </span>
                       {showPrices && (
                         <span className={`${MONO} ml-auto text-[14px] font-semibold`}>
                           {fmtPeso(Number(po.totalAmount))}
                         </span>
                       )}
+                    </div>
+
+                    <div className="flex min-w-0 items-baseline gap-2 text-[11.5px]">
+                      <span className="shrink-0 text-ink-muted">Location</span>
+                      <PoLocation po={po} />
                     </div>
 
                     <div className="flex flex-col gap-[5px]">
@@ -1091,14 +1113,16 @@ export function PurchaseOrderList({
               >
                 <span>PO code</span>
                 <span>Supplier</span>
+                <span>Location</span>
                 <span>Status</span>
                 {showPrices && <span className="text-right">Total</span>}
                 <span>Source</span>
-                <span>Receiving</span>
+                <span className="pl-4">Receiving</span>
                 <span className="text-right">Actions</span>
               </div>
               {Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className={`${grid} border-t border-[#f4f4f6] px-4 py-[14px]`}>
+                  <SkeletonBar />
                   <SkeletonBar />
                   <SkeletonBar />
                   <SkeletonBar wide />
@@ -1232,23 +1256,6 @@ export function PurchaseOrderList({
         isConfirming={isSending}
       />
 
-      <ConfirmActionModal
-        open={closeTarget !== null}
-        onClose={() => setCloseTarget(null)}
-        title="Close Purchase Order"
-        icon={<Archive className="h-5 w-5" />}
-        iconColorClass="text-zinc-600"
-        summary={<p className="text-sm font-medium text-zinc-900">{closeTarget?.code}</p>}
-        message="Closing this purchase order marks it as complete — no further receiving can happen against it."
-        confirmLabel="Close"
-        confirmingLabel="Closing…"
-        confirmButtonClass="bg-zinc-800 hover:bg-zinc-900"
-        onConfirm={async () => {
-          if (closeTarget) await closePO(closeTarget.id)
-        }}
-        isConfirming={isClosing}
-      />
-
       <PoDetailModal
         po={effectiveDetailsTarget}
         onClose={closeDetailsTarget}
@@ -1256,8 +1263,8 @@ export function PurchaseOrderList({
         canCancel={canCancel}
         canSend={canSend}
         canReceive={canReceive}
-        canClose={canClose}
         canEdit={canEdit}
+        isHeadOffice={isHeadOffice}
         showPrices={showPrices}
         isDownloading={
           effectiveDetailsTarget != null && downloadingId === effectiveDetailsTarget.id
@@ -1277,10 +1284,6 @@ export function PurchaseOrderList({
         onReceive={(po) => {
           closeDetailsTarget()
           setReceiveTarget(po)
-        }}
-        onCloseOrder={(po) => {
-          closeDetailsTarget()
-          setCloseTarget(po)
         }}
         onEdit={(po) => {
           closeDetailsTarget()

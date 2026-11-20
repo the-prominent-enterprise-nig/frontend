@@ -15,6 +15,8 @@ export type ProcurementHubPermissions = {
   canReceive: boolean
   canViewCost: boolean
   canViewApBill: boolean
+  /** Head Office may also edit or cancel a PO already sent to the supplier. */
+  isHeadOffice: boolean
 }
 
 // Shared by the Purchase Orders page and the Stock Transaction hub so the two
@@ -55,5 +57,6 @@ export function getProcurementHubPermissions(session: SessionUser): ProcurementH
     canViewApBill:
       can(session, ACCOUNTING_PERMISSIONS.AP_BILLS_READ) ||
       can(session, ACCOUNTING_PERMISSIONS.WILDCARD),
+    isHeadOffice: isHeadOffice(session),
   }
 }

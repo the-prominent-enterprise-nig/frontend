@@ -5,6 +5,7 @@ import { api, type ApiResponse } from '@/src/libs/api/client'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { can } from '@/src/libs/guards/permission'
 import { PROCUREMENT_PERMISSIONS } from '@/src/libs/guards/procurement-permissions'
+import { poEditErrorMessage } from '../_lib/poEditRules'
 
 export async function cancelPurchaseOrder(
   id: string,
@@ -33,7 +34,7 @@ export async function cancelPurchaseOrder(
     return {
       success: false,
       error: errStr || 'Failed to cancel purchase order',
-      message: msg || errStr || 'Failed to cancel purchase order',
+      message: poEditErrorMessage(msg || errStr) || 'Failed to cancel purchase order',
     }
   }
 

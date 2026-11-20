@@ -7,7 +7,6 @@ import {
   Ban,
   Send,
   PackagePlus,
-  Archive,
   Pencil,
   Download,
   Eye,
@@ -19,6 +18,7 @@ import { getPurchaseOrderReceipts } from '../_actions/get-purchase-order-receipt
 import { discountChainLabel } from '@/src/libs/format/discount-chain'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { NoDestinationWarning } from './NoDestinationWarning'
+import { canCancelPoStatus, canEditPoStatus } from '../_lib/poEditRules'
 import {
   PLEX,
   MONO,
@@ -44,8 +44,9 @@ type Props = {
   canCancel?: boolean
   canSend?: boolean
   canReceive?: boolean
-  canClose?: boolean
   canEdit?: boolean
+  /** Head Office may also edit or cancel a PO already sent to the supplier. */
+  isHeadOffice?: boolean
   /** Unit price, line totals and the PO total: roles that may see item cost
    * (see canSeeSupplierPrices) only. Everyone else sees quantities. */
   showPrices?: boolean
@@ -55,7 +56,6 @@ type Props = {
   onReceive?: (po: PurchaseOrderSummary) => void
   /** Named distinctly from `onClose` (which dismisses this panel) — this one
    * closes the purchase order itself, settling it. */
-  onCloseOrder?: (po: PurchaseOrderSummary) => void
   onEdit?: (po: PurchaseOrderSummary) => void
   onViewReceipts?: (po: PurchaseOrderSummary) => void
   onViewPo?: (po: PurchaseOrderSummary) => void
@@ -180,14 +180,13 @@ export function PoDetailModal({
   canCancel,
   canSend,
   canReceive,
-  canClose,
   canEdit,
+  isHeadOffice = false,
   showPrices = false,
   onApprove,
   onCancel,
   onSend,
   onReceive,
-  onCloseOrder,
   onEdit,
   onViewReceipts,
   onViewPo,
@@ -237,7 +236,6 @@ export function PoDetailModal({
   // defensive allowance for edge cases, not the intended path), but the UI
   // only exposes it once the order has actually gone out the door.
   const receivable: PoStatus[] = ['sent', 'partially_received']
-  const editable: PoStatus[] = ['draft', 'approved']
   const receipted: PoStatus[] = ['partially_received', 'fully_received', 'closed']
 
   const icon = 'h-3.5 w-3.5'
@@ -500,6 +498,11 @@ export function PoDetailModal({
                               Freebie
                             </span>
                           )}
+                          {line.addedAtReceiving && (
+                            <span className="rounded bg-[#fdf3e7] px-1.5 py-0.5 text-[10px] font-semibold text-[#8a4b06]">
+                              Not on original PO
+                            </span>
+                          )}
                         </div>
                         <p className={`${MONO} text-[10.5px] text-ink-muted`}>{line.item.sku}</p>
                         {line.description && (
@@ -615,7 +618,7 @@ export function PoDetailModal({
           Close
         </button>
 
-        {canEdit && editable.includes(po.status) && (
+        {canEdit && canEditPoStatus(po.status) && (
           <OutlineBtn
             icon={<Pencil className={icon} />}
             label="Edit"
@@ -637,7 +640,7 @@ export function PoDetailModal({
           />
         )}
 
-        {canCancel && (po.status === 'draft' || po.status === 'approved') && (
+        {canCancel && canCancelPoStatus(po, isHeadOffice) && (
           <OutlineBtn
             icon={<Ban className={icon} />}
             label="Cancel PO"
@@ -667,18 +670,6 @@ export function PoDetailModal({
             icon={<PackagePlus className={icon} />}
             label={po.status === 'partially_received' ? 'Receive' : 'Receive Stock'}
             onClick={() => onReceive?.(po)}
-          />
-        )}
-
-        {/* Closing before the order is fully received abandons whatever
-            quantity is still outstanding — this panel only offers it once
-            there's nothing left to receive. */}
-        {canClose && po.status === 'fully_received' && (
-          <PrimaryBtn
-            icon={<Archive className={icon} />}
-            label="Close Order"
-            tone="green"
-            onClick={() => onCloseOrder?.(po)}
           />
         )}
       </div>

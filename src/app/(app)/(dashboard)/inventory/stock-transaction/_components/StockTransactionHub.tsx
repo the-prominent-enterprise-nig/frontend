@@ -160,11 +160,11 @@ function TabBody({
           canApprove={procurement.canApprove}
           canSend={procurement.canSend}
           canCancel={procurement.canCancel}
-          canClose={procurement.canClose}
           canEdit={procurement.canEdit}
           canReceive={procurement.canReceive}
           canViewCost={procurement.canViewCost}
           canViewApBill={procurement.canViewApBill}
+          isHeadOffice={procurement.isHeadOffice}
           currentUserBranchId={session.branchId}
           session={session}
         />

@@ -85,6 +85,8 @@ function getDefaultValues(
       paymentTerms: source.paymentTerms ?? undefined,
       notes: source.notes ?? undefined,
       lines: source.lines.map((line) => ({
+        // Only a PO line is edited in place; a request's lines aren't PO lines.
+        lineId: po ? line.id : undefined,
         itemId: line.itemId,
         quantity: Number(line.quantity),
         unitPrice: line.unitPrice != null ? Number(line.unitPrice) : 0,
@@ -280,9 +282,9 @@ export function CreatePoModal({
         </div>
       </div>
 
-      {isPoEditMode && (po?.status === 'approved' || po?.status === 'sent') && (
+      {isPoEditMode && po?.status === 'approved' && (
         <div className="mx-5 mt-3 rounded-lg border border-[#f7dfc0] bg-[#fdf3e7] px-4 py-2.5 text-[12px] text-[#8a4b06]">
-          This PO is already {po?.status}. Saving changes reverts it to Draft and voids the existing
+          This PO is already approved. Saving changes reverts it to Draft and voids the existing
           approval — it will need to be approved again.
         </div>
       )}

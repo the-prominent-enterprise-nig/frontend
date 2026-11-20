@@ -1,5 +1,6 @@
 'use client'
 
+import { locationLabel } from '@/src/libs/format/locationLabel'
 import { useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
@@ -25,7 +26,6 @@ import { procurementHref } from '../_lib/procurementHref'
 import {
   MONO,
   STATUS_META,
-  SupplierAvatar,
   fmtDate as fmtPoDate,
   fmtPeso,
   type PoStatus,
@@ -314,12 +314,7 @@ function RequestStatus({ pr }: { pr: PurchaseRequestSummary }): React.ReactEleme
 
 function RequestSupplier({ pr }: { pr: PurchaseRequestSummary }): React.ReactElement {
   if (!pr.supplier) return <span className="text-[12.5px] text-ink-subtle">No supplier yet</span>
-  return (
-    <>
-      <SupplierAvatar name={pr.supplier.name} />
-      <span className="truncate text-[12.5px] font-medium">{pr.supplier.name}</span>
-    </>
-  )
+  return <span className="min-w-0 break-words text-[12.5px] font-medium">{pr.supplier.name}</span>
 }
 
 /**
@@ -356,6 +351,9 @@ export function RequestGridRows({
             <div role="cell" className="flex min-w-0 items-center gap-[9px] pl-1.5">
               <RequestSupplier pr={pr} />
             </div>
+            <span role="cell" className="truncate text-[12px] text-[#3d3d4a]">
+              {locationLabel(pr.warehouse, 'Not set')}
+            </span>
             <div role="cell">
               <RequestStatus pr={pr} />
             </div>
@@ -367,7 +365,7 @@ export function RequestGridRows({
             <span role="cell" className="truncate text-[11.5px] text-[#4b4b5a]">
               {pr.branch?.name ?? '—'}
             </span>
-            <span role="cell" className="text-[11.5px] text-ink-subtle">
+            <span role="cell" className="pl-4 text-[11.5px] text-ink-subtle">
               Not ordered yet
             </span>
             <span

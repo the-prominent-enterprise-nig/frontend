@@ -14,6 +14,10 @@ export const LineDiscountSchema = z.object({
 })
 
 export const CreatePoLineSchema = z.object({
+  // The existing PO line, on an edit. Not `id`: useFieldArray keys rows on
+  // that name. Goods receipts point at the line, so the server edits it in
+  // place instead of replacing it.
+  lineId: z.string().optional(),
   itemId: z.string().min(1, 'Item is required'),
   quantity: z.number().positive('Quantity must be greater than 0'),
   unitPrice: z.number().min(0, 'Unit price must be 0 or greater'),
@@ -62,8 +66,9 @@ export const CreatePoServerSchema = CreatePoFormSchema.extend({
   lines: z.array(CreatePoLineServerSchema).min(1, 'At least one line item is required'),
 })
 
-// ─── Update PO (draft/approved/sent — full replace, same shape as create;
-// Scenario 29 PO-16 reverts approved/sent back to draft server-side) ────────
+// ─── Update PO (same shape as create; each line's lineId goes up as `id`).
+// Draft/approved for anyone with the permission — PO-16 reverts approved to
+// draft server-side. Head Office may also edit a sent or received PO. ──────
 
 export const UpdatePoFormSchema = CreatePoFormSchema
 
@@ -185,6 +190,9 @@ const PoLineSchema = z.object({
   lastPriceOverridden: z.boolean().optional().nullable(),
   // Scenario 10 Part 8 — a supplier-given free unit.
   isFreebie: z.boolean().optional().nullable(),
+  // A unit the supplier delivered that wasn't on the order, added to the PO
+  // when it was received.
+  addedAtReceiving: z.boolean().optional().nullable(),
 })
 
 export const PurchaseOrderSummarySchema = z.object({
