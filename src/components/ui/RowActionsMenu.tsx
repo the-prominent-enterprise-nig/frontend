@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, MoreHorizontal, MoreVertical } from 'lucide-react'
 import type { ComponentType } from 'react'
 
@@ -50,15 +51,26 @@ export function RowActionsMenu({
         return
       setOpen(false)
     }
+    // The menu sits at a fixed spot, so any scroll (table or page) or resize closes it.
+    function close(): void {
+      setOpen(false)
+    }
     document.addEventListener('mousedown', handleMouseDown)
-    return () => document.removeEventListener('mousedown', handleMouseDown)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
   }, [open])
 
   function handleToggle() {
     if (!btnRef.current) return
     const rect = btnRef.current.getBoundingClientRect()
     setPos({
-      top: rect.bottom + window.scrollY + 4,
+      // `position: fixed` is viewport-relative, so no scroll offset.
+      top: rect.bottom + 4,
       right: window.innerWidth - rect.right,
     })
     setOpen((o) => !o)
@@ -97,37 +109,42 @@ export function RowActionsMenu({
         )}
       </button>
 
-      {open && pos && (
-        <div
-          ref={menuRef}
-          style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999 }}
-          className="w-max min-w-44 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg"
-        >
-          {items.map((item) => {
-            const Icon = item.icon
-            return (
-              <button
-                key={item.label}
-                type="button"
-                onClick={() => {
-                  item.onClick()
-                  setOpen(false)
-                }}
-                className={`flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-left text-sm ${
-                  item.variant === 'danger'
-                    ? 'text-red-600 hover:bg-red-50'
-                    : item.variant === 'success'
-                      ? 'text-emerald-600 hover:bg-emerald-50'
-                      : 'text-zinc-700 hover:bg-zinc-50'
-                }`}
-              >
-                {Icon && <Icon className="h-3.5 w-3.5" />}
-                {item.label}
-              </button>
-            )
-          })}
-        </div>
-      )}
+      {open &&
+        pos &&
+        // Portalled to <body>: inside a sticky table cell (the stock book's
+        // pinned actions column) the next row's cell would paint over it.
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999 }}
+            className="w-max min-w-44 rounded-lg border border-zinc-200 bg-white py-1 shadow-lg"
+          >
+            {items.map((item) => {
+              const Icon = item.icon
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => {
+                    item.onClick()
+                    setOpen(false)
+                  }}
+                  className={`flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-left text-sm ${
+                    item.variant === 'danger'
+                      ? 'text-red-600 hover:bg-red-50'
+                      : item.variant === 'success'
+                        ? 'text-emerald-600 hover:bg-emerald-50'
+                        : 'text-zinc-700 hover:bg-zinc-50'
+                  }`}
+                >
+                  {Icon && <Icon className="h-3.5 w-3.5" />}
+                  {item.label}
+                </button>
+              )
+            })}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

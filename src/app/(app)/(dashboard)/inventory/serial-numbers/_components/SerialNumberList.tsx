@@ -56,6 +56,10 @@ import {
 import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
 import SerialHistoryContent from '@/src/components/inventory/serial-history/SerialHistoryContent'
 
+// The actions column stays pinned to the right edge while the wide table
+// scrolls sideways, so the ⋮ menu is visible without scrolling.
+const STICKY_ACTIONS = 'sticky right-0 z-[1] shadow-[-1px_0_0_#eeeef1]'
+
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // Matches Stock Balance's own #5b21b6 palette (same StockHub tab group), so
 // the two lists in the Stock hub read as one design language.
@@ -740,6 +744,11 @@ export default function SerialNumberList({
                         <th className="px-4 py-[9px] text-left hidden md:table-cell">Store Age</th>
                         {canViewCost && <th className="px-4 py-[9px] text-right">Cost</th>}
                         <th className="px-4 py-[9px] text-center">Status</th>
+                        {canEditSerials && (
+                          <th className={`${STICKY_ACTIONS} w-12 bg-[#fbfbfc] px-2 py-[9px]`}>
+                            <span className="sr-only">Actions</span>
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#f4f4f6]">
@@ -758,7 +767,7 @@ export default function SerialNumberList({
                                     })
                                 : undefined
                             }
-                            className={`${isLocator || serial.pastUnit ? 'cursor-pointer ' : ''}hover:bg-[#fcfcfd] ${
+                            className={`group ${isLocator || serial.pastUnit ? 'cursor-pointer ' : ''}hover:bg-[#fcfcfd] ${
                               selection.isSelected(serial.id) || inlineSerial?.id === serial.id
                                 ? 'bg-[#f8f4fd]'
                                 : ''
@@ -794,9 +803,6 @@ export default function SerialNumberList({
                                     </span>
                                   )}
                                   <CopySerialButton serialNumber={serial.serialNumber} />
-                                  {canEditSerials && !serial.pastUnit && (
-                                    <SerialOwnerActions serial={serial} />
-                                  )}
                                 </div>
                                 {displayClassificationLabel(serial.item?.type?.name) && (
                                   <span className="text-[13px] text-ink-muted">
@@ -900,10 +906,21 @@ export default function SerialNumberList({
                                 )}
                               </div>
                             </td>
+                            {canEditSerials && (
+                              <td
+                                className={`${STICKY_ACTIONS} px-2 py-[11px] text-right ${
+                                  selection.isSelected(serial.id) || inlineSerial?.id === serial.id
+                                    ? 'bg-[#f8f4fd]'
+                                    : 'bg-white group-hover:bg-[#fcfcfd]'
+                                }`}
+                              >
+                                {!serial.pastUnit && <SerialOwnerActions serial={serial} />}
+                              </td>
+                            )}
                           </tr>
                           {expandedSerial?.id === serial.id && (
                             <tr className="bg-[#fbfbfc]">
-                              <td colSpan={12} className="p-0">
+                              <td colSpan={13} className="p-0">
                                 <div className="flex h-[440px] flex-col overflow-hidden border-t border-[#e4e4e9]">
                                   <SerialHistoryContent
                                     timelineOnly

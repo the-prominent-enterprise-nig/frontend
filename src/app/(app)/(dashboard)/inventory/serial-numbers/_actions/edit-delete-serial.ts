@@ -44,3 +44,16 @@ export async function deleteSerialNumber(serialId: string): Promise<ApiResponse<
   revalidatePath('/inventory/serial-numbers')
   return { success: true, data: result.data, message: 'Serial number deleted' }
 }
+
+export type SerialDeleteCheck = { deletable: boolean; blockers: string[] }
+
+/** What the delete dialog shows before asking: can the unit go, and if not, why. */
+export async function checkSerialDeletable(serialId: string): Promise<SerialDeleteCheck> {
+  const result = await api.get<SerialDeleteCheck>(
+    `/inventory/serial-numbers/${serialId}/delete-check`
+  )
+  if (!result.success || !result.data) {
+    throw new Error(failureMessage(result, 'Could not check this unit'))
+  }
+  return result.data
+}
