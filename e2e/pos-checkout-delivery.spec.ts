@@ -364,8 +364,8 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     await expect(page.getByTestId('order-summary-amount')).toContainText('₱8,000.00')
     await expect(page.getByTestId('order-summary-delivery-fee')).toContainText('₱150.00')
     await expect(page.getByTestId('order-summary-total')).toHaveText('₱8,150.00')
-    // Same at the very bottom. This is the cashier's view only: the Copy
-    // beside the Amount stays the sale's figure (see DT-F07).
+    // Same at the very bottom: Amount, Delivery fee, Total. The fee is paid in
+    // cash by default, so Amount received counts it too (see DT-F07 / DT-F08).
     await expect(page.getByTestId('checkout-sale-amount')).toContainText('₱8,000.00')
     await expect(page.getByTestId('checkout-fee-total')).toContainText('₱150.00')
     await expect(page.getByTestId('checkout-grand-total')).toHaveText('₱8,150.00')
@@ -418,8 +418,9 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
     const customer = await createCustomer(page.request, 'DTF07', withAddress)
     await readyCashSale(page, customer.name, `SI-DTF07-${Date.now()}`)
-    // Copy sits beside the Amount, which is what Amount received takes — the
-    // delivery fee is paid apart, so it is not what gets copied.
+    // Copy puts what Amount received takes on the clipboard. The delivery fee is
+    // paid in cash by default, so the cash handed over is the sale + the fee and
+    // the Copy sits beside the Total.
     await toggle(page).check()
     await fillStable(feeInput(page), '150')
 
@@ -427,15 +428,15 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     await expect(copyButton).toContainText('Copy')
     await copyButton.click()
     await expect(copyButton).toContainText('Copied')
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('8000.00')
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('8150.00')
 
     const received = page.getByLabel('Amount received')
     await received.click()
     await page.keyboard.press('ControlOrMeta+V')
-    await expect(received).toHaveValue('8000.00')
+    await expect(received).toHaveValue('8150.00')
   })
 
-  test("DT-F02: the sale's Amount received covers the sale only — paying the sale total alone is enough, the fee is paid separately", async ({
+  test("DT-F02: a cash fee is handed over with the sale's cash — the sale total alone leaves the fee unpaid, sale + fee is enough", async ({
     page,
   }) => {
     const customer = await createCustomer(page.request, 'DTF02', withAddress)
@@ -447,12 +448,14 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     await fillStable(feeCr(page), `CR-DTF02-FEE-${Date.now()}`)
     await fillPayment(page, `CR-DTF02-SALE-${Date.now()}`, '8000')
 
-    // No "Underpaid" — the ₱150 isn't part of this payment.
+    // The sale alone is ₱150 short of what the customer hands over.
+    await expect(page.getByRole('button', { name: 'Underpaid by ₱150.00' })).toBeVisible()
+    await fillStable(page.getByLabel('Amount received'), '8150')
     await expect(page.getByRole('button', { name: /Underpaid/ })).toHaveCount(0)
     await expect(confirm(page)).toBeVisible()
   })
 
-  test("DT-F03: sale and fee are paid apart — the sale's change is the sale's, and the success screen lists the Sale total and the Delivery fee on separate lines, never added into one total", async ({
+  test("DT-F03: the change is what is left after sale + fee — the sale's payments stay the sale's alone, and the success screen lists the Sale total and the Delivery fee on separate lines, never added into one total", async ({
     page,
   }) => {
     const customer = await createCustomer(page.request, 'DTF03', withAddress)
@@ -467,13 +470,15 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
     // own Paid with.
     await expect(page.getByLabel('Delivery fee amount received')).toHaveCount(0)
     await fillPayment(page, `CR-DTF03-SALE-${Date.now()}`, '8200')
+    // ₱8,200 handed over against ₱8,000 + ₱150: ₱50 back.
+    await expect(page.getByText('Change', { exact: true })).toBeVisible()
 
     await confirm(page).click()
     await expect(page.getByText('Sale Complete', { exact: true })).toBeVisible({
       timeout: 20_000,
     })
-    // The sale's change only — the fee was never in the sale's payment.
-    await expect(page.getByText('Change: ₱200.00')).toBeVisible()
+    // The change is after the fee: ₱8,200 − ₱8,000 − ₱150.
+    await expect(page.getByText('Change: ₱50.00')).toBeVisible()
     await expect(page.getByTestId('success-sale-total-line')).toContainText('Sale total')
     await expect(page.getByTestId('success-sale-total-line')).toContainText('₱8,000.00')
     await expect(page.getByTestId('success-delivery-fee-line')).toContainText('₱150.00')
@@ -494,6 +499,72 @@ test.describe('POS Checkout — Delivery (Scenario 66)', () => {
       method: 'CASH',
       amount: 150,
     })
+  })
+
+  test("DT-F08 (pilot, Caravan): with a cash fee, Use exact is the sale + the fee — the exact cash handed over leaves no change, and the sale's payments and the fee's CR are still apart", async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'DTF08', withAddress)
+    const salesInvoiceNumber = `SI-DTF08-${Date.now()}`
+    const feeCrNumber = `CR-DTF08-FEE-${Date.now()}`
+    await readyCashSale(page, customer.name, salesInvoiceNumber)
+    await toggle(page).check()
+    await expect(page.getByTestId('delivery-customer-address')).toBeVisible({ timeout: 15_000 })
+    await fillStable(feeInput(page), '200')
+    await fillStable(feeCr(page), feeCrNumber)
+
+    // The fee's Paid with is Cash on Hand: the customer hands over ₱8,000 + ₱200.
+    const useExact = page.getByTestId('payment-use-exact-0')
+    await expect(useExact).toContainText('₱8,200.00')
+    await useExact.click()
+    await expect(page.getByLabel('Amount received')).toHaveValue('8200')
+    await expect(page.getByText('Fully collected')).toBeVisible()
+    // No change to give back: the ₱200 is the fee.
+    await expect(page.getByText('Change', { exact: true })).toHaveCount(0)
+
+    await confirm(page).click()
+    await expect(page.getByText('Sale Complete', { exact: true })).toBeVisible({
+      timeout: 20_000,
+    })
+    await expect(page.getByText(/^Change:/)).toHaveCount(0)
+    await expect(page.getByText('Tendered ₱8,200.00')).toBeVisible()
+    await expect(page.getByTestId('success-sale-total-line')).toContainText('₱8,000.00')
+    await expect(page.getByTestId('success-delivery-fee-line')).toContainText('₱200.00')
+
+    const [sale] = await salesBySalesInvoice(page.request, salesInvoiceNumber)
+    const detail = await (await page.request.get(`/api/pos/transactions/${sale.id}`)).json()
+    const tx = detail.data ?? detail
+    // The invoice and the sale's payments are the sale's alone; the fee is on its own CR.
+    expect(Number(tx.totalAmount)).toBe(8000)
+    const paid = (tx.payments as { amount: number | string }[]).reduce(
+      (sum, p) => sum + Number(p.amount),
+      0
+    )
+    expect(paid).toBe(8000)
+    expect(tx.deliveryFeeCollectionReceipt).toMatchObject({
+      reference: feeCrNumber,
+      method: 'CASH',
+      amount: 200,
+    })
+  })
+
+  test("DT-F09 (pilot, Caravan): a fee that is not paid in cash stays out of Amount received — Use exact is the sale's own figure", async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'DTF09', withAddress)
+    await readyCashSale(page, customer.name, `SI-DTF09-${Date.now()}`)
+    await toggle(page).check()
+    await expect(page.getByTestId('delivery-customer-address')).toBeVisible({ timeout: 15_000 })
+    await fillStable(feeInput(page), '200')
+    await expect(page.getByTestId('payment-use-exact-0')).toContainText('₱8,200.00')
+
+    // Paid with Check: not cash at the counter, so it is no part of the cash box.
+    await page
+      .getByTestId('delivery-fee-method')
+      .getByRole('button', { name: 'Check', exact: true })
+      .click()
+    await expect(page.getByTestId('payment-use-exact-0')).toContainText('₱8,000.00')
+    await expect(page.getByTestId('checkout-grand-total')).toHaveText('₱8,200.00')
   })
 
   test("DT-F04: the fee's tender is its own — a sale paid by check does not carry its check onto the fee, and the fee can be paid by a check of its own", async ({
