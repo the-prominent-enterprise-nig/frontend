@@ -1137,6 +1137,84 @@ export interface AgingAccountOption {
   outstanding: number
   nextDueDate: string
 }
+// ============ Customer deposits applied to an aging account (Docket NIG #91) ============
+export type DepositApplicationStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+export interface CustomerDepositRow {
+  id: string
+  receiptId: string
+  date: string
+  /** The CR number off the paper receipt. */
+  reference: string | null
+  /** Where it was received in — a bank, a fund, or Cash on Hand. */
+  receivedIn: string
+  amount: number
+  available: number
+}
+export interface DepositApplicationRow {
+  id: string
+  status: DepositApplicationStatus
+  customerId: string
+  customerName: string | null
+  installmentAccountId: string
+  /** The aging account's SI No. and the branch it sits in. */
+  siNo: string | null
+  branchName: string | null
+  amount: number
+  remarks: string | null
+  /** The deposit receipt(s) it was drawn from. */
+  depositReferences: string[]
+  requestedAt: string
+  requestedBy: string | null
+  resolvedAt: string | null
+  resolvedBy: string | null
+  rejectionReason: string | null
+  /** The date of the entry, once approved. */
+  postingDate: string | null
+  /** Approvals list, for a request that is still waiting. */
+  accountOutstanding?: number | null
+  customerAvailableDeposit?: number | null
+}
+export interface CustomerDepositSummary {
+  customerId: string
+  /** Every live deposit received. */
+  received: number
+  /** Taken by approved applications. */
+  applied: number
+  /** Held by requests waiting for approval (still unapplied). */
+  reserved: number
+  /** What a new request may still draw: received − applied − reserved. */
+  available: number
+  deposits: CustomerDepositRow[]
+  applications: DepositApplicationRow[]
+  /** Account id → what waiting requests hold on it. */
+  pendingByAccount: Record<string, number>
+}
+export const CustomerDeposits = {
+  /** The CRM profile's Deposits card. */
+  summary: (customerId: string) =>
+    api.get<CustomerDepositSummary>(`/accounting/customer-deposits/customers/${customerId}`),
+  /** Approvals & Reviews. */
+  list: (params?: { status?: DepositApplicationStatus; customerId?: string }) =>
+    api.get<{ pendingCount: number; applications: DepositApplicationRow[] }>(
+      '/accounting/customer-deposits/applications',
+      params as any
+    ),
+  apply: (body: {
+    customerId: string
+    installmentAccountId: string
+    amount: number
+    remarks?: string
+  }) => api.post<{ id: string }>('/accounting/customer-deposits/applications', body),
+  cancel: (id: string) =>
+    api.post<{ id: string }>(`/accounting/customer-deposits/applications/${id}/cancel`, {}),
+  approve: (id: string) =>
+    api.post<{ id: string }>(`/accounting/customer-deposits/applications/${id}/approve`, {}),
+  reject: (id: string, reason: string) =>
+    api.post<{ id: string }>(`/accounting/customer-deposits/applications/${id}/reject`, {
+      reason,
+    }),
+}
+
 export const AcknowledgementReceipts = {
   /** A customer's open aging accounts (every branch's), for the Collection
    * form's Aging account pick when the credit entry is Monthly instalment. */

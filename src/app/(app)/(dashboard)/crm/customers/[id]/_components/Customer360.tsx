@@ -25,6 +25,8 @@ import { TransactionDetail } from '@/src/app/(app)/(dashboard)/pos/_components/T
 import { RowActionsMenu } from '@/src/components/ui/RowActionsMenu'
 import ScheduleReminderModal from '@/src/components/crm/ScheduleReminderModal'
 import AgingAccountsList from '@/src/components/crm/AgingAccountsList'
+import CustomerDepositsCard from '@/src/components/crm/CustomerDepositsCard'
+import { CustomerDeposits, type CustomerDepositSummary } from '@/src/libs/data/AccountingV2Data'
 import { REMINDERS_ENABLED } from '@/src/libs/features'
 import { getSessionIfAvailable } from '@/src/libs/auth/actions'
 import { type SessionUser } from '@/src/libs/guards/permission'
@@ -134,6 +136,7 @@ export default function Customer360({
   canDelete,
   canScheduleReminder,
   canApplyForCredit,
+  canApplyDeposit = false,
   currentUserId,
   tenantId,
   scope = 'crm',
@@ -143,6 +146,9 @@ export default function Customer360({
   canDelete: boolean
   canScheduleReminder: boolean
   canApplyForCredit: boolean
+  /** Docket #91 — Head Office AR: may ask to apply the customer's deposit to an
+   * aging account. Everyone else sees the deposit and no button. */
+  canApplyDeposit?: boolean
   currentUserId: string
   tenantId: string
   /** Which module this view is mounted under. POS reuses this exact
@@ -182,6 +188,9 @@ export default function Customer360({
   const [agingAccounts, setAgingAccounts] = useState<InstallmentSchedule[]>([])
   const [installmentLoading, setInstallmentLoading] = useState(true)
   const [installmentError, setInstallmentError] = useState<string | null>(null)
+  // Docket #91 — what the customer has paid ahead of any bill, still unapplied.
+  // Read from the CRM profile only: its route is the CRM customers read.
+  const [deposits, setDeposits] = useState<CustomerDepositSummary | null>(null)
   // Scenario 23 Gap 2 (developer-requested redesign, 2026-08-09) — each
   // schedule collapses to a summary row (product + term); the full
   // due-date/invoice-number/rebate breakdown lives behind a click, matching
@@ -242,6 +251,18 @@ export default function Customer360({
       setLoading(false)
     })
   }, [id])
+
+  function loadDeposits() {
+    CustomerDeposits.summary(id).then((res) => {
+      if (res.success && res.data) setDeposits(res.data)
+    })
+  }
+
+  useEffect(() => {
+    if (!isCrm) return
+    loadDeposits()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, isCrm])
 
   useEffect(() => {
     customersApi.getInstallmentSchedules(id, { withAgingAccounts: true }).then((res) => {
@@ -355,6 +376,13 @@ export default function Customer360({
                   />
                 )}
               </>
+            )}
+            {deposits && deposits.received - deposits.applied > 0 && (
+              <HeaderChip
+                label="Deposit"
+                value={formatPeso(deposits.received - deposits.applied)}
+                className="bg-prominent-purple-50 text-prominent-purple-800 ring-prominent-purple-200"
+              />
             )}
           </div>
           {(() => {
@@ -590,9 +618,31 @@ export default function Customer360({
         </section>
       </div>
 
+      {isCrm && deposits && (
+        <div className="mt-4">
+          <CustomerDepositsCard
+            customerId={id}
+            summary={deposits}
+            agingAccounts={agingAccounts}
+            canApply={canApplyDeposit}
+            onChanged={loadDeposits}
+          />
+        </div>
+      )}
+
       {agingAccounts.length > 0 && (
         <div className="mt-4">
-          <AgingAccountsList plans={agingAccounts} />
+          <AgingAccountsList
+            plans={agingAccounts}
+            deposit={
+              isCrm && deposits
+                ? {
+                    unapplied: deposits.received - deposits.applied,
+                    pendingByAccount: deposits.pendingByAccount,
+                  }
+                : undefined
+            }
+          />
         </div>
       )}
 

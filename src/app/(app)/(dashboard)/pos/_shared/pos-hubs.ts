@@ -16,6 +16,7 @@ import {
   Monitor,
   PackageCheck,
   PauseCircle,
+  PiggyBank,
   ReceiptText,
   Settings as SettingsIcon,
   ShieldCheck,
@@ -31,6 +32,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { CREDIT_PERMISSIONS } from '@/src/libs/guards/credit-permissions'
+import { CRM_PERMISSIONS } from '@/src/libs/guards/crm-permissions'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
 import { POS_PERMISSIONS } from '@/src/libs/guards/pos-permissions'
 import { RESERVATION_ACCESS } from '@/src/libs/guards/shared-ownership'
@@ -418,6 +420,20 @@ export const APPROVALS_REVIEWS_HUB: PosHub = {
       href: '/pos/cancellation-requests',
       icon: ClipboardX,
       permissions: [POS_PERMISSIONS.TRANSACTIONS_OVERRIDE],
+    },
+    {
+      // Docket #91 — requests to apply a customer's deposit to an aging
+      // account. Head Office AR (apply) sees and cancels its own; the Approver
+      // (approve) decides. Neither permission comes through a wildcard, so a
+      // Cashier has no tab.
+      id: 'deposit-applications',
+      label: 'Deposit Applications',
+      href: '/pos/deposit-applications',
+      icon: PiggyBank,
+      permissions: [
+        CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_APPLY_DEPOSIT,
+        CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_APPROVE_DEPOSIT,
+      ],
     },
   ],
 }

@@ -32,10 +32,18 @@ export const CRM_OWNER_ONLY_EDITS: readonly string[] = [
   'pos:customers:update',
 ]
 
+/** Apply a customer's unapplied deposit to an aging account (Docket #91). */
+export const DEPOSIT_APPLY = 'crm:installment-accounts:apply_deposit'
+
+/** Approve or reject such a request (Docket #91). */
+export const DEPOSIT_APPROVE = 'crm:installment-accounts:approve_deposit'
+
 const EXPLICIT_ONLY: ReadonlySet<string> = new Set([
   RECORDED_ENTRIES_EDIT,
   NEW_RECEIPTS_EDIT,
   RECORDED_SALES_EDIT,
+  DEPOSIT_APPLY,
+  DEPOSIT_APPROVE,
   ...CRM_OWNER_ONLY_EDITS,
 ])
 
