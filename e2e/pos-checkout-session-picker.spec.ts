@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext } from '@playwright/test'
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
 import { gotoReady, loginAs } from './utils'
 
 // Checkout asks which cashier session a sale is for before the cart opens
@@ -370,3 +370,213 @@ async function ensureOwnSessionAt(
     ) ?? null
   )
 }
+
+// Switching the branch in Checkout must show that branch's open sessions,
+// never "No Open Session" while one is open there (bug, 2026-11-20).
+test.describe('POS checkout — switching the branch', () => {
+  // A branch with no session open at the start, so Checkout first sees it empty.
+  const EMPTY_FIRST = 'Candoni'
+
+  type Branch = { id: string; name: string }
+
+  async function branchNamed(request: APIRequestContext, name: string): Promise<Branch> {
+    const all = ((await (await request.get('/api/branches?limit=200')).json()).data ??
+      []) as Branch[]
+    const branch = all.find((b) => b.name === name)
+    expect(branch, `branch ${name}`).toBeTruthy()
+    return branch!
+  }
+
+  /** Sets the POS branch switcher as if picked, before Checkout loads. */
+  async function startOnBranch(page: Page, branch: Branch): Promise<void> {
+    await gotoReady(page, '/pos/sessions')
+    await page.evaluate(
+      (value) => localStorage.setItem('pos-branch-context', value),
+      JSON.stringify({ state: { branchId: branch.id, branchName: branch.name }, version: 0 })
+    )
+  }
+
+  /** Picks a branch in the switcher at the top of the POS pages. */
+  async function switchBranch(page: Page, name: string): Promise<void> {
+    const switcher = page.getByTestId('pos-branch-switcher')
+    await switcher.getByRole('combobox').click()
+    await switcher.getByLabel('Search branches').fill(name)
+    await switcher.getByRole('option', { name, exact: true }).click()
+  }
+
+  test("switching to a branch with an open session offers it, not 'No Open Session'", async ({
+    page,
+    request,
+  }) => {
+    const own = await ensureOwnSessionAt(request, OTHER_BRANCH)
+    test.skip(!own, `no free ${OTHER_BRANCH} terminal for the owner's own session`)
+    await startOnBranch(page, await branchNamed(request, EMPTY_FIRST))
+    await gotoReady(page, '/pos/checkout')
+    await expect(page.getByText('No Open Session')).toBeVisible({ timeout: 30_000 })
+
+    await switchBranch(page, OTHER_BRANCH)
+    await expect(
+      page
+        .getByTestId('checkout-session-picker')
+        .getByTestId('checkout-session-option')
+        .filter({ hasText: OTHER_BRANCH })
+    ).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('No Open Session')).toHaveCount(0)
+  })
+
+  test('a session opened after Checkout saw the branch empty is offered when switching back', async ({
+    page,
+    request,
+  }) => {
+    const empty = await branchNamed(request, EMPTY_FIRST)
+    const openThere = (await openSessions(request)).filter(
+      (s) => s.terminal?.branch?.name === EMPTY_FIRST
+    )
+    test.skip(openThere.length > 0, `${EMPTY_FIRST} already has an open session`)
+
+    // Checkout sees the branch with nothing open.
+    await startOnBranch(page, empty)
+    await gotoReady(page, '/pos/checkout')
+    await expect(page.getByText('No Open Session')).toBeVisible({ timeout: 30_000 })
+
+    // A session opens there meanwhile (another tab, another till), then the
+    // seller looks at another branch and comes back.
+    const opened = await ensureOwnSessionAt(request, EMPTY_FIRST)
+    test.skip(!opened, `no free ${EMPTY_FIRST} terminal`)
+    try {
+      await switchBranch(page, BRANCH)
+      await switchBranch(page, EMPTY_FIRST)
+      await expect(
+        page
+          .getByTestId('checkout-session-picker')
+          .getByTestId('checkout-session-option')
+          .filter({ hasText: EMPTY_FIRST })
+      ).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByText('No Open Session')).toHaveCount(0)
+    } finally {
+      await closeAtExpected(request, opened!.id)
+    }
+  })
+
+  test('a session closed elsewhere is gone when switching back, ending on "No Open Session"', async ({
+    page,
+    request,
+  }) => {
+    // The other way round: Checkout saw the session, then it closed elsewhere.
+    const CLOSED_LATER = 'Canlaon'
+    const opened = await ensureOwnSessionAt(request, CLOSED_LATER)
+    test.skip(!opened, `no free ${CLOSED_LATER} terminal`)
+    await startOnBranch(page, await branchNamed(request, CLOSED_LATER))
+    await gotoReady(page, '/pos/checkout')
+    const option = page
+      .getByTestId('checkout-session-picker')
+      .getByTestId('checkout-session-option')
+      .filter({ hasText: CLOSED_LATER })
+    await expect(option).toBeVisible({ timeout: 30_000 })
+
+    await closeAtExpected(request, opened!.id)
+    await switchBranch(page, BRANCH)
+    await switchBranch(page, CLOSED_LATER)
+    // Not offered from the old list, and not stuck on "Checking open sessions…".
+    await expect(page.getByText('No Open Session')).toBeVisible({ timeout: 30_000 })
+    await expect(option).toHaveCount(0)
+    await expect(page.getByTestId('checkout-sessions-checking')).toHaveCount(0)
+  })
+
+  test('the kept session comes back on switching back to its branch; switching away is not a "closed" session', async ({
+    page,
+    request,
+  }) => {
+    const own = await ensureOwnSessionAt(request, OTHER_BRANCH)
+    test.skip(!own, `no free ${OTHER_BRANCH} terminal for the owner's own session`)
+    await startOnBranch(page, await branchNamed(request, OTHER_BRANCH))
+    await gotoReady(page, '/pos/checkout')
+    const picker = page.getByTestId('checkout-session-picker')
+    const active = page.getByTestId('checkout-active-session')
+    await expect(async () => {
+      await picker
+        .getByTestId('checkout-session-option')
+        .filter({ hasText: OTHER_BRANCH })
+        .first()
+        .click({ timeout: 3_000 })
+      await expect(active).toHaveAttribute('data-session-id', own!.id, { timeout: 3_000 })
+    }).toPass({ timeout: 30_000 })
+
+    // Away to Bago: the Binalbagan session is not Bago's, so it is dropped,
+    // without the message meant for a session that really closed.
+    await switchBranch(page, BRANCH)
+    await expect(picker.or(page.getByText('No Open Session'))).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('The session you were using has been closed')).toHaveCount(0)
+
+    // Back to Binalbagan: straight onto the kept session, no picker.
+    await switchBranch(page, OTHER_BRANCH)
+    await expect(active).toHaveAttribute('data-session-id', own!.id, { timeout: 30_000 })
+    await expect(picker).toHaveCount(0)
+  })
+})
+
+test.describe('POS checkout — searching the session dropdown', () => {
+  test('typing filters the list by branch, terminal or cashier; no match says so', async ({
+    page,
+    request,
+    browser,
+  }) => {
+    const cashierContext = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
+    })
+    const cashierPage = await cashierContext.newPage()
+    await loginAs(cashierPage, CASHIER_EMAIL, DEV_PASSWORD)
+    const cashierSession = await ensureCashierBagoSession(cashierPage.request)
+    await cashierContext.close()
+    const own = await ensureOwnSessionAt(request, OTHER_BRANCH)
+    test.skip(!own, `no free ${OTHER_BRANCH} terminal for the owner's own session`)
+
+    await gotoReady(page, '/pos/checkout')
+    const picker = page.getByTestId('checkout-session-picker')
+    const active = page.getByTestId('checkout-active-session')
+    await expect(picker).toBeVisible({ timeout: 30_000 })
+    test.skip(
+      !(await picker
+        .getByTestId('checkout-session-option')
+        .filter({ hasText: OTHER_BRANCH })
+        .count()),
+      `the branch switcher is not on All Branches, so ${OTHER_BRANCH} is not offered`
+    )
+    await expect(async () => {
+      await picker
+        .getByTestId('checkout-session-option')
+        .filter({ hasText: OTHER_BRANCH })
+        .first()
+        .click({ timeout: 3_000 })
+      await expect(active).toHaveAttribute('data-session-id', own!.id, { timeout: 3_000 })
+    }).toPass({ timeout: 30_000 })
+
+    await active.click()
+    const search = page.getByTestId('checkout-session-search')
+    await expect(search).toBeFocused()
+    const options = page.getByTestId('checkout-session-switch-option')
+
+    // By branch: only that branch's sessions are left.
+    await search.fill(BRANCH)
+    await expect(options.filter({ hasText: BRANCH }).first()).toBeVisible()
+    await expect(options.filter({ hasText: OTHER_BRANCH })).toHaveCount(0)
+
+    // By cashier name.
+    const cashierName = cashierSession.cashier?.name ?? ''
+    test.skip(!cashierName, 'the cashier session has no cashier name')
+    await search.fill(cashierName)
+    await expect(options.filter({ hasText: cashierName }).first()).toBeVisible()
+    await expect(options.filter({ hasText: OTHER_BRANCH })).toHaveCount(0)
+
+    // Nothing matches.
+    await search.fill('zzzz-no-such-session')
+    await expect(options).toHaveCount(0)
+    await expect(page.getByText('No sessions match')).toBeVisible()
+
+    // Closing empties the search, so the list reopens whole.
+    await page.keyboard.press('Escape')
+    await active.click()
+    await expect(page.getByTestId('checkout-session-search')).toHaveValue('')
+    await expect(options.filter({ hasText: OTHER_BRANCH }).first()).toBeVisible()
+  })
+})

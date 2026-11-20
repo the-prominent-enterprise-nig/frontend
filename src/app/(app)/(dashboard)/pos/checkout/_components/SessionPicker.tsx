@@ -1,7 +1,15 @@
 'use client'
 
 import { useEffect, useId, useRef, useState } from 'react'
-import { AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronRight, Monitor } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Monitor,
+  Search,
+} from 'lucide-react'
 import type { PosSession } from '@/src/schema/pos'
 import { formatManilaDateTime } from '@/src/libs/format/manila-date'
 
@@ -124,6 +132,19 @@ function orderSessions(sessions: PosSession[], currentUserId: string | null): Po
   })
 }
 
+/** Whether a session matches what was typed in a search box: its branch and
+ * terminal (the label) or its cashier, every word anywhere, any case. */
+function matchesSessionSearch(
+  session: PosSession,
+  query: string,
+  labelFor: (s: PosSession) => string
+): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return true
+  const haystack = `${labelFor(session)} ${session.cashier?.name ?? ''}`.toLowerCase()
+  return words.every((w) => haystack.includes(w))
+}
+
 /** "Bago Cashier (you) · Opened Nov 16, 11:27 AM" */
 function SessionMeta({ session, mine }: { session: PosSession; mine: boolean }) {
   return (
@@ -163,16 +184,28 @@ export function SessionSwitcher({
   disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
+  // What is typed in the list's search box. Emptied whenever the list closes,
+  // so it always reopens showing every session.
+  const [query, setQuery] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
   const listboxId = useId()
 
+  function close() {
+    setOpen(false)
+    setQuery('')
+  }
+
   useEffect(() => {
     if (!open) return
+    function shut() {
+      setOpen(false)
+      setQuery('')
+    }
     function handleMouseDown(e: MouseEvent) {
-      if (!containerRef.current?.contains(e.target as Node)) setOpen(false)
+      if (!containerRef.current?.contains(e.target as Node)) shut()
     }
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') shut()
     }
     document.addEventListener('mousedown', handleMouseDown)
     document.addEventListener('keydown', handleKeyDown)
@@ -188,6 +221,9 @@ export function SessionSwitcher({
   const selectedText = `${labelFor(selected)} · ${selected.cashier?.name || 'Cashier'}${
     selectedMine ? ' (you)' : ''
   }`
+  const visibleSessions = orderSessions(sessions, currentUserId).filter((s) =>
+    matchesSessionSearch(s, query, labelFor)
+  )
 
   return (
     <div ref={containerRef} className="relative min-w-0">
@@ -201,7 +237,7 @@ export function SessionSwitcher({
         data-testid="checkout-active-session"
         data-session-id={selected.id}
         disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? close() : setOpen(true))}
         className="flex max-w-xs min-w-0 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-left text-sm outline-none transition-colors hover:border-purple-300 focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500 disabled:cursor-not-allowed disabled:opacity-50 sm:max-w-sm"
       >
         <Monitor size={14} className="shrink-0 text-purple-600" />
@@ -212,46 +248,68 @@ export function SessionSwitcher({
       </button>
 
       {open && !disabled && (
-        <div
-          id={listboxId}
-          role="listbox"
-          className="absolute left-0 top-full z-50 mt-1 max-h-80 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-zinc-200 bg-white p-1 shadow-lg"
-        >
-          {orderSessions(sessions, currentUserId).map((s) => {
-            const isSelected = s.id === value
-            return (
-              <button
-                key={s.id}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                data-testid="checkout-session-switch-option"
-                onClick={() => {
-                  setOpen(false)
-                  if (!isSelected) onChoose(s.id)
-                }}
-                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-purple-50 ${
-                  isSelected ? 'bg-purple-50' : ''
-                }`}
-              >
-                <Monitor size={16} className="shrink-0 text-purple-600" />
-                <span className="min-w-0 flex-1">
-                  <span
-                    className={`block truncate text-sm font-semibold ${
-                      isSelected ? 'text-prominent-purple-700' : 'text-gray-900'
-                    }`}
-                  >
-                    {labelFor(s)}
+        <div className="absolute left-0 top-full z-50 mt-1 flex w-80 max-w-[calc(100vw-2rem)] flex-col rounded-xl border border-zinc-200 bg-white shadow-lg">
+          {/* Typing filters straight away: the box has focus as the list opens. */}
+          <div className="border-b border-zinc-100 p-2">
+            <div className="relative">
+              <Search
+                size={14}
+                className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400"
+              />
+              <input
+                autoFocus
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search branch, terminal or cashier"
+                aria-label="Search sessions"
+                data-testid="checkout-session-search"
+                className="w-full rounded-lg border border-zinc-200 py-1.5 pl-8 pr-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+              />
+            </div>
+          </div>
+          <div id={listboxId} role="listbox" className="max-h-72 overflow-y-auto p-1">
+            {visibleSessions.length === 0 && (
+              <p className="px-3 py-4 text-center text-sm text-zinc-500">
+                No sessions match &ldquo;{query.trim()}&rdquo;
+              </p>
+            )}
+            {visibleSessions.map((s) => {
+              const isSelected = s.id === value
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  data-testid="checkout-session-switch-option"
+                  onClick={() => {
+                    close()
+                    if (!isSelected) onChoose(s.id)
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-purple-50 ${
+                    isSelected ? 'bg-purple-50' : ''
+                  }`}
+                >
+                  <Monitor size={16} className="shrink-0 text-purple-600" />
+                  <span className="min-w-0 flex-1">
+                    <span
+                      className={`block truncate text-sm font-semibold ${
+                        isSelected ? 'text-prominent-purple-700' : 'text-gray-900'
+                      }`}
+                    >
+                      {labelFor(s)}
+                    </span>
+                    <SessionMeta
+                      session={s}
+                      mine={!!currentUserId && s.cashierId === currentUserId}
+                    />
                   </span>
-                  <SessionMeta
-                    session={s}
-                    mine={!!currentUserId && s.cashierId === currentUserId}
-                  />
-                </span>
-                {isSelected && <Check className="h-4 w-4 shrink-0 text-prominent-purple-700" />}
-              </button>
-            )
-          })}
+                  {isSelected && <Check className="h-4 w-4 shrink-0 text-prominent-purple-700" />}
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>

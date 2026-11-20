@@ -181,7 +181,10 @@ export function useRemoveCashier() {
 
 export function useSessions(
   filters?: Parameters<typeof getSessions>[0],
-  options?: { refetchInterval?: number; refetchOnWindowFocus?: boolean }
+  /** `staleTime: 0` asks the server every time the filters change, instead of
+   * reusing a list up to a minute old (Checkout: a session opened from another
+   * tab or till must show when the branch is switched back). */
+  options?: { refetchInterval?: number; refetchOnWindowFocus?: boolean; staleTime?: number }
 ) {
   return useQuery({
     queryKey: ['pos-sessions', filters],

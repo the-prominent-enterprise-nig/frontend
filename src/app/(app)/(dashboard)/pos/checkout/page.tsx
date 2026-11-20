@@ -759,10 +759,16 @@ export default function CheckoutPage() {
     isLoading: sessionsLoading,
     isFetching: sessionsFetching,
     isFetchedAfterMount: sessionsFreshSinceMount,
-  } = useSessions({
-    status: 'open',
-    ...(switcherBranchId ? { branchId: switcherBranchId } : {}),
-  })
+  } = useSessions(
+    {
+      status: 'open',
+      ...(switcherBranchId ? { branchId: switcherBranchId } : {}),
+    },
+    // Fresh on every visit and every branch switch. Reusing a branch's list
+    // for up to a minute (the default) kept saying "No Open Session" after a
+    // session was opened there from another tab or till (bug, 2026-11-20).
+    { staleTime: 0 }
+  )
   const rawSessions = sessionsData?.data
   // A caravan's register is stored on its host, so the host's session list
   // includes it — but checkout only offers registers that are at the
@@ -6197,6 +6203,24 @@ export default function CheckoutPage() {
       >
         <Loader2 size={16} className="animate-spin text-purple-600" />
         Opening your session…
+      </div>
+    )
+  }
+
+  // ─── Checking open sessions ────────────────────────────────────────────────
+  // Nothing listed yet, but the first fresh list for this branch is still on
+  // its way: the one showing is the previous branch's, or an older copy of
+  // this one. Say so rather than "No Open Session" until the server answers.
+  // A later background refresh does not bring this back.
+
+  if (sessionsData && openSessions.length === 0 && sessionsFetching && !sessionsFreshSinceMount) {
+    return (
+      <div
+        data-testid="checkout-sessions-checking"
+        className="flex min-h-full items-center justify-center gap-2 bg-zinc-50 p-10 text-sm text-gray-500"
+      >
+        <Loader2 size={16} className="animate-spin text-purple-600" />
+        Checking open sessions…
       </div>
     )
   }
