@@ -38,6 +38,8 @@ export default function CollectionPaymentBlock({
   tiles: DeliveryFeeTender[]
   resolved: {
     tile: DeliveryFeeTender
+    /** A method button has been pressed — until then none is shown as picked. */
+    chosen: boolean
     method: string
     options: { id: string; name: string }[]
     optionId: string | undefined
@@ -71,18 +73,21 @@ export default function CollectionPaymentBlock({
       </div>
 
       <div
-        className="rounded-lg border border-purple-100 p-2.5"
+        className={`rounded-lg border p-2.5 ${
+          invalid.has('method') ? 'border-red-400' : 'border-purple-100'
+        }`}
         data-testid={`collection-method-${index}`}
+        aria-invalid={invalid.has('method')}
       >
         <div className="flex flex-wrap gap-1.5">
           {tiles.map((tile) => (
             <button
               key={tile}
               type="button"
-              aria-pressed={resolved.tile === tile}
+              aria-pressed={resolved.chosen && resolved.tile === tile}
               onClick={() => onChange({ tile, optionId: '', bankReferenceNumber: '' })}
               className={`min-w-22 flex-1 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors ${
-                resolved.tile === tile
+                resolved.chosen && resolved.tile === tile
                   ? 'bg-purple-200 text-purple-700'
                   : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}

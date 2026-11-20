@@ -82,6 +82,11 @@ test.describe('POS Collections — rebate', () => {
     await rebateBox.check()
     await expect.poll(async () => pesos(await netCell(page).innerText())).toBe(net)
 
+    // The payment method has to be picked (20 Nov).
+    await page
+      .getByTestId('collection-method-0')
+      .getByRole('button', { name: 'Cash on Hand', exact: true })
+      .click()
     await fillMoney(page.getByTestId('collection-amount-0'), net)
     await fillCrNumber(page, 'REBATE')
     await page.getByRole('button', { name: 'Collect payment' }).click()

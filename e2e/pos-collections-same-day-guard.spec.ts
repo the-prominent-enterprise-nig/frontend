@@ -39,6 +39,11 @@ const rebateCell = (page: Page) => previewRow(page).locator('td').nth(3)
 const rebateBox = (page: Page) => rebateCell(page).getByRole('checkbox')
 
 async function collectAmount(page: Page, amount: number): Promise<void> {
+  // The payment method has to be picked (20 Nov).
+  await page
+    .getByTestId('collection-method-0')
+    .getByRole('button', { name: 'Cash on Hand', exact: true })
+    .click()
   await fillMoney(page.getByTestId('collection-amount-0'), amount)
   await fillCrNumber(page, 'GUARD')
   await collect(page).click()

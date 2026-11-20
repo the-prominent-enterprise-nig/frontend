@@ -1226,6 +1226,7 @@ function PaymentPanel({
       amount: r.amount,
       method: r.method,
       bankReferenceNumber: payments[i].bankReferenceNumber,
+      methodChosen: r.chosen,
       option:
         r.options.length > 0 && TILE_OPTION_LABEL[r.tile]
           ? { label: TILE_OPTION_LABEL[r.tile]!, chosen: !!r.optionId }

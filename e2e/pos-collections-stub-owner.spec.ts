@@ -74,6 +74,11 @@ async function createCollector(
 async function startCollecting(page: Page, customerName: string): Promise<void> {
   await openCustomerOnCollections(page, customerName)
   await tickDue(page, 1)
+  // The payment method has to be picked (20 Nov).
+  await page
+    .getByTestId('collection-method-0')
+    .getByRole('button', { name: 'Cash on Hand', exact: true })
+    .click()
   await fillMoney(page.getByTestId('collection-amount-0'), 1)
 }
 

@@ -222,8 +222,14 @@ async function createInstallmentPlan(page: Page, label: string) {
   return customer
 }
 
-/** Opens the collection panel on the plan's first due (the one picked). */
-async function openFirstDue(page: Page, customerName: string): Promise<void> {
+/** Opens the collection panel on the plan's first due (the one picked). The
+ * payment method has to be picked (20 Nov: the panel no longer opens on Cash),
+ * so Cash on Hand is pressed unless a test is about that very choice. */
+async function openFirstDue(
+  page: Page,
+  customerName: string,
+  { pickCash = true }: { pickCash?: boolean } = {}
+): Promise<void> {
   await gotoReady(page, '/pos/collections')
   await fillStable(page.getByPlaceholder('Filter by name or phone…'), customerName)
   const row = page.locator('ul > li > button').filter({ hasText: customerName })
@@ -239,6 +245,12 @@ async function openFirstDue(page: Page, customerName: string): Promise<void> {
   await expect(
     page.getByTestId('collection-method-0').getByRole('button', { name: 'Debit/Credit Card' })
   ).toBeVisible({ timeout: 15_000 })
+  if (pickCash) {
+    await page
+      .getByTestId('collection-method-0')
+      .getByRole('button', { name: 'Cash on Hand', exact: true })
+      .click()
+  }
 }
 
 /** What the panel says is due, net of any rebate left ticked: the Net cell. */
@@ -468,5 +480,39 @@ test.describe('POS Collections — several payments in one collection', () => {
     await toggle.click()
     await expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await expect(dues.first().getByRole('checkbox')).toBeChecked()
+  })
+
+  // 20 Nov 2026 — Pandan left the method alone and the payment was recorded as
+  // Cash, which the branch then had to reverse. The panel opens with no method
+  // picked, and Collect payment lists it until one is.
+  test('CM-F09: the payment method is required — none is pressed when the panel opens, and Collect payment lists it until one is picked', async ({
+    page,
+  }) => {
+    const customer = await createInstallmentPlan(page, 'F09')
+    await openFirstDue(page, customer.name, { pickCash: false })
+
+    const method = page.getByTestId('collection-method-0')
+    for (const name of ['Cash on Hand', 'Check', 'Bank Transfer', 'Debit/Credit Card']) {
+      await expect(method.getByRole('button', { name, exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'false'
+      )
+    }
+
+    await fillMoney(amount(page, 0), '100')
+    await fillStable(page.getByTestId('collection-cr-number'), `CR-CM-F09-${Date.now()}`)
+    await collect(page).click()
+    const issues = page.getByTestId('collection-issues')
+    await expect(issues).toContainText('Payment method')
+    await expect(method).toHaveClass(/border-red-400/)
+
+    // Picking one takes it off the list.
+    await method.getByRole('button', { name: 'Cash on Hand', exact: true }).click()
+    await expect(method.getByRole('button', { name: 'Cash on Hand', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+    await expect(issues).not.toContainText('Payment method')
+    await expect(method).not.toHaveClass(/border-red-400/)
   })
 })
