@@ -1233,9 +1233,11 @@ function PaymentPanel({
     })),
     crNumber: form.reference,
     fieldStubWithoutCollector: form.stubOwner === 'field' && !form.collectorId,
+    branchId: form.branchId,
   })
   const shownIssues = showIssues ? issues : []
   const crNumberInvalid = shownIssues.some((i) => i.field === 'crNumber')
+  const branchInvalid = shownIssues.some((i) => i.field === 'branch')
   const invalidFieldsOf = (row: number): ReadonlySet<CollectionIssueField> =>
     new Set(shownIssues.filter((i) => i.row === row).map((i) => i.field))
 
@@ -1699,7 +1701,9 @@ function PaymentPanel({
               )}
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Branch <span className="text-red-500">*</span>
+              </label>
               <BranchSearchCombobox
                 key={branchDefault?.id ?? 'no-default'}
                 value={form.branchId}
@@ -1707,6 +1711,7 @@ function PaymentPanel({
                 onChange={(id) => setForm({ ...form, branchId: id, collectorId: '' })}
                 initialLabel={branchDefault?.name}
                 placeholder="Search branch…"
+                error={branchInvalid ? 'Pick the branch this was collected at.' : undefined}
               />
             </div>
           </div>
