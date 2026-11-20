@@ -8,7 +8,7 @@ import { Hash, X, Truck, Search, ArrowRightLeft } from 'lucide-react'
 import { useSerialNumbers, type StockClassification } from '../_hooks/useSerialNumbers'
 import { hasPermission } from '@/src/hooks/usePermission'
 import { INVENTORY_PERMISSIONS } from '@/src/libs/guards/inventory-permissions'
-import { hasPrivilegedRole, type SessionUser } from '@/src/libs/guards/permission'
+import { hasPrivilegedRole, isHeadOffice, type SessionUser } from '@/src/libs/guards/permission'
 import {
   caravanScopeBranchId,
   isCaravanBranch,
@@ -31,6 +31,7 @@ import CaravanItemTable, { type CaravanActions } from './CaravanItemTable'
 import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
 import { useCaravanAlerts } from '@/src/components/inventory/caravan/useCaravanAlerts'
 import CopySerialButton from './CopySerialButton'
+import SerialOwnerActions from './SerialOwnerActions'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
@@ -238,6 +239,9 @@ export default function SerialNumberList({
   const canManageCaravan = hasPermission(session, INVENTORY_PERMISSIONS.CARAVAN_MANAGE)
   // Unit cost is for Business Owner / Accountant, as on receiving.
   const canViewCost = hasPermission(session, INVENTORY_PERMISSIONS.RECEIVE_COST_VIEW)
+  // Correcting or deleting a unit: Business Owner, or Head Office staff who
+  // manage serials (not Branch Managers, whose wildcards reach SERIAL_MANAGE).
+  const canEditSerials = hasPrivilegedRole(session) || (isHeadOffice(session) && canManage)
   // Each count's total amount is aggregate valuation (as on the Valuation
   // report), so it follows that permission or its totals-only one — Stock
   // Controller, Branch Manager and the custodians see it without per-unit cost.
@@ -780,16 +784,19 @@ export default function SerialNumberList({
                                     <SerialLink
                                       serialId={serial.id}
                                       serialNumber={serial.serialNumber}
-                                      className={`${MONO} text-[14.5px] font-semibold text-[#17171c]`}
+                                      className={`${MONO} text-[13px] font-semibold text-[#17171c]`}
                                     />
                                   ) : (
                                     <span
-                                      className={`${MONO} text-[14.5px] font-semibold text-[#17171c]`}
+                                      className={`${MONO} text-[13px] font-semibold text-[#17171c]`}
                                     >
                                       {serial.serialNumber}
                                     </span>
                                   )}
                                   <CopySerialButton serialNumber={serial.serialNumber} />
+                                  {canEditSerials && !serial.pastUnit && (
+                                    <SerialOwnerActions serial={serial} />
+                                  )}
                                 </div>
                                 {displayClassificationLabel(serial.item?.type?.name) && (
                                   <span className="text-[13px] text-ink-muted">
