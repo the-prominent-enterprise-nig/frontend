@@ -354,7 +354,7 @@ export function RequestGridRows({
             <span role="cell" className="truncate text-[12px] text-[#3d3d4a]">
               {locationLabel(pr.warehouse, 'Not set')}
             </span>
-            <div role="cell">
+            <div role="cell" className="pl-3">
               <RequestStatus pr={pr} />
             </div>
             {showTotal && (

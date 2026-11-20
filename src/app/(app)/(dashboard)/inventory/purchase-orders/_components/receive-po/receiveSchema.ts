@@ -3,11 +3,7 @@ import { z } from 'zod'
 const ReceivePoLineSchema = z
   .object({
     purchaseOrderLineId: z.string(),
-    // The item that actually arrived. Starts as the PO line's own item; when
-    // the supplier sent another model it is that model, received against
-    // this line (it still fills it). Form-only label for it below.
     itemId: z.string(),
-    substituteLabel: z.string().optional(),
     quantityReceived: z.number().min(0),
     unitCost: z.number().min(0).optional(),
     // Scenario 46 — the supplier's pricing as stated, carried through from the
@@ -84,37 +80,6 @@ const ReceivePoLineSchema = z
     }
   })
 
-/** A unit the supplier delivered that wasn't on the PO — an extra item, or
- * more of one than ordered. Posted with addToPurchaseOrderId; the server adds
- * a PO line for it so it lands on the PO's receipts and AP bill. */
-export const ExtraUnitSchema = z
-  .object({
-    itemId: z.string().min(1, 'Pick the item that arrived'),
-    label: z.string(),
-    sku: z.string().optional(),
-    isSerialTracked: z.boolean(),
-    quantity: z.number().min(0),
-    serialNumbers: z.array(z.string()).optional(),
-    unitCost: z.number().min(0).optional(),
-    notes: z.string().max(500).optional(),
-  })
-  .superRefine((unit, ctx) => {
-    if (unit.quantity <= 0) {
-      ctx.addIssue({ code: 'custom', message: 'Enter how many arrived', path: ['quantity'] })
-      return
-    }
-    const filled = (unit.serialNumbers ?? []).filter((s) => s.trim() !== '').length
-    if (unit.isSerialTracked && filled !== unit.quantity) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'A serial number is required for every unit',
-        path: ['serialNumbers'],
-      })
-    }
-  })
-
-export type ExtraUnit = z.infer<typeof ExtraUnitSchema>
-
 export const ReceivePoFormSchema = z.object({
   warehouseId: z.string().min(1, 'Destination warehouse is required'),
   receivedAt: z.string().optional(),
@@ -136,7 +101,6 @@ export const ReceivePoFormSchema = z.object({
   // never be on it. Same pair the direct-receive form carries, so a receipt
   // raised against a PO prints the same line as one raised without.
   lines: z.array(ReceivePoLineSchema).min(1),
-  extraUnits: z.array(ExtraUnitSchema).optional(),
 })
 
 export type ReceivePoFormValues = z.infer<typeof ReceivePoFormSchema>

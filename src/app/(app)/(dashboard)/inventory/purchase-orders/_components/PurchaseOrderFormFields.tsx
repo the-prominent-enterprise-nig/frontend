@@ -39,6 +39,9 @@ type Props = {
   /** Off when editing a PO without receiving-cost access: no SRP, discounts,
    * unit price, line totals or money summary — quantities only. */
   showPrices?: boolean
+  /** Quantity already received per PO line id, when Head Office edits a PO
+   * that is being received. Such a line can't be removed or cut below it. */
+  receivedByLineId?: Record<string, number>
 }
 
 const EMPTY_LINE = {
@@ -98,6 +101,7 @@ export function PurchaseOrderFormFields({
   submitted,
   warnNoDestination,
   showPrices = true,
+  receivedByLineId = {},
 }: Props): React.ReactElement {
   const [openLines, setOpenLines] = useState<Record<string, boolean>>({})
   const searchRef = useRef<HTMLDivElement>(null)
@@ -130,6 +134,7 @@ export function PurchaseOrderFormFields({
         setOpenLines={setOpenLines}
         searchRef={searchRef}
         showPrices={showPrices}
+        receivedByLineId={receivedByLineId}
       />
     </div>
   )
@@ -415,6 +420,7 @@ function LineItemsCard({
   setOpenLines,
   searchRef,
   showPrices,
+  receivedByLineId,
 }: {
   control: Control<CreatePoFormValues>
   register: UseFormRegister<CreatePoFormValues>
@@ -426,6 +432,7 @@ function LineItemsCard({
   setOpenLines: React.Dispatch<React.SetStateAction<Record<string, boolean>>>
   searchRef: React.RefObject<HTMLDivElement | null>
   showPrices: boolean
+  receivedByLineId: Record<string, number>
 }): React.ReactElement {
   const { fields, append, insert, remove } = useFieldArray({ control, name: 'lines' })
   // Scenario 71 — the search lists the chosen supplier's approved items.
@@ -577,6 +584,7 @@ function LineItemsCard({
                   labels={merged}
                   submitted={submitted}
                   showPrices={showPrices}
+                  received={(field.lineId && receivedByLineId[field.lineId]) || 0}
                   open={!!openLines[String(index)]}
                   onToggle={() =>
                     setOpenLines((s) => ({ ...s, [String(index)]: !s[String(index)] }))
@@ -603,6 +611,7 @@ function LineItemsCard({
                   labels={merged}
                   submitted={submitted}
                   showPrices={showPrices}
+                  received={(field.lineId && receivedByLineId[field.lineId]) || 0}
                   open={!!openLines[String(index)]}
                   onToggle={() =>
                     setOpenLines((s) => ({ ...s, [String(index)]: !s[String(index)] }))
@@ -633,6 +642,8 @@ type LineRowProps = {
   labels: Record<string, ItemLabel>
   submitted?: boolean
   showPrices: boolean
+  /** Already received on this PO line — 0 for a new or unreceived line. */
+  received: number
   open: boolean
   onToggle: () => void
   onRemove: () => void
@@ -715,18 +726,21 @@ function LineRow(props: LineRowProps): React.ReactElement {
   // discount nobody entered.
   const effective = Number(srp) ? (1 - chain.unit / Number(srp)) * 100 : 0
 
-  const badQty = !!submitted && (!quantity || qty < 1)
+  const belowReceived = props.received > 0 && qty < props.received
+  const badQty = belowReceived || (!!submitted && (!quantity || qty < 1))
   // A line priced by hand needs no SRP: one or the other has to give the
   // line a cost, and either alone is enough.
   const badSrp = props.showPrices && !!submitted && !srp && !isFreebie && unit <= 0
   const badItem = !!submitted && !itemId
   const errorText = badItem
     ? 'Item is required.'
-    : badQty
-      ? 'Quantity must be at least 1.'
-      : badSrp
-        ? 'Enter the supplier’s SRP, or type a unit price directly.'
-        : ''
+    : belowReceived
+      ? `${props.received} already received — the quantity can't go below that.`
+      : badQty
+        ? 'Quantity must be at least 1.'
+        : badSrp
+          ? 'Enter the supplier’s SRP, or type a unit price directly.'
+          : ''
 
   const label = itemId ? labels[itemId] : undefined
   const discCount = discountFields.length
@@ -931,6 +945,7 @@ function LineRowWide(p: RenderProps): React.ReactElement {
                 {p.isFreebie && <FreebieTag />}
               </div>
               <span className={`${MONO} text-[10.5px] text-ink-muted`}>{label?.sku ?? ''}</span>
+              <ReceivedNote received={p.received} />
               <InternalNoteInput index={index} control={control} />
             </>
           ) : (
@@ -1053,16 +1068,18 @@ function LineRowWide(p: RenderProps): React.ReactElement {
               <Copy className="h-3.25 w-3.25" />
             </button>
           </Tooltip>
-          <Tooltip label="Remove line" align="end">
-            <button
-              type="button"
-              aria-label="Remove line"
-              onClick={p.onRemove}
-              className="flex h-6 w-6 items-center justify-center rounded-md text-ink-subtle hover:bg-[#fdeceb] hover:text-[#b42318]"
-            >
-              <Trash2 className="h-3.25 w-3.25" />
-            </button>
-          </Tooltip>
+          {p.received === 0 && (
+            <Tooltip label="Remove line" align="end">
+              <button
+                type="button"
+                aria-label="Remove line"
+                onClick={p.onRemove}
+                className="flex h-6 w-6 items-center justify-center rounded-md text-ink-subtle hover:bg-[#fdeceb] hover:text-[#b42318]"
+              >
+                <Trash2 className="h-3.25 w-3.25" />
+              </button>
+            </Tooltip>
+          )}
         </div>
       </div>
 
@@ -1075,6 +1092,16 @@ function LineRowWide(p: RenderProps): React.ReactElement {
 
       {open && p.showPrices && <DiscountStack {...p} />}
     </div>
+  )
+}
+
+/** Marks a PO line that already has stock received against it. */
+function ReceivedNote({ received }: { received: number }): React.ReactElement | null {
+  if (received <= 0) return null
+  return (
+    <span className="text-[11px] text-[#0b6644]">
+      {received} received · can&apos;t be removed or change item
+    </span>
   )
 }
 
@@ -1343,6 +1370,7 @@ function LineCardNarrow(p: RenderProps): React.ReactElement {
                   {p.isFreebie && <FreebieTag />}
                 </div>
                 <span className={`${MONO} text-[10.5px] text-ink-muted`}>{label?.sku ?? ''}</span>
+                <ReceivedNote received={p.received} />
                 <InternalNoteInput index={index} control={control} />
               </>
             ) : (
@@ -1361,16 +1389,18 @@ function LineCardNarrow(p: RenderProps): React.ReactElement {
               />
             )}
           </div>
-          <Tooltip label="Remove line" align="end">
-            <button
-              type="button"
-              aria-label="Remove line"
-              onClick={p.onRemove}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-subtle hover:bg-[#fdeceb] hover:text-[#b42318]"
-            >
-              <Trash2 className="h-3.75 w-3.75" />
-            </button>
-          </Tooltip>
+          {p.received === 0 && (
+            <Tooltip label="Remove line" align="end">
+              <button
+                type="button"
+                aria-label="Remove line"
+                onClick={p.onRemove}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-subtle hover:bg-[#fdeceb] hover:text-[#b42318]"
+              >
+                <Trash2 className="h-3.75 w-3.75" />
+              </button>
+            </Tooltip>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">

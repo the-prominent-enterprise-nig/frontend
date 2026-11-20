@@ -10,8 +10,6 @@ import { useEwtCodes } from '@/src/hooks/useEwtCodes'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { type PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import { receiveStock } from '../../goods-receiving/_actions/receive-stock'
-import { EMPTY_EXTRA_UNIT, ExtraUnitsCard, unitError } from './receive-po/ExtraUnitsCard'
-import type { ArrivedItem } from './receive-po/ArrivedItemPicker'
 import { MONO, PLEX } from './procurementTokens'
 import { DeliveryDetailsPanel, DR_FIELD_ID } from './receive-po/DeliveryDetailsPanel'
 import { ReceiptTotalsPanel } from './receive-po/ReceiptTotalsPanel'
@@ -36,7 +34,6 @@ import {
 } from './receive-po/receiveIssues'
 import {
   ReceivePoFormSchema,
-  type ExtraUnit,
   type LineDrawer,
   type ReceivePoFormValues,
 } from './receive-po/receiveSchema'
@@ -85,7 +82,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
     formState: { errors, isSubmitting },
   } = useForm<ReceivePoFormValues>({
     resolver: zodResolver(ReceivePoFormSchema),
-    defaultValues: { warehouseId: '', deliveryReceiptNumber: '', lines: [], extraUnits: [] },
+    defaultValues: { warehouseId: '', deliveryReceiptNumber: '', lines: [] },
   })
 
   const watched = watch()
@@ -98,7 +95,6 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
   // below is therefore a plain expression; they are all O(lines) over a
   // handful of rows.
   const lines = watched.lines ?? []
-  const extraUnits = watched.extraUnits ?? []
   const poLines = useMemo(() => po?.lines ?? [], [po])
   // SRP + discounts as the PO opened with them — see the pricing effect below.
   const pricingBaseline = useRef<string | null>(null)
@@ -122,13 +118,11 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
       notes: '',
       deliveryReceiptNumber: '',
       supplierInvoiceNumber: '',
-      extraUnits: [],
       lines: po.lines.map((l) => {
         const remaining = remainingOf(l)
         return {
           purchaseOrderLineId: l.id,
           itemId: l.itemId,
-          substituteLabel: undefined,
           // A serial-tracked line's quantity is whatever serials get typed —
           // the receiver scans a pallet before they can count it — so it
           // starts at none, not at the remainder.
@@ -212,18 +206,11 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
   )
 
   const totals = receiptTotals(
-    [
-      ...lines.map((l) => ({
-        selected: l.selected,
-        quantityReceived: l.quantityReceived,
-        unitCost: l.unitCost,
-      })),
-      ...extraUnits.map((u) => ({
-        selected: true,
-        quantityReceived: u.quantity,
-        unitCost: u.unitCost,
-      })),
-    ],
+    lines.map((l) => ({
+      selected: l.selected,
+      quantityReceived: l.quantityReceived,
+      unitCost: l.unitCost,
+    })),
     po?.supplier ?? ({} as PurchaseOrderSummary['supplier']),
     rateFor
   )
@@ -237,11 +224,7 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
     ...(po && !po.warehouseId
       ? [{ key: 'no-location', kind: 'error' as const, text: NO_LOCATION_RECEIVE_MESSAGE }]
       : []),
-    // A delivery of nothing but units not on the PO is still a delivery.
-    ...collectBlockers(issueLines, poLines, watched.deliveryReceiptNumber ?? '', labelFor).filter(
-      (b) => b.key !== 'qty' || extraUnits.length === 0
-    ),
-    ...extraUnitBlockers(extraUnits),
+    ...collectBlockers(issueLines, poLines, watched.deliveryReceiptNumber ?? '', labelFor),
   ]
 
   const warnings = collectWarnings(issueLines, poLines, labelFor)
@@ -320,44 +303,6 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
 
   const openDrawer = (index: number, drawer: LineDrawer) =>
     setDrawers((prev) => ({ ...prev, [index]: drawer }))
-
-  /** Points a line at the item that arrived — another model, or (undo) the
-   * ordered one again — and starts its quantity over for that item's kind. */
-  const setArrivedItem = (index: number, item: ArrivedItem, substituteLabel?: string) => {
-    const remaining = remainingOf(poLines[index])
-    setValue(`lines.${index}.itemId`, item.id, { shouldValidate: false })
-    setValue(`lines.${index}.substituteLabel`, substituteLabel, { shouldValidate: false })
-    setValue(`lines.${index}.isSerialTracked`, item.isSerialTracked, { shouldValidate: false })
-    setValue(
-      `lines.${index}.serialNumbers`,
-      item.isSerialTracked ? blankSerials(remaining) : undefined,
-      { shouldValidate: false }
-    )
-    setValue(`lines.${index}.quantityReceived`, item.isSerialTracked ? 0 : remaining, {
-      shouldValidate: false,
-    })
-    setValue(`lines.${index}.selected`, !item.isSerialTracked && remaining > 0, {
-      shouldValidate: false,
-    })
-    openDrawer(index, item.isSerialTracked ? 'serials' : null)
-  }
-
-  const substitute = (index: number, item: ArrivedItem) => setArrivedItem(index, item, item.label)
-
-  const undoSubstitute = (index: number) => {
-    const poLine = poLines[index]
-    if (!poLine) return
-    setArrivedItem(index, {
-      id: poLine.itemId,
-      label: labelFor(index),
-      isSerialTracked: !!poLine.item?.isSerialTracked,
-    })
-  }
-
-  const setExtraUnits = (next: ExtraUnit[]) =>
-    setValue('extraUnits', next, { shouldValidate: showErrors })
-
-  const addExtraUnit = () => setExtraUnits([...extraUnits, { ...EMPTY_EXTRA_UNIT }])
 
   const receiveAllRemaining = () => {
     // Serial-tracked lines are skipped: there is no way to invent the serials
@@ -458,29 +403,26 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
       // so the amount is carved out of them rather than added on top. Always
       // explicit so the server never falls back to deriving VAT nobody entered.
       vatTreatment: 'inclusive' as const,
-      lines: [
-        ...data.lines
-          .filter((l) => l.selected && l.quantityReceived > 0)
-          .map((l) => ({
-            purchaseOrderLineId: l.purchaseOrderLineId,
-            itemId: l.itemId,
-            quantityReceived: l.quantityReceived,
-            unitCost: l.unitCost,
-            srp: l.srp,
-            discounts: l.discounts && l.discounts.length > 0 ? l.discounts : undefined,
-            taxCode: l.taxCode || undefined,
-            taxAmount: l.taxAmount,
-            batchNumber: l.batchNumber || undefined,
-            qualityHold: l.qualityHold,
-            notes: l.notes || undefined,
-            // Only the boxes actually filled: on a serial-tracked line a blank is
-            // a unit not received yet, and the server wants one serial per unit
-            // of the quantity it is given.
-            ...(l.serialNumbers &&
-              l.serialNumbers.length > 0 && { serialNumbers: l.serialNumbers.filter(isFilled) }),
-          })),
-        ...(data.extraUnits ?? []).map((u) => extraUnitPayload(u, po.id)),
-      ],
+      lines: data.lines
+        .filter((l) => l.selected && l.quantityReceived > 0)
+        .map((l) => ({
+          purchaseOrderLineId: l.purchaseOrderLineId,
+          itemId: l.itemId,
+          quantityReceived: l.quantityReceived,
+          unitCost: l.unitCost,
+          srp: l.srp,
+          discounts: l.discounts && l.discounts.length > 0 ? l.discounts : undefined,
+          taxCode: l.taxCode || undefined,
+          taxAmount: l.taxAmount,
+          batchNumber: l.batchNumber || undefined,
+          qualityHold: l.qualityHold,
+          notes: l.notes || undefined,
+          // Only the boxes actually filled: on a serial-tracked line a blank is
+          // a unit not received yet, and the server wants one serial per unit
+          // of the quantity it is given.
+          ...(l.serialNumbers &&
+            l.serialNumbers.length > 0 && { serialNumbers: l.serialNumbers.filter(isFilled) }),
+        })),
     })
 
     if (!result.success || !result.data) {
@@ -674,30 +616,11 @@ export function ReceiveAgainstPoModal({ po, onClose, onPosted, canViewCost }: Pr
                       onSerialChange={(unit, value) => setSerial(index, unit, value)}
                       onClearSerials={() => clearSerials(index)}
                       onFixIssue={(fix) => applyLineFix(index, fix)}
-                      supplierId={po.supplier.id}
-                      onSubstitute={(item) => substitute(index, item)}
-                      onUndoSubstitute={() => undoSubstitute(index)}
                     />
                   )
                 })}
               </>
             )}
-
-            {/* Inside the line items, under the PO's own lines, so it's seen
-                while counting the delivery rather than below the fold. */}
-            <div className="border-t border-[#eeeef1] px-4.5 py-3">
-              <ExtraUnitsCard
-                units={extraUnits}
-                canViewCost={canViewCost}
-                showErrors={showErrors}
-                supplierId={po.supplier.id}
-                onAdd={addExtraUnit}
-                onChange={(i, patch) =>
-                  setExtraUnits(extraUnits.map((u, n) => (n === i ? { ...u, ...patch } : u)))
-                }
-                onRemove={(i) => setExtraUnits(extraUnits.filter((_, n) => n !== i))}
-              />
-            </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[#e4e4e9] bg-[#fbfbfc] px-4.5 py-3">
               <span className="text-[11.5px] text-ink-muted">
@@ -749,35 +672,4 @@ function LineTableHead() {
       <span className="text-right">Line total</span>
     </div>
   )
-}
-
-/** A unit not on the PO, as the receive endpoint takes it: the server adds a
- * PO line for it (see StockService.addUnitsNotOnPo). */
-function extraUnitPayload(unit: ExtraUnit, purchaseOrderId: string): Record<string, unknown> {
-  const serials = (unit.serialNumbers ?? []).filter(isFilled)
-  return {
-    addToPurchaseOrderId: purchaseOrderId,
-    itemId: unit.itemId,
-    quantityReceived: unit.quantity,
-    unitCost: unit.unitCost,
-    qualityHold: false,
-    notes: unit.notes || undefined,
-    ...(serials.length > 0 && { serialNumbers: serials }),
-  }
-}
-
-/** One blocker per unit not on the PO that can't post yet. */
-function extraUnitBlockers(units: ExtraUnit[]): Blocker[] {
-  return units.flatMap((unit, i) => {
-    const text = unitError(unit, true)
-    return text
-      ? [
-          {
-            key: `extra-${i}`,
-            kind: 'error' as const,
-            text: `${unit.label || `Unlisted item ${i + 1}`}: ${text}`,
-          },
-        ]
-      : []
-  })
 }

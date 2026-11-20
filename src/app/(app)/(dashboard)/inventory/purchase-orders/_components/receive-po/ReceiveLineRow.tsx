@@ -10,7 +10,6 @@ import { LinePricingDrawer } from './LinePricingDrawer'
 import { SerialCaptureDrawer } from './SerialCaptureDrawer'
 import type { LineIssue, IssueFix } from './receiveIssues'
 import type { LineDrawer, ReceivePoFormValues, ReceivePoLine } from './receiveSchema'
-import { ArrivedItemPicker, type ArrivedItem } from './ArrivedItemPicker'
 
 export type ReceiveLineRowProps = {
   control: Control<ReceivePoFormValues>
@@ -35,11 +34,6 @@ export type ReceiveLineRowProps = {
   onSerialChange: (unitIndex: number, value: string) => void
   onClearSerials: () => void
   onFixIssue: (fix: IssueFix) => void
-  /** Supplier-first search for the model that actually arrived. */
-  supplierId?: string
-  /** Another model arrived in this line's place — received against it. */
-  onSubstitute: (item: ArrivedItem) => void
-  onUndoSubstitute: () => void
 }
 
 /**
@@ -136,59 +130,19 @@ export function ReceiveLineRow(props: ReceiveLineRowProps) {
 
 type InnerProps = ReceiveLineRowProps & { closed: boolean; lineTotal: number }
 
-/**
- * The line's item, and the way to say another model arrived in its place.
- * Once swapped, the arrived model leads and the ordered one is kept beside it
- * so the receiver can see what the substitution was.
- */
-function LineTitle(props: InnerProps & { size: string }): React.ReactElement {
-  const { line, closed, size } = props
-  const swapped = !!line.substituteLabel
-  return (
-    <div className="flex min-w-0 flex-col gap-[3px]">
-      <span className={`${size} font-medium leading-[1.35]`}>
-        {swapped ? line.substituteLabel : props.title}
-      </span>
-      <div className="flex flex-wrap items-center gap-[7px]">
-        {!swapped && props.sku && (
-          <span className={`${MONO} text-[10.5px] text-ink-muted`}>{props.sku}</span>
-        )}
-        {line.isSerialTracked && !closed && <SerialBadge />}
-      </div>
-      {swapped ? (
-        <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#8a4b06]">
-          <span className="rounded-[4px] bg-[#fdf3e7] px-1.5 py-px font-medium">
-            Different model
-          </span>
-          <span className="text-ink-muted">ordered {props.title}</span>
-          <button
-            type="button"
-            onClick={props.onUndoSubstitute}
-            className="text-[#5b21b6] underline decoration-transparent underline-offset-2 hover:decoration-current"
-          >
-            Undo
-          </button>
-        </span>
-      ) : (
-        !closed && (
-          <ArrivedItemPicker
-            label="Different model arrived?"
-            supplierId={props.supplierId}
-            onPick={props.onSubstitute}
-          />
-        )
-      )}
-    </div>
-  )
-}
-
 function WideRow(props: InnerProps) {
   const { line, closed, remaining, lineTotal, canViewCost } = props
   return (
     <div className={`hidden px-4.5 py-3 lg:grid ${LINE_GRID}`}>
       <SelectBox {...props} />
 
-      <LineTitle {...props} size="text-[13px]" />
+      <div className="flex min-w-0 flex-col gap-[3px]">
+        <span className="text-[13px] font-medium leading-[1.35]">{props.title}</span>
+        <div className="flex flex-wrap items-center gap-[7px]">
+          {props.sku && <span className={`${MONO} text-[10.5px] text-ink-muted`}>{props.sku}</span>}
+          {line.isSerialTracked && !closed && <SerialBadge />}
+        </div>
+      </div>
 
       {/* h-[34px] + self-start is what lines these three up with the middle of
           the quantity stepper rather than with the taller cell it sits in —
@@ -260,8 +214,14 @@ function NarrowCard(props: InnerProps) {
     <div className="flex flex-col gap-3 p-3.5 lg:hidden">
       <div className="flex items-start gap-2.5">
         <SelectBox {...props} large />
-        <div className="flex min-w-0 flex-1">
-          <LineTitle {...props} size="text-[13.5px]" />
+        <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
+          <span className="text-[13.5px] font-medium leading-[1.35]">{props.title}</span>
+          <div className="flex flex-wrap items-center gap-[7px]">
+            {props.sku && (
+              <span className={`${MONO} text-[10.5px] text-ink-muted`}>{props.sku}</span>
+            )}
+            {line.isSerialTracked && !closed && <SerialBadge />}
+          </div>
         </div>
       </div>
 

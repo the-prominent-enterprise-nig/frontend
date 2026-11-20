@@ -498,11 +498,6 @@ export function PoDetailModal({
                               Freebie
                             </span>
                           )}
-                          {line.addedAtReceiving && (
-                            <span className="rounded bg-[#fdf3e7] px-1.5 py-0.5 text-[10px] font-semibold text-[#8a4b06]">
-                              Not on original PO
-                            </span>
-                          )}
                         </div>
                         <p className={`${MONO} text-[10.5px] text-ink-muted`}>{line.item.sku}</p>
                         {line.description && (
@@ -618,7 +613,7 @@ export function PoDetailModal({
           Close
         </button>
 
-        {canEdit && canEditPoStatus(po.status) && (
+        {canEdit && canEditPoStatus(po.status, isHeadOffice) && (
           <OutlineBtn
             icon={<Pencil className={icon} />}
             label="Edit"

@@ -17,9 +17,6 @@ const ReceiveStockLineSchema = z
     // instead, resolved into a real Item at receiving time server-side.
     newItemName: z.string().max(255).optional(),
     purchaseOrderLineId: z.string().optional(),
-    // A unit not on the PO that came with its delivery — the server adds a PO
-    // line for it. Never alongside purchaseOrderLineId.
-    addToPurchaseOrderId: z.string().optional(),
     quantityReceived: z.number().positive('Quantity must be greater than 0'),
     unitCost: z.number().min(0).optional(),
     // Scenario 46 — the supplier's pricing as stated: SRP and the ordered

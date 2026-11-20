@@ -91,16 +91,17 @@ const STATUS_FILTERS: { label: string; value: PoStatus | undefined }[] = [
  * Supplier is the only flexible track, so it takes all the spare width;
  * Location is fixed at what "Panay Warehouse" needs. The last
  * track holds the row's action buttons and is sized for the widest run of
- * them — a partially-received order with an invoice, as Head Office sees it:
- * Download · Edit · Receive · Close · Receipts · Invoice, ~240px — so they
- * never wrap or spill into the Receiving column.
+ * them — a partially-received order with an invoice: Download · Receive ·
+ * Receipts · Invoice, ~200px — so they never wrap or spill into Receiving.
+ * Status carries left padding (inside its track) so it sits clear of
+ * Location rather than hard against it.
  * The data columns were trimmed to pay for it rather than letting the grid
  * overflow its card at the 1080px breakpoint. */
 const GRID =
-  'grid grid-cols-[154px_minmax(0,1fr)_118px_84px_94px_114px_124px_248px] gap-x-3 items-center'
+  'grid grid-cols-[154px_minmax(0,1fr)_118px_96px_94px_114px_108px_216px] gap-x-3 items-center'
 /** The same grid without the Total track, for whoever may not see prices. */
 const GRID_NO_TOTAL =
-  'grid grid-cols-[154px_minmax(0,1fr)_118px_84px_114px_124px_248px] gap-x-3 items-center'
+  'grid grid-cols-[154px_minmax(0,1fr)_118px_96px_114px_108px_216px] gap-x-3 items-center'
 
 const SORT_SELECT_CLASS =
   'h-[38px] cursor-pointer appearance-none rounded-lg border border-[#d3d3db] bg-white pl-[11px] pr-[30px] text-[12.5px] text-[#3d3d4a] transition-colors focus:border-[#5b21b6] focus:shadow-[0_0_0_3px_#f0e9fc] focus:outline-none'
@@ -549,7 +550,7 @@ export function PurchaseOrderList({
         disabled: downloading,
         run: () => void downloadPdf(po),
       },
-      ...(canEdit && canEditPoStatus(po.status)
+      ...(canEdit && canEditPoStatus(po.status, isHeadOffice)
         ? [
             {
               key: 'edit',
@@ -865,7 +866,9 @@ export function PurchaseOrderList({
                   Supplier
                 </span>
                 <span role="columnheader">Location</span>
-                <span role="columnheader">Status</span>
+                <span role="columnheader" className="pl-3">
+                  Status
+                </span>
                 {showPrices && (
                   <span role="columnheader" className="text-right">
                     Total
@@ -918,7 +921,7 @@ export function PurchaseOrderList({
                         <PoLocation po={po} />
                       </span>
 
-                      <div role="cell" className="flex flex-col items-start gap-[3px]">
+                      <div role="cell" className="flex flex-col items-start gap-[3px] pl-3">
                         <StatusBadge status={po.status} />
                         {late > 0 && (
                           <span className="text-[10.5px] text-[#b25e09]">
@@ -1114,7 +1117,7 @@ export function PurchaseOrderList({
                 <span>PO code</span>
                 <span>Supplier</span>
                 <span>Location</span>
-                <span>Status</span>
+                <span className="pl-3">Status</span>
                 {showPrices && <span className="text-right">Total</span>}
                 <span>Source</span>
                 <span className="pl-4">Receiving</span>

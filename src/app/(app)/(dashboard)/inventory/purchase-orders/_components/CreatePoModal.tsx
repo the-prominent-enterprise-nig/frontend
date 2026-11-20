@@ -11,6 +11,8 @@ import type { PurchaseRequestSummary } from '@/src/schema/inventory/purchase-req
 import type { PurchaseOrderSummary } from '@/src/schema/inventory/purchase-orders'
 import { ConfirmActionModal } from '@/src/components/inventory/ConfirmActionModal'
 import { PurchaseOrderFormFields } from './PurchaseOrderFormFields'
+import { CostCorrectionReason } from './CostCorrectionReason'
+import { receivedCostChanged, SUPPLIER_STATUSES } from '../_lib/poEditRules'
 import { PLEX, MONO } from './procurementTokens'
 import { manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
 
@@ -116,6 +118,12 @@ function getDefaultValues(
   }
 }
 
+/** Quantity already received per PO line, so the form can lock those lines. */
+function receivedByLineId(po?: PurchaseOrderSummary | null): Record<string, number> {
+  if (!po) return {}
+  return Object.fromEntries(po.lines.map((l) => [l.id, Number(l.receivedQuantity ?? 0)]))
+}
+
 export function CreatePoModal({
   open,
   onClose,
@@ -173,6 +181,7 @@ export function CreatePoModal({
     handleSubmit,
     reset,
     setValue,
+    setError,
     formState: { errors, isDirty, isSubmitted },
   } = useForm<CreatePoFormValues>({
     resolver: zodResolver(CreatePoFormSchema),
@@ -195,6 +204,12 @@ export function CreatePoModal({
   }, [open, pr, po, currentUserBranchId, initialSupplierId, reset])
 
   async function handleFormSubmit(data: CreatePoFormValues) {
+    // Caught here, not left to the server: the modal closes after a save, so
+    // a refusal would throw the edit away.
+    if (po && receivedCostChanged(po, data.lines) && !data.costCorrectionReason?.trim()) {
+      setError('costCorrectionReason', { message: 'Say why the cost changed.' })
+      return
+    }
     if (po) {
       await onUpdatePo?.(po.id, data)
     } else if (pr) {
@@ -282,6 +297,23 @@ export function CreatePoModal({
         </div>
       </div>
 
+      {isPoEditMode && po && SUPPLIER_STATUSES.includes(po.status) && (
+        <div className="mx-5 mt-3 rounded-lg border border-[#e4e4e9] bg-white px-4 py-2.5 text-[12px] text-[#3d3d4a]">
+          This PO is already with the supplier. Edit it to match what was actually delivered — swap
+          a line to the model that arrived, add an item that wasn&apos;t ordered, or correct a cost.
+          Lines already received keep their item and quantity; a cost change on them updates their
+          receiving reports.
+        </div>
+      )}
+
+      {isPoEditMode && po && (
+        <CostCorrectionReason
+          control={control}
+          po={po}
+          error={errors.costCorrectionReason?.message}
+        />
+      )}
+
       {isPoEditMode && po?.status === 'approved' && (
         <div className="mx-5 mt-3 rounded-lg border border-[#f7dfc0] bg-[#fdf3e7] px-4 py-2.5 text-[12px] text-[#8a4b06]">
           This PO is already approved. Saving changes reverts it to Draft and voids the existing
@@ -309,6 +341,7 @@ export function CreatePoModal({
           // PO is sent.
           warnNoDestination={isEditMode}
           showPrices={showPrices}
+          receivedByLineId={receivedByLineId(po)}
         />
       </form>
 

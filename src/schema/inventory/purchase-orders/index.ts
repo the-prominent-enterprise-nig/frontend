@@ -54,6 +54,8 @@ export const CreatePoFormSchema = z.object({
   paymentTerms: z.string().max(50).optional(),
   notes: z.string().max(1000).optional(),
   lines: z.array(CreatePoLineSchema).min(1, 'At least one line item is required'),
+  // Edit only: why a received line's cost changed (it reaches the RRs).
+  costCorrectionReason: z.string().max(500).optional(),
 })
 
 const CreatePoLineServerSchema = CreatePoLineSchema.extend({
@@ -190,9 +192,6 @@ const PoLineSchema = z.object({
   lastPriceOverridden: z.boolean().optional().nullable(),
   // Scenario 10 Part 8 — a supplier-given free unit.
   isFreebie: z.boolean().optional().nullable(),
-  // A unit the supplier delivered that wasn't on the order, added to the PO
-  // when it was received.
-  addedAtReceiving: z.boolean().optional().nullable(),
 })
 
 export const PurchaseOrderSummarySchema = z.object({
