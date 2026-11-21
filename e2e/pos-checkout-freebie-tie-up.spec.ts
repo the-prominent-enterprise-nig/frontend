@@ -798,4 +798,34 @@ test.describe('POS Checkout — freebie / tie-up, unit details, ₱ (Docket #28)
     await fillStable(page.locator('#delivery-fee'), '150')
     await expect(note).toHaveText(/^Down payment \+ delivery · sale total ₱10,000\.00$/)
   })
+
+  test('FT-10 (pilot, Caravan): a TPF sale with a freebie still collects only the down payment + delivery — the ₱0 freebie does not make it a mixed cart', async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'FT10')
+    await openCheckout(page)
+    await addItem(page, fx.coreA, 0)
+    await addItem(page, fx.gift, 1)
+    await selectCustomer(page, customer.name)
+    await page.getByRole('button', { name: 'Installment', exact: true }).click()
+    await page.getByRole('button', { name: 'TPF Installment', exact: true }).first().click()
+    await expect(page.getByText('TPF Provider *')).toBeVisible({ timeout: 15_000 })
+    await row(page, fx.gift).getByTestId('tag-freebie').check()
+    await expect.poll(() => rowPrice(page, fx.gift)).toBe('₱0.00')
+
+    await fillStable(page.getByTestId('down-payment-input'), '2000')
+    await page.getByTestId('down-payment-input').blur()
+    await page.getByText('For delivery', { exact: true }).click()
+    await fillStable(page.locator('#delivery-fee'), '400')
+    await page
+      .getByTestId('dp-payment-mode-toggle')
+      .getByRole('button', { name: 'Cash', exact: true })
+      .click()
+
+    // Down payment + delivery, never the ₱12,000 sale.
+    await expect(page.getByTestId('confirm-total-due')).toContainText('₱2,400.00')
+    await expect(page.getByTestId('payment-use-exact-0')).toContainText('₱2,400.00')
+    await fillStable(page.getByTestId('payment-amount-0'), '2400')
+    await expect(page.getByRole('button', { name: /Underpaid/ })).toHaveCount(0)
+  })
 })
