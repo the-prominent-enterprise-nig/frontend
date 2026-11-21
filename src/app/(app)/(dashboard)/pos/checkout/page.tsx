@@ -2441,9 +2441,13 @@ export default function CheckoutPage() {
   // only the down payment here, or the financed half lands twice. A cart
   // that mixes TPF with cash/inhouse lines gets no such backend row, so it
   // keeps tendering the full TPF amount exactly as it always has.
+  // A freebie or tie-up (Nov UAT #28) is a ₱0 cash line with nothing to
+  // collect, so it doesn't stop a TPF sale from being pure — the backend's own
+  // pure-TPF check ignores cash lines too. Pilot (Caravan): a TPF sale with a
+  // freebie asked for the full sale instead of the down payment + delivery.
   const isPureTpfCart =
     tpfInstallmentCartLines.length > 0 &&
-    cashCartLines.length === 0 &&
+    cashCartLines.every((l) => l.promoTag) &&
     chargeCartLines.length === 0 &&
     inhouseInstallmentCartLines.length === 0
   const tpfCollectedAtRegister = isPureTpfCart ? tpfDownPaymentsTotal : tpfLinesTotal
