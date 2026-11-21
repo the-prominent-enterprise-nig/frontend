@@ -21,6 +21,7 @@ import {
   useOpenSession,
 } from '../../_hooks/usePos'
 import OpenSessionModal from '../../sessions/_components/OpenSessionModal'
+import { terminalPlaceId } from '@/src/libs/format/locationLabel'
 import { keepCheckoutSession } from '@/src/libs/pos/checkout-session-memory'
 import type { OpenSessionInput } from '@/src/schema/pos'
 import {
@@ -1228,13 +1229,18 @@ function PaymentPanel({
   const { data: branchTerminals } = useTerminals(
     form.branchId ? { branchId: form.branchId } : undefined
   )
+  // Matched the way the Open Session dialog lists terminals (a caravan's is
+  // its own place), so this never asks for a session that dialog can't open.
   const branchHasCounter = (branchTerminals?.success ? (branchTerminals.data ?? []) : []).some(
-    (t) => t.branchId === form.branchId && t.status === 'active'
+    (t) => terminalPlaceId(t) === form.branchId && t.status === 'active'
   )
+  // Any session open at the branch, not just the one this receipt would go
+  // on: with several open and none the user's own, openSessionId stays unset
+  // on purpose (which drawer is the cashier's call) — that is not "no session".
   const cashWithoutSession =
     branchHasCounter &&
+    openSessionList.length === 0 &&
     form.stubOwner !== 'field' &&
-    !onSession &&
     !isBackdated &&
     resolvedPayments.some((r) => r.method === 'CASH')
   // Informational only, not blocking — the backend only rejects a repeat
