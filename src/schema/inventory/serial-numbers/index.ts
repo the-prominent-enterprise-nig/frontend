@@ -112,6 +112,17 @@ export const RegisterSerialsFormInputSchema = z.object({
 
 export type RegisterSerialsFormInput = z.infer<typeof RegisterSerialsFormInputSchema>
 
+/** Business Owner or Head Office correcting a unit's serial text (a typo at receiving). */
+export const EditSerialFormSchema = z.object({
+  serialNumber: z
+    .string()
+    .trim()
+    .min(1, 'Serial number is required')
+    .max(150, 'Serial number is too long'),
+})
+
+export type EditSerialFormInput = z.infer<typeof EditSerialFormSchema>
+
 const SerialItemSchema = z.object({
   id: z.string(),
   name: z.string(),

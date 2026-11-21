@@ -16,6 +16,7 @@ import CategorySelect, { type CategorySelectOption } from '@/src/components/ui/C
 import SegmentedControl from '@/src/components/ui/SegmentedControl'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { useBranches } from '@/src/app/(app)/(dashboard)/pos/_hooks/usePos'
+import CollectionReceiptForm from './CollectionReceiptForm'
 import CustomerField, { type PickedCustomer } from './CustomerField'
 import InvoiceField, { type PickedInvoice } from './InvoiceField'
 import {
@@ -269,6 +270,22 @@ export default function NewAcknowledgementReceiptForm({
     router.push(`/pos/collections/acknowledgement/view?id=${res.data.id}`)
   }
 
+  // Docket NIG #90 — a Collection has its own, simpler form. Only the
+  // Acknowledgement type (and the batch upload) keep Cleared, Received in
+  // account, Subsidy, Withholding Tax, Sales Invoice No. and Net amount.
+  if (form.receiptType === 'COLLECTION') {
+    return (
+      <CollectionReceiptForm
+        restrictedBranchId={restrictedBranchId}
+        restrictedBranchName={restrictedBranchName}
+        branches={branches}
+        branchesLoading={branchesLoading}
+        acknowledgementOnly={acknowledgementOnly}
+        onReceiptTypeChange={(receiptType) => setForm({ ...form, receiptType })}
+      />
+    )
+  }
+
   return (
     <div className="px-6 py-8 lg:px-10">
       <Link
@@ -280,7 +297,7 @@ export default function NewAcknowledgementReceiptForm({
       </Link>
 
       <h1 className="text-2xl font-semibold text-prominent-purple-900">
-        New {form.receiptType === 'COLLECTION' ? 'Collection' : 'Acknowledgement'} Receipt
+        New Acknowledgement Receipt
       </h1>
       <p className="mt-1 text-sm text-gray-500">
         Record money received — for a customer&apos;s sale, or from someone who is not a customer —

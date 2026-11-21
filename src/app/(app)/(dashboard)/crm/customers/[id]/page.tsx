@@ -21,6 +21,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       canDelete={can(session, CRM_PERMISSIONS.CUSTOMERS_DELETE)}
       canScheduleReminder={REMINDERS_ENABLED && can(session, CRM_PERMISSIONS.REMINDERS_CREATE)}
       canApplyForCredit={can(session, CREDIT_PERMISSIONS.APPLICATION_CREATE)}
+      canApplyDeposit={can(session, CRM_PERMISSIONS.INSTALLMENT_ACCOUNTS_APPLY_DEPOSIT)}
       currentUserId={session.id}
       tenantId={session.enterpriseOwnerId ?? session.id}
     />

@@ -60,6 +60,8 @@ export interface SessionUser {
   positionId?: string | null
   branchId?: string | null
   branchName?: string | null
+  /** The user's branch carries Branch.isHeadOffice (Mabini, San Sebastian). */
+  branchIsHeadOffice?: boolean
   managerId?: string | null
   employee?: SessionEmployee | null
   branches: SessionBranch[]
