@@ -129,6 +129,7 @@ export type CollectionIssueField =
   | 'crNumber'
   | 'branch'
   | 'method'
+  | 'session'
 
 export interface CollectionIssue {
   /** Zero-based payment, or null for the collection as a whole. */
@@ -164,6 +165,11 @@ export function collectionIssues(args: {
    * Daily Collection Report while still counting in the all-branches total.
    * Omitted by callers that do not pick one. */
   branchId?: string
+  /** Cash taken at a branch counter with no session open there (pilot, Pandan
+   * Nov 20: ₱9,315 taken before the session opened was in the drawer but on no
+   * session, so Close session came up short). Omitted by callers that do not
+   * take cash at a counter. */
+  cashWithoutSession?: boolean
 }): CollectionIssue[] {
   const { rows } = args
   const several = rows.length > 1
@@ -206,6 +212,13 @@ export function collectionIssues(args: {
   }
   if (args.branchId !== undefined && !args.branchId.trim()) {
     issues.push({ row: null, field: 'branch', message: 'Branch' })
+  }
+  if (args.cashWithoutSession) {
+    issues.push({
+      row: null,
+      field: 'session',
+      message: "An open session at this branch's counter — open one before taking cash",
+    })
   }
   return issues
 }
