@@ -1600,6 +1600,8 @@ export interface PosReleaseFormCartLine {
   serialNumberId?: string
   serialNumberLabel?: string
   serialNumber?: string
+  /** Set on a ₱0 freebie / tie-up line given with a sold item (Docket #28). */
+  promoTag?: 'freebie' | 'tie_up'
   /** Per-line payment mode (2026-08-06) — falls back to the cart snapshot's
    * own invoiceType when a line omits it, same as the backend's
    * lineInvoiceType resolution. */

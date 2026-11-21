@@ -77,9 +77,12 @@ function RequestTypeBadge({ requestType }: { requestType?: string }) {
 
 /** The line the row/cards key off — first line flagged serial-tracked, or
  * failing that just the first line in the snapshot. */
+/** The line a row is named after: the sold unit, not a ₱0 freebie / tie-up
+ * given with it (a serialized freebie used to win and read ₱0.00). */
 function primaryLine(req: PosReleaseFormRequest): PosReleaseFormCartLine | undefined {
   const lines = req.cartSnapshot?.lines ?? []
-  return lines.find((l) => l.serialNumberId) ?? lines[0]
+  const sold = lines.filter((l) => !l.promoTag)
+  return sold.find((l) => l.serialNumberId) ?? sold[0] ?? lines[0]
 }
 
 function serialLabel(line?: PosReleaseFormCartLine): string {
@@ -107,8 +110,10 @@ function referenceLabel(req: PosReleaseFormRequest): string {
     : `#${req.id.slice(0, 8).toUpperCase()}`
 }
 
+/** Who submitted it (the backend resolves a name, first + last when the
+ * combined name is blank), else the session's cashier — never a raw id. */
 function cashierLabel(req: PosReleaseFormRequest): string {
-  return req.requestedBy?.name ?? req.session?.cashier?.name ?? shortId(req.requestedById)
+  return req.requestedBy?.name || req.session?.cashier?.name || 'Unknown cashier'
 }
 
 function branchTerminalLabel(req: PosReleaseFormRequest): string {
@@ -482,7 +487,7 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
+    <div className="w-full space-y-6 p-6">
       <div>
         <h1 className="text-xl font-bold text-gray-900">
           Release &amp; Application Form Approvals
@@ -689,6 +694,9 @@ ${signedDate ? `<div class="row"><span>Signed at</span><span>${signedDate}</span
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 bg-gray-50">
+                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Ref #
+                      </th>
                       <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                         Type
                       </th>
