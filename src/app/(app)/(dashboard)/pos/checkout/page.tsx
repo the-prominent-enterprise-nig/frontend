@@ -760,10 +760,16 @@ export default function CheckoutPage() {
     isLoading: sessionsLoading,
     isFetching: sessionsFetching,
     isFetchedAfterMount: sessionsFreshSinceMount,
-  } = useSessions({
-    status: 'open',
-    ...(switcherBranchId ? { branchId: switcherBranchId } : {}),
-  })
+  } = useSessions(
+    {
+      status: 'open',
+      ...(switcherBranchId ? { branchId: switcherBranchId } : {}),
+    },
+    // Fresh on every visit and every branch switch. Reusing a branch's list
+    // for up to a minute (the default) kept saying "No Open Session" after a
+    // session was opened there from another tab or till (bug, 2026-11-20).
+    { staleTime: 0 }
+  )
   const rawSessions = sessionsData?.data
   // A caravan's register is stored on its host, so the host's session list
   // includes it — but checkout only offers registers that are at the
@@ -795,9 +801,14 @@ export default function CheckoutPage() {
     setSessionClosedNotice(false)
     setPendingSessionSwitch(null)
     setSessionId(id)
-    // Kept for the next visit, so it is not picked all over again.
-    if (currentUserId) keepCheckoutSession(currentUserId, id)
   }
+  // Kept for this login as soon as both the session and the login are known,
+  // so it is not picked all over again. Not inside pickSession: a pick made
+  // before the login check finished (a slow first load) was never kept, and
+  // coming back to its branch asked again (QA on #377, 2026-11-20).
+  useEffect(() => {
+    if (sessionId && currentUserId) keepCheckoutSession(currentUserId, sessionId)
+  }, [sessionId, currentUserId])
   // The top-bar dropdown. Same rule as the picker: someone else's session asks first.
   function switchSession(id: string) {
     const target = openSessions.find((s) => s.id === id)
@@ -6228,6 +6239,24 @@ export default function CheckoutPage() {
     )
   }
 
+  // ─── Checking open sessions ────────────────────────────────────────────────
+  // Nothing listed yet, but the first fresh list for this branch is still on
+  // its way: the one showing is the previous branch's, or an older copy of
+  // this one. Say so rather than "No Open Session" until the server answers.
+  // A later background refresh does not bring this back.
+
+  if (sessionsData && openSessions.length === 0 && sessionsFetching && !sessionsFreshSinceMount) {
+    return (
+      <div
+        data-testid="checkout-sessions-checking"
+        className="flex min-h-full items-center justify-center gap-2 bg-zinc-50 p-10 text-sm text-gray-500"
+      >
+        <Loader2 size={16} className="animate-spin text-purple-600" />
+        Checking open sessions…
+      </div>
+    )
+  }
+
   // ─── No open sessions ──────────────────────────────────────────────────────
 
   if (sessionsData && openSessions.length === 0) {
@@ -6259,6 +6288,20 @@ export default function CheckoutPage() {
   // back intact once another session is picked.
 
   if (sessionsData && !sessionId) {
+    // Not until the login is known: the picker marks your own sessions, the
+    // "whose drawer" check needs to know whose a session is, and a pick has to
+    // be kept for this login.
+    if (!currentUserId) {
+      return (
+        <div
+          data-testid="checkout-sessions-checking"
+          className="flex min-h-full items-center justify-center gap-2 bg-zinc-50 p-10 text-sm text-gray-500"
+        >
+          <Loader2 size={16} className="animate-spin text-purple-600" />
+          Checking open sessions…
+        </div>
+      )
+    }
     return (
       <SessionPicker
         sessions={openSessions}

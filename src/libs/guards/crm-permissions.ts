@@ -29,6 +29,10 @@ export const CRM_PERMISSIONS = {
   INSTALLMENT_ACCOUNTS_EARLY_PAYOFF: 'crm:installment-accounts:early_payoff',
   INSTALLMENT_ACCOUNTS_RECORD_PAYMENT: 'crm:installment-accounts:record_payment',
   INSTALLMENT_ACCOUNTS_APPROVE_GRADUATION: 'crm:installment-accounts:approve_graduation',
+  // Docket #91 — Head Office AR applies a customer's deposit to an aging
+  // account; an Approver decides. Held through no wildcard.
+  INSTALLMENT_ACCOUNTS_APPLY_DEPOSIT: 'crm:installment-accounts:apply_deposit',
+  INSTALLMENT_ACCOUNTS_APPROVE_DEPOSIT: 'crm:installment-accounts:approve_deposit',
   INSTALLMENT_ACCOUNTS_APPROVE_DAM_ESCALATION: 'crm:installment-accounts:approve_dam_escalation',
   INSTALLMENT_ACCOUNTS_MANAGE_LEGAL_ESCALATION: 'crm:installment-accounts:manage_legal_escalation',
   PIPELINE_MANAGE: 'crm:pipeline:manage',

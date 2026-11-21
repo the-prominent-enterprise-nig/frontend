@@ -31,6 +31,8 @@ import CaravanItemTable, { type CaravanActions } from './CaravanItemTable'
 import EndedCaravansBanner from '@/src/components/inventory/caravan/EndedCaravansBanner'
 import { useCaravanAlerts } from '@/src/components/inventory/caravan/useCaravanAlerts'
 import CopySerialButton from './CopySerialButton'
+import SerialOwnerActions from './SerialOwnerActions'
+import { canEditSerialNumbers } from '../_permissions/serial-edit-access'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { StatusBadge } from '@/src/components/ui/StatusBadge'
@@ -53,6 +55,10 @@ import {
 } from '@/src/components/inventory/ListFooterPager'
 import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
 import SerialHistoryContent from '@/src/components/inventory/serial-history/SerialHistoryContent'
+
+// The actions column stays pinned to the right edge while the wide table
+// scrolls sideways, so the ⋮ menu is visible without scrolling.
+const STICKY_ACTIONS = 'sticky right-0 z-[1] shadow-[-1px_0_0_#eeeef1]'
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 // Matches Stock Balance's own #5b21b6 palette (same StockHub tab group), so
@@ -238,6 +244,8 @@ export default function SerialNumberList({
   const canManageCaravan = hasPermission(session, INVENTORY_PERMISSIONS.CARAVAN_MANAGE)
   // Unit cost is for Business Owner / Accountant, as on receiving.
   const canViewCost = hasPermission(session, INVENTORY_PERMISSIONS.RECEIVE_COST_VIEW)
+  // Correcting or deleting a unit: Business Owner, or the Inventory/EDP Head at Mabini.
+  const canEditSerials = canEditSerialNumbers(session)
   // Each count's total amount is aggregate valuation (as on the Valuation
   // report), so it follows that permission or its totals-only one — Stock
   // Controller, Branch Manager and the custodians see it without per-unit cost.
@@ -736,6 +744,11 @@ export default function SerialNumberList({
                         <th className="px-4 py-[9px] text-left hidden md:table-cell">Store Age</th>
                         {canViewCost && <th className="px-4 py-[9px] text-right">Cost</th>}
                         <th className="px-4 py-[9px] text-center">Status</th>
+                        {canEditSerials && (
+                          <th className={`${STICKY_ACTIONS} w-12 bg-[#fbfbfc] px-2 py-[9px]`}>
+                            <span className="sr-only">Actions</span>
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#f4f4f6]">
@@ -754,7 +767,7 @@ export default function SerialNumberList({
                                     })
                                 : undefined
                             }
-                            className={`${isLocator || serial.pastUnit ? 'cursor-pointer ' : ''}hover:bg-[#fcfcfd] ${
+                            className={`group ${isLocator || serial.pastUnit ? 'cursor-pointer ' : ''}hover:bg-[#fcfcfd] ${
                               selection.isSelected(serial.id) || inlineSerial?.id === serial.id
                                 ? 'bg-[#f8f4fd]'
                                 : ''
@@ -780,11 +793,11 @@ export default function SerialNumberList({
                                     <SerialLink
                                       serialId={serial.id}
                                       serialNumber={serial.serialNumber}
-                                      className={`${MONO} text-[14.5px] font-semibold text-[#17171c]`}
+                                      className={`${MONO} text-[13px] font-semibold text-[#17171c]`}
                                     />
                                   ) : (
                                     <span
-                                      className={`${MONO} text-[14.5px] font-semibold text-[#17171c]`}
+                                      className={`${MONO} text-[13px] font-semibold text-[#17171c]`}
                                     >
                                       {serial.serialNumber}
                                     </span>
@@ -893,10 +906,21 @@ export default function SerialNumberList({
                                 )}
                               </div>
                             </td>
+                            {canEditSerials && (
+                              <td
+                                className={`${STICKY_ACTIONS} px-2 py-[11px] text-right ${
+                                  selection.isSelected(serial.id) || inlineSerial?.id === serial.id
+                                    ? 'bg-[#f8f4fd]'
+                                    : 'bg-white group-hover:bg-[#fcfcfd]'
+                                }`}
+                              >
+                                {!serial.pastUnit && <SerialOwnerActions serial={serial} />}
+                              </td>
+                            )}
                           </tr>
                           {expandedSerial?.id === serial.id && (
                             <tr className="bg-[#fbfbfc]">
-                              <td colSpan={12} className="p-0">
+                              <td colSpan={13} className="p-0">
                                 <div className="flex h-[440px] flex-col overflow-hidden border-t border-[#e4e4e9]">
                                   <SerialHistoryContent
                                     timelineOnly

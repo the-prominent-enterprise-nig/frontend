@@ -1072,6 +1072,12 @@ export interface CreateAcknowledgementReceiptInput {
    * The credit goes to that partner's own receivable instead of the customer's
    * Accounts Receivable, and the receipt stays off the customer's ledger. */
   tpfProviderId?: string
+  /** Docket NIG #90 — what a customer's Collection receipt credits when it is
+   * not a Chart of Accounts pick: pay down one aging account
+   * (`installmentAccountId`, required with it) or hold the money as a customer
+   * deposit. Needs `customerId`; not combined with `accountId`. */
+  creditEntry?: 'MONTHLY_INSTALMENT' | 'CUSTOMER_DEPOSIT'
+  installmentAccountId?: string
   reason?: string
   amount: number
   paymentDate: string
@@ -1119,7 +1125,106 @@ export interface UpdateAcknowledgementReceiptInput {
   branchId?: string
   collectorId?: string
 }
+/** Docket NIG #90 — one of a customer's open aging accounts, as the New
+ * Receipt (Collection) form's Aging account pick lists it. */
+export interface AgingAccountOption {
+  id: string
+  accountNumber: string
+  /** The SI No. the customer holds — the account number without our `IA-`. */
+  siNo: string
+  branchName: string | null
+  /** What is still owed, with every collection and receipt laid over it. */
+  outstanding: number
+  nextDueDate: string
+}
+// ============ Customer deposits applied to an aging account (Docket NIG #91) ============
+export type DepositApplicationStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+export interface CustomerDepositRow {
+  id: string
+  receiptId: string
+  date: string
+  /** The CR number off the paper receipt. */
+  reference: string | null
+  /** Where it was received in — a bank, a fund, or Cash on Hand. */
+  receivedIn: string
+  amount: number
+  available: number
+}
+export interface DepositApplicationRow {
+  id: string
+  status: DepositApplicationStatus
+  customerId: string
+  customerName: string | null
+  installmentAccountId: string
+  /** The aging account's SI No. and the branch it sits in. */
+  siNo: string | null
+  branchName: string | null
+  amount: number
+  remarks: string | null
+  /** The deposit receipt(s) it was drawn from. */
+  depositReferences: string[]
+  requestedAt: string
+  requestedBy: string | null
+  resolvedAt: string | null
+  resolvedBy: string | null
+  rejectionReason: string | null
+  /** The date the entry posts as of, once approved: the ORIGINAL deposit date
+   * (the older, when it drew on two). The day it was applied is `resolvedAt`. */
+  postingDate: string | null
+  /** The same date before approval too: where a waiting request will post. */
+  entryDate: string
+  /** Approvals list, for a request that is still waiting. */
+  accountOutstanding?: number | null
+  customerAvailableDeposit?: number | null
+}
+export interface CustomerDepositSummary {
+  customerId: string
+  /** Every live deposit received. */
+  received: number
+  /** Taken by approved applications. */
+  applied: number
+  /** Held by requests waiting for approval (still unapplied). */
+  reserved: number
+  /** What a new request may still draw: received − applied − reserved. */
+  available: number
+  deposits: CustomerDepositRow[]
+  applications: DepositApplicationRow[]
+  /** Account id → what waiting requests hold on it. */
+  pendingByAccount: Record<string, number>
+}
+export const CustomerDeposits = {
+  /** The CRM profile's Deposits card. */
+  summary: (customerId: string) =>
+    api.get<CustomerDepositSummary>(`/accounting/customer-deposits/customers/${customerId}`),
+  /** Approvals & Reviews. */
+  list: (params?: { status?: DepositApplicationStatus; customerId?: string }) =>
+    api.get<{ pendingCount: number; applications: DepositApplicationRow[] }>(
+      '/accounting/customer-deposits/applications',
+      params as any
+    ),
+  apply: (body: {
+    customerId: string
+    installmentAccountId: string
+    amount: number
+    remarks?: string
+  }) => api.post<{ id: string }>('/accounting/customer-deposits/applications', body),
+  cancel: (id: string) =>
+    api.post<{ id: string }>(`/accounting/customer-deposits/applications/${id}/cancel`, {}),
+  approve: (id: string) =>
+    api.post<{ id: string }>(`/accounting/customer-deposits/applications/${id}/approve`, {}),
+  reject: (id: string, reason: string) =>
+    api.post<{ id: string }>(`/accounting/customer-deposits/applications/${id}/reject`, {
+      reason,
+    }),
+}
+
 export const AcknowledgementReceipts = {
+  /** A customer's open aging accounts (every branch's), for the Collection
+   * form's Aging account pick when the credit entry is Monthly instalment. */
+  agingAccounts: (customerId: string) =>
+    api.get<AgingAccountOption[]>(
+      `/accounting/acknowledgement-receipts/customers/${customerId}/aging-accounts`
+    ),
   /** `unbanked: 'true'` asks for only what the branch still has to bank —
    * not cancelled, not already on a deposit (Scenario 70 G11). */
   list: (params?: {

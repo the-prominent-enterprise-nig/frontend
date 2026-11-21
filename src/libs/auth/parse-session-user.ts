@@ -76,6 +76,7 @@ export function parseSessionUser(raw: any): SessionUser {
     positionId: data.positionId ?? null,
     branchId: data.branchId ?? null,
     branchName: data.branchName ?? null,
+    branchIsHeadOffice: data.branchIsHeadOffice === true,
     managerId: data.managerId ?? null,
     employee: data.employee ?? undefined,
     branches,
