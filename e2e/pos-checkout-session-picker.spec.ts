@@ -10,8 +10,10 @@ import { gotoReady, loginAs } from './utils'
 // their drawer.
 
 const BRANCH = 'Bago'
-// Where the owner keeps a session of their own, for the dropdown switch.
-const OTHER_BRANCH = 'Binalbagan'
+// Where the owner keeps a session of their own. A branch nothing else here
+// uses: in the shared test database another cashier can hold Binalbagan's
+// only terminal, which skipped every test that needed it.
+const OTHER_BRANCH = 'Hinobaan'
 const CASHIER_EMAIL = 'technova.b1.cashier@test.com'
 const DEV_PASSWORD = 'dev-prominent-enterprise-2026'
 
@@ -510,6 +512,77 @@ test.describe('POS checkout — switching the branch', () => {
 
     // Back to Binalbagan: straight onto the kept session, no picker.
     await switchBranch(page, OTHER_BRANCH)
+    await expect(active).toHaveAttribute('data-session-id', own!.id, { timeout: 30_000 })
+    await expect(picker).toHaveCount(0)
+  })
+
+  test("QA's run: open and close a session in a second tab, then the kept session still comes back on its branch", async ({
+    page,
+    request,
+    context,
+  }) => {
+    // Steps 1 to 3 of the PR's manual test, in one go, with a second tab
+    // sharing this one's browser storage (as two tabs do).
+    // The owner's own session lives at Canlaon here, a branch these tests
+    // otherwise leave alone.
+    const OWN_AT = 'Canlaon'
+    const own = await ensureOwnSessionAt(request, OWN_AT)
+    test.skip(!own, `no free ${OWN_AT} terminal for the owner's own session`)
+    const empty = await branchNamed(request, EMPTY_FIRST)
+    const me = (await (await request.get('/api/users/me')).json()) as { id: string }
+    // Leftovers of the owner's own from an earlier run are closed; anyone
+    // else's would mean the branch is not empty, so the test cannot run.
+    const leftovers = (await openSessions(request)).filter(
+      (s) => s.terminal?.branch?.name === EMPTY_FIRST
+    )
+    for (const s of leftovers.filter((s) => s.cashierId === me.id)) {
+      await closeAtExpected(request, s.id)
+    }
+    test.skip(
+      leftovers.some((s) => s.cashierId !== me.id),
+      `${EMPTY_FIRST} has another cashier's open session`
+    )
+    const picker = page.getByTestId('checkout-session-picker')
+    const active = page.getByTestId('checkout-active-session')
+
+    // 1. Tab 1 on the empty branch; tab 2 opens a session there, which the
+    //    Sessions page also keeps for this login.
+    await startOnBranch(page, empty)
+    await gotoReady(page, '/pos/checkout')
+    await expect(page.getByText('No Open Session')).toBeVisible({ timeout: 30_000 })
+    const tab2 = await context.newPage()
+    await gotoReady(tab2, '/pos/sessions')
+    const opened = await ensureOwnSessionAt(request, EMPTY_FIRST)
+    test.skip(!opened, `no free ${EMPTY_FIRST} terminal`)
+    await tab2.evaluate(
+      ([key, value]) => localStorage.setItem(key, value),
+      ['pos_checkout_session', JSON.stringify({ userId: me.id, sessionId: opened!.id })]
+    )
+    await switchBranch(page, BRANCH)
+    await switchBranch(page, EMPTY_FIRST)
+    await expect(active.or(picker)).toBeVisible({ timeout: 30_000 })
+
+    // 2. Tab 2 closes it; tab 1 no longer offers it.
+    await closeAtExpected(request, opened!.id)
+    await switchBranch(page, BRANCH)
+    await switchBranch(page, EMPTY_FIRST)
+    await expect(page.getByText('No Open Session')).toBeVisible({ timeout: 30_000 })
+
+    // 3. Tab 1 picks its own Canlaon session, goes to Bago, comes back.
+    await switchBranch(page, OWN_AT)
+    await expect(async () => {
+      if (await picker.isVisible()) {
+        await picker
+          .getByTestId('checkout-session-option')
+          .filter({ hasText: OWN_AT })
+          .first()
+          .click({ timeout: 3_000 })
+      }
+      await expect(active).toHaveAttribute('data-session-id', own!.id, { timeout: 3_000 })
+    }).toPass({ timeout: 30_000 })
+    await switchBranch(page, BRANCH)
+    await expect(picker.or(page.getByText('No Open Session'))).toBeVisible({ timeout: 30_000 })
+    await switchBranch(page, OWN_AT)
     await expect(active).toHaveAttribute('data-session-id', own!.id, { timeout: 30_000 })
     await expect(picker).toHaveCount(0)
   })
