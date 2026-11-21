@@ -17,7 +17,12 @@ import {
   useCustomerInstallmentSchedules,
   useCollectionsCustomers,
   useSessions,
+  useTerminals,
+  useOpenSession,
 } from '../../_hooks/usePos'
+import OpenSessionModal from '../../sessions/_components/OpenSessionModal'
+import { keepCheckoutSession } from '@/src/libs/pos/checkout-session-memory'
+import type { OpenSessionInput } from '@/src/schema/pos'
 import {
   getBranches,
   getPaymentMethods,
@@ -941,6 +946,10 @@ function PaymentPanel({
   // Set when Collect payment is pressed with something missing, so the list
   // (and the red fields) only appear then, and shrink live as each gap fills.
   const [showIssues, setShowIssues] = useState(false)
+  // Collect Payment opens the counter's session in place when cash needs one.
+  const [openingSession, setOpeningSession] = useState(false)
+  const [openSessionError, setOpenSessionError] = useState('')
+  const openSessionMutation = useOpenSession()
   const [form, setForm] = useState({
     withholdingAmount: '0',
     // Opens on today; the penalty/rebate previewed below follow whatever
@@ -1211,6 +1220,23 @@ function PaymentPanel({
   const receiptDate = onSession ? manilaToday() : pickedDate
   const assessedAsOf = onSession && pickedDate < receiptDate ? pickedDate : undefined
   const isBackdated = receiptDate < manilaToday()
+  // A branch with a counter takes today's cash into a drawer, so it needs a
+  // session open there first — otherwise the cash is in the drawer but on no
+  // session, and Close session comes up short by it. A Field stub (a
+  // collector's), a backdated entry made after the fact, a non-cash payment
+  // and a branch with no terminal (Head Office) are not drawer cash.
+  const { data: branchTerminals } = useTerminals(
+    form.branchId ? { branchId: form.branchId } : undefined
+  )
+  const branchHasCounter = (branchTerminals?.success ? (branchTerminals.data ?? []) : []).some(
+    (t) => t.branchId === form.branchId && t.status === 'active'
+  )
+  const cashWithoutSession =
+    branchHasCounter &&
+    form.stubOwner !== 'field' &&
+    !onSession &&
+    !isBackdated &&
+    resolvedPayments.some((r) => r.method === 'CASH')
   // Informational only, not blocking — the backend only rejects a repeat
   // same-date payment once the invoice is already fully paid (isFullyPaid,
   // handled separately above). A due that's still open can be topped up
@@ -1235,6 +1261,7 @@ function PaymentPanel({
     crNumber: form.reference,
     fieldStubWithoutCollector: form.stubOwner === 'field' && !form.collectorId,
     branchId: form.branchId,
+    cashWithoutSession,
   })
   const shownIssues = showIssues ? issues : []
   const crNumberInvalid = shownIssues.some((i) => i.field === 'crNumber')
@@ -1289,6 +1316,18 @@ function PaymentPanel({
         .querySelector(`[data-testid="collection-payment-${payments.length}"]`)
         ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
     }, 60)
+  }
+
+  async function handleOpenSession(input: OpenSessionInput): Promise<void> {
+    setOpenSessionError('')
+    const res = await openSessionMutation.mutateAsync(input)
+    if (!res.success) {
+      setOpenSessionError(res.error ?? 'Failed to open session')
+      return
+    }
+    // Checkout keeps this session for them too, as the Sessions page does.
+    if (res.data?.id && res.data.cashierId) keepCheckoutSession(res.data.cashierId, res.data.id)
+    setOpeningSession(false)
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -1835,6 +1874,37 @@ function PaymentPanel({
             />
           </div>
 
+          {cashWithoutSession && (
+            <div
+              data-testid="collection-no-session"
+              className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+            >
+              <span>
+                No session is open at this branch&apos;s counter. Cash goes into a drawer, so open
+                one first.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenSessionError('')
+                  setOpeningSession(true)
+                }}
+                className="shrink-0 rounded-lg bg-prominent-purple-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-prominent-purple-800"
+              >
+                Open session
+              </button>
+            </div>
+          )}
+          {openingSession && (
+            <OpenSessionModal
+              branchId={form.branchId}
+              note="Cash taken here goes into this counter's drawer, so its session has to be open first. Count the float that's already in the drawer."
+              error={openSessionError}
+              isLoading={openSessionMutation.isPending}
+              onClose={() => setOpeningSession(false)}
+              onSubmit={handleOpenSession}
+            />
+          )}
           {shownIssues.length > 0 && (
             <div
               role="alert"
