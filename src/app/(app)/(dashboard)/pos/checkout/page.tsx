@@ -152,6 +152,7 @@ import {
 } from './_utils/delivery'
 import {
   availableTenders,
+  canGiveChange,
   mixedPaymentIssues,
   nextTender,
   rowForTender,
@@ -1458,6 +1459,9 @@ export default function CheckoutPage() {
     transactionId: string
     transactionNumber: string
     change: number
+    /** The part of what was tendered that was the delivery fee (handed over in
+     * cash with the sale). It is on the fee's own CR, so it is not the sale's. */
+    feeInPayments?: number
     journalEntryId?: string | null
     arInvoiceId?: string | null
     salesInvoiceNumber?: string | null
@@ -2474,18 +2478,39 @@ export default function CheckoutPage() {
   // valid amount).
   const deliveryFeeAmount = delivery.enabled ? (parseDeliveryFee(delivery.fee) ?? 0) : 0
   // Scenario 70 — the fee is paid with its own tender (the Delivery section's
-  // Paid with), on its own CR, never through the sale's payment box. So the
-  // payment box's Amount received, change and "Underpaid" measure the sale
-  // alone (tenderTarget), and the invoice and journal entries carry the sale
-  // alone. The two Totals (Order Summary and the block above Confirm) are a
-  // cashier's view only: they list Amount + Delivery fee and add the fee in,
-  // so the cashier sees everything the customer hands over at a glance.
+  // Paid with) and recorded on its own CR; the invoice and journal entries
+  // carry the sale alone. The two Totals (Order Summary and the block above
+  // Confirm) list Amount + Delivery fee, so the cashier sees everything the
+  // customer hands over at a glance.
   const totalWithDeliveryFee = Math.round((totalAmount + deliveryFeeAmount) * 100) / 100
   const tenderTargetWithDeliveryFee = Math.round((tenderTarget + deliveryFeeAmount) * 100) / 100
 
+  // The first row follows Item Payment Mode: a Check there is not cash on hand.
+  const firstRowIsCheck = hasCashLine && cashSubMode === 'check'
+
+  // Pilot (Caravan) — a delivery fee paid in cash is handed over in the same
+  // breath as the sale's cash, so the payment box counts it: Use exact, the
+  // Amount received, "Still to collect" and the Change all measure sale + fee.
+  // It is the box's figure only. At Confirm the fee comes back off the cash
+  // rows, so the sale's payments still total the sale alone and the fee is
+  // recorded on its own CR, as before. A fee paid any other way (card, GCash,
+  // transfer, ...) is not cash at the counter, and a sale paid with no cash at
+  // all has nothing to take the fee out of: the box stays the sale's own figure.
+  const feeInPaymentBox =
+    saleMode === 'sale' &&
+    !isOffline &&
+    tenderTarget > 0 &&
+    deliveryFeeAmount > 0 &&
+    delivery.tender === 'cash_on_hand' &&
+    payments.some((p) => canGiveChange(p, firstRowIsCheck))
+      ? deliveryFeeAmount
+      : 0
+  const paymentBoxTarget = Math.round((tenderTarget + feeInPaymentBox) * 100) / 100
+
   const totalPaid = Math.round(payments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100
-  const balance = Math.max(0, Math.round((tenderTarget - totalPaid) * 100) / 100)
-  const change = totalPaid > tenderTarget ? Math.round((totalPaid - tenderTarget) * 100) / 100 : 0
+  const balance = Math.max(0, Math.round((paymentBoxTarget - totalPaid) * 100) / 100)
+  const change =
+    totalPaid > paymentBoxTarget ? Math.round((totalPaid - paymentBoxTarget) * 100) / 100 : 0
 
   // ─── Mixed payment ──────────────────────────────────────────────────────────
   // One sale can be tendered with several methods. Not on an X-Deal or a
@@ -2494,8 +2519,6 @@ export default function CheckoutPage() {
   const mixedPaymentAllowed =
     saleMode === 'sale' && !isOffline && !xDealActive && !isPureTpfCart && tenderTarget > 0
   const mixedPaymentActive = saleMode === 'sale' && payments.length > 1
-  // The first row follows Item Payment Mode: a Check there is not cash on hand.
-  const firstRowIsCheck = hasCashLine && cashSubMode === 'check'
   const tenderChoices = availableTenders(enabledPaymentMethods)
   const firstRowTender: DeliveryFeeTender = (() => {
     const m = payments[0]?.method ?? preferredPaymentMethodKey() ?? 'cash'
@@ -2745,12 +2768,12 @@ export default function CheckoutPage() {
   // line added, a discount): the amounts are left alone, the cashier is told.
   useEffect(() => {
     const previous = lastTenderTargetRef.current
-    lastTenderTargetRef.current = tenderTarget
-    if (mixedPaymentActive && previous > 0 && Math.abs(previous - tenderTarget) > 0.009) {
+    lastTenderTargetRef.current = paymentBoxTarget
+    if (mixedPaymentActive && previous > 0 && Math.abs(previous - paymentBoxTarget) > 0.009) {
       setTotalChangedFrom(previous)
     }
     if (!mixedPaymentActive) setTotalChangedFrom(null)
-  }, [tenderTarget, mixedPaymentActive])
+  }, [paymentBoxTarget, mixedPaymentActive])
   useEffect(() => {
     if (balance <= 0.009) setTotalChangedFrom(null)
   }, [balance])
@@ -5699,9 +5722,12 @@ export default function CheckoutPage() {
         const tendered = payments.filter((p) => p.amount > 0)
         // Mixed payment — the change comes off the cash rows, so a GCash, card
         // or transfer row is recorded for what actually went through it.
+        // A delivery fee handed over in cash with the sale comes off the cash
+        // rows too: it is recorded on its own CR, never as part of the sale.
+        const takenFromCash = Math.round((change + feeInPaymentBox) * 100) / 100
         const rows =
-          mixedPaymentActive && change > 0.009
-            ? withChangeTakenFromCash(tendered, change, firstRowIsCheck)
+          mixedPaymentActive && takenFromCash > 0.009
+            ? withChangeTakenFromCash(tendered, takenFromCash, firstRowIsCheck)
             : tendered
         const consumed: number[] = rows.map(() => 0)
         const payRowPortion = async (
@@ -5875,6 +5901,7 @@ export default function CheckoutPage() {
         transactionId: txId,
         transactionNumber: txData?.transactionNumber ?? txId,
         change,
+        feeInPayments: feeInPaymentBox,
         journalEntryId: txData?.journalEntryId,
         arInvoiceId: txData?.arInvoiceId ?? null,
         salesInvoiceNumber: txData?.salesInvoiceNumber ?? null,
@@ -8585,10 +8612,11 @@ export default function CheckoutPage() {
             {/* Scenario 70 — the Total comes first, then the payment fields under it
               (Amount received, CR Number, Change), then Confirm. With a
               delivery fee it reads Amount + Delivery fee = Total, so the
-              cashier sees everything to collect at a glance. That is a view
-              only: Amount received (and its Copy) stays the sale's own figure,
-              because the fee is a collection on its own CR, paid in the
-              Delivery section above, and never part of the sale. */}
+              cashier sees everything to collect at a glance. The fee is a
+              collection on its own CR, never part of the sale. When it is paid
+              in cash it is handed over with the sale's cash, so Amount received
+              (and the Copy) is the Total; otherwise Amount received stays the
+              sale's own figure and the fee is paid in the Delivery section. */}
             {saleMode === 'sale' &&
               cart.length > 0 &&
               (tenderTarget > 0 || deliveryFeeAmount > 0) && (
@@ -8605,7 +8633,9 @@ export default function CheckoutPage() {
                             : 'Amount due now'}
                         </span>
                         <span className="flex items-center gap-3">
-                          <CopyAmountButton amount={tenderTarget} testId="checkout-total-copy" />
+                          {feeInPaymentBox <= 0 && (
+                            <CopyAmountButton amount={tenderTarget} testId="checkout-total-copy" />
+                          )}
                           <span className="font-medium">{fmt(tenderTarget)}</span>
                         </span>
                       </div>
@@ -8620,15 +8650,25 @@ export default function CheckoutPage() {
                         <span className="text-sm font-semibold text-gray-700">
                           {Math.abs(tenderTarget - totalAmount) < 0.01 ? 'Total' : 'Total due now'}
                         </span>
-                        <span
-                          className="text-2xl font-bold text-gray-900"
-                          data-testid="checkout-grand-total"
-                        >
-                          {fmt(tenderTargetWithDeliveryFee)}
+                        <span className="flex items-center gap-3">
+                          {feeInPaymentBox > 0 && (
+                            <CopyAmountButton
+                              amount={paymentBoxTarget}
+                              testId="checkout-total-copy"
+                            />
+                          )}
+                          <span
+                            className="text-2xl font-bold text-gray-900"
+                            data-testid="checkout-grand-total"
+                          >
+                            {fmt(tenderTargetWithDeliveryFee)}
+                          </span>
                         </span>
                       </div>
                       <p className="mt-1 text-xs text-purple-700">
-                        The delivery fee is on its own CR — the invoice stays the sale amount.
+                        {feeInPaymentBox > 0
+                          ? 'The cash received includes the delivery fee — it goes on its own CR, and the invoice stays the sale amount.'
+                          : 'The delivery fee is on its own CR — the invoice stays the sale amount.'}
                       </p>
                     </>
                   )}
@@ -8772,7 +8812,7 @@ export default function CheckoutPage() {
                         exactAmount={Math.max(
                           0,
                           Math.round(
-                            (tenderTarget -
+                            (paymentBoxTarget -
                               payments.reduce(
                                 (sum, other, j) => (j === i ? sum : sum + (other.amount || 0)),
                                 0
@@ -8983,8 +9023,8 @@ export default function CheckoutPage() {
                 >
                   {totalChangedFrom !== null && (
                     <p className="text-xs text-amber-700" data-testid="payment-total-changed">
-                      The total changed from {fmt(totalChangedFrom)} to {fmt(tenderTarget)} — check
-                      the amounts above.
+                      The total changed from {fmt(totalChangedFrom)} to {fmt(paymentBoxTarget)} —
+                      check the amounts above.
                     </p>
                   )}
                   <div className="flex justify-between text-gray-700">
@@ -10133,6 +10173,9 @@ function SuccessScreen({
     transactionId: string
     transactionNumber: string
     change: number
+    /** The part of what was tendered that was the delivery fee (handed over in
+     * cash with the sale). It is on the fee's own CR, so it is not the sale's. */
+    feeInPayments?: number
     journalEntryId?: string | null
     arInvoiceId?: string | null
     salesInvoiceNumber?: string | null
@@ -10216,7 +10259,12 @@ function SuccessScreen({
   // receipt, so the sale's payments (and the change on them) are the sale's
   // alone.
   const deliveryFeeCollected = success.delivery?.fee ?? 0
-  const paidNow = Math.max(0, Math.round((totalTendered - success.change) * 100) / 100)
+  // The fee handed over in cash with the sale is in the tendered figure but is
+  // not the sale's, so it comes off before the sale's own Paid Now.
+  const paidNow = Math.max(
+    0,
+    Math.round((totalTendered - success.change - (success.feeInPayments ?? 0)) * 100) / 100
+  )
   const notCollectedHere = Math.max(0, Math.round((totalAmount - paidNow) * 100) / 100)
   const tpfOutcomes = installmentOutcomes.filter((o) => o.installmentProvider === 'tpf')
   const allTpf = tpfOutcomes.length > 0 && tpfOutcomes.length === installmentOutcomes.length

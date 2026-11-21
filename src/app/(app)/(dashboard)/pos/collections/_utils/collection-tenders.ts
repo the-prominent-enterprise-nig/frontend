@@ -97,6 +97,12 @@ export function resolveCollectionPayment(
   tiles: DeliveryFeeTender[],
   paymentMethods: CollectionsPaymentOption[]
 ) {
+  // The cashier has to pick the method (20 Nov): a payment recorded on whatever
+  // the screen opened with was recorded as Cash by mistake (Pandan). `chosen` is
+  // false until a button on offer is pressed; the tile below still falls back to
+  // Cash so the amounts and previews have something to work from, but such a
+  // payment cannot be submitted (see collectionIssues).
+  const chosen = row.tile !== '' && tiles.includes(row.tile)
   const tile: DeliveryFeeTender =
     tiles.find((t) => t === row.tile) ??
     (tiles.includes('cash_on_hand') ? 'cash_on_hand' : tiles[0])
@@ -106,6 +112,7 @@ export function resolveCollectionPayment(
   const optionId = options.some((o) => o.id === row.optionId) ? row.optionId : undefined
   return {
     tile,
+    chosen,
     option,
     method: option?.method ?? 'CASH',
     options,
@@ -114,7 +121,14 @@ export function resolveCollectionPayment(
   }
 }
 
-export type CollectionIssueField = 'amount' | 'bankReference' | 'option' | 'collector' | 'crNumber'
+export type CollectionIssueField =
+  | 'amount'
+  | 'bankReference'
+  | 'option'
+  | 'collector'
+  | 'crNumber'
+  | 'branch'
+  | 'method'
 
 export interface CollectionIssue {
   /** Zero-based payment, or null for the collection as a whole. */
@@ -132,6 +146,9 @@ export function collectionIssues(args: {
     amount: number
     method: PaymentMethod
     bankReferenceNumber: string
+    /** Whether a method button was pressed (20 Nov: the screen no longer opens on
+     * Cash). Omitted by callers that do not ask for one. */
+    methodChosen?: boolean
     /** The bank / gateway / biller / acquirer this payment has to name — only
      * when its method offers any; null when there is nothing to choose. */
     option?: { label: string; chosen: boolean } | null
@@ -142,12 +159,24 @@ export function collectionIssues(args: {
   crNumber?: string
   /** A Field stub names the collector whose booklet it came off. */
   fieldStubWithoutCollector?: boolean
+  /** The branch the collection was taken at, as picked. Required (20 Nov): the
+   * receipt files under it, and one with no branch drops out of every branch's
+   * Daily Collection Report while still counting in the all-branches total.
+   * Omitted by callers that do not pick one. */
+  branchId?: string
 }): CollectionIssue[] {
   const { rows } = args
   const several = rows.length > 1
   const issues: CollectionIssue[] = []
   rows.forEach((r, i) => {
     const who = several ? `Payment ${i + 1} — ` : ''
+    if (r.methodChosen === false) {
+      issues.push({
+        row: i,
+        field: 'method',
+        message: several ? `${who}payment method` : 'Payment method',
+      })
+    }
     if (!(r.amount > 0)) {
       issues.push({
         row: i,
@@ -174,6 +203,9 @@ export function collectionIssues(args: {
   }
   if (args.fieldStubWithoutCollector) {
     issues.push({ row: null, field: 'collector', message: 'Collector (Field stub)' })
+  }
+  if (args.branchId !== undefined && !args.branchId.trim()) {
+    issues.push({ row: null, field: 'branch', message: 'Branch' })
   }
   return issues
 }

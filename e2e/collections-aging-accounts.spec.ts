@@ -233,6 +233,11 @@ test('a customer from the aging upload is listed in Collections and can be colle
   await expect(page.getByText('Total with penalty')).toBeVisible()
 
   // What is handed over is the month plus its penalty.
+  // The payment method has to be picked (20 Nov).
+  await page
+    .getByTestId('collection-method-0')
+    .getByRole('button', { name: 'Cash on Hand', exact: true })
+    .click()
   await fillMoney(page.getByTestId('collection-amount-0'), 1050)
   await fillCrNumber(page, 'AGING')
   await page.getByRole('button', { name: 'Collect payment' }).click()
@@ -454,6 +459,11 @@ test('two months collected together are one payment, and fill the months oldest 
   await expect(page.locator('table tbody tr')).toHaveCount(2)
 
   // ₱2,000 of dues and the 5% penalty on each late month: ₱100.
+  // The payment method has to be picked (20 Nov).
+  await page
+    .getByTestId('collection-method-0')
+    .getByRole('button', { name: 'Cash on Hand', exact: true })
+    .click()
   await fillMoney(page.getByTestId('collection-amount-0'), 2100)
   await fillCrNumber(page, 'AGING')
   // Several dues ticked: the button reads the total, not "Collect payment".
@@ -491,6 +501,11 @@ test('a month can take its rebate when the payment clears it in full', async ({ 
   await expect(previewRow).toContainText('−₱75.00')
   await expect(previewRow).toContainText('+₱50.00')
   // ₱1,000 − ₱75 rebate + ₱50 penalty.
+  // The payment method has to be picked (20 Nov).
+  await page
+    .getByTestId('collection-method-0')
+    .getByRole('button', { name: 'Cash on Hand', exact: true })
+    .click()
   await fillMoney(page.getByTestId('collection-amount-0'), 975)
   await fillCrNumber(page, 'AGING')
   await page.getByRole('button', { name: 'Collect payment' }).click()

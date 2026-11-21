@@ -129,7 +129,8 @@ const COLLECTIONS_METHOD_KEYS: Record<string, PaymentMethod> = {
 
 // 'Check' has no POS equivalent (not a PosPaymentMethod at all) — kept as a
 // fixed extra choice alongside the branch's configured methods below, same
-// as it's always worked in this form.
+// as it's always worked in this form. Its configId is filled in below, from
+// the Cash method's.
 const CHECK_PAYMENT_OPTION: CollectionsPaymentOption = {
   id: 'CHECK',
   label: 'Check',
@@ -187,7 +188,20 @@ function useCollectionsPaymentMethods(branchId: string): CollectionsPaymentOptio
       })
     )
 
-  return [...configuredOptions, CHECK_PAYMENT_OPTION]
+  // A check is cash with its number — POS checkout sends it under the Cash
+  // method's own config, and so does this screen. The server will not take a
+  // non-cash collection that names neither a bank nor a configured method
+  // ("Source of Fund (bankAccountId) is required for CHECK payments"), and a
+  // check has no bank to name at collection: it waits for a deposit like cash
+  // does and posts to Cash and Cash Equivalents. Without the Cash config here a
+  // Check collection on a single due or an aging account could not be saved.
+  const cashConfig = configured.find((m) => m.isEnabled && m.key === 'cash')
+  const checkOption: CollectionsPaymentOption = {
+    ...CHECK_PAYMENT_OPTION,
+    configId: cashConfig?.id,
+  }
+
+  return [...configuredOptions, checkOption]
 }
 
 // A due is eligible for selection (and payment, via "Pay Selected") once its
@@ -1212,6 +1226,7 @@ function PaymentPanel({
       amount: r.amount,
       method: r.method,
       bankReferenceNumber: payments[i].bankReferenceNumber,
+      methodChosen: r.chosen,
       option:
         r.options.length > 0 && TILE_OPTION_LABEL[r.tile]
           ? { label: TILE_OPTION_LABEL[r.tile]!, chosen: !!r.optionId }
@@ -1219,9 +1234,11 @@ function PaymentPanel({
     })),
     crNumber: form.reference,
     fieldStubWithoutCollector: form.stubOwner === 'field' && !form.collectorId,
+    branchId: form.branchId,
   })
   const shownIssues = showIssues ? issues : []
   const crNumberInvalid = shownIssues.some((i) => i.field === 'crNumber')
+  const branchInvalid = shownIssues.some((i) => i.field === 'branch')
   const invalidFieldsOf = (row: number): ReadonlySet<CollectionIssueField> =>
     new Set(shownIssues.filter((i) => i.row === row).map((i) => i.field))
 
@@ -1685,7 +1702,9 @@ function PaymentPanel({
               )}
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-zinc-700">Branch</label>
+              <label className="mb-1 block text-sm font-medium text-zinc-700">
+                Branch <span className="text-red-500">*</span>
+              </label>
               <BranchSearchCombobox
                 key={branchDefault?.id ?? 'no-default'}
                 value={form.branchId}
@@ -1693,6 +1712,7 @@ function PaymentPanel({
                 onChange={(id) => setForm({ ...form, branchId: id, collectorId: '' })}
                 initialLabel={branchDefault?.name}
                 placeholder="Search branch…"
+                error={branchInvalid ? 'Pick the branch this was collected at.' : undefined}
               />
             </div>
           </div>
