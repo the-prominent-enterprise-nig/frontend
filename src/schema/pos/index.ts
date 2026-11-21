@@ -139,10 +139,12 @@ export interface SessionTurnover {
 
 export interface SessionCollection {
   id: string
-  /** The CR number, or the booklet reference when it has none. */
+  /** The booklet CR the cashier wrote, or the system CR number when none was keyed in. */
   number: string | null
   customerName: string | null
-  kind: 'Delivery fee' | 'Down payment' | 'FMI' | 'MI'
+  /** Read as the Daily Collection Report does. Never a down payment: a DP is a
+   * tender on its sale, under "Also taken this shift". */
+  kind: 'Delivery fee' | 'FP' | 'FMI' | 'MI'
   /** Same shape as the nonCash keys: 'cash', 'qr::Maya', 'check', … */
   tenderKey: string
   isCash: boolean
