@@ -1168,8 +1168,11 @@ export interface DepositApplicationRow {
   resolvedAt: string | null
   resolvedBy: string | null
   rejectionReason: string | null
-  /** The date of the entry, once approved. */
+  /** The date the entry posts as of, once approved: the ORIGINAL deposit date
+   * (the older, when it drew on two). The day it was applied is `resolvedAt`. */
   postingDate: string | null
+  /** The same date before approval too: where a waiting request will post. */
+  entryDate: string
   /** Approvals list, for a request that is still waiting. */
   accountOutstanding?: number | null
   customerAvailableDeposit?: number | null

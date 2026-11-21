@@ -327,7 +327,8 @@ export default function CustomerDepositsCard({
                   <p className="mt-0.5 text-[12px] text-gray-500">
                     Requested {fmtDate(a.requestedAt)}
                     {a.requestedBy ? ` by ${a.requestedBy}` : ''}
-                    {a.remarks ? ` — ${a.remarks}` : ''}
+                    {a.remarks ? ` — ${a.remarks}` : ''} · posts as of the deposit date,{' '}
+                    {fmtDate(a.entryDate)}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -400,7 +401,7 @@ export default function CustomerDepositsCard({
                   </p>
                   <p className="mt-0.5 text-[12px] text-gray-500">
                     {a.status === 'APPROVED' && a.postingDate
-                      ? `Applied ${fmtDate(a.postingDate)}${a.resolvedBy ? ` — approved by ${a.resolvedBy}` : ''}`
+                      ? `Applied ${a.resolvedAt ? fmtDate(a.resolvedAt) : ''}, posted as of the deposit date ${fmtDate(a.postingDate)}${a.resolvedBy ? ` — approved by ${a.resolvedBy}` : ''}`
                       : a.status === 'REJECTED'
                         ? `Rejected${a.resolvedBy ? ` by ${a.resolvedBy}` : ''}${a.rejectionReason ? `: ${a.rejectionReason}` : ''}`
                         : `Cancelled ${a.resolvedAt ? fmtDate(a.resolvedAt) : ''}`}

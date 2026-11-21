@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
   CustomerDeposits,
@@ -50,15 +50,9 @@ export default function DepositApplicationsList({
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    const res = await CustomerDeposits.list({ status: filter })
-    if (res.success && res.data) {
-      setResults((r) => ({ ...r, [filter]: res.data!.applications }))
-      setLoadError(null)
-    } else {
-      setLoadError(res.error ?? 'Failed to load deposit applications')
-    }
-  }, [filter])
+  // Bumped after every decision so the tab being looked at is fetched again,
+  // whichever tab that is by then.
+  const [version, setVersion] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -74,7 +68,7 @@ export default function DepositApplicationsList({
     return () => {
       cancelled = true
     }
-  }, [filter])
+  }, [filter, version])
 
   function startDeciding(id: string, mode: 'approve' | 'reject') {
     setDeciding({ id, mode })
@@ -92,7 +86,7 @@ export default function DepositApplicationsList({
       return
     }
     setDeciding(null)
-    load()
+    setVersion((v) => v + 1)
   }
 
   function confirmReject(app: DepositApplicationRow) {
@@ -207,6 +201,11 @@ export default function DepositApplicationsList({
                         </td>
                         <td className="px-5 py-3">
                           <p className="font-semibold text-gray-900">{fmtMoney(a.amount)}</p>
+                          {a.status === 'PENDING' && (
+                            <p className="mt-0.5 text-xs text-gray-500">
+                              Posts as of {fmtDate(a.entryDate)} (deposit date)
+                            </p>
+                          )}
                           {a.remarks && (
                             <p className="mt-0.5 max-w-[16rem] text-xs text-gray-500">
                               {a.remarks}
@@ -216,10 +215,13 @@ export default function DepositApplicationsList({
                         <td className="px-5 py-3">
                           <DepositStatusChip status={a.status} />
                           {a.status === 'APPROVED' && a.postingDate && (
-                            <p className="mt-1 text-xs text-gray-500">
-                              {fmtDate(a.postingDate)}
-                              {a.resolvedBy ? ` · ${a.resolvedBy}` : ''}
-                            </p>
+                            <div className="mt-1 text-xs text-gray-500">
+                              <p>
+                                Applied {a.resolvedAt ? fmtDate(a.resolvedAt) : ''}
+                                {a.resolvedBy ? ` · ${a.resolvedBy}` : ''}
+                              </p>
+                              <p>Posted as of {fmtDate(a.postingDate)}</p>
+                            </div>
                           )}
                           {a.status === 'REJECTED' && (
                             <p className="mt-1 max-w-[14rem] text-xs text-gray-500">
