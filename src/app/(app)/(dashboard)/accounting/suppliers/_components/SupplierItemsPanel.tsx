@@ -7,6 +7,7 @@ import { ConfirmDialog } from '@/src/components/ui/Modal'
 import Tooltip from '@/src/components/ui/Tooltip'
 import { SearchCombobox, type SearchComboboxOption } from '@/src/components/ui/SearchCombobox'
 import { MONO } from '@/src/libs/design/plex'
+import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
 import SupplierItemSuggestions from './SupplierItemSuggestions'
 import {
   addSupplierItem,
@@ -14,8 +15,6 @@ import {
   removeSupplierItem,
   type SupplierItemMapping,
 } from '../_actions/get-supplier-items'
-
-type ItemOption = { id: string; name: string; sku: string }
 
 /** A supplier that carries the whole catalogue would otherwise print hundreds
  * of rows into a column 700px wide. Ten at a time, searchable — same treatment
@@ -56,11 +55,9 @@ function mappingMeta(mapping: SupplierItemMapping): string[] {
  */
 export default function SupplierItemsPanel({
   supplierId,
-  itemOptions,
   canUpdate,
 }: {
   supplierId: string
-  itemOptions: ItemOption[]
   canUpdate: boolean
 }) {
   const [mappings, setMappings] = useState<SupplierItemMapping[]>([])
@@ -137,14 +134,17 @@ export default function SupplierItemsPanel({
   }
 
   const linkedItemIds = new Set(mappings.map((m) => m.itemId))
-  const availableItems = itemOptions.filter((i) => !linkedItemIds.has(i.id))
-
-  /** Client-side filter over the already-loaded item list — a plain <select>
-   * of 2,700 options is unusable, and the list is in memory already. */
+  /** Searched on the server, minus what is already linked. This used to filter
+   * a list of the first 500 items held in memory, so an item outside those
+   * 500 (of 3,500+) could never be linked from here. */
   async function searchAvailableItems(query: string): Promise<SearchComboboxOption[]> {
-    const q = query.trim().toLowerCase()
-    return availableItems
-      .filter((i) => !q || `${i.sku} ${i.name}`.toLowerCase().includes(q))
+    const res = await getItems({
+      search: query.trim() || undefined,
+      limit: 60,
+      lifecycle: 'active',
+    })
+    return (res.data?.data ?? [])
+      .filter((i) => !linkedItemIds.has(i.id))
       .slice(0, 50)
       .map((i) => ({ id: i.id, primary: i.name, secondary: i.sku }))
   }
@@ -184,12 +184,7 @@ export default function SupplierItemsPanel({
             <button
               type="button"
               onClick={() => setShowAddForm(true)}
-              disabled={availableItems.length === 0}
-              title={
-                availableItems.length === 0
-                  ? 'Every active item is already linked'
-                  : 'Link an item to this supplier'
-              }
+              title="Link an item to this supplier"
               className="flex items-center gap-1.5 rounded-lg bg-[#5b21b6] px-3 py-2 text-xs font-medium text-white hover:bg-[#4a189b] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-3.5 w-3.5" />

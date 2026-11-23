@@ -22,7 +22,6 @@ import {
 import SupplierItemsPanel from './SupplierItemsPanel'
 
 type AccountOption = { id: string; name: string; number?: string }
-type ItemOption = { id: string; name: string; sku: string }
 type Tab = 'items' | 'profile' | 'banks'
 
 const TABS: { id: Tab; label: string }[] = [
@@ -75,7 +74,6 @@ function ProfileGroup({ title, children }: { title: string; children: React.Reac
 
 export default function SupplierDetailPanel({
   supplierId,
-  itemOptions,
   accountOptions,
   canUpdate,
   canBuy,
@@ -83,7 +81,6 @@ export default function SupplierDetailPanel({
   onBack,
 }: {
   supplierId: string
-  itemOptions: ItemOption[]
   accountOptions: AccountOption[]
   canUpdate: boolean
   /** Whether this reader may start a purchase at all — the same PR_CREATE
@@ -237,12 +234,7 @@ export default function SupplierDetailPanel({
 
       <div className="px-4 py-4 md:px-5">
         {tab === 'items' && (
-          <SupplierItemsPanel
-            key={supplier.id}
-            supplierId={supplier.id}
-            itemOptions={itemOptions}
-            canUpdate={canUpdate}
-          />
+          <SupplierItemsPanel key={supplier.id} supplierId={supplier.id} canUpdate={canUpdate} />
         )}
 
         {tab === 'profile' && (

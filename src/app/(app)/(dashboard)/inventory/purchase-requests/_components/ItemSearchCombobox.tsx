@@ -52,18 +52,38 @@ type Props = {
   /** Lists this supplier's approved items (ItemSupplier) first, with the rest
    * of the catalog below them. Just the catalog when the supplier has none. */
   supplierId?: string
+  /** Also offers items that are discontinued or archived — for a FILTER, which
+   * must be able to name an item that has history even if it is no longer
+   * sold. Off by default: a new document is made against a live item. */
+  includeInactive?: boolean
+  /** Only serial-tracked items — Register Serials has nothing to register
+   * against any other. */
+  onlySerialTracked?: boolean
+  /** Drops bundles — a bundle's component can't itself be a bundle. */
+  excludeBundles?: boolean
+  /** Items to leave out — already chosen elsewhere on the same screen. */
+  excludeIds?: string[]
+}
+
+/** What the catalog search narrows by, besides the typed text. */
+type CatalogFilter = {
+  excludeSerialTracked?: boolean
+  onlySerialTracked?: boolean
+  includeInactive?: boolean
+  excludeBundles?: boolean
+  excludeIds?: ReadonlySet<string>
 }
 
 async function searchSupplierFirst(
   query: string,
   supplierId: string,
-  excludeSerialTracked?: boolean
+  filter: CatalogFilter
 ): Promise<SearchComboboxOption[]> {
   // A caller without inventory:suppliers:read gets an error here — that
   // degrades to the full catalog rather than an empty picker.
   const res = await getSupplierItems(supplierId)
   const mapped = res.success ? (res.data ?? []) : []
-  if (mapped.length === 0) return searchCatalog(query, excludeSerialTracked)
+  if (mapped.length === 0) return searchCatalog(query, filter)
 
   const q = query.trim().toLowerCase()
   const matches = mapped
@@ -79,7 +99,7 @@ async function searchSupplierFirst(
   // The supplier's own items lead; the rest of the catalog follows untagged —
   // the links are partly auto-derived, so off-list doesn't mean wrong.
   const listed = new Set(matches.map((o) => o.id))
-  const catalog = await searchCatalog(query, excludeSerialTracked)
+  const catalog = await searchCatalog(query, filter)
   return [...matches, ...catalog.filter((o) => !listed.has(o.id))]
 }
 
@@ -102,13 +122,29 @@ async function withMeta(option: SearchComboboxOption): Promise<SearchComboboxOpt
   return res.success && res.data ? { ...option, meta: toMeta(res.data) } : option
 }
 
+const CATALOG_PAGE = 20
+
 async function searchCatalog(
   query: string,
-  excludeSerialTracked?: boolean
+  filter: CatalogFilter = {}
 ): Promise<SearchComboboxOption[]> {
-  const res = await getItems({ search: query || undefined, limit: 20, lifecycle: 'active' })
+  const { excludeSerialTracked, onlySerialTracked, includeInactive, excludeBundles, excludeIds } =
+    filter
+  // The server can't narrow by serial/bundle/ids, so those are applied here
+  // after the fetch — which can leave fewer than a page. Ask for more then, so
+  // a filter doesn't starve the list.
+  const narrowed = excludeSerialTracked || onlySerialTracked || excludeBundles || !!excludeIds?.size
+  const res = await getItems({
+    search: query || undefined,
+    limit: narrowed ? CATALOG_PAGE * 3 : CATALOG_PAGE,
+    ...(includeInactive ? {} : { lifecycle: 'active' as const }),
+  })
   return (res.data?.data ?? [])
     .filter((item) => !excludeSerialTracked || !item.isSerialTracked)
+    .filter((item) => !onlySerialTracked || item.isSerialTracked)
+    .filter((item) => !excludeBundles || !item.isBundle)
+    .filter((item) => !excludeIds?.has(item.id))
+    .slice(0, CATALOG_PAGE)
     .map((item) => ({
       id: item.id,
       primary: item.name,
@@ -158,14 +194,15 @@ async function searchSourceStock(
 async function searchStockedFirst(
   query: string,
   warehouseId: string,
-  excludeSerialTracked?: boolean,
+  filter: CatalogFilter,
   fromOtherBranch?: boolean,
   stockOnly?: boolean
 ): Promise<SearchComboboxOption[]> {
+  const { excludeSerialTracked } = filter
   if (stockOnly && !excludeSerialTracked) return searchStocked(query, warehouseId, fromOtherBranch)
   const [stocked, catalog] = await Promise.all([
     searchStocked(query, warehouseId, fromOtherBranch),
-    searchCatalog(query, excludeSerialTracked),
+    searchCatalog(query, filter),
   ])
   const catalogById = new Map(catalog.map((o) => [o.id, o]))
   // Catalog is already filtered when excludeSerialTracked is on, so gate
@@ -193,7 +230,29 @@ export function ItemSearchCombobox({
   stockOnly,
   excludeSerialTracked,
   supplierId,
+  includeInactive,
+  onlySerialTracked,
+  excludeBundles,
+  excludeIds,
 }: Props) {
+  const excluded = excludeIds?.length ? new Set(excludeIds) : undefined
+  const filter: CatalogFilter = {
+    excludeSerialTracked,
+    onlySerialTracked,
+    includeInactive,
+    excludeBundles,
+    excludeIds: excluded,
+  }
+  // What the filters are is part of the cache key, or a picker that excludes
+  // one set of items would serve a cached list built for another.
+  const filterKey = [
+    includeInactive && 'all',
+    onlySerialTracked && 'serial',
+    excludeBundles && 'nobundle',
+    excludeIds?.length && `ex${[...excludeIds].sort().join(',')}`,
+  ]
+    .filter(Boolean)
+    .join('-')
   return (
     <SearchCombobox
       value={value}
@@ -203,28 +262,22 @@ export function ItemSearchCombobox({
       initialLabel={initialLabel}
       compact={compact}
       disabled={disabled}
-      queryKey={
+      queryKey={`${
         supplierId
           ? `items-search-supplier-${supplierId}`
           : stockWarehouseId
             ? `items-search-stock-${stockFromOtherBranch ? 'source-' : ''}${stockOnly ? 'only-' : ''}${stockWarehouseId}`
             : 'items-search'
-      }
+      }${filterKey ? `|${filterKey}` : ''}`}
       placeholder={placeholder}
       typeToSearchMessage="Type to search items…"
       emptyMessage="No items found"
       search={(query) =>
         supplierId
-          ? searchSupplierFirst(query, supplierId, excludeSerialTracked)
+          ? searchSupplierFirst(query, supplierId, filter)
           : stockWarehouseId
-            ? searchStockedFirst(
-                query,
-                stockWarehouseId,
-                excludeSerialTracked,
-                stockFromOtherBranch,
-                stockOnly
-              )
-            : searchCatalog(query, excludeSerialTracked)
+            ? searchStockedFirst(query, stockWarehouseId, filter, stockFromOtherBranch, stockOnly)
+            : searchCatalog(query, filter)
       }
     />
   )

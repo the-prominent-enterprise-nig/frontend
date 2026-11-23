@@ -255,12 +255,6 @@ export function useItemMaster() {
     staleTime: 30 * 1000,
   })
 
-  const itemsLookupQuery = useQuery({
-    queryKey: ['inventory-items-lookup'],
-    queryFn: () => getItems({ limit: 200, lifecycle: 'active' }),
-    staleTime: 5 * 60 * 1000,
-  })
-
   const createBundleMutation = useMutation({
     mutationFn: (data: CreateBundleFormValues) => createBundle(data),
     onSuccess: (result) => {
@@ -485,7 +479,6 @@ export function useItemMaster() {
     bundleComponents: bundleComponentsQuery.data?.data?.components ?? [],
     bundleAvailableQty: bundleComponentsQuery.data?.data?.bundleAvailableQty ?? null,
     isLoadingComponents: bundleComponentsQuery.isLoading,
-    itemOptions: (itemsLookupQuery.data?.data?.data ?? []).filter((i) => !i.isBundle),
     createBundle: createBundleMutation.mutateAsync,
     isCreatingBundle: createBundleMutation.isPending,
     addBundleComponent: addBundleComponentMutation.mutateAsync,

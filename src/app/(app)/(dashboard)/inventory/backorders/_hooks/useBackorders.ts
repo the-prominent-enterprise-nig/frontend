@@ -7,7 +7,6 @@ import { showToast } from '@/src/components/ui/toast'
 import { getBackorders } from '../_actions/get-backorders'
 import { createBackorder } from '../_actions/create-backorder'
 import { updateBackorder } from '../_actions/update-backorder'
-import { getItems } from '../../items/_actions/get-items'
 import type {
   BackorderFormValues,
   BackorderUpdateFormValues,
@@ -32,12 +31,6 @@ export function useBackorders() {
     },
     placeholderData: keepPreviousData,
     staleTime: 30 * 1000,
-  })
-
-  const itemsQuery = useQuery({
-    queryKey: ['inventory-items-lookup'],
-    queryFn: () => getItems({ limit: 200 }),
-    staleTime: 5 * 60 * 1000,
   })
 
   const createMutation = useMutation({
@@ -83,7 +76,6 @@ export function useBackorders() {
     setPage,
     limit,
     setLimit,
-    itemOptions: itemsQuery.data?.data?.data ?? [],
     createBackorder: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
     updateBackorder: updateMutation.mutateAsync,

@@ -18,6 +18,7 @@ import {
 import CreateBatchModal from './CreateBatchModal'
 import BatchDetailDrawer from './BatchDetailDrawer'
 import { MANILA_TZ } from '@/src/libs/format/manila-date'
+import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 
 const statusOptions = BatchStatusSchema.options
 
@@ -43,7 +44,6 @@ export default function BatchList({ session }: { session: SessionUser }) {
     setPage,
     selectedBatch,
     setSelectedBatch,
-    itemOptions,
     createBatch,
     isCreating,
     updateStatus,
@@ -130,18 +130,14 @@ export default function BatchList({ session }: { session: SessionUser }) {
               </option>
             ))}
           </select>
-          <select
-            value={itemFilter ?? ''}
-            onChange={(e) => setItemFilter(e.target.value || undefined)}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">All Items</option>
-            {itemOptions.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.sku} — {item.name}
-              </option>
-            ))}
-          </select>
+          <div className="w-72">
+            <ItemSearchCombobox
+              value={itemFilter ?? ''}
+              onChange={(id) => setItemFilter(id || undefined)}
+              placeholder="All items — search to filter"
+              includeInactive
+            />
+          </div>
           {hasFilters && (
             <button
               type="button"
@@ -304,7 +300,6 @@ export default function BatchList({ session }: { session: SessionUser }) {
         onClose={() => setIsCreateOpen(false)}
         onSubmit={createBatch}
         isSubmitting={isCreating}
-        items={itemOptions}
       />
 
       <BatchDetailDrawer

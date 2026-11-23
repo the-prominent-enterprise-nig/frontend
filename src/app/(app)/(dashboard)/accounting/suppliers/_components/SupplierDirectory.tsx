@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, RefreshCw } from 'lucide-react'
-import { getItems } from '@/src/app/(app)/(dashboard)/inventory/items/_actions/get-items'
 import { getAccountOptions } from '@/src/libs/data/AccountingData'
 import { createSupplier } from '../_actions/create-supplier'
 import { updateSupplier } from '../_actions/update-supplier'
@@ -68,12 +67,6 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
     select(suppliers[0].id)
   }, [suppliers, selectedId, select])
 
-  const itemsQuery = useQuery({
-    queryKey: ['inventory-items-lookup-active'],
-    queryFn: () => getItems({ limit: 500, lifecycle: 'active' }),
-    staleTime: 5 * 60 * 1000,
-  })
-
   // Scenario 33 — GL account options for defaultPayableAccountId /
   // defaultExpenseAccountId, on the form and read back on the Profile tab.
   const accountsQuery = useQuery({
@@ -82,11 +75,6 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
     staleTime: 5 * 60 * 1000,
   })
 
-  const itemOptions = (itemsQuery.data?.data?.data ?? []).map((i) => ({
-    id: i.id,
-    name: i.name,
-    sku: i.sku,
-  }))
   const accountOptions = ((accountsQuery.data?.data as { items?: unknown })?.items ??
     accountsQuery.data?.data ??
     []) as { id: string; name: string; number?: string }[]
@@ -255,7 +243,6 @@ export default function SupplierDirectory({ session }: { session: SessionUser })
               <SupplierDetailPanel
                 key={selected.id}
                 supplierId={selected.id}
-                itemOptions={itemOptions}
                 accountOptions={accountOptions}
                 canUpdate={canUpdate}
                 canBuy={canBuy}

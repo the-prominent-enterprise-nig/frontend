@@ -6,21 +6,19 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { X, Loader2 } from 'lucide-react'
 import { BackorderFormSchema, type BackorderFormValues } from '@/src/schema/inventory/backorders'
 import type { ApiResponse } from '@/src/libs/api/client'
-
-type ItemOption = { id: string; name: string; sku: string }
+import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 
 type Props = {
   isOpen: boolean
   onClose: () => void
   onSubmit: (data: BackorderFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
-  items: ItemOption[]
 }
 
 const fieldClass =
   'w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500'
 
-export default function BackorderModal({ isOpen, onClose, onSubmit, isSubmitting, items }: Props) {
+export default function BackorderModal({ isOpen, onClose, onSubmit, isSubmitting }: Props) {
   const {
     control,
     handleSubmit,
@@ -137,19 +135,14 @@ export default function BackorderModal({ isOpen, onClose, onSubmit, isSubmitting
                 name="itemId"
                 control={control}
                 render={({ field }) => (
-                  <select {...field} className={`${fieldClass} bg-white`}>
-                    <option value="">Select item…</option>
-                    {items.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.sku} — {item.name}
-                      </option>
-                    ))}
-                  </select>
+                  <ItemSearchCombobox
+                    value={field.value}
+                    onChange={field.onChange}
+                    error={errors.itemId?.message}
+                    includeInactive
+                  />
                 )}
               />
-              {errors.itemId && (
-                <p className="mt-1 text-xs text-red-600">{errors.itemId.message}</p>
-              )}
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
