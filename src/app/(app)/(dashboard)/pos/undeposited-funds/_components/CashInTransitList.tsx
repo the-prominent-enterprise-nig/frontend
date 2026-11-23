@@ -320,6 +320,22 @@ function toDepositByDay(rows: LedgerRow[]): Map<string, LedgerRow> {
   return latest
 }
 
+/** The receipts a deposit of these sessions banks: the ones To deposit shows
+ * on them (foldReceipts), so each day is deposited with its own session. */
+function receiptsOnSessions(
+  rows: LedgerRow[],
+  receipts: AcknowledgementReceipt[],
+  sessions: LedgerRow[]
+): AcknowledgementReceipt[] {
+  const byDay = toDepositByDay(rows)
+  const picked = new Set(sessions.map((s) => s.sessionId))
+  return receipts.filter((r) => {
+    if (!ridesWithSessions(r)) return false
+    const host = byDay.get(branchDay(r.branchId ?? 'none', r.paymentDate))
+    return !!host && picked.has(host.sessionId)
+  })
+}
+
 /**
  * Scenario 70 G11 — a branch's unbanked New Receipts are banked with its next
  * deposit, so they count on its To-deposit session of the same day, the way a
@@ -491,7 +507,12 @@ export function CashInTransitList({
     sessions: LedgerRow[]
     branchId: string
     branchName: string
+    /** The New Receipts it banks — those of the sessions' days, or the one
+     * day's receipts it was opened from. */
+    receiptIds: string[]
   } | null>(null)
+  // What a deposit of the ticked sessions banks with them.
+  const selectedReceipts = receiptsOnSessions(shown, unbanked, selection.rows)
   const depositSelection = (): void => {
     const first = selection.rows[0]
     if (!first) return
@@ -499,6 +520,7 @@ export function CashInTransitList({
       sessions: selection.rows,
       branchId: first.branchId,
       branchName: first.branchName,
+      receiptIds: selectedReceipts.map((r) => r.id),
     })
   }
   // A journal entry's amount links here with ?deposit=<id>, opening that
@@ -575,8 +597,13 @@ export function CashInTransitList({
         canCorrect={canCorrect}
         selection={selection}
         onOpenDeposit={openDeposit}
-        onDepositReceipts={(group) =>
-          setDepositing({ sessions: [], branchId: group.branchId, branchName: group.branchName })
+        onDepositReceipts={(group, receiptIds) =>
+          setDepositing({
+            sessions: [],
+            branchId: group.branchId,
+            branchName: group.branchName,
+            receiptIds,
+          })
         }
         onTurnoverChanged={refreshAll}
         empty={ledger.loading ? 'Loading...' : 'Nothing here for these filters.'}
@@ -584,11 +611,10 @@ export function CashInTransitList({
       {canManage && selection.rows.length > 0 && (
         <SelectionBar
           rows={selection.rows}
-          // The branch's unbanked New Receipts go into the same deposit; an
-          // acknowledged turnover is deposited from its own row.
-          receipts={unbanked.filter(
-            (r) => r.branchId === selection.rows[0].branchId && ridesWithSessions(r)
-          )}
+          // The New Receipts shown on the ticked sessions go into the same
+          // deposit; another day's, and an acknowledged turnover, are
+          // deposited from their own row.
+          receipts={selectedReceipts}
           onClear={selection.clear}
           onRecord={depositSelection}
         />
@@ -603,6 +629,7 @@ export function CashInTransitList({
         <DepositForm
           accounts={ledger.accounts}
           sessions={depositing.sessions}
+          receiptIds={depositing.receiptIds}
           branchId={depositing.branchId}
           branchName={depositing.branchName}
           onClose={() => setDepositing(null)}
@@ -967,6 +994,7 @@ function SummaryCard({
 function DepositForm({
   accounts,
   sessions,
+  receiptIds,
   branchId,
   branchName,
   onClose,
@@ -974,6 +1002,8 @@ function DepositForm({
 }: {
   accounts: BankAccountOption[]
   sessions: LedgerRow[]
+  /** The New Receipts this deposit banks, by id. */
+  receiptIds: string[]
   branchId: string
   branchName: string
   onClose: () => void
@@ -989,16 +1019,15 @@ function DepositForm({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // The branch's New Receipts still to be banked — money taken at the counter
-  // against no sale, which sits in the branch's cash like any collection
-  // (Scenario 70 G11). Banked with the day, so always part of this deposit;
-  // accounting enters a cheque like any other bank, on a slip of its own.
-  // With sessions, an acknowledged turnover stays out (ridesWithSessions);
-  // a receipts-only deposit, opened from a receipt's row, takes them all.
+  // The New Receipts this deposit banks — money taken at the counter against
+  // no sale, which sits in the branch's cash like any collection (Scenario 70
+  // G11). Banked with their day: with sessions, the ones To deposit shows on
+  // them; opened from a receipt's row, that day's receipts. Accounting enters
+  // a cheque like any other bank, on a slip of its own. Read live, so one
+  // banked meanwhile drops out.
   const newReceipts = useUnbankedReceipts(branchId)
-  const receipts = (newReceipts.data?.data ?? []).filter(
-    (r) => sessions.length === 0 || ridesWithSessions(r)
-  )
+  const picked = new Set(receiptIds)
+  const receipts = (newReceipts.data?.data ?? []).filter((r) => picked.has(r.id))
 
   const owed = owedTotals(sessions, receipts)
   // The card and e-wallet providers these sessions took, so a slip can say

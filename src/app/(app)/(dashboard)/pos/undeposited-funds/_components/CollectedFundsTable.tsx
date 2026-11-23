@@ -1,6 +1,6 @@
 'use client'
 
-import { manilaToday } from '@/src/libs/format/manila-date'
+import { manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, CornerDownRight, Landmark } from 'lucide-react'
 import { fmtDate, fmtMoney, type AcknowledgementReceipt } from '@/src/libs/data/AccountingV2Data'
@@ -206,6 +206,33 @@ function turnoverChips(row: LedgerRow): Chip[] {
     : [{ label: 'Acknowledged', tone: 'green' }]
 }
 
+/**
+ * The receipt lines that open Record deposit, each with the receipts it banks:
+ * the first line of each day, for that day's receipts. Pilot, Aircool Mabini:
+ * one button banked every day's receipts together, so a Nov 21 check could not
+ * be deposited apart from Nov 20.
+ */
+function receiptDayOpeners(
+  lines: LedgerLine[],
+  receipts: AcknowledgementReceipt[]
+): Map<string, string[]> {
+  const dayOf = new Map(receipts.map((r) => [r.id, manilaDateOf(r.paymentDate)]))
+  const byDay = new Map<string, string[]>()
+  for (const r of receipts) {
+    const day = dayOf.get(r.id) ?? ''
+    byDay.set(day, [...(byDay.get(day) ?? []), r.id])
+  }
+  const openers = new Map<string, string[]>()
+  const seen = new Set<string>()
+  for (const line of lines) {
+    const day = dayOf.get(line.key)
+    if (day === undefined || seen.has(day)) continue
+    seen.add(day)
+    openers.set(line.key, byDay.get(day) ?? [])
+  }
+  return openers
+}
+
 /** An unbanked New Receipt — or an acknowledged turnover, which becomes one
  * at the receiving branch and is deposited with its day. */
 export function receiptLine(receipt: AcknowledgementReceipt, branchName: string): LedgerLine {
@@ -409,7 +436,8 @@ export function CollectedFundsTable({
   canCorrect?: boolean
   selection: Selection
   onOpenDeposit: OpenDeposit
-  onDepositReceipts: (group: BranchGroup) => void
+  /** Opens Record deposit for one day of a branch's receipts. */
+  onDepositReceipts: (group: BranchGroup, receiptIds: string[]) => void
   onTurnoverChanged: () => void
   empty: string
 }): React.JSX.Element {
@@ -460,7 +488,7 @@ export function CollectedFundsTable({
               onAct={(turnover, kind) => setActing({ turnover, kind })}
               onCorrect={canCorrect ? setCorrecting : undefined}
               onOpenDeposit={onOpenDeposit}
-              onDepositReceipts={() => onDepositReceipts(group)}
+              onDepositReceipts={(receiptIds) => onDepositReceipts(group, receiptIds)}
             />
           ))
         )}
@@ -539,17 +567,15 @@ function BranchRows({
   /** Accounting only: opens the turnover correction form. */
   onCorrect?: (t: TurnoverToCorrect) => void
   onOpenDeposit: OpenDeposit
-  onDepositReceipts: () => void
+  onDepositReceipts: (receiptIds: string[]) => void
 }): React.JSX.Element {
   const selectable = group.rows.filter((r) => r.status === 'to_deposit')
-  // New Receipts — an acknowledged turnover among them — are always banked
-  // from their own row, even while older sessions wait: a short deposit with
-  // sessions in it banks the sessions first, so riding on one would leave
-  // them unbanked. A ticked session's deposit never takes a turnover.
-  const receiptsAlone = canManage && group.receipts.length > 0
+  // New Receipts with no session of their day — an acknowledged turnover
+  // among them — are banked from their own row, a day at a time, even while
+  // older sessions wait: a short deposit with sessions in it banks the
+  // sessions first, so riding on one would leave them unbanked.
+  const openers = canManage ? receiptDayOpeners(lines, group.receipts) : new Map<string, string[]>()
   const allPicked = selectable.length > 0 && selectable.every((r) => selection.has(r.sessionId))
-  const receiptKeys = new Set(group.receipts.map((r) => r.id))
-  const firstReceiptKey = lines.find((l) => receiptKeys.has(l.key))?.key
   const Chevron = open ? ChevronDown : ChevronRight
   return (
     <tbody className="divide-y divide-gray-100 border-t border-gray-200">
@@ -593,11 +619,12 @@ function BranchRows({
           <LineRow
             key={line.key}
             line={line}
-            // New Receipts — an acknowledged turnover, say — are deposited on
-            // their own from the first receipt's row; the form takes in all
-            // of the branch's unbanked receipts and no session.
+            // A day's receipts are deposited on their own from that day's
+            // first receipt row; the form takes in those and no session.
             onDepositReceipts={
-              receiptsAlone && line.key === firstReceiptKey ? onDepositReceipts : undefined
+              openers.has(line.key)
+                ? () => onDepositReceipts(openers.get(line.key) ?? [])
+                : undefined
             }
             canManage={canManage}
             selection={selection}
