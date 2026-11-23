@@ -1,6 +1,11 @@
 'use client'
 
-import { addDaysIso, manilaDayEndIso, manilaToday } from '@/src/libs/format/manila-date'
+import {
+  addDaysIso,
+  manilaDateOf,
+  manilaDayEndIso,
+  manilaToday,
+} from '@/src/libs/format/manila-date'
 import { useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -300,29 +305,44 @@ export interface BranchGroup {
   total: number
 }
 
+/** A branch's day, as the key a receipt and a session meet on. */
+const branchDay = (branchId: string, at: string): string => `${branchId}|${manilaDateOf(at)}`
+
+/** Each branch's latest To-deposit session per day it closed on. */
+function toDepositByDay(rows: LedgerRow[]): Map<string, LedgerRow> {
+  const latest = new Map<string, LedgerRow>()
+  for (const r of rows) {
+    if (r.status !== 'to_deposit') continue
+    const key = branchDay(r.branchId, r.closedAt)
+    const current = latest.get(key)
+    if (!current || r.closedAt > current.closedAt) latest.set(key, r)
+  }
+  return latest
+}
+
 /**
  * Scenario 70 G11 — a branch's unbanked New Receipts are banked with its next
- * deposit, so they count on its latest To-deposit session, the way a deposit's
- * receipts count on one of its sessions once recorded. The same day reads as
- * one figure before and after Record deposit. Rows are copied, not changed:
- * the summary cards add receipts up themselves. An acknowledged turnover keeps
- * a line of its own, so the branch sees the cash it took in.
+ * deposit, so they count on its To-deposit session of the same day, the way a
+ * deposit's receipts count on one of its sessions once recorded. The same day
+ * reads as one figure before and after Record deposit. A receipt whose day has
+ * no To-deposit session keeps a line of its own on its day — pilot, Aircool
+ * Mabini: a Nov 21 check (that day's drawer closed at ₱0) was added to the
+ * Nov 20 session, the branch's only one, so it read as Nov 20 money. Rows are
+ * copied, not changed: the summary cards add receipts up themselves. An
+ * acknowledged turnover keeps a line of its own, so the branch sees the cash
+ * it took in.
  */
 function foldReceipts(
   rows: LedgerRow[],
   receipts: AcknowledgementReceipt[]
 ): { rows: LedgerRow[]; loose: AcknowledgementReceipt[] } {
-  const latest = new Map<string, LedgerRow>()
-  for (const r of rows) {
-    const current = latest.get(r.branchId)
-    if (r.status === 'to_deposit' && (!current || r.closedAt > current.closedAt)) {
-      latest.set(r.branchId, r)
-    }
-  }
+  const byDay = toDepositByDay(rows)
   const extra = new Map<string, number>()
   const loose: AcknowledgementReceipt[] = []
   for (const receipt of receipts) {
-    const host = receipt.turnoverLine ? undefined : latest.get(receipt.branchId ?? 'none')
+    const host = receipt.turnoverLine
+      ? undefined
+      : byDay.get(branchDay(receipt.branchId ?? 'none', receipt.paymentDate))
     if (!host) loose.push(receipt)
     else extra.set(host.key, (extra.get(host.key) ?? 0) + Number(receipt.amount ?? 0))
   }
