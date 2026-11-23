@@ -96,11 +96,11 @@ function clears(line: AllocationLine & { amount: number }, withholding: number):
 }
 
 /**
- * allocateCash, with each rebate kept only where it is earned. A rebate (PPD)
- * is earned per due the payment clears in full; a payment that leaves a due
+ * allocateCash, with each rebate kept only where it is earned. A rebate is
+ * earned per due the payment clears in full; a payment that leaves a due
  * short earns none on it, and the server refuses one sent anyway
- * (rebate_exceeds_ppd: its cap is ppd × the whole dues the payment clears).
- * So a ticked rebate on a due the cash does not clear is dropped and the cash
+ * (rebate_exceeds_dues: its cap is what the whole dues the payment clears
+ * still owe). So a ticked rebate on a due the cash does not clear is dropped and the cash
  * split again without it. Dues before it are unaffected (they were cleared),
  * and the short due still takes all the cash left, so one more pass is final.
  */

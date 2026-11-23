@@ -1,6 +1,11 @@
 'use client'
 
-import { addDaysIso, manilaDayEndIso, manilaToday } from '@/src/libs/format/manila-date'
+import {
+  addDaysIso,
+  manilaDateOf,
+  manilaDayEndIso,
+  manilaToday,
+} from '@/src/libs/format/manila-date'
 import { useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -300,29 +305,60 @@ export interface BranchGroup {
   total: number
 }
 
+/** A branch's day, as the key a receipt and a session meet on. */
+const branchDay = (branchId: string, at: string): string => `${branchId}|${manilaDateOf(at)}`
+
+/** Each branch's latest To-deposit session per day it closed on. */
+function toDepositByDay(rows: LedgerRow[]): Map<string, LedgerRow> {
+  const latest = new Map<string, LedgerRow>()
+  for (const r of rows) {
+    if (r.status !== 'to_deposit') continue
+    const key = branchDay(r.branchId, r.closedAt)
+    const current = latest.get(key)
+    if (!current || r.closedAt > current.closedAt) latest.set(key, r)
+  }
+  return latest
+}
+
+/** The receipts a deposit of these sessions banks: the ones To deposit shows
+ * on them (foldReceipts), so each day is deposited with its own session. */
+function receiptsOnSessions(
+  rows: LedgerRow[],
+  receipts: AcknowledgementReceipt[],
+  sessions: LedgerRow[]
+): AcknowledgementReceipt[] {
+  const byDay = toDepositByDay(rows)
+  const picked = new Set(sessions.map((s) => s.sessionId))
+  return receipts.filter((r) => {
+    if (!ridesWithSessions(r)) return false
+    const host = byDay.get(branchDay(r.branchId ?? 'none', r.paymentDate))
+    return !!host && picked.has(host.sessionId)
+  })
+}
+
 /**
  * Scenario 70 G11 — a branch's unbanked New Receipts are banked with its next
- * deposit, so they count on its latest To-deposit session, the way a deposit's
- * receipts count on one of its sessions once recorded. The same day reads as
- * one figure before and after Record deposit. Rows are copied, not changed:
- * the summary cards add receipts up themselves. An acknowledged turnover keeps
- * a line of its own, so the branch sees the cash it took in.
+ * deposit, so they count on its To-deposit session of the same day, the way a
+ * deposit's receipts count on one of its sessions once recorded. The same day
+ * reads as one figure before and after Record deposit. A receipt whose day has
+ * no To-deposit session keeps a line of its own on its day — pilot, Aircool
+ * Mabini: a Nov 21 check (that day's drawer closed at ₱0) was added to the
+ * Nov 20 session, the branch's only one, so it read as Nov 20 money. Rows are
+ * copied, not changed: the summary cards add receipts up themselves. An
+ * acknowledged turnover keeps a line of its own, so the branch sees the cash
+ * it took in.
  */
 function foldReceipts(
   rows: LedgerRow[],
   receipts: AcknowledgementReceipt[]
 ): { rows: LedgerRow[]; loose: AcknowledgementReceipt[] } {
-  const latest = new Map<string, LedgerRow>()
-  for (const r of rows) {
-    const current = latest.get(r.branchId)
-    if (r.status === 'to_deposit' && (!current || r.closedAt > current.closedAt)) {
-      latest.set(r.branchId, r)
-    }
-  }
+  const byDay = toDepositByDay(rows)
   const extra = new Map<string, number>()
   const loose: AcknowledgementReceipt[] = []
   for (const receipt of receipts) {
-    const host = receipt.turnoverLine ? undefined : latest.get(receipt.branchId ?? 'none')
+    const host = receipt.turnoverLine
+      ? undefined
+      : byDay.get(branchDay(receipt.branchId ?? 'none', receipt.paymentDate))
     if (!host) loose.push(receipt)
     else extra.set(host.key, (extra.get(host.key) ?? 0) + Number(receipt.amount ?? 0))
   }
@@ -464,21 +500,31 @@ export function CashInTransitList({
       ? ledger.bankedReceipts.filter((r) => receiptMatches(r, search))
       : []
   const groups = groupByBranch(shown, shownReceipts, shownIncoming, shownBanked)
-  const selection = useSingleBranchSelection(ledger.rows)
+  const selection = useSingleBranchSelection(ledger.rows, unbanked)
   // The sessions being deposited, and their branch — which is all there is
   // for a deposit of New Receipts alone.
   const [depositing, setDepositing] = useState<{
     sessions: LedgerRow[]
     branchId: string
     branchName: string
+    /** The New Receipts it banks: those shown on the ticked sessions, and
+     * the ones ticked on their own. */
+    receiptIds: string[]
   } | null>(null)
+  // What Record deposit banks: the ticked sessions' own receipts, then the
+  // receipts ticked on their own rows.
+  const onSessions = receiptsOnSessions(shown, unbanked, selection.rows)
+  const selectedReceipts = [
+    ...onSessions,
+    ...selection.receipts.filter((r) => !onSessions.some((s) => s.id === r.id)),
+  ]
   const depositSelection = (): void => {
-    const first = selection.rows[0]
-    if (!first) return
+    if (!selection.branch) return
     setDepositing({
       sessions: selection.rows,
-      branchId: first.branchId,
-      branchName: first.branchName,
+      branchId: selection.branch.id,
+      branchName: selection.branch.name,
+      receiptIds: selectedReceipts.map((r) => r.id),
     })
   }
   // A journal entry's amount links here with ?deposit=<id>, opening that
@@ -555,20 +601,14 @@ export function CashInTransitList({
         canCorrect={canCorrect}
         selection={selection}
         onOpenDeposit={openDeposit}
-        onDepositReceipts={(group) =>
-          setDepositing({ sessions: [], branchId: group.branchId, branchName: group.branchName })
-        }
         onTurnoverChanged={refreshAll}
         empty={ledger.loading ? 'Loading...' : 'Nothing here for these filters.'}
       />
-      {canManage && selection.rows.length > 0 && (
+      {canManage && selection.branch && (
         <SelectionBar
           rows={selection.rows}
-          // The branch's unbanked New Receipts go into the same deposit; an
-          // acknowledged turnover is deposited from its own row.
-          receipts={unbanked.filter(
-            (r) => r.branchId === selection.rows[0].branchId && ridesWithSessions(r)
-          )}
+          receipts={selectedReceipts}
+          branchName={selection.branch.name}
           onClear={selection.clear}
           onRecord={depositSelection}
         />
@@ -583,6 +623,7 @@ export function CashInTransitList({
         <DepositForm
           accounts={ledger.accounts}
           sessions={depositing.sessions}
+          receiptIds={depositing.receiptIds}
           branchId={depositing.branchId}
           branchName={depositing.branchName}
           onClose={() => setDepositing(null)}
@@ -689,37 +730,81 @@ function useLedger(
 
 export interface Selection {
   rows: LedgerRow[]
+  /** Ticked New Receipts of their own — no session of their day. */
+  receipts: AcknowledgementReceipt[]
+  /** The branch everything ticked belongs to, once anything is. */
+  branch: { id: string; name: string } | null
   has: (sessionId: string) => boolean
+  hasReceipt: (receiptId: string) => boolean
   toggle: (row: LedgerRow) => void
+  toggleReceipt: (receipt: AcknowledgementReceipt) => void
   toggleGroup: (group: BranchGroup) => void
   clear: () => void
 }
 
+/** The set with the id added, or taken out if it was in. */
+function flip(set: Set<string>, id: string): Set<string> {
+  const next = new Set(set)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  return next
+}
+
+/** The branch a selection is in, from its first session or receipt. */
+function branchOfSelection(
+  rows: LedgerRow[],
+  receipts: AcknowledgementReceipt[]
+): Selection['branch'] {
+  if (rows[0]) return { id: rows[0].branchId, name: rows[0].branchName }
+  if (!receipts[0]) return null
+  return { id: receipts[0].branchId ?? 'none', name: receipts[0].branch?.name ?? 'No branch' }
+}
+
 /**
- * Selected To-deposit sessions, never spanning two branches: one deposit is
- * one branch's journal entry, so picking a row in another branch starts a
- * new selection instead of building one the server would refuse.
+ * Selected To-deposit sessions and New Receipts, never spanning two
+ * branches: one deposit is one branch's journal entry, so picking a row in
+ * another branch starts a new selection instead of building one the server
+ * would refuse. Receipts tick like sessions, so any of them — one ₱400
+ * receipt, a day, several days — is deposited together or apart.
  */
-function useSingleBranchSelection(rows: LedgerRow[]): Selection {
+function useSingleBranchSelection(
+  rows: LedgerRow[],
+  receipts: AcknowledgementReceipt[]
+): Selection {
   const [ids, setIds] = useState<Set<string>>(new Set())
+  const [receiptIds, setReceiptIds] = useState<Set<string>>(new Set())
   const picked = rows.filter((r) => r.status === 'to_deposit' && ids.has(r.sessionId))
-  const branchOf = picked[0]?.branchId
+  const pickedReceipts = receipts.filter((r) => receiptIds.has(r.id))
+  const branch = branchOfSelection(picked, pickedReceipts)
+  // Ticking in another branch starts over there.
+  const elsewhere = (branchId: string): boolean => !!branch && branch.id !== branchId
+  const clear = (): void => {
+    setIds(new Set())
+    setReceiptIds(new Set())
+  }
   return {
     rows: picked,
+    receipts: pickedReceipts,
+    branch,
     has: (id) => ids.has(id),
-    toggle: (row) =>
-      setIds((prev) => {
-        const next = new Set(row.branchId === branchOf ? prev : [])
-        if (next.has(row.sessionId)) next.delete(row.sessionId)
-        else next.add(row.sessionId)
-        return next
-      }),
-    toggleGroup: (group) => {
-      const selectable = group.rows.filter((r) => r.status === 'to_deposit')
-      const all = selectable.every((r) => ids.has(r.sessionId))
-      setIds(all ? new Set() : new Set(selectable.map((r) => r.sessionId)))
+    hasReceipt: (id) => receiptIds.has(id),
+    toggle: (row) => {
+      if (elsewhere(row.branchId)) setReceiptIds(new Set())
+      setIds((prev) => flip(elsewhere(row.branchId) ? new Set() : prev, row.sessionId))
     },
-    clear: () => setIds(new Set()),
+    toggleReceipt: (receipt) => {
+      const id = receipt.branchId ?? 'none'
+      if (elsewhere(id)) setIds(new Set())
+      setReceiptIds((prev) => flip(elsewhere(id) ? new Set() : prev, receipt.id))
+    },
+    toggleGroup: (group) => {
+      const sessions = group.rows.filter((r) => r.status === 'to_deposit').map((r) => r.sessionId)
+      const own = group.receipts.map((r) => r.id)
+      const all = sessions.every((id) => ids.has(id)) && own.every((id) => receiptIds.has(id))
+      setIds(all ? new Set() : new Set(sessions))
+      setReceiptIds(all ? new Set() : new Set(own))
+    },
+    clear,
   }
 }
 
@@ -837,11 +922,13 @@ function Toolbar(props: {
 function SelectionBar({
   rows,
   receipts,
+  branchName,
   onClear,
   onRecord,
 }: {
   rows: LedgerRow[]
   receipts: AcknowledgementReceipt[]
+  branchName: string
   onClear: () => void
   onRecord: () => void
 }): React.JSX.Element {
@@ -849,16 +936,17 @@ function SelectionBar({
   const total =
     rows.reduce((sum, r) => sum + r.amount, 0) +
     receipts.reduce((sum, r) => sum + Number(r.amount ?? 0), 0)
-  const withReceipts = receipts.length
-    ? ` + ${receipts.length} receipt${receipts.length === 1 ? '' : 's'}`
-    : ''
+  const counted = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`
+  const picked = [
+    rows.length ? counted(rows.length, 'session') : '',
+    receipts.length ? counted(receipts.length, 'receipt') : '',
+  ]
+    .filter(Boolean)
+    .join(' + ')
   return (
     <div className="sticky bottom-4 z-20 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-purple-200 bg-white px-4 py-3 shadow-lg">
       <p className="text-sm text-gray-700">
-        <strong>
-          {rows.length} session{rows.length === 1 ? '' : 's'}
-        </strong>{' '}
-        selected{withReceipts} · {rows[0].branchName} ·{' '}
+        <strong>{picked}</strong> selected · {branchName} ·{' '}
         <strong className="tabular-nums">{fmtMoney(total)}</strong>
       </p>
       <div className="flex items-center gap-2">
@@ -947,6 +1035,7 @@ function SummaryCard({
 function DepositForm({
   accounts,
   sessions,
+  receiptIds,
   branchId,
   branchName,
   onClose,
@@ -954,6 +1043,8 @@ function DepositForm({
 }: {
   accounts: BankAccountOption[]
   sessions: LedgerRow[]
+  /** The New Receipts this deposit banks, by id. */
+  receiptIds: string[]
   branchId: string
   branchName: string
   onClose: () => void
@@ -969,16 +1060,15 @@ function DepositForm({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // The branch's New Receipts still to be banked — money taken at the counter
-  // against no sale, which sits in the branch's cash like any collection
-  // (Scenario 70 G11). Banked with the day, so always part of this deposit;
-  // accounting enters a cheque like any other bank, on a slip of its own.
-  // With sessions, an acknowledged turnover stays out (ridesWithSessions);
-  // a receipts-only deposit, opened from a receipt's row, takes them all.
+  // The New Receipts this deposit banks — money taken at the counter against
+  // no sale, which sits in the branch's cash like any collection (Scenario 70
+  // G11). Banked with their day: with sessions, the ones To deposit shows on
+  // them; opened from a receipt's row, that day's receipts. Accounting enters
+  // a cheque like any other bank, on a slip of its own. Read live, so one
+  // banked meanwhile drops out.
   const newReceipts = useUnbankedReceipts(branchId)
-  const receipts = (newReceipts.data?.data ?? []).filter(
-    (r) => sessions.length === 0 || ridesWithSessions(r)
-  )
+  const picked = new Set(receiptIds)
+  const receipts = (newReceipts.data?.data ?? []).filter((r) => picked.has(r.id))
 
   const owed = owedTotals(sessions, receipts)
   // The card and e-wallet providers these sessions took, so a slip can say
