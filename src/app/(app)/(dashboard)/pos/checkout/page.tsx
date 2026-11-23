@@ -98,7 +98,9 @@ import {
   DOWN_PAYMENT_FLOOR_LABEL,
   DOWN_PAYMENT_FLOOR_TOLERANCE,
   isCardTerm,
+  isZeroPercentPlan,
 } from '@/src/libs/constants/financing'
+import { hasRules, isTermAllowed, paymentBlockReason } from '@/src/libs/constants/price-use-rules'
 import { Select } from '@/src/components/ui/Select'
 import { DEFAULT_VAT_RATE } from '../_actions/pos-constants'
 import { getCreditApplications } from '../credit-applications/_actions/get-applications'
@@ -2680,6 +2682,44 @@ export default function CheckoutPage() {
   // Manager override check
   const discountPct = subtotal > 0 && promoDiscount > 0 ? (promoDiscount / subtotal) * 100 : 0
   const needsManagerOverride = discountThreshold > 0 && discountPct > discountThreshold
+  // Docket #92 — what each line's price use allows: the payment types, the
+  // terms, a typed plan, and whether a 0% needs a reason. A cart's payment mode
+  // is one choice for the whole cart, so what is offered is what every price use
+  // on it allows. A price use with no rules (or none loaded) restricts nothing;
+  // the server holds the same rules and is the one that counts.
+  const priceUseRulesOf = (l: CartLine) => priceUseTypes.find((t) => t.id === l.priceUseTypeId)
+  const cartRulesList = cart
+    .map(priceUseRulesOf)
+    .filter((r): r is PosPriceUseType => r != null && hasRules(r))
+  const inhouseRulesList = inhouseInstallmentCartLines
+    .map(priceUseRulesOf)
+    .filter((r): r is PosPriceUseType => r != null && hasRules(r))
+  // Why a payment choice is out (its tooltip); null while it is open.
+  const cashBlockedReason = paymentBlockReason(cartRulesList, ['cash'])
+  const installmentBlockedReason = paymentBlockReason(cartRulesList, ['inhouse', 'tpf'])
+  const inhouseBlockedReason = paymentBlockReason(cartRulesList, ['inhouse'])
+  const tpfBlockedReason = paymentBlockReason(cartRulesList, ['tpf'])
+  // The terms on offer: the ones every in-house line's price use allows.
+  const planTermOptions = financingTerms.filter((t) =>
+    inhouseRulesList.every((r) => isTermAllowed(r, t.termMonths))
+  )
+  const planAllowsTypedPlan = inhouseRulesList.every((r) => r.allowTypedPlan)
+  // A 0% in-house installment on a price use that asks a reason for it (SPLIT
+  // REGULAR, SPLIT OUT OF TOWN) is an exception like any other. The plan is one
+  // schedule for the whole cart, so its preview says whether it collects no more
+  // than the cash price; a typed plan already asks for a reason.
+  const zeroPercentUseNames = [
+    ...new Set(inhouseRulesList.filter((r) => r.zeroPercentNeedsReason).map((r) => r.name)),
+  ]
+  const planTermMonths = financingTerms.find((t) => t.id === planTermId)?.termMonths ?? null
+  const anyZeroPercent =
+    !planIsTpf &&
+    !planTyped &&
+    zeroPercentUseNames.length > 0 &&
+    planTermMonths != null &&
+    planPreview != null &&
+    planPreview.amountFinanced > 0 &&
+    isZeroPercentPlan(planPreview.totalPayable - planPreview.amountFinanced, planTermMonths)
   // Scenario 71 — any line with a typed-over price makes the sale carry a
   // reason and a note.
   const anyPriceOverridden = cart.some((l) => l.priceOverridden)
@@ -2688,6 +2728,7 @@ export default function CheckoutPage() {
   const anyException =
     anyPriceOverridden ||
     anyTypedPlan ||
+    anyZeroPercent ||
     creditApplicationWaivedActive ||
     creditApplicationOverriddenActive
   // Only a TPF installment sale still waits for approval (Scenario 71): an
@@ -2697,6 +2738,7 @@ export default function CheckoutPage() {
     [
       anyPriceOverridden,
       anyTypedPlan,
+      anyZeroPercent,
       creditApplicationWaivedActive,
       creditApplicationOverriddenActive,
     ].filter(Boolean).length > 1
@@ -2707,7 +2749,9 @@ export default function CheckoutPage() {
           ? 'Credit Application Waived'
           : anyTypedPlan
             ? 'Typed Installment Terms'
-            : 'Price Override'
+            : anyZeroPercent
+              ? '0% Installment'
+              : 'Price Override'
   // Nov UAT #28 — what is still missing before the sale can go through, as the
   // footer's "N things left". Each is a check Confirm already makes; the reason
   // and its note count as one thing (they are one card).
@@ -5157,6 +5201,7 @@ export default function CheckoutPage() {
       const what = [
         anyPriceOverridden && 'the price override',
         anyTypedPlan && 'the typed terms',
+        anyZeroPercent && `the 0% installment on ${zeroPercentUseNames.join(' and ')}`,
         creditApplicationWaivedActive && 'the credit application waiver',
         creditApplicationOverriddenActive && 'the credit application override',
       ]
@@ -8064,12 +8109,18 @@ export default function CheckoutPage() {
                         <button
                           key={mode}
                           type="button"
-                          // Scenario 67 — an X-Deal is installment-only.
-                          disabled={xDealActive && mode !== 'installment'}
+                          data-testid={`payment-mode-${mode}`}
+                          // Scenario 67 — an X-Deal is installment-only. Docket #92 — and a
+                          // price use on the cart may not sell for this payment mode.
+                          disabled={
+                            (xDealActive && mode !== 'installment') ||
+                            (mode === 'cash' ? cashBlockedReason : installmentBlockedReason) != null
+                          }
                           title={
                             xDealActive && mode !== 'installment'
                               ? 'An X-Deal is always an inhouse installment sale'
-                              : undefined
+                              : ((mode === 'cash' ? cashBlockedReason : installmentBlockedReason) ??
+                                undefined)
                           }
                           onClick={() => {
                             setPaymentMode(mode)
@@ -8102,8 +8153,18 @@ export default function CheckoutPage() {
                           key={provider}
                           type="button"
                           onClick={() => setLineInstallmentProvider(planLineIds, provider)}
-                          // Scenario 67 — an X-Deal is inhouse-only.
-                          disabled={xDealActive && provider === 'tpf'}
+                          data-testid={`payment-provider-${provider}`}
+                          // Scenario 67 — an X-Deal is inhouse-only. Docket #92 — and a price
+                          // use on the cart may not sell for this provider.
+                          disabled={
+                            (xDealActive && provider === 'tpf') ||
+                            (provider === 'inhouse' ? inhouseBlockedReason : tpfBlockedReason) !=
+                              null
+                          }
+                          title={
+                            (provider === 'inhouse' ? inhouseBlockedReason : tpfBlockedReason) ??
+                            undefined
+                          }
                           className={`flex-1 rounded-lg px-3 py-2 text-[13.5px] font-semibold transition-colors ${
                             planProvider === provider
                               ? 'bg-prominent-purple-200 text-prominent-purple-800'
@@ -8533,7 +8594,7 @@ export default function CheckoutPage() {
                               posEditedRef.current.term = true
                               setLineFinancingTermId(planLineIds, v)
                             }}
-                            options={financingTerms.map((t) => ({
+                            options={planTermOptions.map((t) => ({
                               value: t.id,
                               label: `${t.termMonths} months`,
                             }))}
@@ -8580,7 +8641,7 @@ export default function CheckoutPage() {
                               )}
                             </div>
                           )}
-                          {!xDealActive && !employeeApplianceLoanActive && (
+                          {!xDealActive && !employeeApplianceLoanActive && planAllowsTypedPlan && (
                             <div className="flex flex-wrap gap-x-4 gap-y-1">
                               <button
                                 type="button"
@@ -9189,6 +9250,15 @@ export default function CheckoutPage() {
                 <p className="mt-1 text-xs text-gray-600">
                   No approval needed. Management reviews it at the end of the day.
                 </p>
+                {anyZeroPercent && (
+                  <p
+                    className="mt-1 text-xs font-medium text-amber-800"
+                    data-testid="zero-percent-note"
+                  >
+                    A 0% installment on {zeroPercentUseNames.join(' and ')} needs a reason and a
+                    note.
+                  </p>
+                )}
 
                 {/* Nov UAT #28 — which unit(s) the override applies to. */}
                 {cart
