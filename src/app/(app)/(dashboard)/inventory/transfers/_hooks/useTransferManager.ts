@@ -504,10 +504,13 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
 
   const cancelMutation = useMutation({
     mutationFn: (id: string) => cancelTransfer(id),
-    onSuccess: (result) => {
+    onSuccess: (result, id) => {
       if (result.success) {
         showToast({ title: 'Transfer cancelled', description: result.message, status: 'success' })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers'] })
+        // The detail is cached (staleTime 30s) and keyed by id; without this,
+        // reopening the request shows its pre-cancel status and Cancel button.
+        queryClient.invalidateQueries({ queryKey: ['inventory-transfer', id] })
         queryClient.invalidateQueries({ queryKey: ['inventory-uds'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-serial-numbers'] })
         queryClient.invalidateQueries({ queryKey: ['inventory-transfers-count'] })
