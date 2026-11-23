@@ -1,7 +1,7 @@
 ---
 name: pr-template
 description: "Writes the PR title and description for BOTH repos (frontend + backend) from ONLY the commits THIS Claude session made, filled into each repo's own .github PR template. Use when asked for the PR of 'this session', 'just my commits here', 'only what we did in this chat'. For the whole branch whichever session made it, use pr-description instead. Never posts, comments or opens a PR."
-argument-hint: "Optional branch name. Omit it to use the branch each checkout is on."
+argument-hint: 'Optional branch name. Omit it to use the branch each checkout is on.'
 ---
 
 # PR Description (this session only) — TPE

@@ -382,6 +382,8 @@ function shiftLength(from: string, to?: string | null): string | null {
   if (!Number.isFinite(ms) || ms < 0) return null
   const minutes = Math.floor(ms / 60000)
   const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+  if (days) return `${days}d ${hours % 24}h`
   return hours ? `${hours}h ${minutes % 60}m` : `${minutes}m`
 }
 
