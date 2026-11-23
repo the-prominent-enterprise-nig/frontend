@@ -274,11 +274,11 @@ function selectionAfterToggle(
 
 // The AR service reports these guards as bare codes, deliberately — they are
 // an API contract its own e2e specs assert on. This screen is where a cashier
-// reads them, so translate them here rather than leaking "rebate_exceeds_ppd"
+// reads them, so translate them here rather than leaking "rebate_exceeds_dues"
 // into the dialog. Anything unmapped falls through to the server's own text.
 const PAYMENT_ERROR_MESSAGES: Record<string, string> = {
-  rebate_exceeds_ppd:
-    'The rebate is more than the prompt payment discount these dues have earned. A due only earns its PPD once the payment covers it in full.',
+  rebate_exceeds_dues:
+    'The rebate is more than the dues this payment clears. A rebate is only earned on a due paid in full, and it cannot be more than that due.',
   rebate_requires_installment_account:
     'A rebate can only be given on an installment plan. This invoice has no linked installment account.',
   penalty_exceeds_assessed:
@@ -881,11 +881,13 @@ export default function CollectionsScreen({ canCollect = true }: { canCollect?: 
  * feedback). Reflects whichever dues are currently checked on the left, one
  * due or several at once, same shell/field set either way, both defaulting to
  * paying every checked due off in full. Amount/Total is always freely typed;
- * Rebate and Penalty are checkbox-driven per due instead — rebate defaults
- * checked (still on time), penalty defaults checked once a due qualifies
- * (15+ days late), and penalty has no amount override at all — it's
- * auto-calculated only, never typed by a cashier. Both — and whether a due
- * even counts as late — are derived LIVE from the Payment date field
+ * Rebate is a checkbox plus an amount the cashier can change per due — it
+ * opens at the account's PPD (7.5% of the monthly), ticked while the due is on
+ * time, because an existing account on a ZI price does not fit that figure.
+ * Penalty is checkbox-driven per due, defaults checked once a due qualifies
+ * (15+ days late), and has no amount override at all — it's auto-calculated
+ * only, never typed by a cashier. Whether a due even counts as late — and the
+ * penalty — are derived LIVE from the Payment date field
  * (liveLines/dueSuggestions), never the date this panel happened to open
  * with, since a cashier can freely back/post-date that field and the
  * backend recomputes the exact same caps against whatever date actually
@@ -938,9 +940,9 @@ function PaymentPanel({
 }) {
   // The payments the collection was taken with — one, or several methods
   // (part cash, part GCash, part card). Each Amount received starts blank:
-  // the cashier types what was actually handed over, never assumed. Rebate /
-  // Penalty are not free-typed at all (see rebateChecked/penaltyChecked
-  // below) — both are checkbox-driven per due.
+  // the cashier types what was actually handed over, never assumed. Rebate is
+  // a ticked amount the cashier may change (rebateChecked/rebateTyped below);
+  // Penalty is never typed (penaltyChecked) — it is checkbox-driven per due.
   const [payments, setPayments] = useState<CollectionPaymentRow[]>(() => [
     newCollectionPaymentRow(),
   ])
@@ -990,14 +992,10 @@ function PaymentPanel({
   // allowing it through as an overpayment.
   const isFullyPaid = !!single?.line.settledAt
 
-  // Sums across every selected due — used for the rebate cap and for the
-  // Total/Rebate fields' initial values (paying each due off in full is the
-  // sensible starting point; the cashier can edit either field from there).
+  // Sums across every selected due — used for the Total/Rebate fields' initial
+  // values (paying each due off in full is the sensible starting point; the
+  // cashier can edit either field from there).
   const outstandingSum = liveLines.reduce((sum, { line }) => sum + dueOutstanding(line), 0)
-  const rebateCapSum = liveLines.reduce(
-    (sum, { suggestedRebate }) => sum + (suggestedRebate ?? 0),
-    0
-  )
   // What the penalty would come to if every selected due were paid in full —
   // the at-a-glance figure. What a given payment is actually charged follows
   // the amount typed (see bulkAllocated), since the penalty is 5% of the part
@@ -1022,16 +1020,23 @@ function PaymentPanel({
   // the selection changes (see the component doc comment above), so this
   // never goes stale against a different set of dues. If the cashier later
   // edits the Payment date, a due's checkbox stays wherever they left it;
-  // rebateAmountFor below (and bulkAllocated, for the penalty) always clamp to the LIVE cap
-  // regardless, so a checked-but-no-longer-qualifying due safely
-  // contributes ₱0 rather than ever submitting more than the backend will
-  // actually allow.
+  // bulkAllocated (for the penalty) always clamps to the LIVE caps regardless,
+  // so a checked-but-no-longer-qualifying due safely contributes ₱0 rather than
+  // ever submitting more than the backend will actually allow.
   const [rebateChecked, setRebateChecked] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
       lines.map(({ line, ppd }) => {
         const s = dueSuggestions(line, ppd, manilaToday())
         return [line.id, !s.isLate && (s.suggestedRebate ?? 0) > 0]
       })
+    )
+  )
+  // The rebate amount per due, as the cashier sees it in the field: it opens at
+  // the account's PPD (blank where the account earns none) and can be typed
+  // over — an existing account on a ZI price does not fit the automatic 7.5%.
+  const [rebateTyped, setRebateTyped] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      lines.map(({ line, ppd }) => [line.id, ppd != null && ppd > 0 ? ppd.toFixed(2) : ''])
     )
   )
   // Penalty has no amount override at all — auto-calculated only, per the
@@ -1047,8 +1052,20 @@ function PaymentPanel({
     )
   )
 
-  function rebateAmountFor(lineId: string, suggestedRebate: number | null): number {
-    return rebateChecked[lineId] ? (suggestedRebate ?? 0) : 0
+  // What a ticked due's rebate comes to: the amount typed, never more than the
+  // due still owes (the server refuses a rebate above the dues it clears).
+  function rebateAmountFor(lineId: string, dueRemaining: number): number {
+    if (!rebateChecked[lineId]) return 0
+    const typed = Number(rebateTyped[lineId])
+    if (!Number.isFinite(typed) || typed <= 0) return 0
+    return Math.min(Math.round(typed * 100) / 100, dueRemaining)
+  }
+  // Typing an amount ticks the due's rebate (a zero or a blank unticks it), so a
+  // cashier never types a figure that is then ignored.
+  function typeRebate(lineId: string, raw: string) {
+    const cleaned = raw.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')
+    setRebateTyped((prev) => ({ ...prev, [lineId]: cleaned }))
+    setRebateChecked((prev) => ({ ...prev, [lineId]: Number(cleaned) > 0 }))
   }
   // Resolved together (id + name) before ever touching form.branchId, so the
   // combobox's one-shot initialLabel is never stale — see BranchSearchCombobox's
@@ -1107,19 +1124,18 @@ function PaymentPanel({
     setPayments((prev) => prev.map((p, i) => (i === index ? { ...p, ...patch } : p)))
   }
 
-  // Rebate resolved per due from the checkbox state above, against the LIVE
-  // suggestion for form.paymentDate (liveLines, not the raw `lines` prop) —
-  // this is the single source of truth for both the single-due and batch cases
-  // (a single due is just a one-element `lines`). Already capped by
-  // construction (rebateAmountFor clamps to the due's own live suggestedRebate),
-  // and since the cap itself tracks form.paymentDate, it can never promise more
-  // than the backend will allow for whatever date actually submits. The penalty
+  // Rebate resolved per due from the checkbox and typed amount above — this is
+  // the single source of truth for both the single-due and batch cases (a
+  // single due is just a one-element `lines`). Already capped by construction
+  // (rebateAmountFor clamps to what the due still owes), and
+  // allocateWithEarnedRebates drops it on a due the payment does not clear, so
+  // it can never promise more than the backend will allow. The penalty
   // is NOT resolved here: it is 5% of the part of each late due the payment
   // settles, so it can only be worked out once the typed amount has been
   // allocated across the dues (bulkAllocated below).
-  const resolvedLines = liveLines.map(({ line, suggestedRebate, penaltyEligible }) => ({
+  const resolvedLines = liveLines.map(({ line, penaltyEligible }) => ({
     line,
-    rebateAmount: rebateAmountFor(line.id, suggestedRebate),
+    rebateAmount: rebateAmountFor(line.id, dueOutstanding(line)),
     penaltyApplies: penaltyEligible && (penaltyChecked[line.id] ?? false),
   }))
   const rebateTotal = resolvedLines.reduce((sum, r) => sum + r.rebateAmount, 0)
@@ -1582,10 +1598,12 @@ function PaymentPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {liveLines.map(({ line, isLate, suggestedRebate, penaltyEligible }, rowIndex) => {
+                {liveLines.map(({ line, ppd, isLate, penaltyEligible }, rowIndex) => {
                   const remaining = dueOutstanding(line)
-                  const cap = suggestedRebate ?? 0
-                  // isLate/suggestedRebate/penaltyEligible are all live
+                  // A rebate can only go on an account with an installment plan
+                  // behind it (the server refuses one otherwise).
+                  const canRebate = ppd != null
+                  // isLate/penaltyEligible are both live
                   // against form.paymentDate (see liveLines above), so
                   // this badge and the Rebate/Penalty columns beside it
                   // can never disagree with each other or with what the
@@ -1597,8 +1615,7 @@ function PaymentPanel({
                   // What this due earns at the typed amount, not just what is
                   // ticked: a due left short earns no rebate.
                   const rowRebate =
-                    bulkAllocated[rowIndex]?.rebateAmount ??
-                    rebateAmountFor(line.id, suggestedRebate)
+                    bulkAllocated[rowIndex]?.rebateAmount ?? rebateAmountFor(line.id, remaining)
                   // 5% of the part of this due the typed amount settles.
                   const rowPenalty = bulkAllocated[rowIndex]?.penaltyAmount ?? 0
                   const net = Math.max(Math.round((remaining - rowRebate) * 100) / 100, 0)
@@ -1620,10 +1637,15 @@ function PaymentPanel({
                       </td>
                       <td className="px-3 py-2 text-right text-zinc-500">{fmtMoney(remaining)}</td>
                       <td className="px-3 py-2 text-right">
-                        {cap > 0 ? (
-                          <label className="flex items-center justify-end gap-1.5 text-emerald-700">
+                        {canRebate ? (
+                          <div
+                            className={`flex items-center justify-end gap-1.5 ${
+                              rebateChecked[line.id] ? 'text-emerald-700' : 'text-zinc-400'
+                            }`}
+                          >
                             <input
                               type="checkbox"
+                              aria-label={`Apply the rebate to payment ${line.lineNumber}`}
                               checked={rebateChecked[line.id] ?? false}
                               onChange={(e) =>
                                 setRebateChecked((prev) => ({
@@ -1633,8 +1655,21 @@ function PaymentPanel({
                               }
                               className="h-3.5 w-3.5 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500"
                             />
-                            −{fmtMoney(rowRebate)}
-                          </label>
+                            <span aria-hidden="true">−₱</span>
+                            {/* The cashier can change the rebate: it opens at the
+                                account's PPD, which does not fit an existing
+                                account on a ZI price. */}
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              aria-label={`Rebate for payment ${line.lineNumber}`}
+                              data-testid={`collection-rebate-${line.lineNumber}`}
+                              value={rebateTyped[line.id] ?? ''}
+                              placeholder="0.00"
+                              onChange={(e) => typeRebate(line.id, e.target.value)}
+                              className="w-20 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-right text-[13px] tabular-nums text-zinc-900 outline-none focus:border-prominent-purple-500 focus:ring-1 focus:ring-prominent-purple-500"
+                            />
+                          </div>
                         ) : (
                           <span className="text-zinc-400">{fmtMoney(0)}</span>
                         )}
@@ -1668,10 +1703,10 @@ function PaymentPanel({
               </tbody>
             </table>
           </div>
-          {rebateCapSum > 0 && (
+          {rebateTotal > 0 && outstandingSum > 0 && (
             <p className="text-[12px] text-zinc-400">
-              Rebate is about {((rebateCapSum / outstandingSum) * 100).toFixed(1)}% of the amount
-              due.
+              Rebate is about {((rebateTotal / outstandingSum) * 100).toFixed(1)}% of the amount
+              due. You can change it for each due.
             </p>
           )}
           {rebateDropped && (
