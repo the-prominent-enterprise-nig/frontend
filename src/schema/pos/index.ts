@@ -1792,6 +1792,9 @@ export type OverrideFlag =
   | 'credit_waived'
   | 'credit_overridden'
   | 'credit_warning'
+  // Docket #92 — an in-house installment that collects no more than the cash price, on a
+  // price use that asks a reason for that (SPLIT REGULAR, SPLIT OUT OF TOWN)
+  | 'zero_percent'
 
 export type OverridePlanKind = 'cash' | 'installment_term' | 'installment_typed' | 'tpf'
 

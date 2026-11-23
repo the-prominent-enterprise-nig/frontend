@@ -33,6 +33,8 @@ export function flagLabel(flag: OverrideFlag, thresholdPct: number): string {
       return 'Credit app overridden'
     case 'credit_warning':
       return 'Credit warning'
+    case 'zero_percent':
+      return '0% interest'
   }
 }
 
@@ -45,6 +47,8 @@ export const FLAG_STYLES: Record<OverrideFlag, string> = {
   credit_waived: 'bg-red-100 text-red-700',
   credit_overridden: 'bg-red-100 text-red-700',
   credit_warning: 'bg-red-100 text-red-700',
+  // Worth a second look, like manual terms: the business gave up its interest, with a reason.
+  zero_percent: 'bg-amber-100 text-amber-800',
 }
 
 export const PLAN_LABELS: Record<OverridePlanKind, string> = {
