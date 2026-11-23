@@ -15,7 +15,7 @@ import { rejectItemAccounting } from '../_actions/reject-item-accounting'
 import { approveItem } from '../_actions/approve-item'
 import { rejectItem } from '../_actions/reject-item'
 import { getUnitsOfMeasure, getItemBrands, getItemTypes } from '../_actions/get-lookup-data'
-import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
+import { getAllCategoriesFlat } from '../../categories/_actions/get-categories-flat'
 import { createBundle } from '../../bundles/_actions/create-bundle'
 import { getBundleComponents } from '../../bundles/_actions/get-bundle-components'
 import { addBundleComponent } from '../../bundles/_actions/add-bundle-component'
@@ -112,7 +112,7 @@ export function useItemMaster() {
 
   const categoriesQuery = useQuery({
     queryKey: ['inventory-categories-flat'],
-    queryFn: () => getCategoriesFlat({ limit: 500 }),
+    queryFn: () => getAllCategoriesFlat(),
     staleTime: 10 * 60 * 1000,
   })
 

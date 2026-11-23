@@ -17,6 +17,8 @@ type Props = {
   /** Lists only suppliers marked as service centers — the repair-provider
    * pickers (Create RR › From Service Center, a DR to a service center). */
   serviceCentersOnly?: boolean
+  /** Replaces "Search supplier" — a filter reads "All suppliers" until one is picked. */
+  placeholder?: string
 }
 
 export function SupplierSearchCombobox({
@@ -26,6 +28,7 @@ export function SupplierSearchCombobox({
   error,
   initialLabel,
   serviceCentersOnly = false,
+  placeholder,
 }: Props): React.JSX.Element {
   const noun = serviceCentersOnly ? 'service center' : 'supplier'
   return (
@@ -37,7 +40,7 @@ export function SupplierSearchCombobox({
         error={error}
         initialLabel={initialLabel}
         queryKey={serviceCentersOnly ? 'service-centers-search' : 'suppliers-search'}
-        placeholder={`Search ${noun}`}
+        placeholder={placeholder ?? `Search ${noun}`}
         typeToSearchMessage={`Type to search ${noun}s…`}
         emptyMessage={`No ${noun}s found`}
         search={async (query) => {

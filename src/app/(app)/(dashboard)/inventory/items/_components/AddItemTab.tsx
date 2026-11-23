@@ -17,7 +17,7 @@ import type {
 } from '@/src/schema/inventory/items'
 import { createItem } from '../_actions/create-item'
 import { getUnitsOfMeasure, getItemBrands, getItemTypes } from '../_actions/get-lookup-data'
-import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
+import { getAllCategoriesFlat } from '../../categories/_actions/get-categories-flat'
 import CreateItemModal from './CreateItemModal'
 
 const LOOKUP_STALE = 10 * 60 * 1000
@@ -45,7 +45,7 @@ function useItemLookups(): ItemLookups {
   const categories = useQuery({
     ...opts,
     queryKey: ['inventory-categories-flat'],
-    queryFn: () => getCategoriesFlat({ limit: 500 }),
+    queryFn: () => getAllCategoriesFlat(),
   })
   const uom = useQuery({ ...opts, queryKey: ['inventory-uom'], queryFn: () => getUnitsOfMeasure() })
   const brands = useQuery({

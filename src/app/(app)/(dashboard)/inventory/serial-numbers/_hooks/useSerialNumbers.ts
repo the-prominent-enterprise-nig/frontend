@@ -18,7 +18,7 @@ import { getCaravanItemGroups } from '../_actions/get-caravan-item-groups'
 import { registerSerialNumbers } from '../_actions/register-serial-numbers'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import { getBrands } from '../../brands/_actions/get-brands'
-import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
+import { getAllCategoriesFlat } from '../../categories/_actions/get-categories-flat'
 import { flatToCategorySelectOptions } from '@/src/libs/format/category-tree'
 import type {
   RegisterSerialsFormInput,
@@ -245,7 +245,7 @@ export function useSerialNumbers(
 
   const categoriesQuery = useQuery({
     queryKey: ['inventory-categories-flat'],
-    queryFn: () => getCategoriesFlat({ limit: 500 }),
+    queryFn: () => getAllCategoriesFlat(),
     staleTime: 5 * 60 * 1000,
   })
 

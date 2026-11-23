@@ -34,6 +34,7 @@ import {
 import { PLEX, MONO } from '../../purchase-orders/_components/procurementTokens'
 import { STOCK_TABLE_HEAD } from '@/src/libs/design/plex'
 import { manilaToday, formatManilaDate } from '@/src/libs/format/manila-date'
+import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 
 // ─── Design tokens ──────────────────────────────────────────────────────────
 // Same #5b21b6 palette as the sibling Stock Ledger/Stock Balance
@@ -339,8 +340,6 @@ export default function ReceivingReportsTab({
     isLoadingSummary,
     warehouseOptions,
     warehousesLoading,
-    supplierOptions,
-    suppliersLoading,
     search,
     warehouseId,
     supplierId,
@@ -463,7 +462,6 @@ export default function ReceivingReportsTab({
     value: wh.id,
     label: wh.branch?.name ?? wh.name,
   }))
-  const supplierSelectOptions = supplierOptions.map((s) => ({ value: s.id, label: s.name }))
 
   async function handleExport() {
     setIsExporting(true)
@@ -642,16 +640,13 @@ export default function ReceivingReportsTab({
           options={locationOptions}
         />
 
-        <SearchableSelect
-          className="w-[180px]"
-          value={supplierId ?? ''}
-          onChange={(v) => setSupplierId(v || undefined)}
-          placeholder="All Suppliers"
-          loading={suppliersLoading}
-          chrome={CONTROL_CHROME}
-          clearable
-          options={supplierSelectOptions}
-        />
+        <div className="w-[220px]">
+          <SupplierSearchCombobox
+            value={supplierId ?? ''}
+            onChange={(id) => setSupplierId(id || undefined)}
+            placeholder="All Suppliers"
+          />
+        </div>
 
         {isFetching && !isLoading && (
           <RefreshCw className="h-3.5 w-3.5 animate-spin text-ink-subtle" />

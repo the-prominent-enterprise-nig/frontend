@@ -35,7 +35,7 @@ import {
   DESTINATION_REQUIRED_MESSAGE,
   type PurchaseOrderSummary,
 } from '@/src/schema/inventory/purchase-orders'
-import { getSuppliers } from '../_actions/get-suppliers'
+import { SupplierSearchCombobox } from '@/src/components/inventory/SupplierSearchCombobox'
 import { getBranches } from '@/src/app/(app)/(dashboard)/pos/price-lists/_actions/get-branches'
 import { getPurchaseOrder } from '../_actions/get-purchase-order'
 import { getPurchaseOrderDocument } from '../_actions/get-purchase-order-document'
@@ -420,20 +420,8 @@ export function PurchaseOrderList({
 
   const isActing = isApproving || isSending || isClosing || isCancelling || isUpdating
 
-  const suppliersQuery = useQuery({
-    queryKey: ['po-filter-suppliers'],
-    queryFn: () => getSuppliers({ limit: 200 }),
-  })
   const branchesQuery = useQuery({ queryKey: ['po-filter-branches'], queryFn: () => getBranches() })
 
-  const supplierOptions = useMemo(
-    () =>
-      (suppliersQuery.data?.success ? (suppliersQuery.data.data?.data ?? []) : []).map((s) => ({
-        value: s.id,
-        label: s.name,
-      })),
-    [suppliersQuery.data]
-  )
   const branchOptions = useMemo(
     () => (branchesQuery.data ?? []).map((b) => ({ value: b.id, label: b.name })),
     [branchesQuery.data]
@@ -692,16 +680,13 @@ export function PurchaseOrderList({
                 list runs long enough that scrolling it is the slow way to a
                 known name, and locations use the same control so the pair
                 behaves identically. */}
-            <SearchableSelect
-              className="w-[200px]"
-              value={supplierId ?? ''}
-              onChange={(v) => setSupplierId(v || undefined)}
-              placeholder="All suppliers"
-              loading={suppliersQuery.isLoading}
-              chrome={CONTROL_CHROME}
-              clearable
-              options={supplierOptions}
-            />
+            <div className="w-[220px]">
+              <SupplierSearchCombobox
+                value={supplierId ?? ''}
+                onChange={(id) => setSupplierId(id || undefined)}
+                placeholder="All suppliers"
+              />
+            </div>
 
             {/* "All locations" filters by destination — the branch whose
                 warehouse the order is headed to (PoFilterDto.branchId maps
