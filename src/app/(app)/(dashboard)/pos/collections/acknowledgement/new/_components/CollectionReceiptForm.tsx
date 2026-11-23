@@ -28,6 +28,10 @@ const CASH_GROUP = 'Cash and Cash Equivalents'
 const CLEARING_GROUP = 'Payment Gateway and Collection Clearing Funds'
 /** The seeded Cash on Hand fund — counter cash, not money that reached a bank. */
 const CASH_ON_HAND_TYPE = 'Cash'
+/** Where a customer deposit is held. A customer's receipt picks it through
+ * "Customer deposit", never as a plain account: that entry is what saves the
+ * deposit record the customer's profile reads. */
+const CUSTOMER_DEPOSITS_ACCOUNT_NUMBER = '2-01-040'
 
 const MONTHLY_INSTALMENT = 'MI'
 const CUSTOMER_DEPOSIT = 'DEPOSIT'
@@ -173,17 +177,18 @@ export default function CollectionReceiptForm({
       }))
   }, [accounts])
 
-  const creditEntryOptions = useMemo<SearchableSelectOption[]>(
-    () =>
-      payerKind === 'CUSTOMER'
-        ? [
-            { value: MONTHLY_INSTALMENT, label: 'Monthly instalment (MI)' },
-            { value: CUSTOMER_DEPOSIT, label: 'Customer deposit' },
-            ...creditAccountOptions,
-          ]
-        : creditAccountOptions,
-    [payerKind, creditAccountOptions]
-  )
+  const creditEntryOptions = useMemo<SearchableSelectOption[]>(() => {
+    if (payerKind !== 'CUSTOMER') return creditAccountOptions
+    // Customer deposit already is that account, and the only way to it that also
+    // records the deposit — listing the account beside it left a receipt that
+    // posted but showed nowhere on the customer's profile.
+    const deposits = accounts.find((a) => a.number === CUSTOMER_DEPOSITS_ACCOUNT_NUMBER)
+    return [
+      { value: MONTHLY_INSTALMENT, label: 'Monthly instalment (MI)' },
+      { value: CUSTOMER_DEPOSIT, label: 'Customer deposit' },
+      ...creditAccountOptions.filter((o) => !deposits || o.value !== `acct:${deposits.id}`),
+    ]
+  }, [payerKind, creditAccountOptions, accounts])
 
   // The customer's open aging accounts, for the Aging account pick.
   const [agingAccounts, setAgingAccounts] = useState<AgingAccountOption[]>([])

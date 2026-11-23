@@ -111,6 +111,23 @@ test('only a customer can credit Monthly instalment or Customer deposit', async 
   ).toHaveCount(0)
 })
 
+// A customer's deposit reaches their profile only through "Customer deposit",
+// which saves the deposit record along with the entry. The account it posts to
+// used to sit in the same list as a plain pick — it posted, but the profile's
+// Deposits card stayed empty.
+test("a customer's Credit entry has Customer deposit but not Customer Deposits / Advances as a plain account", async ({
+  page,
+}) => {
+  await openCollection(page)
+  await page.getByLabel('Credit entry', { exact: true }).click()
+  const options = page.getByTestId('searchable-select-option')
+  await expect(options.filter({ hasText: /^Customer deposit$/ })).toHaveCount(1)
+  // The rest of the chart is still offered, so the list was not emptied.
+  expect(await options.count()).toBeGreaterThan(3)
+  await expect(options.filter({ hasText: '2-01-040' })).toHaveCount(0)
+  await expect(options.filter({ hasText: 'Customer Deposits / Advances' })).toHaveCount(0)
+})
+
 test('Aging account appears only for Monthly instalment, and says when the customer has none', async ({
   page,
 }) => {

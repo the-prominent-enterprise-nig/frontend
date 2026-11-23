@@ -14,10 +14,11 @@ import {
 } from './collections-plan'
 
 // Collections rebate (Prompt Payment Discount). An on-time due's rebate is a
-// checkbox in the panel's per-due table, ticked by default at the plan's ppd;
-// Net is the due less the rebate, so collecting Net with the rebate ticked
-// settles the due exactly. Unticking it puts Net back to the full due. (The
-// rebate used to be a typed amount with its own cap; it is no longer typed.)
+// checkbox and an amount in the panel's per-due table, ticked by default at the
+// plan's ppd; Net is the due less the rebate, so collecting Net with the rebate
+// ticked settles the due exactly. Unticking it puts Net back to the full due,
+// and the cashier can type another amount over the ppd (an existing account on
+// a ZI price does not fit the automatic 7.5%).
 //
 // The plan is built through checkout (collections-plan.ts): the seed has no
 // open dues, and a bare API sale now needs an approved credit application.
@@ -72,7 +73,8 @@ test.describe('POS Collections — rebate', () => {
     const due = pesos(await previewRow(page).locator('td').nth(2).innerText())
     const rebateBox = rebateCell(page).getByRole('checkbox')
     await expect(rebateBox).toBeChecked()
-    expect(pesos(await rebateCell(page).innerText())).toBe(ppd)
+    const rebateInput = page.getByTestId('collection-rebate-1')
+    await expect(rebateInput).toHaveValue(ppd.toFixed(2))
     const net = Math.round((due - ppd) * 100) / 100
     expect(pesos(await netCell(page).innerText())).toBe(net)
 
@@ -80,6 +82,21 @@ test.describe('POS Collections — rebate', () => {
     await rebateBox.uncheck()
     await expect.poll(async () => pesos(await netCell(page).innerText())).toBe(due)
     await rebateBox.check()
+    await expect.poll(async () => pesos(await netCell(page).innerText())).toBe(net)
+
+    // The cashier can change it: another amount replaces the ppd and Net follows;
+    // clearing it unticks the rebate; typing the ppd back ticks it again.
+    const typed = Math.round((ppd + 10) * 100) / 100
+    await rebateInput.fill(String(typed))
+    await expect(rebateBox).toBeChecked()
+    await expect
+      .poll(async () => pesos(await netCell(page).innerText()))
+      .toBe(Math.round((due - typed) * 100) / 100)
+    await rebateInput.fill('')
+    await expect(rebateBox).not.toBeChecked()
+    await expect.poll(async () => pesos(await netCell(page).innerText())).toBe(due)
+    await rebateInput.fill(ppd.toFixed(2))
+    await expect(rebateBox).toBeChecked()
     await expect.poll(async () => pesos(await netCell(page).innerText())).toBe(net)
 
     // The payment method has to be picked (20 Nov).

@@ -45,7 +45,9 @@ export function SerialNumberSearchCombobox({
       typeToSearchMessage={noUnitsMessage}
       emptyMessage="No available serial numbers"
       search={async (query) => {
-        const res = await getAvailableSerialNumbers(itemId, branchId)
+        // The search goes to the server — the endpoint pages at 20 newest, so
+        // matching only in the browser could never reach an older unit.
+        const res = await getAvailableSerialNumbers(itemId, branchId, query)
         const rows = res.data ?? []
         const filtered = query
           ? rows.filter((sn) => sn.serialNumber.toLowerCase().includes(query.toLowerCase()))

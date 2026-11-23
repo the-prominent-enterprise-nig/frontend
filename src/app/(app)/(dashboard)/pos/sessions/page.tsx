@@ -362,6 +362,18 @@ function shiftTime(iso: string): string {
   })
 }
 
+/** "Nov 21, 10:37 AM" — a shift row's open/close stamp. The date matters:
+ *  a till left open for days sits beside today's, and the time alone hides it. */
+function shiftStamp(iso: string): string {
+  return new Date(iso).toLocaleString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: MANILA_TZ,
+  })
+}
+
 /** "2h 14m" between two moments — how long the till has been, or was, open.
  *  Safe against a clock-skewed closedAt: a negative span renders as nothing
  *  rather than as "-1h". */
@@ -370,6 +382,8 @@ function shiftLength(from: string, to?: string | null): string | null {
   if (!Number.isFinite(ms) || ms < 0) return null
   const minutes = Math.floor(ms / 60000)
   const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+  if (days) return `${days}d ${hours % 24}h`
   return hours ? `${hours}h ${minutes % 60}m` : `${minutes}m`
 }
 
@@ -410,7 +424,7 @@ function SessionRow({
   const branch = terminalPlaceName(session.terminal)
 
   const subline = [
-    session.closedAt ? `closed ${shiftTime(session.closedAt)}` : 'still open',
+    session.closedAt ? `closed ${shiftStamp(session.closedAt)}` : 'still open',
     length,
     showBranch ? branch : null,
   ]
@@ -487,10 +501,10 @@ function SessionRow({
       <div className={`hidden items-center gap-3 px-4 py-3 lg:grid ${ROW_GRID}`}>
         {caret}
         <div className="flex min-w-0 flex-col">
-          <span className="truncate text-[12.5px] font-medium">
-            {terminal} · opened {shiftTime(session.openedAt)}
+          <span className="text-[12.5px] font-medium break-words">
+            {terminal} · opened {shiftStamp(session.openedAt)}
           </span>
-          <span className="truncate text-[10.5px] text-[#4b4b5a]">{subline}</span>
+          <span className="text-[10.5px] break-words text-[#4b4b5a]">{subline}</span>
         </div>
         <span className="min-w-0 truncate text-[12.5px] text-[#3d3d4a]">{cashier}</span>
         <span className="text-right text-[12.5px] tabular-nums">
@@ -517,14 +531,14 @@ function SessionRow({
               tabIndex={-1}
               className="flex min-w-0 flex-col text-left"
             >
-              <span className="truncate text-[12.5px] font-medium">
-                {terminal} · opened {shiftTime(session.openedAt)}
+              <span className="text-[12.5px] font-medium break-words">
+                {terminal} · opened {shiftStamp(session.openedAt)}
               </span>
               <span className="truncate text-[11px] text-[#4b4b5a]">
                 {cashier} · {session._count?.transactions ?? 0} txns ·{' '}
                 {formatCurrency(session.openingCash)} float
               </span>
-              <span className="truncate text-[11px] text-[#4b4b5a]">{subline}</span>
+              <span className="text-[11px] break-words text-[#4b4b5a]">{subline}</span>
             </button>
           </div>
           {chip}
