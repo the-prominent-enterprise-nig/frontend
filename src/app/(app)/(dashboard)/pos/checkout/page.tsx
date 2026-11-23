@@ -983,6 +983,21 @@ export default function CheckoutPage() {
   const [serialLoading, setSerialLoading] = useState(false)
   const [serialError, setSerialError] = useState('')
   const [serialSearchQuery, setSerialSearchQuery] = useState('')
+  // The list above is only the newest page (20) of what this branch holds — a
+  // typed search is answered by the server, not matched over that page
+  // (Docket #94). `serialRequestedQueryRef` is the search the latest request
+  // asked for; `serialRequestRef` drops a slower, older response.
+  const [serialSearchDebounced, setSerialSearchDebounced] = useState('')
+  const [serialSearching, setSerialSearching] = useState(false)
+  const [serialTotal, setSerialTotal] = useState<number | null>(null)
+  const serialRequestedQueryRef = useRef('')
+  const serialRequestRef = useRef(0)
+  const serialOpenKeyRef = useRef('')
+  const serialListLoadedRef = useRef(false)
+  // One key per picker "opening" — item, primary/secondary stage and branch.
+  const serialPickerKey = serialPickerTarget
+    ? `${serialPickerTarget.itemId}|${serialPickerStage}|${stockBranchId ?? ''}`
+    : ''
   // Read-only "also available elsewhere" section — never sellable from here.
   const [elsewhereSerials, setElsewhereSerials] = useState<SerialNumberRecord[]>([])
   // Whether the "elsewhere" lookup actually succeeded. A failed lookup and a
@@ -1682,26 +1697,67 @@ export default function CheckoutPage() {
     setError('')
   }, [cart])
 
-  // Fetch serial numbers when picker target or stage (primary/secondary) changes
+  // The typed serial is sent to the server after a short pause — Docket #94.
   useEffect(() => {
-    if (!serialPickerTarget) return
-    setSerialLoading(true)
-    setSerialNumbers([])
-    setSerialError('')
-    setSerialSearchQuery('')
-    setSerialRequestStatus({})
-    setExpandedBranch(null)
-    getAvailableSerialNumbers(serialPickerTarget.itemId, stockBranchId ?? undefined).then((res) => {
+    const timer = setTimeout(() => setSerialSearchDebounced(serialSearchQuery.trim()), 300)
+    return () => clearTimeout(timer)
+  }, [serialSearchQuery])
+
+  // Fetch serial numbers when the picker target or stage (primary/secondary)
+  // changes, and again whenever the typed search settles. The endpoint pages at
+  // 20 newest, so matching a typed serial over that page alone never found an
+  // older unit (Docket #94) — the search is the server's. Clearing the box
+  // brings the newest page back.
+  useEffect(() => {
+    if (!serialPickerTarget) {
+      serialOpenKeyRef.current = ''
+      return
+    }
+    const opening = serialOpenKeyRef.current !== serialPickerKey
+    serialOpenKeyRef.current = serialPickerKey
+    if (opening) {
+      serialListLoadedRef.current = false
+      setSerialLoading(true)
+      setSerialSearching(false)
+      setSerialNumbers([])
+      setSerialTotal(null)
+      setSerialError('')
+      setSerialSearchQuery('')
+      setSerialSearchDebounced('')
+      setSerialRequestStatus({})
+      setExpandedBranch(null)
+    } else if (serialSearchDebounced === serialRequestedQueryRef.current) {
+      // Nothing new to ask — the in-flight (or shown) list already answers it.
+      return
+    } else {
+      setSerialSearching(true)
+    }
+    const searched = opening ? '' : serialSearchDebounced
+    serialRequestedQueryRef.current = searched
+    const request = ++serialRequestRef.current
+    getAvailableSerialNumbers(
+      serialPickerTarget.itemId,
+      stockBranchId ?? undefined,
+      searched || undefined
+    ).then((res) => {
+      // A newer request (another search, or the picker reopened) owns the
+      // list and clears the loading flags itself.
+      if (request !== serialRequestRef.current) return
       if (res.success && Array.isArray(res.data)) {
+        serialListLoadedRef.current = true
         setSerialNumbers(res.data)
-      } else if (!res.success) {
+        setSerialTotal(res.total ?? null)
+      } else if (!serialListLoadedRef.current) {
         // A failed fetch (e.g. missing permission) must not look like
         // "zero serials in stock" — that's a data state, this is an error.
+        // (A failed SEARCH over a list that did load keeps that list on
+        // screen, still narrowed in the browser, rather than blanking it.)
         setSerialError(res.error || 'Failed to load serial numbers.')
       }
       setSerialLoading(false)
+      setSerialSearching(false)
     })
-  }, [serialPickerTarget?.itemId, serialPickerStage, stockBranchId])
+  }, [serialPickerKey, serialSearchDebounced])
 
   // Read-only "also available elsewhere" lookup — purely informational, so a
   // failure here stays silent rather than surfacing as a picker-blocking
@@ -9653,6 +9709,9 @@ export default function CheckoutPage() {
           // branch" above). Excludes anything already shown in
           // visibleSerials above (a serial physically in this branch
           // appears in both fetches).
+          // True while the server is still answering what was just typed.
+          const serialSearchPending =
+            serialSearching || serialSearchQuery.trim() !== serialSearchDebounced
           const ownIds = new Set(serialNumbers.map((sn) => sn.id))
           const elsewhereByBranch = elsewhereSerials
             .filter((sn) => !ownIds.has(sn.id))
@@ -9749,8 +9808,14 @@ export default function CheckoutPage() {
                       value={serialSearchQuery}
                       onChange={(e) => setSerialSearchQuery(e.target.value)}
                       placeholder="Search serial number…"
-                      className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
+                      className="w-full rounded-lg border border-gray-200 bg-gray-50 py-2.5 pl-9 pr-9 text-sm outline-none focus:border-purple-400 focus:bg-white focus:ring-2 focus:ring-purple-100"
                     />
+                    {(serialSearching || serialSearchQuery.trim() !== serialSearchDebounced) && (
+                      <Loader2
+                        size={14}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-purple-400"
+                      />
+                    )}
                   </div>
 
                   {hasElsewhere && (
@@ -9766,6 +9831,10 @@ export default function CheckoutPage() {
                     ) : serialError ? (
                       <div className="rounded-lg bg-red-50 px-4 py-5 text-center text-sm text-red-700">
                         {serialError}
+                      </div>
+                    ) : visibleSerials.length === 0 && serialSearchPending ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 size={20} className="animate-spin text-purple-400" />
                       </div>
                     ) : visibleSerials.length === 0 ? (
                       <div className="rounded-lg bg-amber-50 px-4 py-5 text-center text-sm text-amber-700">
@@ -9795,6 +9864,20 @@ export default function CheckoutPage() {
                       })
                     )}
                   </div>
+
+                  {/* Only the newest page is loaded until something is typed — say
+                      so, or the list reads as everything this branch holds
+                      (Docket #94: an older unit looked missing). */}
+                  {!serialLoading &&
+                    !serialError &&
+                    !serialSearchQuery.trim() &&
+                    serialTotal != null &&
+                    serialTotal > serialNumbers.length && (
+                      <p className="mt-2 text-xs text-gray-500">
+                        Showing the newest {serialNumbers.length} of {serialTotal} units — type a
+                        serial to find the rest.
+                      </p>
+                    )}
 
                   {/* Out of stock here AND at every other branch — there is no
                       unit to request, so no stock request (and no purchase
