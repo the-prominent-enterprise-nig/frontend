@@ -500,26 +500,30 @@ export function CashInTransitList({
       ? ledger.bankedReceipts.filter((r) => receiptMatches(r, search))
       : []
   const groups = groupByBranch(shown, shownReceipts, shownIncoming, shownBanked)
-  const selection = useSingleBranchSelection(ledger.rows)
+  const selection = useSingleBranchSelection(ledger.rows, unbanked)
   // The sessions being deposited, and their branch — which is all there is
   // for a deposit of New Receipts alone.
   const [depositing, setDepositing] = useState<{
     sessions: LedgerRow[]
     branchId: string
     branchName: string
-    /** The New Receipts it banks — those of the sessions' days, or the one
-     * day's receipts it was opened from. */
+    /** The New Receipts it banks: those shown on the ticked sessions, and
+     * the ones ticked on their own. */
     receiptIds: string[]
   } | null>(null)
-  // What a deposit of the ticked sessions banks with them.
-  const selectedReceipts = receiptsOnSessions(shown, unbanked, selection.rows)
+  // What Record deposit banks: the ticked sessions' own receipts, then the
+  // receipts ticked on their own rows.
+  const onSessions = receiptsOnSessions(shown, unbanked, selection.rows)
+  const selectedReceipts = [
+    ...onSessions,
+    ...selection.receipts.filter((r) => !onSessions.some((s) => s.id === r.id)),
+  ]
   const depositSelection = (): void => {
-    const first = selection.rows[0]
-    if (!first) return
+    if (!selection.branch) return
     setDepositing({
       sessions: selection.rows,
-      branchId: first.branchId,
-      branchName: first.branchName,
+      branchId: selection.branch.id,
+      branchName: selection.branch.name,
       receiptIds: selectedReceipts.map((r) => r.id),
     })
   }
@@ -597,24 +601,14 @@ export function CashInTransitList({
         canCorrect={canCorrect}
         selection={selection}
         onOpenDeposit={openDeposit}
-        onDepositReceipts={(group, receiptIds) =>
-          setDepositing({
-            sessions: [],
-            branchId: group.branchId,
-            branchName: group.branchName,
-            receiptIds,
-          })
-        }
         onTurnoverChanged={refreshAll}
         empty={ledger.loading ? 'Loading...' : 'Nothing here for these filters.'}
       />
-      {canManage && selection.rows.length > 0 && (
+      {canManage && selection.branch && (
         <SelectionBar
           rows={selection.rows}
-          // The New Receipts shown on the ticked sessions go into the same
-          // deposit; another day's, and an acknowledged turnover, are
-          // deposited from their own row.
           receipts={selectedReceipts}
+          branchName={selection.branch.name}
           onClear={selection.clear}
           onRecord={depositSelection}
         />
@@ -736,37 +730,81 @@ function useLedger(
 
 export interface Selection {
   rows: LedgerRow[]
+  /** Ticked New Receipts of their own — no session of their day. */
+  receipts: AcknowledgementReceipt[]
+  /** The branch everything ticked belongs to, once anything is. */
+  branch: { id: string; name: string } | null
   has: (sessionId: string) => boolean
+  hasReceipt: (receiptId: string) => boolean
   toggle: (row: LedgerRow) => void
+  toggleReceipt: (receipt: AcknowledgementReceipt) => void
   toggleGroup: (group: BranchGroup) => void
   clear: () => void
 }
 
+/** The set with the id added, or taken out if it was in. */
+function flip(set: Set<string>, id: string): Set<string> {
+  const next = new Set(set)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  return next
+}
+
+/** The branch a selection is in, from its first session or receipt. */
+function branchOfSelection(
+  rows: LedgerRow[],
+  receipts: AcknowledgementReceipt[]
+): Selection['branch'] {
+  if (rows[0]) return { id: rows[0].branchId, name: rows[0].branchName }
+  if (!receipts[0]) return null
+  return { id: receipts[0].branchId ?? 'none', name: receipts[0].branch?.name ?? 'No branch' }
+}
+
 /**
- * Selected To-deposit sessions, never spanning two branches: one deposit is
- * one branch's journal entry, so picking a row in another branch starts a
- * new selection instead of building one the server would refuse.
+ * Selected To-deposit sessions and New Receipts, never spanning two
+ * branches: one deposit is one branch's journal entry, so picking a row in
+ * another branch starts a new selection instead of building one the server
+ * would refuse. Receipts tick like sessions, so any of them — one ₱400
+ * receipt, a day, several days — is deposited together or apart.
  */
-function useSingleBranchSelection(rows: LedgerRow[]): Selection {
+function useSingleBranchSelection(
+  rows: LedgerRow[],
+  receipts: AcknowledgementReceipt[]
+): Selection {
   const [ids, setIds] = useState<Set<string>>(new Set())
+  const [receiptIds, setReceiptIds] = useState<Set<string>>(new Set())
   const picked = rows.filter((r) => r.status === 'to_deposit' && ids.has(r.sessionId))
-  const branchOf = picked[0]?.branchId
+  const pickedReceipts = receipts.filter((r) => receiptIds.has(r.id))
+  const branch = branchOfSelection(picked, pickedReceipts)
+  // Ticking in another branch starts over there.
+  const elsewhere = (branchId: string): boolean => !!branch && branch.id !== branchId
+  const clear = (): void => {
+    setIds(new Set())
+    setReceiptIds(new Set())
+  }
   return {
     rows: picked,
+    receipts: pickedReceipts,
+    branch,
     has: (id) => ids.has(id),
-    toggle: (row) =>
-      setIds((prev) => {
-        const next = new Set(row.branchId === branchOf ? prev : [])
-        if (next.has(row.sessionId)) next.delete(row.sessionId)
-        else next.add(row.sessionId)
-        return next
-      }),
-    toggleGroup: (group) => {
-      const selectable = group.rows.filter((r) => r.status === 'to_deposit')
-      const all = selectable.every((r) => ids.has(r.sessionId))
-      setIds(all ? new Set() : new Set(selectable.map((r) => r.sessionId)))
+    hasReceipt: (id) => receiptIds.has(id),
+    toggle: (row) => {
+      if (elsewhere(row.branchId)) setReceiptIds(new Set())
+      setIds((prev) => flip(elsewhere(row.branchId) ? new Set() : prev, row.sessionId))
     },
-    clear: () => setIds(new Set()),
+    toggleReceipt: (receipt) => {
+      const id = receipt.branchId ?? 'none'
+      if (elsewhere(id)) setIds(new Set())
+      setReceiptIds((prev) => flip(elsewhere(id) ? new Set() : prev, receipt.id))
+    },
+    toggleGroup: (group) => {
+      const sessions = group.rows.filter((r) => r.status === 'to_deposit').map((r) => r.sessionId)
+      const own = group.receipts.map((r) => r.id)
+      const all = sessions.every((id) => ids.has(id)) && own.every((id) => receiptIds.has(id))
+      setIds(all ? new Set() : new Set(sessions))
+      setReceiptIds(all ? new Set() : new Set(own))
+    },
+    clear,
   }
 }
 
@@ -884,11 +922,13 @@ function Toolbar(props: {
 function SelectionBar({
   rows,
   receipts,
+  branchName,
   onClear,
   onRecord,
 }: {
   rows: LedgerRow[]
   receipts: AcknowledgementReceipt[]
+  branchName: string
   onClear: () => void
   onRecord: () => void
 }): React.JSX.Element {
@@ -896,16 +936,17 @@ function SelectionBar({
   const total =
     rows.reduce((sum, r) => sum + r.amount, 0) +
     receipts.reduce((sum, r) => sum + Number(r.amount ?? 0), 0)
-  const withReceipts = receipts.length
-    ? ` + ${receipts.length} receipt${receipts.length === 1 ? '' : 's'}`
-    : ''
+  const counted = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`
+  const picked = [
+    rows.length ? counted(rows.length, 'session') : '',
+    receipts.length ? counted(receipts.length, 'receipt') : '',
+  ]
+    .filter(Boolean)
+    .join(' + ')
   return (
     <div className="sticky bottom-4 z-20 mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-purple-200 bg-white px-4 py-3 shadow-lg">
       <p className="text-sm text-gray-700">
-        <strong>
-          {rows.length} session{rows.length === 1 ? '' : 's'}
-        </strong>{' '}
-        selected{withReceipts} · {rows[0].branchName} ·{' '}
+        <strong>{picked}</strong> selected · {branchName} ·{' '}
         <strong className="tabular-nums">{fmtMoney(total)}</strong>
       </p>
       <div className="flex items-center gap-2">

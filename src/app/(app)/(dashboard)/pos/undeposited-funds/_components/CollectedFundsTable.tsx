@@ -1,8 +1,8 @@
 'use client'
 
-import { manilaDateOf, manilaToday } from '@/src/libs/format/manila-date'
+import { manilaToday } from '@/src/libs/format/manila-date'
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, CornerDownRight, Landmark } from 'lucide-react'
+import { ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react'
 import { fmtDate, fmtMoney, type AcknowledgementReceipt } from '@/src/libs/data/AccountingV2Data'
 import { useMe } from '@/src/hooks/useMe'
 import type { PosTurnover } from '../_actions/pos-deposits'
@@ -54,6 +54,8 @@ export interface LedgerLine {
   incoming?: PosTurnover
   /** The session row behind it, to tick or open. */
   row?: LedgerRow
+  /** An unbanked New Receipt of its own (no session of its day), to tick. */
+  receipt?: AcknowledgementReceipt
   /** The part of a To-deposit session already deposited or turned over:
    * opens that deposit rather than ticking the session. */
   settled?: boolean
@@ -206,33 +208,6 @@ function turnoverChips(row: LedgerRow): Chip[] {
     : [{ label: 'Acknowledged', tone: 'green' }]
 }
 
-/**
- * The receipt lines that open Record deposit, each with the receipts it banks:
- * the first line of each day, for that day's receipts. Pilot, Aircool Mabini:
- * one button banked every day's receipts together, so a Nov 21 check could not
- * be deposited apart from Nov 20.
- */
-function receiptDayOpeners(
-  lines: LedgerLine[],
-  receipts: AcknowledgementReceipt[]
-): Map<string, string[]> {
-  const dayOf = new Map(receipts.map((r) => [r.id, manilaDateOf(r.paymentDate)]))
-  const byDay = new Map<string, string[]>()
-  for (const r of receipts) {
-    const day = dayOf.get(r.id) ?? ''
-    byDay.set(day, [...(byDay.get(day) ?? []), r.id])
-  }
-  const openers = new Map<string, string[]>()
-  const seen = new Set<string>()
-  for (const line of lines) {
-    const day = dayOf.get(line.key)
-    if (day === undefined || seen.has(day)) continue
-    seen.add(day)
-    openers.set(line.key, byDay.get(day) ?? [])
-  }
-  return openers
-}
-
 /** An unbanked New Receipt — or an acknowledged turnover, which becomes one
  * at the receiving branch and is deposited with its day. */
 export function receiptLine(receipt: AcknowledgementReceipt, branchName: string): LedgerLine {
@@ -244,6 +219,7 @@ export function receiptLine(receipt: AcknowledgementReceipt, branchName: string)
     const sender = receipt.payerName.replace(/^Turnover from /, '')
     return {
       key: receipt.id,
+      receipt,
       date: receipt.paymentDate,
       title: 'Turnover slip',
       detail: `Received from ${sender}`,
@@ -266,6 +242,7 @@ export function receiptLine(receipt: AcknowledgementReceipt, branchName: string)
   }
   return {
     key: receipt.id,
+    receipt,
     date: receipt.paymentDate,
     title: receipt.number ?? 'New Receipt',
     detail: receipt.payerName,
@@ -425,7 +402,6 @@ export function CollectedFundsTable({
   canCorrect = false,
   selection,
   onOpenDeposit,
-  onDepositReceipts,
   onTurnoverChanged,
   empty,
 }: {
@@ -436,8 +412,6 @@ export function CollectedFundsTable({
   canCorrect?: boolean
   selection: Selection
   onOpenDeposit: OpenDeposit
-  /** Opens Record deposit for one day of a branch's receipts. */
-  onDepositReceipts: (group: BranchGroup, receiptIds: string[]) => void
   onTurnoverChanged: () => void
   empty: string
 }): React.JSX.Element {
@@ -488,7 +462,6 @@ export function CollectedFundsTable({
               onAct={(turnover, kind) => setActing({ turnover, kind })}
               onCorrect={canCorrect ? setCorrecting : undefined}
               onOpenDeposit={onOpenDeposit}
-              onDepositReceipts={(receiptIds) => onDepositReceipts(group, receiptIds)}
             />
           ))
         )}
@@ -553,7 +526,6 @@ function BranchRows({
   onAct,
   onCorrect,
   onOpenDeposit,
-  onDepositReceipts,
 }: {
   group: BranchGroup
   showHeader: boolean
@@ -567,15 +539,15 @@ function BranchRows({
   /** Accounting only: opens the turnover correction form. */
   onCorrect?: (t: TurnoverToCorrect) => void
   onOpenDeposit: OpenDeposit
-  onDepositReceipts: (receiptIds: string[]) => void
 }): React.JSX.Element {
   const selectable = group.rows.filter((r) => r.status === 'to_deposit')
-  // New Receipts with no session of their day — an acknowledged turnover
-  // among them — are banked from their own row, a day at a time, even while
-  // older sessions wait: a short deposit with sessions in it banks the
-  // sessions first, so riding on one would leave them unbanked.
-  const openers = canManage ? receiptDayOpeners(lines, group.receipts) : new Map<string, string[]>()
-  const allPicked = selectable.length > 0 && selectable.every((r) => selection.has(r.sessionId))
+  // Everything here that ticks: To-deposit sessions, and New Receipts with no
+  // session of their day (an acknowledged turnover among them).
+  const tickable = selectable.length + group.receipts.length
+  const allPicked =
+    tickable > 0 &&
+    selectable.every((r) => selection.has(r.sessionId)) &&
+    group.receipts.every((r) => selection.hasReceipt(r.id))
   const Chevron = open ? ChevronDown : ChevronRight
   return (
     <tbody className="divide-y divide-gray-100 border-t border-gray-200">
@@ -583,7 +555,7 @@ function BranchRows({
         <tr className="bg-prominent-purple-50/40">
           {canManage && (
             <td className="px-3 py-2">
-              {selectable.length > 0 && (
+              {tickable > 0 && (
                 <input
                   type="checkbox"
                   checked={allPicked}
@@ -619,13 +591,6 @@ function BranchRows({
           <LineRow
             key={line.key}
             line={line}
-            // A day's receipts are deposited on their own from that day's
-            // first receipt row; the form takes in those and no session.
-            onDepositReceipts={
-              openers.has(line.key)
-                ? () => onDepositReceipts(openers.get(line.key) ?? [])
-                : undefined
-            }
             canManage={canManage}
             selection={selection}
             allowed={line.incoming ? allowed(line.incoming) : null}
@@ -651,11 +616,11 @@ function groupCounts(group: BranchGroup): string {
     .join(' · ')
 }
 
-/** A To-deposit session ticks; any other session opens the deposit it is in
- * (a Partially deposited one, the deposit that banked part of it). */
+/** A To-deposit session or an unbanked receipt of its own ticks; any other
+ * session opens the deposit it is in (a Partially deposited one, the deposit
+ * that banked part of it). */
 function LineRow({
   line,
-  onDepositReceipts,
   canManage,
   selection,
   allowed,
@@ -664,7 +629,6 @@ function LineRow({
   onOpenDeposit,
 }: {
   line: LedgerLine
-  onDepositReceipts?: () => void
   canManage: boolean
   selection: Selection
   allowed: Allowed | null
@@ -675,6 +639,7 @@ function LineRow({
   const row = line.row
   // The still-to-deposit part ticks; the part already gone opens its deposit.
   const pickable = canManage && row?.status === 'to_deposit' && !line.settled
+  const receipt = canManage ? line.receipt : undefined
   const opensId = row
     ? row.status === 'to_deposit'
       ? row.bankedDepositId
@@ -683,9 +648,11 @@ function LineRow({
   const onClick =
     row && pickable
       ? () => selection.toggle(row)
-      : opensId
-        ? () => onOpenDeposit(opensId, row ? depositChoices(row) : line.openChoices)
-        : undefined
+      : receipt
+        ? () => selection.toggleReceipt(receipt)
+        : opensId
+          ? () => onOpenDeposit(opensId, row ? depositChoices(row) : line.openChoices)
+          : undefined
   return (
     <tr onClick={onClick} className={`hover:bg-gray-50 ${onClick ? 'cursor-pointer' : ''}`}>
       {canManage && (
@@ -696,6 +663,14 @@ function LineRow({
               checked={selection.has(row.sessionId)}
               onChange={() => selection.toggle(row)}
               aria-label="Select session"
+            />
+          )}
+          {receipt && (
+            <input
+              type="checkbox"
+              checked={selection.hasReceipt(receipt.id)}
+              onChange={() => selection.toggleReceipt(receipt)}
+              aria-label="Select receipt"
             />
           )}
         </td>
@@ -757,15 +732,6 @@ function LineRow({
           {onCorrect && <CorrectTurnoverButton onClick={onCorrect} />}
           {allowed && <TurnoverActions allowed={allowed} onAct={onAct} />}
         </span>
-        {onDepositReceipts && (
-          <button
-            type="button"
-            onClick={onDepositReceipts}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-purple-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-800"
-          >
-            <Landmark className="h-3.5 w-3.5" /> Record deposit
-          </button>
-        )}
       </td>
     </tr>
   )
