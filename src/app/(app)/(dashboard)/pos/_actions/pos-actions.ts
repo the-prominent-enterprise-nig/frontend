@@ -2570,22 +2570,36 @@ export interface SerialNumberRecord {
 // `forSale` (Scenario 60): only units sellable at this terminal — a caravan's
 // units sell on the caravan's own terminal (branchId = the caravan), never the
 // host's, and not at all once its event has ended.
+//
+// The list endpoint pages at 20, newest first, and an item can have hundreds
+// of units in one branch — so a typed search MUST go to the server (`search`)
+// rather than be matched in the browser over that first page, or any unit
+// older than the 20 newest can never be found (Docket #94). `total` is the
+// whole in-stock count, so the picker can say when it is showing only the
+// newest page.
+//
+// The server's `search` also matches the item's name, brand and the receiving
+// report, so a broad word returns every unit of the item — the cap is raised
+// for a search (same 1000 the cross-branch lookup below uses) and the caller
+// still narrows to the serial itself.
 export async function getAvailableSerialNumbers(
   itemId: string,
-  branchId?: string
-): Promise<ApiResponse<SerialNumberRecord[]>> {
+  branchId?: string,
+  search?: string
+): Promise<ApiResponse<SerialNumberRecord[]> & { total?: number }> {
   try {
-    type Envelope = SerialNumberRecord[] | { data: SerialNumberRecord[] }
+    type Meta = { total?: number }
+    type Envelope = SerialNumberRecord[] | { data: SerialNumberRecord[]; meta?: Meta }
+    const q = search?.trim()
     const result = await api.get<Envelope>(
-      `/inventory/serial-numbers?itemId=${itemId}&status=in_stock&forSale=true${branchId ? `&branchId=${branchId}` : ''}`
+      `/inventory/serial-numbers?itemId=${itemId}&status=in_stock&forSale=true${branchId ? `&branchId=${branchId}` : ''}${q ? `&search=${encodeURIComponent(q)}&limit=1000` : ''}`
     )
     if (!result.success || !result.data) {
       return { success: false, error: result.error || 'Failed to fetch serial numbers' }
     }
-    const rows = Array.isArray(result.data)
-      ? result.data
-      : ((result.data as { data: SerialNumberRecord[] }).data ?? [])
-    return { success: true, data: rows }
+    if (Array.isArray(result.data)) return { success: true, data: result.data }
+    const envelope = result.data as { data: SerialNumberRecord[]; meta?: Meta }
+    return { success: true, data: envelope.data ?? [], total: envelope.meta?.total }
   } catch {
     return { success: false, error: 'Failed to fetch serial numbers' }
   }
