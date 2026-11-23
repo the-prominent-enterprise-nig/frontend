@@ -129,12 +129,9 @@ test.describe('Expense lines — Commissions - SMI (Scenario 78)', () => {
       if (r.method() === 'POST' && /\/expenses(\?|$)/.test(r.url())) posted = true
     })
     await page.getByRole('button', { name: 'Save draft' }).click()
-    // Paid from / Division are checked first; whichever message shows, the
-    // entry must not be sent.
+    // Paid from is checked first; whichever message shows, the entry must not be sent.
     await expect(
-      page.getByText(
-        /Pick where this is paid from|Every line needs a Division|Pick the Sales Invoice No\. on every SMI line/
-      )
+      page.getByText(/Pick where this is paid from|Pick the Sales Invoice No\. on every SMI line/)
     ).toBeVisible()
     expect(posted).toBe(false)
   })

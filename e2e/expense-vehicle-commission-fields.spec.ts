@@ -7,7 +7,7 @@
  * lines that don't.
  *
  * Also guards the form's shape (the four numbered sections; Paid from replacing the
- * payment method rows; Division required on every line).
+ * payment method rows; Division optional on every line).
  *
  * UI contract only: the rules the server enforces (plate required, service type
  * required, the sale must be the agent's, a sale is released once) are proven in
@@ -16,8 +16,8 @@
  * path needs an agent with a sale, which the seed does not create, so it stops at
  * "pick the agent first".
  *
- * Self-cleaning: never submits the form (the Save draft clicks below are all stopped
- * by validation), so nothing is created.
+ * Self-cleaning: never creates an expense (the Save draft clicks below are stopped
+ * by validation, or the request is aborted in the browser), so nothing is created.
  */
 
 import { test, expect, type Page } from '@playwright/test'
@@ -192,25 +192,37 @@ test.describe('Expense lines — Fuel, Vehicle Repair, Commission', () => {
     await expect(page.getByLabel('Notes')).toBeVisible()
   })
 
-  test('Save draft waits for Paid from, then for a Division on every line — nothing is sent', async ({
+  test('Division is optional — a line with none is not refused (non-operating expenses have no division)', async ({
     page,
   }) => {
+    // Stop the save before it reaches the API, so nothing is created; keep the body to
+    // prove the line went out with no Division.
     const writes: string[] = []
-    page.on('request', (r) => {
-      if (r.method() === 'POST' && r.url().endsWith('/api/expenses')) writes.push(r.url())
+    await page.route('**/api/expenses', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue()
+      writes.push(route.request().postData() ?? '')
+      await route.abort()
     })
     await pickPayee(page, 'Supplier')
     await pickAccount(page, 'Rent', '6-03-010 — Rent Expense')
     await fillStable(page.locator('input[aria-label="Amount"]').first(), '100')
+    // No asterisk: the field no longer reads as required.
+    await expect(page.getByText('Division *')).toHaveCount(0)
+    await expect(page.getByText('Division', { exact: true }).first()).toBeVisible()
 
+    // Paid from is still checked, and nothing is sent until it is picked.
     await page.getByRole('button', { name: 'Save draft' }).click()
     await expect(page.getByText('Pick where this is paid from (Bank/Cash).')).toBeVisible()
+    expect(writes).toEqual([])
 
+    // With Paid from picked and Division left blank, the form passes its own checks
+    // and sends the line — without a division id.
     await page.locator('[aria-label="Select source of fund"]').click()
     await page.locator('body > div.fixed button').nth(1).click()
     await page.getByRole('button', { name: 'Save draft' }).click()
-    await expect(page.getByText('Every line needs a Division.')).toBeVisible()
-    expect(writes).toEqual([])
+    await expect.poll(() => writes.length).toBe(1)
+    await expect(page.getByText('Every line needs a Division.')).toHaveCount(0)
+    expect(writes[0]).not.toMatch(/divisionBranchId|divisionDepartmentId/)
   })
 
   test('Sales Agent payee: a commission line reads its agent from the payee', async ({ page }) => {
