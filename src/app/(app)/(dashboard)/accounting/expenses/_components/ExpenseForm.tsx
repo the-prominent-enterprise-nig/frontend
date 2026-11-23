@@ -1251,9 +1251,8 @@ function ExpenseFormFields({
         return 'Every line needs an amount greater than 0.'
       }
       if (!l.categoryAccountId) return 'Every line needs an account.'
-      // The client's form marks Division required on every line — except a payroll
-      // run, whose sheet names a department on each row and carries deductions with none.
-      if (!isPayrollCategory && !l.division) return 'Every line needs a Division.'
+      // Division is optional on every line: a non-operating expense belongs to no
+      // division, so Accounting leaves it blank (the API stores it as none).
       if (l.taxCode === CAPEX_CODE && !l.projectAssetRef.trim())
         return 'A capital purchase needs the project or asset it is for.'
       const kind = kindOfAccount(l.categoryAccountId)
@@ -2210,8 +2209,9 @@ function ExpenseFormFields({
                             />
                           </LineField>
                         )}
-                        {/* One pick from the branches and departments list, on every line. */}
-                        <LineField label={isPayrollCategory ? 'Division' : 'Division *'}>
+                        {/* One pick from the branches and departments list, on every line.
+                          Optional — a non-operating expense has no division. */}
+                        <LineField label="Division">
                           <CategorySelect
                             compact
                             aria-label="Division"
