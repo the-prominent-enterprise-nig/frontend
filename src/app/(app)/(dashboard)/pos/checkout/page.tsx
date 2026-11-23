@@ -4559,20 +4559,26 @@ export default function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart, activeTaxRate, inclusivePricing, isTaxExempt])
 
-  // The typed monthly is the plan's, typed once; each line holds a share of it
-  // and the server refuses a line whose share is not above 0 ("lines.1
-  // .manualMonthlyInstallment must be a positive number"). A line that is priced
-  // AFTER its share was written — an unpriced item (INSTALLATION) given its price
-  // by an override, a Price Use back-fill, a quantity change — still holds the
-  // 0.00 it had while it cost nothing, and the sum the till checks hides it. When
-  // that happens, share the plan's monthly out again by price; its total stays
-  // exactly as typed.
+  // The typed monthly is the plan's, typed once; each line holds a share of it,
+  // and a line's share has to follow what the line costs: above 0 for a line that
+  // costs something (the server refuses it otherwise — "lines.1
+  // .manualMonthlyInstallment must be a positive number"), and 0 for a ₱0.00 line
+  // (an outdoor unit overridden to nothing), which has nothing to pay. A line
+  // that is priced AFTER its share was written — an unpriced item (INSTALLATION)
+  // given its price by an override, a Price Use back-fill, a quantity change —
+  // still holds the 0.00 it had while it cost nothing, and the sum the till
+  // checks hides it; the same the other way round when a line holding a share is
+  // overridden to ₱0.00. When that happens, share the plan's monthly out again by
+  // price; its total stays exactly as typed.
   useEffect(() => {
     const typedLines = inhouseInstallmentCartLines.filter((l) => l.manualPlan)
-    const starved = typedLines.some(
-      (l) => saleAmountOf(l) > 0 && !(parseFloat(l.manualMonthlyInput ?? '') > 0)
-    )
-    if (!starved || !(planTypedMonthly > 0)) return
+    const outOfStep = typedLines.some((l) => {
+      const holdsShare = parseFloat(l.manualMonthlyInput ?? '') > 0
+      return saleAmountOf(l) > 0 ? !holdsShare : holdsShare
+    })
+    // Nothing to share out to when no line costs anything.
+    const anythingToPay = typedLines.some((l) => saleAmountOf(l) > 0)
+    if (!outOfStep || !anythingToPay || !(planTypedMonthly > 0)) return
     const typedIds = new Set(typedLines.map((l) => l.lineId))
     const rows = planRows.filter((r) => r.lineIds.every((id) => typedIds.has(id)))
     const shares = shareByAmount(rows, planTypedMonthly)

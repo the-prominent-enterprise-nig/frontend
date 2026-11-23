@@ -651,6 +651,132 @@ test.describe('POS Checkout — typed installment plan (Scenario 71 Part 2)', ()
     expect(String(account.nextDueDate).slice(0, 10)).toBe(fmi)
   })
 
+  // Pandan / Mabini, 2026-11-23, the second report: the Outdoor unit of a split
+  // AC is overridden to ₱0.00 (its price sits on the Indoor unit). It stays on the
+  // plan with nothing to pay, so its share of the monthly is 0.00 — which the server
+  // used to refuse ("lines.1.manualMonthlyInstallment must be a positive number").
+  async function sellWithZeroPricedSecondLine(
+    page: Page,
+    options: { secondRowPriceUse: string; tag: string }
+  ): Promise<{
+    lines: { manualMonthlyInstallment: string | number; unitPrice: string | number }[]
+  }> {
+    const { customer } = await startInstallmentSale(page, [fx.unpricedItemId])
+    const salesInvoiceNumber = `SI-${options.tag}-${Date.now()}`
+    const fmi = todayPlus(45)
+
+    await page.getByTestId('type-terms').click()
+    const panel = typedPlan(page)
+    await expect(panel).toBeVisible()
+
+    const search = page.getByPlaceholder('Search by name or serial')
+    await search.fill(fx.unpricedItemName)
+    const card = page
+      .getByRole('button')
+      .filter({ has: page.getByText(fx.unpricedItemName, { exact: true }) })
+    await expect(card.first()).toBeVisible({ timeout: 15_000 })
+    await card.first().click()
+    const secondRow = page.locator('tr', { hasText: fx.unpricedItemName })
+    await expect(secondRow).toBeVisible({ timeout: 10_000 })
+    await pickCartPriceUse(page, options.secondRowPriceUse, 1)
+
+    // The monthly is typed while the second line is still what it was.
+    await panel.getByLabel('Typed months').fill('12')
+    await panel.getByLabel('Typed monthly installment').fill('1400')
+
+    // Then the second line is overridden to ₱0.00.
+    const overrideButton = secondRow.getByText(/No price — Override|Override price/).first()
+    await overrideButton.click()
+    await expect(page.getByRole('heading', { name: 'Price Override' })).toBeVisible()
+    await page.getByLabel('New unit price').fill('0')
+    await page.getByRole('button', { name: 'Apply Override' }).click()
+    await expect(page.getByRole('heading', { name: 'Price Override' })).toHaveCount(0)
+
+    await expect(panel.getByLabel('Typed monthly installment')).toHaveValue(/^1400(\.00)?$/)
+    await panel.getByLabel('First due date').fill(fmi)
+    await expect(page.getByTestId('typed-plan-problem')).toHaveCount(0)
+
+    const section = exceptionSection(page)
+    await openCustomSelect(section.getByRole('combobox', { name: 'Pick a reason…' }))
+    await page.getByRole('listbox').getByRole('option', { name: 'Management special' }).click()
+    await fillStable(
+      section.getByLabel('Note for the price override or typed terms'),
+      'Outdoor unit goes with the indoor unit'
+    )
+
+    await fillStable(page.getByLabel('Sales Invoice No.'), salesInvoiceNumber)
+    const downPayment = (await panel.getByLabel('Typed down payment').inputValue()).replace(
+      /,/g,
+      ''
+    )
+    if (Number(downPayment) > 0) {
+      await page
+        .getByTestId('dp-payment-mode-toggle')
+        .getByRole('button', { name: 'Cash', exact: true })
+        .click()
+      await fillStable(page.getByLabel('Amount received'), downPayment)
+      await fillStable(page.getByPlaceholder('CR Number'), `CR-${options.tag}-${Date.now()}`)
+    }
+
+    // Not clickStable — this submits a real sale.
+    await page.getByRole('button', { name: /Create Installment Plan/ }).click()
+    await expect(page.getByText('Installment Plan Created', { exact: true })).toBeVisible({
+      timeout: 25_000,
+    })
+
+    const listRes = await page.request.get('/api/pos/transactions', {
+      params: { search: salesInvoiceNumber },
+    })
+    const listBody = await listRes.json()
+    const sale = (
+      (listBody.data ?? listBody) as { id: string; salesInvoiceNumber: string | null }[]
+    ).find((t) => t.salesInvoiceNumber === salesInvoiceNumber)!
+    const detail = await (await page.request.get(`/api/pos/transactions/${sale.id}`)).json()
+
+    // The account the collectors see starts on the typed date, on the typed monthly.
+    const accountsRes = await page.request.get('/api/crm/installment-accounts', {
+      params: { customerId: customer.id },
+    })
+    const accountsBody = await accountsRes.json()
+    const account = (
+      (accountsBody.data ?? accountsBody) as { customerId: string; nextDueDate: string | null }[]
+    ).find((a) => a.customerId === customer.id)!
+    expect(String(account.nextDueDate).slice(0, 10)).toBe(fmi)
+    return detail
+  }
+
+  const expectZeroLineHoldsNoShare = (detail: {
+    lines: { manualMonthlyInstallment: string | number; unitPrice: string | number }[]
+  }) => {
+    expect(detail.lines).toHaveLength(2)
+    const free = detail.lines.find((l) => Number(l.unitPrice) === 0)!
+    const priced = detail.lines.find((l) => Number(l.unitPrice) > 0)!
+    expect(Number(free.manualMonthlyInstallment)).toBe(0)
+    expect(Number(priced.manualMonthlyInstallment)).toBe(1400)
+  }
+
+  test('PO2-F10: a line overridden to ₱0.00 stays on the typed plan with a ₱0 share, and the sale posts', async ({
+    page,
+  }) => {
+    // Rung up as "No price — Override", then overridden to nothing.
+    const detail = await sellWithZeroPricedSecondLine(page, {
+      secondRowPriceUse: fx.noListPriceUseName,
+      tag: 'PO2F10',
+    })
+    expectZeroLineHoldsNoShare(detail)
+  })
+
+  test('PO2-F11: a priced line that already holds a share gives it back when it is overridden to ₱0.00', async ({
+    page,
+  }) => {
+    // Priced from the list first (so the monthly is shared to it), then overridden.
+    const detail = await sellWithZeroPricedSecondLine(page, {
+      secondRowPriceUse: fx.priceUseTypeName,
+      tag: 'PO2F11',
+    })
+    expectZeroLineHoldsNoShare(detail)
+  })
+
   // The FMI date is a field of its own: a plain rate-card plan takes it without
   // typing the plan, and so without the override's reason and note.
   test('PO2-F08: an FMI date entered on a rate-card plan posts — the schedule starts on it, and it is not an override', async ({
