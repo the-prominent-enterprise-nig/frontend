@@ -192,10 +192,12 @@ function StatusBadges({
 // ── Actions ───────────────────────────────────────────────────────────────
 
 /** New-transfer choices for one caravan: into it while it is still running
- * (an ended caravan takes no new stock), and out of it at any time. */
+ * (an ended caravan takes no new stock), and out of it while it has stock on
+ * hand (an empty caravan has nothing to send). */
 function transferMenuItems(
   caravan: WarehouseBranch | null,
   warehouseId: string,
+  onHand: number,
   go: (href: string) => void
 ): RowMenuItem[] {
   const base = '/inventory/stock-transaction?tab=transfers'
@@ -209,11 +211,15 @@ function transferMenuItems(
             onClick: () => go(`${base}&prefillToWarehouseId=${warehouseId}`),
           },
         ]),
-    {
-      label: 'Transfer out — from this caravan',
-      icon: ArrowUpFromLine,
-      onClick: () => go(`${base}&prefillFromWarehouseId=${warehouseId}`),
-    },
+    ...(onHand > 0
+      ? [
+          {
+            label: 'Transfer out — from this caravan',
+            icon: ArrowUpFromLine,
+            onClick: () => go(`${base}&prefillFromWarehouseId=${warehouseId}`),
+          },
+        ]
+      : []),
   ]
 }
 
@@ -228,17 +234,19 @@ function TransferActions({
   const router = useRouter()
   const { caravan, warehouseId } = block
   if (!warehouseId) return null
+  const onHand = blockOnHand(block)
+  const items = transferMenuItems(caravan, warehouseId, onHand, router.push)
   return (
     <>
-      {canTransfer && !caravan?.closedAt && (
+      {canTransfer && !caravan?.closedAt && items.length > 0 && (
         <RowActionsMenu
           trigger={{ label: 'Transfer', icon: Send, className: MENU_BUTTON }}
-          items={transferMenuItems(caravan, warehouseId, router.push)}
+          items={items}
         />
       )}
       <ViewTransfersLink
         warehouseId={warehouseId}
-        spelledOut={!isCaravanEnded(caravan) && blockOnHand(block) === 0}
+        spelledOut={!isCaravanEnded(caravan) && onHand === 0}
       />
     </>
   )
