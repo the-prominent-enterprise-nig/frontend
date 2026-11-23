@@ -89,13 +89,17 @@ function CreditMemoLineRow({
   // picker needs. This used to pass no status at all, which got the intent
   // half right: it stopped excluding sold units, but went on offering in_stock
   // ones that are sitting in the warehouse and cannot have been returned.
-  const serialsQuery = useQuery({
-    queryKey: ['credit-memo-serials', selectedItemId],
-    queryFn: () => getSerialNumbers({ itemId: selectedItemId, status: 'sold', limit: 500 }),
-    enabled: isSerialTracked && !!selectedItemId,
-    staleTime: 60 * 1000,
-  })
-  const serialOptions = serialsQuery.data?.data?.data ?? []
+  // Searched on the server as the clerk types — the list used to be the first
+  // 500 units of the item, filtered in the browser.
+  const searchSerials = async (query: string) =>
+    (
+      await getSerialNumbers({
+        itemId: selectedItemId,
+        status: 'sold',
+        search: query || undefined,
+        limit: 30,
+      })
+    ).data?.data ?? []
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-3">
@@ -194,12 +198,9 @@ function CreditMemoLineRow({
                   <SerialSearchCombobox
                     value={f.value ?? ''}
                     onChange={f.onChange}
-                    options={serialOptions}
+                    search={searchSerials}
                     queryKey={`credit-memo-serial-${selectedItemId}`}
-                    disabled={serialsQuery.isLoading}
-                    placeholder={
-                      serialsQuery.isLoading ? 'Loading serials…' : 'Search serial number…'
-                    }
+                    placeholder="Search serial number…"
                   />
                 )}
               />

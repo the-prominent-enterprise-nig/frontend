@@ -65,6 +65,7 @@ import {
   serialScanProps,
 } from '../../purchase-orders/_components/receive-po/serialScan'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
+import { useDebouncedValue } from '@/src/hooks/useDebouncedValue'
 import { getSenderSerials, type SenderSerial } from '../_actions/get-sender-serials'
 import { getTransfer } from '../_actions/get-transfer'
 import { isStaleReceiveError } from '@/src/libs/inventory/stale-receive'
@@ -303,9 +304,34 @@ function ItemSerialGroup({
     enabled: !widened && !!fromWarehouseId && !!itemId,
     staleTime: 30 * 1000,
   })
-  const serialOptions = (serialsQuery.data?.data?.data ?? []).filter(
-    (s) => !pickedSerialIds.includes(s.id)
-  )
+  // The list above is capped at 500, and a warehouse can hold more of one item
+  // than that — a unit past the cap could never be assigned. What the
+  // dispatcher types is asked of the server too, and its matches join the
+  // options. (A separate query, so a search that finds nothing never reads as
+  // "nothing in stock" — that message is for the base list alone.)
+  const [typedSerial, setTypedSerial] = useState('')
+  const serialSearch = useDebouncedValue(typedSerial, 300)
+  const serialSearchQuery = useQuery({
+    queryKey: ['inventory-serials-in-stock-search', fromWarehouseId, itemId, serialSearch],
+    queryFn: () =>
+      getSerialNumbers({
+        warehouseId: fromWarehouseId,
+        itemId,
+        status: 'in_stock',
+        freeForTransfer: true,
+        search: serialSearch,
+        limit: 200,
+      }),
+    enabled: !widened && !!fromWarehouseId && !!itemId && !!serialSearch,
+    staleTime: 30 * 1000,
+  })
+  const baseSerials = serialsQuery.data?.data?.data ?? []
+  const baseTotal = serialsQuery.data?.data?.total ?? baseSerials.length
+  const knownSerialIds = new Set(baseSerials.map((s) => s.id))
+  const serialOptions = [
+    ...baseSerials,
+    ...(serialSearchQuery.data?.data?.data ?? []).filter((s) => !knownSerialIds.has(s.id)),
+  ].filter((s) => !pickedSerialIds.includes(s.id))
 
   function handlePick(option: SearchComboboxOption) {
     if (firstEmptyIndex === undefined) return
@@ -419,7 +445,7 @@ function ItemSerialGroup({
                   }))
                 }}
               />
-            ) : serialsQuery.isSuccess && serialOptions.length === 0 ? (
+            ) : serialsQuery.isSuccess && baseSerials.length === 0 ? (
               // Distinct from an empty search result — this is "there is
               // nothing here regardless of what you type," not "haven't
               // searched yet," so say so plainly instead of leaving a
@@ -448,7 +474,12 @@ function ItemSerialGroup({
                 }))}
                 loading={serialsQuery.isLoading}
                 loadingLabel="Loading serials…"
-                placeholder="Search serial number…"
+                placeholder={
+                  baseTotal > baseSerials.length && !serialSearch
+                    ? `Search serial number… — ${baseTotal} in stock`
+                    : 'Search serial number…'
+                }
+                onQueryChange={setTypedSerial}
                 summaryNoun="serials assigned"
                 // The dispatcher scans the unit off the shelf: a scan that
                 // names one serial is assigned as it lands, no click needed.
