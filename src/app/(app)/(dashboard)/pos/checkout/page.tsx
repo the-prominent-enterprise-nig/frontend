@@ -100,7 +100,16 @@ import {
   isCardTerm,
   isZeroPercentPlan,
 } from '@/src/libs/constants/financing'
-import { hasRules, isTermAllowed, paymentBlockReason } from '@/src/libs/constants/price-use-rules'
+import {
+  commonPaymentTypes,
+  hasRules,
+  isTermAllowed,
+  noActiveTermMessage,
+  noCommonPaymentTypeMessage,
+  noCommonTermMessage,
+  paymentBlockReason,
+  termRuleReason,
+} from '@/src/libs/constants/price-use-rules'
 import { Select } from '@/src/components/ui/Select'
 import { DEFAULT_VAT_RATE } from '../_actions/pos-constants'
 import { getCreditApplications } from '../credit-applications/_actions/get-applications'
@@ -1113,6 +1122,9 @@ export default function CheckoutPage() {
   // instead of chosen per line). If any item needs a different mode, that's
   // a separate transaction.
   const [paymentMode, setPaymentMode] = useState<'cash' | 'installment'>('cash')
+  // Docket #92 — said when a price-use change made the till switch the payment
+  // mode or provider, or clear a term or a typed plan the price use does not allow.
+  const [ruleNotice, setRuleNotice] = useState<string | null>(null)
 
   // Payment
   const [payments, setPayments] = useState<PaymentRow[]>([])
@@ -2720,6 +2732,99 @@ export default function CheckoutPage() {
     planPreview != null &&
     planPreview.amountFinanced > 0 &&
     isZeroPercentPlan(planPreview.totalPayable - planPreview.amountFinanced, planTermMonths)
+  // Docket #92 — what to say where the rules leave nothing to choose from.
+  const activeTermMonths = financingTerms.map((t) => t.termMonths)
+  const noCommonPaymentType =
+    cartRulesList.length >= 2 && commonPaymentTypes(cartRulesList).length === 0
+  const uniqueInhouseRules = inhouseRulesList.filter(
+    (r, i) => inhouseRulesList.findIndex((x) => x.name === r.name) === i
+  )
+  const noTermMessage =
+    financingTerms.length > 0 && planTermOptions.length === 0 && uniqueInhouseRules.length > 0
+      ? uniqueInhouseRules.length >= 2
+        ? noCommonTermMessage(uniqueInhouseRules, activeTermMonths, {
+            tpfAvailable: commonPaymentTypes(cartRulesList).includes('tpf'),
+          })
+        : noActiveTermMessage(uniqueInhouseRules[0])
+      : null
+  const typedPlanBlockedNames = [
+    ...new Set(inhouseRulesList.filter((r) => !r.allowTypedPlan).map((r) => r.name)),
+  ]
+  // A price-use change can leave the cart on something its price use does not
+  // allow: the cash / installment mode, the in-house / TPF provider, a typed
+  // plan, a term. Rather than leave the cashier on a choice that will be
+  // refused, switch to the one that is open, or clear the one that is not, and
+  // SAY so (the notice above the toggles). One fix per pass; each leaves the
+  // cart valid for it, so the next pass finds the next thing, or nothing.
+  const ruleSignature = [
+    paymentMode,
+    saleMode,
+    xDealActive,
+    priceUseTypes.length,
+    financingTerms.length,
+    ...cart.map((l) =>
+      [
+        l.priceUseTypeId,
+        l.invoiceType,
+        l.installmentProvider,
+        l.financingTermId,
+        l.manualPlan,
+      ].join(':')
+    ),
+  ].join('|')
+  useEffect(() => {
+    if (saleMode !== 'sale' || cart.length === 0 || xDealActive) return
+    const lineIds = cart.map((l) => l.lineId)
+    if (paymentMode === 'cash' && cashBlockedReason && !installmentBlockedReason) {
+      setPaymentMode('installment')
+      if (cashSubMode === 'card') setCashSubMode('cash_on_hand')
+      setLineInvoiceType(lineIds, 'installment')
+      setRuleNotice(`Switched to Installment: ${cashBlockedReason}`)
+      return
+    }
+    if (paymentMode === 'installment' && installmentBlockedReason && !cashBlockedReason) {
+      setPaymentMode('cash')
+      setLineInvoiceType(lineIds, 'cash')
+      setRuleNotice(`Switched to Cash: ${installmentBlockedReason}`)
+      return
+    }
+    if (installmentCartLines.length > 0) {
+      if (planProvider === 'inhouse' && inhouseBlockedReason && !tpfBlockedReason) {
+        setLineInstallmentProvider(planLineIds, 'tpf')
+        setRuleNotice(`Switched to TPF: ${inhouseBlockedReason}`)
+        return
+      }
+      if (planProvider === 'tpf' && tpfBlockedReason && !inhouseBlockedReason) {
+        setLineInstallmentProvider(planLineIds, 'inhouse')
+        setRuleNotice(`Switched to Inhouse Installment: ${tpfBlockedReason}`)
+        return
+      }
+    }
+    if (planTyped && typedPlanBlockedNames.length > 0) {
+      applyRateCardPlan(planLineIds)
+      setRuleNotice(
+        `Typed terms were removed: ${typedPlanBlockedNames.join(' and ')} does not allow typed terms.`
+      )
+      return
+    }
+    if (planTermId && planTermMonths != null && !planTermOptions.some((t) => t.id === planTermId)) {
+      const stoppedBy = inhouseRulesList.find((r) => !isTermAllowed(r, planTermMonths))
+      const ids = new Set(
+        inhouseInstallmentCartLines.filter((l) => !l.manualPlan).map((l) => l.lineId)
+      )
+      setCart((prev) =>
+        prev.map((l) => (ids.has(l.lineId) ? { ...l, financingTermId: undefined } : l))
+      )
+      setRuleNotice(
+        `The ${planTermMonths}-month term was cleared: ${stoppedBy ? termRuleReason(stoppedBy) : 'the price use does not allow it.'}`
+      )
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ruleSignature])
+  // The notice is about the cart it was said for.
+  useEffect(() => {
+    if (cart.length === 0) setRuleNotice(null)
+  }, [cart.length])
   // Scenario 71 — any line with a typed-over price makes the sale carry a
   // reason and a note.
   const anyPriceOverridden = cart.some((l) => l.priceOverridden)
@@ -2760,6 +2865,8 @@ export default function CheckoutPage() {
     if (!documentDone) thingsLeft.push('document number')
     if (!selectedCustomer) thingsLeft.push('customer')
     if (serialsMissingOnCart) thingsLeft.push('serial numbers')
+    // Docket #92 — price uses on the cart that leave no payment type to sell with.
+    if (noCommonPaymentType) thingsLeft.push('payment type')
     if (inhouseInstallmentCartLines.some((l) => !l.manualPlan && !l.financingTermId)) {
       thingsLeft.push('financing term')
     }
@@ -8100,6 +8207,31 @@ export default function CheckoutPage() {
                   <p className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">
                     Payment Mode
                   </p>
+                  {/* Docket #92 — what the till switched or cleared because of a price use,
+                    and why; and when the price uses on the cart leave no payment type. */}
+                  {ruleNotice && (
+                    <p
+                      data-testid="price-use-rule-notice"
+                      className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700"
+                    >
+                      <span className="flex-1">{ruleNotice}</span>
+                      <button
+                        type="button"
+                        onClick={() => setRuleNotice(null)}
+                        className="font-semibold underline"
+                      >
+                        Dismiss
+                      </button>
+                    </p>
+                  )}
+                  {noCommonPaymentType && (
+                    <p
+                      data-testid="no-payment-type-note"
+                      className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700"
+                    >
+                      {noCommonPaymentTypeMessage(cartRulesList)}
+                    </p>
+                  )}
                   {/* Cash / Installment — one choice for
                     the whole cart, never per item. If any item needs a
                     different mode, it's a separate transaction. */}
@@ -8588,19 +8720,28 @@ export default function CheckoutPage() {
                       )}
                       {planProvider === 'inhouse' && !planTyped && (
                         <>
-                          <Select
-                            value={planTermId}
-                            onChange={(v) => {
-                              posEditedRef.current.term = true
-                              setLineFinancingTermId(planLineIds, v)
-                            }}
-                            options={planTermOptions.map((t) => ({
-                              value: t.id,
-                              label: `${t.termMonths} months`,
-                            }))}
-                            placeholder="Select a term…"
-                            compact
-                          />
+                          {noTermMessage ? (
+                            <p
+                              data-testid="no-term-note"
+                              className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700"
+                            >
+                              {noTermMessage}
+                            </p>
+                          ) : (
+                            <Select
+                              value={planTermId}
+                              onChange={(v) => {
+                                posEditedRef.current.term = true
+                                setLineFinancingTermId(planLineIds, v)
+                              }}
+                              options={planTermOptions.map((t) => ({
+                                value: t.id,
+                                label: `${t.termMonths} months`,
+                              }))}
+                              placeholder="Select a term…"
+                              compact
+                            />
+                          )}
                           {renderPlanDownPayment()}
                           {planOnCard && planUsesCardMonthly && !downPaymentFree && (
                             <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
@@ -8640,6 +8781,12 @@ export default function CheckoutPage() {
                                 </span>
                               )}
                             </div>
+                          )}
+                          {!xDealActive && !employeeApplianceLoanActive && !planAllowsTypedPlan && (
+                            <p data-testid="typed-plan-note" className="text-xs text-gray-500">
+                              Typed terms are not available on {typedPlanBlockedNames.join(' and ')}
+                              .
+                            </p>
                           )}
                           {!xDealActive && !employeeApplianceLoanActive && planAllowsTypedPlan && (
                             <div className="flex flex-wrap gap-x-4 gap-y-1">
