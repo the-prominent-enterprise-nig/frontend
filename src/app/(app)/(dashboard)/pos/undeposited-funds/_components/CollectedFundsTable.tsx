@@ -297,7 +297,7 @@ function receiptDepositChoices(receipt: AcknowledgementReceipt): DepositChoice[]
       id: a.posDeposit.id,
       label: [
         unique(a.posDeposit.lines.map((l) => l.reference)).join(', ') || 'No slip no.',
-        fmtMoney(Number(a.cashAmount)),
+        fmtMoney(Number(a.cashAmount) + Number(a.clearingAmount ?? 0)),
       ].join(' · '),
     }))
 }
