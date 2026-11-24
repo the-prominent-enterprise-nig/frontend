@@ -34,6 +34,14 @@ function formKind(row: DailyCollectionRow): string {
 /** The options under the POS's GCash button, upper-cased: both read as GCASH. */
 const GCASH_OPTION_LABELS = ['SOUNDPAY', 'GCASH SEND MONEY']
 
+/** Beside the DESC code: a New Receipt shows the Description entered on it
+ * (what the money was for), every other row how it was paid. */
+function rowMode(r: DailyCollectionRow): string {
+  if (r.cancelled) return ''
+  if (r.kind === 'OTHERS' && r.description) return r.description
+  return tenderModeLabel(r.tender)
+}
+
 /** A tender key as the short mode the client's form uses — CASH, CHECK, GCASH,
  * MAYA, CARD-BDO, or a bank by name. Same naming as the backend's `tenderLine`
  * (daily-collection.form-sheet.ts), plus CASH for drawer money. */
@@ -139,7 +147,7 @@ function collectionLines(report: DailyCollectionReport): {
       si: r.siNumber ?? '',
       customer: r.customerName,
       desc: formKind(r),
-      mode: r.cancelled ? '' : tenderModeLabel(r.tender),
+      mode: rowMode(r),
       // The CR number sits under OFFICE or FIELD by whose stub it came off;
       // OTHERS names the counter that took it when the cash is in another
       // drawer.

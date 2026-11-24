@@ -49,6 +49,9 @@ export const DailyCollectionRowSchema = z.object({
    * filing under this branch. Null for the branch's own counter, so only a
    * row whose cash is in another drawer carries a tag. */
   sourceCounter: z.string().nullable().optional(),
+  /** A New Receipt's own Description — shown beside OTHERS in place of the
+   * payment mode. Absent on every other row. */
+  description: z.string().nullable().optional(),
 })
 export type DailyCollectionRow = z.infer<typeof DailyCollectionRowSchema>
 
