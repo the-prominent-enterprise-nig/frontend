@@ -2233,11 +2233,7 @@ export default function TransferDetailModal({
                               {isReceivedStatus && (
                                 <td className="px-3 py-2 text-right">
                                   {line.serialNumberId ? (
-                                    line.serialNumber?.status === 'lost_in_transit' ? (
-                                      <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                                        Lost in Transit
-                                      </span>
-                                    ) : Number(line.receivedQuantity ?? 0) < 1 ? (
+                                    Number(line.receivedQuantity ?? 0) < 1 ? (
                                       // Scenario 71 — left unticked on a partial
                                       // receive: still on its way, not lost.
                                       <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
