@@ -23,5 +23,8 @@ export async function acceptTransfer(id: string): Promise<ApiResponse<void>> {
 
   revalidatePath('/inventory/transfers')
 
-  return { success: true, message: 'Request accepted — ready to dispatch' }
+  return {
+    success: true,
+    message: 'Request accepted — the requested quantity is reserved until dispatch',
+  }
 }
