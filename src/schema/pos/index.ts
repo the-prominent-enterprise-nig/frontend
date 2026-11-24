@@ -126,6 +126,17 @@ export interface SessionTenderSummary {
    *  Already in the expected drawer; banked with the session. */
   turnovers?: SessionTurnover[]
   totalTurnoversIn?: number
+  /** Cash New Receipts the cashier recorded while this drawer was open.
+   *  Already in the expected drawer; banked with the session. */
+  newReceipts?: SessionNewReceipt[]
+  totalNewReceiptsCash?: number
+}
+
+export interface SessionNewReceipt {
+  id: string
+  number: string | null
+  payerName: string
+  amount: number
 }
 
 export interface SessionTurnover {
@@ -180,6 +191,8 @@ export interface SessionReconciliation {
   totalCollectionsCash: number
   /** Cash turned over from another branch, acknowledged into this drawer. */
   totalTurnoversIn?: number
+  /** Cash New Receipts recorded into this drawer while it was open. */
+  totalNewReceiptsCash?: number
   /** Every transaction rung up on the shift, voids and refunds included. */
   transactions?: ShiftTransaction[]
 }
