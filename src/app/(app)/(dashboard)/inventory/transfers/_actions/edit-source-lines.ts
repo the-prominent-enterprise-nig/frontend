@@ -16,9 +16,10 @@ const EditSourceLinesSchema = z.object({
 })
 
 /**
- * The source custodian edits an incoming request's lines before accepting
- * it. Only the lines go over the wire — the route, dates and reason stay the
- * requester's — and the request stays Requested with its approvals.
+ * The source custodian edits an incoming request's lines before dispatching
+ * it — still Requested, or already accepted. Only the lines go over the wire
+ * (the route, dates and reason stay the requester's), and the status and
+ * approvals stay as they were.
  */
 export async function editSourceLines(id: string, input: unknown): Promise<ApiResponse<void>> {
   if (!id) {
@@ -40,5 +41,5 @@ export async function editSourceLines(id: string, input: unknown): Promise<ApiRe
   }
 
   revalidatePath('/inventory/transfers')
-  return { success: true, message: 'Request updated — you can accept it now' }
+  return { success: true, message: 'Request updated — its status and approvals are unchanged' }
 }

@@ -1192,7 +1192,7 @@ type Props = {
   // itself and say which transfer to load.
   canEdit?: boolean
   onEdit?: (transfer: TransferSummary) => void
-  /** The source custodian edits the lines before accepting (gated on accept). */
+  /** The source custodian edits the lines before dispatch (gated on accept). */
   onSourceEdit?: (transfer: TransferSummary) => void
   onApproveHq: (id: string) => Promise<ApiResponse<unknown>>
   onRejectHq: (id: string, data: RejectHqTransferFormValues) => Promise<ApiResponse<unknown>>
@@ -1465,13 +1465,12 @@ export default function TransferDetailModal({
   // The source custodian may reshape a request while it is still theirs —
   // waiting on them, or accepted and not yet dispatched — lines only, status
   // and approvals kept, no confirmation from the requester. The Business
-  // Owner may do the same at any status before dispatch, approvals pending
-  // included. Takes precedence over the requester's edit for someone on both
-  // sides (head office), since it doesn't wipe the approvals the request
-  // already collected.
-  const sourceEditableStatus = currentUserIsOwner
-    ? EDITABLE_STATUSES.has(status)
-    : status === 'requested' || status === 'draft'
+  // Owner gets the same window and no wider: the backend's source-lines
+  // endpoint refuses a request still pending manager/HQ approval, so offering
+  // it there only led to a save that failed. Takes precedence over the
+  // requester's edit for someone on both sides (head office), since it
+  // doesn't wipe the approvals the request already collected.
+  const sourceEditableStatus = status === 'requested' || status === 'draft'
   const canSourceEditThis =
     canAcceptThis && sourceEditableStatus && !isUdsPaired && !hasPinnedSerial
   const sourceCouldEdit = canAcceptThis && sourceEditableStatus
