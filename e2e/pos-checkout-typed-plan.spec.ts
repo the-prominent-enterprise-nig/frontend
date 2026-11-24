@@ -32,10 +32,20 @@ import {
 const PREFIX = 'E2E TypedPlan'
 const BRANCH = 'Bago'
 const ITEM_PRICE = 12000
+// What the unpriced item's catalogue record says — never on a price list, so the
+// till still shows it as "No price" until the cashier overrides it.
+const UNPRICED_LIST_PRICE = 3000
 
 type Fixtures = {
   itemId: string
   itemName: string
+  /** A second item that is on the application's price list but is rung up under
+   * `noListPriceUseName` (a Price Use with no list at all) — so the till shows
+   * "No price — Override", like INSTALLATION on the live till. */
+  unpricedItemId: string
+  unpricedItemName: string
+  noListPriceUseName: string
+  noListPriceUseId: string
   priceUseTypeName: string
   priceUseTypeId: string
   priceListId: string
@@ -77,6 +87,22 @@ async function createFixtures(request: APIRequestContext): Promise<Fixtures> {
   await request.post(`/api/inventory/items/${item.id}/confirm-accounting`, { data: {} })
   await request.post(`/api/inventory/items/${item.id}/approve`, { data: {} })
 
+  const unpricedItemName = `${PREFIX} Unpriced ${stamp}`
+  const unpricedRes = await request.post('/api/inventory/items', {
+    data: {
+      sku: `E2E-PO71U-${stamp}`,
+      name: unpricedItemName,
+      baseUnitId,
+      isSerialTracked: false,
+      sellingPrice: UNPRICED_LIST_PRICE,
+    },
+  })
+  expect(unpricedRes.ok(), await unpricedRes.text()).toBeTruthy()
+  const unpricedItem = await unpricedRes.json()
+  await request.post(`/api/inventory/items/${unpricedItem.id}/submit`)
+  await request.post(`/api/inventory/items/${unpricedItem.id}/confirm-accounting`, { data: {} })
+  await request.post(`/api/inventory/items/${unpricedItem.id}/approve`, { data: {} })
+
   const branches = ((await (await request.get('/api/branches?limit=200')).json()).data ?? []) as {
     id: string
     name: string
@@ -92,7 +118,10 @@ async function createFixtures(request: APIRequestContext): Promise<Fixtures> {
       adjustmentDate: new Date().toISOString().slice(0, 10),
       reasonCode: 'found',
       notes: 'E2E price override fixture stock',
-      lines: [{ itemId: item.id, expectedQty: 0, actualQty: 50 }],
+      lines: [
+        { itemId: item.id, expectedQty: 0, actualQty: 50 },
+        { itemId: unpricedItem.id, expectedQty: 0, actualQty: 50 },
+      ],
     },
   })
   expect(adjustRes.ok(), await adjustRes.text()).toBeTruthy()
@@ -109,13 +138,27 @@ async function createFixtures(request: APIRequestContext): Promise<Fixtures> {
   expect(putRes.ok(), await putRes.text()).toBeTruthy()
   const priceUseType = await putRes.json()
 
+  const noListPriceUseName = `${PREFIX} PU NoList ${stamp}`
+  const noListRes = await request.post('/api/inventory/price-use-types', {
+    data: { name: noListPriceUseName },
+  })
+  expect(noListRes.ok(), await noListRes.text()).toBeTruthy()
+  const noListPriceUse = await noListRes.json()
+
   const listRes = await request.post('/api/inventory/price-lists', {
     data: { name: `${PREFIX} List ${stamp}`, priceUseTypeId: priceUseType.id },
   })
   expect(listRes.ok(), await listRes.text()).toBeTruthy()
   const priceList = await listRes.json()
   const itemsRes = await request.post(`/api/inventory/price-lists/${priceList.id}/items`, {
-    data: { items: [{ itemId: item.id, price: ITEM_PRICE }] },
+    data: {
+      items: [
+        { itemId: item.id, price: ITEM_PRICE },
+        // On the list so a credit application can take it; the till rings it up
+        // under noListPriceUse below, which has no list, so it shows as unpriced.
+        { itemId: unpricedItem.id, price: UNPRICED_LIST_PRICE },
+      ],
+    },
   })
   expect(itemsRes.ok(), await itemsRes.text()).toBeTruthy()
   const approveRes = await request.post(`/api/inventory/price-lists/${priceList.id}/approve`, {
@@ -126,6 +169,10 @@ async function createFixtures(request: APIRequestContext): Promise<Fixtures> {
   return {
     itemId: item.id,
     itemName,
+    unpricedItemId: unpricedItem.id,
+    unpricedItemName,
+    noListPriceUseName,
+    noListPriceUseId: noListPriceUse.id,
     priceUseTypeName,
     priceUseTypeId: priceUseType.id,
     priceListId: priceList.id,
@@ -175,11 +222,12 @@ async function selectCustomer(page: Page, name: string): Promise<void> {
 
 const exceptionSection = (page: Page) => page.getByTestId('price-override-exception')
 
-/** draft → submit → investigate → decide, through the app's own API as the
+/** draft → submit (which approves it), through the app's own API as the
  * Business Owner, scoped to the fixture item and priced under its Price Use. */
 async function createApprovedApplication(
   request: APIRequestContext,
-  branchId: string
+  branchId: string,
+  extraItemIds: string[] = []
 ): Promise<{ customer: { id: string; name: string }; applicationNumber: string }> {
   const stamp = Date.now()
   const name = `${PREFIX} Applicant ${stamp}`
@@ -203,7 +251,7 @@ async function createApprovedApplication(
       applicantCustomerId: customer.id,
       coMakerId: customer.coMakers[0].id,
       priceUseTypeId: fx.priceUseTypeId,
-      items: [{ itemId: fx.itemId }],
+      items: [{ itemId: fx.itemId }, ...extraItemIds.map((itemId) => ({ itemId }))],
     },
   })
   expect(appRes.ok(), await appRes.text()).toBeTruthy()
@@ -221,21 +269,8 @@ async function createApprovedApplication(
       `/api/credit/applications/${application.id}/documents`,
       { fileId: file.id, documentType: 'applicant_id' },
     ],
+    // Submitting approves it (PR #256) — there is no investigation or decision left.
     ['patch', `/api/credit/applications/${application.id}/submit`],
-    ['post', `/api/credit/applications/${application.id}/investigation/start`],
-    [
-      'post',
-      `/api/credit/applications/${application.id}/investigation`,
-      { affordabilityOutcome: 'recommend_approve', notes: 'E2E' },
-    ],
-    [
-      'patch',
-      `/api/credit/applications/${application.id}/decide`,
-      {
-        approveItemIds: (application.items as { id: string }[]).map((i) => i.id),
-        declineItemIds: [],
-      },
-    ],
   ]
   for (const [method, url, data] of steps) {
     const res = await (method === 'post'
@@ -263,9 +298,14 @@ const todayPlus = (days: number, months = 0): string => {
  * applicant selected and their approved application picked — the state a typed
  * plan starts from. */
 async function startInstallmentSale(
-  page: Page
+  page: Page,
+  extraItemIds: string[] = []
 ): Promise<{ customer: { id: string; name: string } }> {
-  const { customer, applicationNumber } = await createApprovedApplication(page.request, fx.branchId)
+  const { customer, applicationNumber } = await createApprovedApplication(
+    page.request,
+    fx.branchId,
+    extraItemIds
+  )
   await openCheckout(page)
   await addItem(page)
   await selectCustomer(page, customer.name)
@@ -303,7 +343,9 @@ test.describe('POS Checkout — typed installment plan (Scenario 71 Part 2)', ()
     if (fx) {
       await request.delete(`/api/inventory/price-lists/${fx.priceListId}`).catch(() => {})
       await request.delete(`/api/inventory/price-use-types/${fx.priceUseTypeId}`).catch(() => {})
+      await request.delete(`/api/inventory/price-use-types/${fx.noListPriceUseId}`).catch(() => {})
       await request.delete(`/api/inventory/items/${fx.itemId}`).catch(() => {})
+      await request.delete(`/api/inventory/items/${fx.unpricedItemId}`).catch(() => {})
     }
     await request.dispose()
   })
@@ -501,6 +543,238 @@ test.describe('POS Checkout — typed installment plan (Scenario 71 Part 2)', ()
       }[]
     ).find((a) => a.customerId === customer.id)!
     expect(String(account.nextDueDate).slice(0, 10)).toBe(fmi)
+  })
+
+  // The live "lines.1.manualMonthlyInstallment must be a positive number" report
+  // (Pandan, Mabini): INSTALLATION is rung up with no price, so while it is ₱0 the
+  // typed monthly is shared out to it as 0.00; the override then prices it, but its
+  // share stayed 0.00 and the server refused the line. The till only weighed the
+  // plan's SUM, which the other line's share covered on its own.
+  test('PO2-F09: an unpriced item priced by an override after the monthly was typed still gets a share of it, and the sale posts', async ({
+    page,
+  }) => {
+    const { customer } = await startInstallmentSale(page, [fx.unpricedItemId])
+    const salesInvoiceNumber = `SI-PO2F09-${Date.now()}`
+    const fmi = todayPlus(45)
+    const OVERRIDE_PRICE = 3000
+
+    await page.getByTestId('type-terms').click()
+    const panel = typedPlan(page)
+    await expect(panel).toBeVisible()
+
+    // The unpriced item joins the cart, still at ₱0 ("No price — Override").
+    const search = page.getByPlaceholder('Search by name or serial')
+    await search.fill(fx.unpricedItemName)
+    const card = page
+      .getByRole('button')
+      .filter({ has: page.getByText(fx.unpricedItemName, { exact: true }) })
+    await expect(card.first()).toBeVisible({ timeout: 15_000 })
+    await card.first().click()
+    const unpricedRow = page.locator('tr', { hasText: fx.unpricedItemName })
+    await expect(unpricedRow).toBeVisible({ timeout: 10_000 })
+    // Rung up under the Price Use that has no list: "No price — Override".
+    await pickCartPriceUse(page, fx.noListPriceUseName, 1)
+    const overrideButton = unpricedRow.getByText('No price — Override')
+    await expect(overrideButton).toBeVisible({ timeout: 10_000 })
+
+    // The cashier types a monthly that covers the whole sale (15,000) — while the
+    // new item is still ₱0, so all of it is shared to the first line.
+    await panel.getByLabel('Typed months').fill('12')
+    await panel.getByLabel('Typed monthly installment').fill('1400')
+
+    // Now the override prices the second line.
+    await overrideButton.click()
+    await expect(page.getByRole('heading', { name: 'Price Override' })).toBeVisible()
+    await page.getByLabel('New unit price').fill(String(OVERRIDE_PRICE))
+    await page.getByRole('button', { name: 'Apply Override' }).click()
+    await expect(page.getByRole('heading', { name: 'Price Override' })).toHaveCount(0)
+    await expect(unpricedRow.getByText('No price — Override')).toHaveCount(0)
+
+    // The plan's monthly is still what was typed.
+    await expect(panel.getByLabel('Typed monthly installment')).toHaveValue(/^1400(\.00)?$/)
+    await panel.getByLabel('First due date').fill(fmi)
+    await expect(page.getByTestId('typed-plan-problem')).toHaveCount(0)
+
+    const section = exceptionSection(page)
+    await openCustomSelect(section.getByRole('combobox', { name: 'Pick a reason…' }))
+    await page.getByRole('listbox').getByRole('option', { name: 'Management special' }).click()
+    await fillStable(
+      section.getByLabel('Note for the price override or typed terms'),
+      'Institutional — installation'
+    )
+
+    await fillStable(page.getByLabel('Sales Invoice No.'), salesInvoiceNumber)
+    const downPayment = (await panel.getByLabel('Typed down payment').inputValue()).replace(
+      /,/g,
+      ''
+    )
+    if (Number(downPayment) > 0) {
+      await page
+        .getByTestId('dp-payment-mode-toggle')
+        .getByRole('button', { name: 'Cash', exact: true })
+        .click()
+      await fillStable(page.getByLabel('Amount received'), downPayment)
+      await fillStable(page.getByPlaceholder('CR Number'), `CR-PO2F09-${Date.now()}`)
+    }
+
+    // Not clickStable — this submits a real sale.
+    await page.getByRole('button', { name: /Create Installment Plan/ }).click()
+    // Before the fix this stopped at "lines.1.manualMonthlyInstallment must be a
+    // positive number": the unpriced item's share of the monthly was still 0.00.
+    await expect(page.getByText('Installment Plan Created', { exact: true })).toBeVisible({
+      timeout: 25_000,
+    })
+
+    // What posted: both lines are on the typed plan with a share above 0, adding
+    // up to the monthly that was typed.
+    const listRes = await page.request.get('/api/pos/transactions', {
+      params: { search: salesInvoiceNumber },
+    })
+    const listBody = await listRes.json()
+    const sale = (
+      (listBody.data ?? listBody) as { id: string; salesInvoiceNumber: string | null }[]
+    ).find((t) => t.salesInvoiceNumber === salesInvoiceNumber)!
+    const detail = await (await page.request.get(`/api/pos/transactions/${sale.id}`)).json()
+    expect(detail.lines).toHaveLength(2)
+    const shares = (detail.lines as { manualMonthlyInstallment: string | number }[]).map((l) =>
+      Number(l.manualMonthlyInstallment)
+    )
+    for (const share of shares) expect(share).toBeGreaterThan(0)
+    expect(Math.round(shares.reduce((sum, n) => sum + n, 0) * 100) / 100).toBe(1400)
+    const accountsRes = await page.request.get('/api/crm/installment-accounts', {
+      params: { customerId: customer.id },
+    })
+    const accountsBody = await accountsRes.json()
+    const account = (
+      (accountsBody.data ?? accountsBody) as { customerId: string; nextDueDate: string | null }[]
+    ).find((a) => a.customerId === customer.id)!
+    expect(String(account.nextDueDate).slice(0, 10)).toBe(fmi)
+  })
+
+  // Pandan / Mabini, 2026-11-23, the second report: the Outdoor unit of a split
+  // AC is overridden to ₱0.00 (its price sits on the Indoor unit). It stays on the
+  // plan with nothing to pay, so its share of the monthly is 0.00 — which the server
+  // used to refuse ("lines.1.manualMonthlyInstallment must be a positive number").
+  async function sellWithZeroPricedSecondLine(
+    page: Page,
+    options: { secondRowPriceUse: string; tag: string }
+  ): Promise<{
+    lines: { manualMonthlyInstallment: string | number; unitPrice: string | number }[]
+  }> {
+    const { customer } = await startInstallmentSale(page, [fx.unpricedItemId])
+    const salesInvoiceNumber = `SI-${options.tag}-${Date.now()}`
+    const fmi = todayPlus(45)
+
+    await page.getByTestId('type-terms').click()
+    const panel = typedPlan(page)
+    await expect(panel).toBeVisible()
+
+    const search = page.getByPlaceholder('Search by name or serial')
+    await search.fill(fx.unpricedItemName)
+    const card = page
+      .getByRole('button')
+      .filter({ has: page.getByText(fx.unpricedItemName, { exact: true }) })
+    await expect(card.first()).toBeVisible({ timeout: 15_000 })
+    await card.first().click()
+    const secondRow = page.locator('tr', { hasText: fx.unpricedItemName })
+    await expect(secondRow).toBeVisible({ timeout: 10_000 })
+    await pickCartPriceUse(page, options.secondRowPriceUse, 1)
+
+    // The monthly is typed while the second line is still what it was.
+    await panel.getByLabel('Typed months').fill('12')
+    await panel.getByLabel('Typed monthly installment').fill('1400')
+
+    // Then the second line is overridden to ₱0.00.
+    const overrideButton = secondRow.getByText(/No price — Override|Override price/).first()
+    await overrideButton.click()
+    await expect(page.getByRole('heading', { name: 'Price Override' })).toBeVisible()
+    await page.getByLabel('New unit price').fill('0')
+    await page.getByRole('button', { name: 'Apply Override' }).click()
+    await expect(page.getByRole('heading', { name: 'Price Override' })).toHaveCount(0)
+
+    await expect(panel.getByLabel('Typed monthly installment')).toHaveValue(/^1400(\.00)?$/)
+    await panel.getByLabel('First due date').fill(fmi)
+    await expect(page.getByTestId('typed-plan-problem')).toHaveCount(0)
+
+    const section = exceptionSection(page)
+    await openCustomSelect(section.getByRole('combobox', { name: 'Pick a reason…' }))
+    await page.getByRole('listbox').getByRole('option', { name: 'Management special' }).click()
+    await fillStable(
+      section.getByLabel('Note for the price override or typed terms'),
+      'Outdoor unit goes with the indoor unit'
+    )
+
+    await fillStable(page.getByLabel('Sales Invoice No.'), salesInvoiceNumber)
+    const downPayment = (await panel.getByLabel('Typed down payment').inputValue()).replace(
+      /,/g,
+      ''
+    )
+    if (Number(downPayment) > 0) {
+      await page
+        .getByTestId('dp-payment-mode-toggle')
+        .getByRole('button', { name: 'Cash', exact: true })
+        .click()
+      await fillStable(page.getByLabel('Amount received'), downPayment)
+      await fillStable(page.getByPlaceholder('CR Number'), `CR-${options.tag}-${Date.now()}`)
+    }
+
+    // Not clickStable — this submits a real sale.
+    await page.getByRole('button', { name: /Create Installment Plan/ }).click()
+    await expect(page.getByText('Installment Plan Created', { exact: true })).toBeVisible({
+      timeout: 25_000,
+    })
+
+    const listRes = await page.request.get('/api/pos/transactions', {
+      params: { search: salesInvoiceNumber },
+    })
+    const listBody = await listRes.json()
+    const sale = (
+      (listBody.data ?? listBody) as { id: string; salesInvoiceNumber: string | null }[]
+    ).find((t) => t.salesInvoiceNumber === salesInvoiceNumber)!
+    const detail = await (await page.request.get(`/api/pos/transactions/${sale.id}`)).json()
+
+    // The account the collectors see starts on the typed date, on the typed monthly.
+    const accountsRes = await page.request.get('/api/crm/installment-accounts', {
+      params: { customerId: customer.id },
+    })
+    const accountsBody = await accountsRes.json()
+    const account = (
+      (accountsBody.data ?? accountsBody) as { customerId: string; nextDueDate: string | null }[]
+    ).find((a) => a.customerId === customer.id)!
+    expect(String(account.nextDueDate).slice(0, 10)).toBe(fmi)
+    return detail
+  }
+
+  const expectZeroLineHoldsNoShare = (detail: {
+    lines: { manualMonthlyInstallment: string | number; unitPrice: string | number }[]
+  }) => {
+    expect(detail.lines).toHaveLength(2)
+    const free = detail.lines.find((l) => Number(l.unitPrice) === 0)!
+    const priced = detail.lines.find((l) => Number(l.unitPrice) > 0)!
+    expect(Number(free.manualMonthlyInstallment)).toBe(0)
+    expect(Number(priced.manualMonthlyInstallment)).toBe(1400)
+  }
+
+  test('PO2-F10: a line overridden to ₱0.00 stays on the typed plan with a ₱0 share, and the sale posts', async ({
+    page,
+  }) => {
+    // Rung up as "No price — Override", then overridden to nothing.
+    const detail = await sellWithZeroPricedSecondLine(page, {
+      secondRowPriceUse: fx.noListPriceUseName,
+      tag: 'PO2F10',
+    })
+    expectZeroLineHoldsNoShare(detail)
+  })
+
+  test('PO2-F11: a priced line that already holds a share gives it back when it is overridden to ₱0.00', async ({
+    page,
+  }) => {
+    // Priced from the list first (so the monthly is shared to it), then overridden.
+    const detail = await sellWithZeroPricedSecondLine(page, {
+      secondRowPriceUse: fx.priceUseTypeName,
+      tag: 'PO2F11',
+    })
+    expectZeroLineHoldsNoShare(detail)
   })
 
   // The FMI date is a field of its own: a plain rate-card plan takes it without

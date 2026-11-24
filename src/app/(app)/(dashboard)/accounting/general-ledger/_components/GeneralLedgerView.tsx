@@ -13,6 +13,29 @@ import { sourceDocumentLink } from '@/src/libs/format/sourceDocumentLink'
 const TODAY = manilaToday()
 const YEAR_START = `${TODAY.slice(0, 4)}-01-01`
 
+// Docket #54 — the supplier or customer a Withholding Tax Payable, Input VAT or
+// Output VAT line was with. The server sends `party` only to a Business Owner or
+// Accountant, and only on those accounts, so the Name and TIN columns exist only
+// when some row carries one. A line with no name or TIN shows a dash.
+interface LineParty {
+  name: string | null
+  tin: string | null
+}
+
+const NO_VALUE = '—'
+
+function hasParty(rows: { party?: LineParty }[]): boolean {
+  return rows.some((r) => r.party !== undefined)
+}
+
+function tableHeaders(showBalance: boolean, showParty: boolean): string[] {
+  const lead = showBalance
+    ? ['Date', 'Reference', 'Description', 'Source']
+    : ['Date', 'Reference', 'Account', 'Description', 'Source']
+  const party = showParty ? ['Name', 'TIN'] : []
+  return [...lead, ...party, 'Debit', 'Credit', ...(showBalance ? ['Balance'] : [])]
+}
+
 export default function GeneralLedgerView() {
   const searchParams = useSearchParams()
   // Scenario 62 — a figure clicked on a report opens this page pre-scoped
@@ -61,6 +84,7 @@ export default function GeneralLedgerView() {
 
   const rows = Array.isArray(data) ? data : []
   const showBalance = !!accountId
+  const showParty = hasParty(rows)
 
   return (
     <div className="px-6 py-5 lg:px-10">
@@ -153,13 +177,7 @@ export default function GeneralLedgerView() {
             No posted transactions in this range.
           </div>
         ) : (
-          <Table
-            headers={
-              showBalance
-                ? ['Date', 'Reference', 'Description', 'Source', 'Debit', 'Credit', 'Balance']
-                : ['Date', 'Reference', 'Account', 'Description', 'Source', 'Debit', 'Credit']
-            }
-          >
+          <Table headers={tableHeaders(showBalance, showParty)}>
             {rows.map((t: any) => (
               <tr key={t.id}>
                 <td className="px-3 py-2 text-xs">{fmtDate(t.date)}</td>
@@ -185,6 +203,12 @@ export default function GeneralLedgerView() {
                 <td className="px-3 py-2 text-xs">
                   <SourceCell line={t} />
                 </td>
+                {showParty && (
+                  <>
+                    <td className="px-3 py-2">{t.party?.name || NO_VALUE}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{t.party?.tin || NO_VALUE}</td>
+                  </>
+                )}
                 <td className="px-3 py-2 text-right">{t.debit ? fmtMoney(t.debit) : '—'}</td>
                 <td className="px-3 py-2 text-right">{t.credit ? fmtMoney(t.credit) : '—'}</td>
                 {showBalance && (
