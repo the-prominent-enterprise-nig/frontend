@@ -4,16 +4,12 @@ import { useState } from 'react'
 import { X, Calculator, AlertTriangle } from 'lucide-react'
 import { COSTING_METHOD_LABELS, type CogsPreview } from '@/src/schema/inventory/costing'
 import type { IssueStockFormValues } from '@/src/schema/inventory/costing'
+import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 
 function fmt(n: number) {
   return n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-interface ItemOption {
-  id: string
-  sku: string
-  name: string
-}
 interface WarehouseOption {
   id: string
   code: string
@@ -32,7 +28,6 @@ interface Props {
     quantity: number
   }) => Promise<{ data?: CogsPreview; success?: boolean; error?: string }>
   isIssuing: boolean
-  itemOptions: ItemOption[]
   warehouseOptions: WarehouseOption[]
 }
 
@@ -41,7 +36,6 @@ export default function IssueStockModal({
   onIssue,
   onPreview,
   isIssuing,
-  itemOptions,
   warehouseOptions,
 }: Props) {
   const [form, setForm] = useState<{
@@ -124,18 +118,11 @@ export default function IssueStockModal({
           {/* Item */}
           <div>
             <label className="mb-1 block text-sm font-medium text-zinc-700">Item</label>
-            <select
+            <ItemSearchCombobox
               value={form.itemId}
-              onChange={(e) => set('itemId', e.target.value)}
-              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-            >
-              <option value="">Select item…</option>
-              {itemOptions.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.sku} — {i.name}
-                </option>
-              ))}
-            </select>
+              onChange={(id) => set('itemId', id)}
+              placeholder="Search an item by name or SKU…"
+            />
           </div>
 
           {/* Branch */}

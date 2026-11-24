@@ -9,8 +9,8 @@ import {
   type ReservationFormValues,
 } from '@/src/schema/inventory/reservations'
 import type { ApiResponse } from '@/src/libs/api/client'
+import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 
-type ItemOption = { id: string; name: string; sku: string }
 type WarehouseOption = {
   id: string
   name: string
@@ -23,7 +23,6 @@ type Props = {
   onClose: () => void
   onSubmit: (data: ReservationFormValues) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
-  items: ItemOption[]
   warehouses: WarehouseOption[]
 }
 
@@ -35,7 +34,6 @@ export default function ReservationModal({
   onClose,
   onSubmit,
   isSubmitting,
-  items,
   warehouses,
 }: Props) {
   const {
@@ -104,19 +102,14 @@ export default function ReservationModal({
                 name="itemId"
                 control={control}
                 render={({ field }) => (
-                  <select {...field} className={`${fieldClass} bg-white`}>
-                    <option value="">Select item…</option>
-                    {items.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.sku} — {item.name}
-                      </option>
-                    ))}
-                  </select>
+                  <ItemSearchCombobox
+                    value={field.value}
+                    onChange={field.onChange}
+                    error={errors.itemId?.message}
+                    includeInactive
+                  />
                 )}
               />
-              {errors.itemId && (
-                <p className="mt-1 text-xs text-red-600">{errors.itemId.message}</p>
-              )}
             </div>
 
             <div>

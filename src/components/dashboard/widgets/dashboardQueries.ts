@@ -17,6 +17,7 @@ import { getNeedsAttentionItems } from './needsAttentionData'
 import { fetchArStats, loadArStats } from './arStats'
 import { arStatsKey, salesByBranchKey, needsAttentionKey } from './dashboardQueryKeys'
 import { manilaDayStartIso, manilaMonthOf } from '@/src/libs/format/manila-date'
+import { countCustomersRegisteredSince } from './customerCounts'
 
 export type EmployeeBirthday = {
   id: string
@@ -182,8 +183,10 @@ export function useModuleStats(branchId: string | null) {
           // one branch) — those two stay unfiltered on purpose.
           fetchArStats(queryClient, branchId ?? undefined),
           APBills.list(),
-          customersApi.list({ limit: 200 }),
-          leadsApi.list({ limit: 200, branchId: branchId ?? undefined }),
+          // Counts only (limit 1 → meta.total): a 200-row page of a list this
+          // long says nothing about who is new or how many leads are active.
+          customersApi.list({ limit: 1 }),
+          leadsApi.list({ limit: 1, status: 'active', branchId: branchId ?? undefined }),
         ])
 
       const allTxns = txRes.data ?? []
@@ -208,12 +211,11 @@ export function useModuleStats(branchId: string | null) {
       const branchIds = branchId ? branchCustomerIds(allTxns, arStats.customerIds ?? []) : null
       const totalCustomers = branchIds ? branchIds.size : (customersRes.data?.meta?.total ?? 0)
       const monthStart = new Date(manilaDayStartIso(`${manilaMonthOf()}-01`))
-      const newThisMonth = (customersRes.data?.data ?? []).filter(
-        (c) =>
-          new Date(c.createdAt).getTime() >= monthStart.getTime() &&
-          (!branchIds || branchIds.has(c.id))
-      ).length
-      const activeLeads = (leadsRes.data?.data ?? []).filter((l) => l.status === 'active').length
+      const newThisMonth = await countCustomersRegisteredSince(
+        monthStart.toISOString(),
+        branchIds ? [...branchIds] : undefined
+      )
+      const activeLeads = leadsRes.data?.meta?.total ?? 0
 
       return {
         pos: [

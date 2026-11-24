@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 import { showToast } from '@/src/components/ui/toast'
-import { getCategoriesFlat } from '../_actions/get-categories-flat'
+import { getAllCategoriesFlat } from '../_actions/get-categories-flat'
 import { createCategory } from '../_actions/create-category'
 import { updateCategory } from '../_actions/update-category'
 import { deleteCategory } from '../_actions/delete-category'
@@ -54,7 +54,7 @@ export function useCategoryManager() {
 
   const flatQuery = useQuery({
     queryKey: ['inventory-categories-flat'],
-    queryFn: () => getCategoriesFlat({ limit: 500 }),
+    queryFn: () => getAllCategoriesFlat(),
     staleTime: 60 * 1000,
   })
 

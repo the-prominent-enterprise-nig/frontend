@@ -9,7 +9,6 @@ import { previewCogs } from '../_actions/preview-cogs'
 import { createRevaluation } from '../_actions/create-revaluation'
 import { updateItemCostingMethod } from '../_actions/update-item-costing-method'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import { getItems } from '../../items/_actions/get-items'
 import type {
   IssueStockFormValues,
   CreateRevaluationFormValues,
@@ -32,12 +31,6 @@ export function useCosting() {
     queryKey: ['inventory-warehouses-lookup'],
     queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
     staleTime: 10 * 60 * 1000,
-  })
-
-  const itemsQuery = useQuery({
-    queryKey: ['inventory-items-costing-lookup'],
-    queryFn: () => getItems({ limit: 200, lifecycle: 'active' }),
-    staleTime: 5 * 60 * 1000,
   })
 
   // ─── Issue stock ────────────────────────────────────────────────────────────
@@ -107,8 +100,6 @@ export function useCosting() {
     return arr
   })()
 
-  const itemOptions = itemsQuery.data?.data?.data ?? []
-
   return {
     // Valuation
     valuation: valuationQuery.data?.data ?? null,
@@ -120,7 +111,6 @@ export function useCosting() {
 
     // Lookup data
     warehouseOptions,
-    itemOptions,
 
     // Issue stock
     issueStock: issueMutation.mutateAsync,

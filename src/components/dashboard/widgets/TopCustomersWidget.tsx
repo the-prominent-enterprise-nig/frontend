@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { getTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
-import { customersApi } from '@/src/libs/api/crm'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 
 type CustomerRow = {
@@ -39,21 +38,19 @@ export default function TopCustomersWidget() {
   useEffect(() => {
     let cancelled = false
     const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
-    Promise.all([
-      getTransactions({
-        transactionType: 'sale',
-        dateFrom: ninetyDaysAgo.toISOString(),
-        branchId: branchId ?? undefined,
-      }),
-      customersApi.list({ limit: 200 }),
-    ])
-      .then(([txRes, custRes]) => {
+    getTransactions({
+      transactionType: 'sale',
+      dateFrom: ninetyDaysAgo.toISOString(),
+      branchId: branchId ?? undefined,
+    })
+      .then((txRes) => {
         if (cancelled) return
-        const nameById = new Map((custRes.data?.data ?? []).map((c) => [c.id, c.name] as const))
         const txns = (txRes.data ?? []).filter((t) => t.status !== 'voided')
         const map = new Map<string, CustomerRow>()
         for (const t of txns) {
-          const name = (t.customerId && nameById.get(t.customerId)) || 'Walk-in Customer'
+          // The name comes with the sale. It used to be looked up in the first
+          // 200 customers of ~235,000, so everyone else read "Walk-in Customer".
+          const name = t.customerName || (t.customerId ? 'Customer' : 'Walk-in Customer')
           const existing = map.get(name) ?? { name, orders: 0, revenue: 0 }
           existing.orders += 1
           existing.revenue += Number(t.totalAmount ?? 0)

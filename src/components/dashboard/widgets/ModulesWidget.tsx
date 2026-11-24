@@ -14,6 +14,7 @@ import { customersApi } from '@/src/libs/api/crm'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import { resolveBranchWarehouseIds } from '../resolveBranchWarehouses'
 import { fetchArStats } from './arStats'
+import { countCustomersRegisteredSince } from './customerCounts'
 import { manilaDayStartIso, manilaMonthOf } from '@/src/libs/format/manila-date'
 
 interface ModuleStat {
@@ -126,6 +127,9 @@ export default function ModulesWidget() {
     let cancelled = false
     ;(async () => {
       const monthStart = new Date(manilaDayStartIso(`${manilaMonthOf()}-01`))
+      // Counted by the server (started now, read below) — the old "new this
+      // month" filtered the first 200 customers of a list ordered by name.
+      const newThisMonthPromise = countCustomersRegisteredSince(monthStart.toISOString())
       const [items, arStats, inventoryStatsResult, txRes, customersRes] = await Promise.all([
         // HR: see the commented-out hrStats state above — /employees and
         // /leave-management/summary both 404, no HR backend module exists.
@@ -141,7 +145,7 @@ export default function ModulesWidget() {
         fetchArStats(queryClient),
         loadInventoryStats(branchId),
         getTransactions({ dateFrom: monthStart.toISOString(), branchId: branchId ?? undefined }),
-        customersApi.list({ limit: 200 }),
+        customersApi.list({ limit: 1 }),
       ])
       if (cancelled) return
 
@@ -168,9 +172,7 @@ export default function ModulesWidget() {
       ])
 
       const totalCustomers = customersRes.data?.meta?.total ?? 0
-      const newThisMonth = (customersRes.data?.data ?? []).filter(
-        (c) => new Date(c.createdAt).getTime() >= monthStart.getTime()
-      ).length
+      const newThisMonth = await newThisMonthPromise
       setCrmStats([
         { label: 'Customers', value: totalCustomers },
         { label: 'New This Month', value: newThisMonth },

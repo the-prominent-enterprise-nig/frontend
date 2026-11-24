@@ -72,7 +72,7 @@ const MENU_BUTTON =
 
 // Gone for good — everything else still has to be transferred out before
 // the caravan can close (mirrors the backend's close check).
-const GONE_FOR_GOOD = new Set(['sold', 'issued', 'scrapped', 'lost_in_transit'])
+const GONE_FOR_GOOD = new Set(['sold', 'issued', 'scrapped'])
 
 // ── Data helpers ──────────────────────────────────────────────────────────
 

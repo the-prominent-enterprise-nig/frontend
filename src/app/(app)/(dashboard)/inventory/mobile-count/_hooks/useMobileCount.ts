@@ -7,6 +7,7 @@ import { getMobileCountSessions } from '../_actions/get-mobile-count-data'
 import { submitCount } from '../../stock-counts/_actions/submit-count'
 import { addCountLine } from '../../stock-counts/_actions/add-count-line'
 import { getItems } from '../../items/_actions/get-items'
+import { getItem } from '../../items/_actions/get-item'
 import type { CountSummary } from '@/src/schema/inventory/stock-counts'
 
 export type ScanEntry = {
@@ -20,6 +21,17 @@ export type ScanEntry = {
   timestamp: number
 }
 
+/** The item a scanned code stands for — its SKU, or (as before) its id. */
+async function findScannedItem(
+  code: string
+): Promise<{ id: string; name: string; sku: string } | undefined> {
+  const bySku = await getItems({ search: code, limit: 50 })
+  const hit = (bySku.data?.data ?? []).find((item) => item.sku === code)
+  if (hit) return hit
+  const byId = await getItem(code)
+  return byId.success && byId.data ? byId.data : undefined
+}
+
 export function useMobileCount() {
   const queryClient = useQueryClient()
   const [selectedSession, setSelectedSession] = useState<CountSummary | null>(null)
@@ -30,12 +42,6 @@ export function useMobileCount() {
     queryKey: ['inventory-mobile-count-sessions'],
     queryFn: getMobileCountSessions,
     staleTime: 30 * 1000,
-  })
-
-  const itemsQuery = useQuery({
-    queryKey: ['inventory-items-lookup'],
-    queryFn: () => getItems({ limit: 200 }),
-    staleTime: 5 * 60 * 1000,
   })
 
   const submitMutation = useMutation({
@@ -58,15 +64,16 @@ export function useMobileCount() {
     },
   })
 
-  const items = itemsQuery.data?.data?.data ?? []
-
   const handleScan = useCallback(
     async (barcode: string) => {
       const trimmed = barcode.trim()
       if (!trimmed) return
       setBarcodeInput('')
 
-      const matchedItem = items.find((item) => item.sku === trimmed || item.id === trimmed)
+      // Asked of the server, per scan. This used to look the code up in the
+      // first 200 items loaded up front (of 3,500+), so a scanned item outside
+      // them read "Item not found".
+      const matchedItem = await findScannedItem(trimmed)
       if (!matchedItem) {
         showToast({
           title: 'Item not found',
@@ -114,7 +121,7 @@ export function useMobileCount() {
         },
       ])
     },
-    [items, scanEntries, selectedSession]
+    [scanEntries, selectedSession]
   )
 
   function updateQuantity(itemId: string, qty: number) {

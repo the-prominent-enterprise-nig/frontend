@@ -5,7 +5,6 @@ import { useState } from 'react'
 import { showToast } from '@/src/components/ui/toast'
 import { getRevaluationHistory } from '../_actions/get-revaluation-history'
 import { createItemRevaluation } from '../_actions/create-item-revaluation'
-import { getItems } from '../../items/_actions/get-items'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import type { CreateRevaluationFormValues } from '@/src/schema/inventory/revaluation'
 
@@ -21,12 +20,6 @@ export function useRevaluation() {
       return result
     },
     staleTime: 30 * 1000,
-  })
-
-  const itemsQuery = useQuery({
-    queryKey: ['inventory-items-lookup'],
-    queryFn: () => getItems({ limit: 200, lifecycle: 'active' }),
-    staleTime: 5 * 60 * 1000,
   })
 
   const warehousesQuery = useQuery({
@@ -50,11 +43,6 @@ export function useRevaluation() {
 
   const records = historyQuery.data?.data?.data ?? []
 
-  const itemOptions = (itemsQuery.data?.data?.data ?? []).map((item) => ({
-    value: item.id,
-    label: `${item.name} (${item.sku})`,
-  }))
-
   const warehouseOptions = (warehousesQuery.data?.data?.data ?? []).map((wh) => ({
     value: wh.id,
     label: wh.branch?.name ?? wh.name,
@@ -66,7 +54,6 @@ export function useRevaluation() {
     isFetching: historyQuery.isFetching,
     isModalOpen,
     setIsModalOpen,
-    itemOptions,
     warehouseOptions,
     createRevaluation: createMutation.mutateAsync,
     isCreating: createMutation.isPending,

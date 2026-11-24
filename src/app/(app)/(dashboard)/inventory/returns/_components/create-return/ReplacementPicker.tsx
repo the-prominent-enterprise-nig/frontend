@@ -1,12 +1,18 @@
 'use client'
 
 import { Loader2 } from 'lucide-react'
-import { INPUT, INPUT_BAD, LABEL, MONO } from './returnTokens'
-import type { ReplacementUnit } from './useReplacementUnits'
+import { SearchCombobox } from '@/src/components/ui/SearchCombobox'
+import { LABEL, MONO } from './returnTokens'
+import { searchReplacementUnits } from './useReplacementUnits'
 
 type Props = {
-  units: ReplacementUnit[]
+  /** In-stock units here — the count only; the unit itself is searched. */
+  count: number | undefined
   isLoading: boolean
+  itemId: string
+  warehouseId: string
+  /** The unit coming back — it cannot also be the one going out. */
+  returnedSerialNumberId?: string
   /** False for an item that is not serial-tracked: the swap is by quantity and
    *  there is no named unit to choose. */
   serialTracked: boolean
@@ -30,8 +36,11 @@ type Props = {
  * decision instead of being something the clerk has to know.
  */
 export default function ReplacementPicker({
-  units,
+  count,
   isLoading,
+  itemId,
+  warehouseId,
+  returnedSerialNumberId,
   serialTracked,
   value,
   onChange,
@@ -57,29 +66,35 @@ export default function ReplacementPicker({
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               Looking for one in stock…
             </span>
-          ) : units.length === 0 ? (
+          ) : count === 0 ? (
             <p className="text-[11.5px] leading-[1.45] text-[#3d3d4a]">
               Nothing of this item is on the shelf here. Restock or quarantine it instead, and raise
               the replacement as its own sale.
             </p>
           ) : (
             <>
-              <select
+              <SearchCombobox
                 value={value ?? ''}
-                onChange={(e) => onChange(e.target.value || undefined)}
-                aria-label="Replacement unit"
-                className={`w-full cursor-pointer ${missing ? INPUT_BAD : INPUT}`}
-              >
-                <option value="">Pick a unit from stock…</option>
-                {units.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.serialNumber}
-                  </option>
-                ))}
-              </select>
-              <span className={`${MONO} text-[10px] text-ink-muted`}>
-                {units.length} available here
-              </span>
+                onChange={(id) => onChange(id || undefined)}
+                queryKey={`return-replacement-${itemId}-${warehouseId}`}
+                placeholder="Pick a unit from stock…"
+                typeToSearchMessage="Type a serial number…"
+                emptyMessage="No matching unit in stock here"
+                error={missing ? 'Pick the unit going out.' : undefined}
+                search={async (query) =>
+                  (
+                    await searchReplacementUnits(
+                      { itemId, warehouseId, returnedSerialNumberId },
+                      query
+                    )
+                  ).map((u) => ({ id: u.id, primary: u.serialNumber }))
+                }
+              />
+              {count !== undefined && (
+                <span className={`${MONO} text-[10px] text-ink-muted`}>
+                  {count} available here — type a serial number to find one
+                </span>
+              )}
             </>
           )}
         </div>

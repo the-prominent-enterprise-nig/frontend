@@ -13,7 +13,7 @@ import { getItem } from '../_actions/get-item'
 import { updateItem } from '../_actions/update-item'
 import { updateItemAttributes } from '../_actions/update-item-attributes'
 import { getItemBrands, getItemTypes, getUnitsOfMeasure } from '../_actions/get-lookup-data'
-import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
+import { getAllCategoriesFlat } from '../../categories/_actions/get-categories-flat'
 
 /**
  * Everything the Edit item form needs for ONE item, outside the Item Master
@@ -35,7 +35,7 @@ export function useItemEditor(itemId: string | null, invalidates: readonly unkno
   })
   const categories = useQuery({
     queryKey: ['inventory-categories-flat'],
-    queryFn: () => getCategoriesFlat({ limit: 500 }),
+    queryFn: () => getAllCategoriesFlat(),
     ...lookup,
   })
   const uom = useQuery({

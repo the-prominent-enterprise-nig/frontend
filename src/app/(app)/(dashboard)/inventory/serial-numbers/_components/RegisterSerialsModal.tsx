@@ -10,8 +10,8 @@ import {
 } from '@/src/schema/inventory/serial-numbers'
 import type { ApiResponse } from '@/src/libs/api/client'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
+import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 
-type ItemOption = { id: string; name: string; sku: string }
 type WarehouseOption = {
   id: string
   name: string
@@ -24,7 +24,6 @@ type Props = {
   onClose: () => void
   onSubmit: (data: RegisterSerialsFormInput) => Promise<ApiResponse<unknown>>
   isSubmitting: boolean
-  items: ItemOption[]
   warehouses: WarehouseOption[]
 }
 
@@ -36,7 +35,6 @@ export default function RegisterSerialsModal({
   onClose,
   onSubmit,
   isSubmitting,
-  items,
   warehouses,
 }: Props) {
   const [parsedCount, setParsedCount] = useState(0)
@@ -104,20 +102,16 @@ export default function RegisterSerialsModal({
                 name="itemId"
                 control={control}
                 render={({ field }) => (
-                  <SearchableSelect
+                  <ItemSearchCombobox
                     value={field.value ?? ''}
                     onChange={field.onChange}
                     placeholder="Search item by SKU or name…"
-                    options={items.map((item) => ({
-                      value: item.id,
-                      label: `${item.sku} — ${item.name}`,
-                    }))}
+                    error={errors.itemId?.message}
+                    onlySerialTracked
+                    includeInactive
                   />
                 )}
               />
-              {errors.itemId && (
-                <p className="mt-1 text-xs text-red-600">{errors.itemId.message}</p>
-              )}
             </div>
 
             <div>

@@ -8,7 +8,6 @@ import { getReceivingReports } from '../_actions/get-receiving-reports'
 import { getReceivingReport } from '../_actions/get-receiving-report'
 import { getReceivingReportsSummary } from '../_actions/get-receiving-reports-summary'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import { getSuppliers } from '../../purchase-orders/_actions/get-suppliers'
 
 export function useReceivingReports(
   options: { includeManual?: boolean; includeCustomerReturns?: boolean } = {}
@@ -88,12 +87,6 @@ export function useReceivingReports(
     staleTime: 5 * 60 * 1000,
   })
 
-  const suppliersQuery = useQuery({
-    queryKey: ['inventory-suppliers-lookup'],
-    queryFn: () => getSuppliers({ limit: 200 }),
-    staleTime: 5 * 60 * 1000,
-  })
-
   const reports = listQuery.data?.data?.data ?? []
   const meta = listQuery.data?.data?.meta
   const totalPages = meta ? meta.lastPage : 1
@@ -124,8 +117,6 @@ export function useReceivingReports(
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     warehousesLoading: warehousesQuery.isLoading,
-    supplierOptions: suppliersQuery.data?.data?.data ?? [],
-    suppliersLoading: suppliersQuery.isLoading,
 
     search,
     warehouseId,

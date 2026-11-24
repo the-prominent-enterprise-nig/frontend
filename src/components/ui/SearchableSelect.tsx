@@ -109,6 +109,11 @@ type BaseProps = {
    * user isn't stuck on an empty list — e.g. Add "Kolin" as a brand. Off by
    * default so the existing usages are untouched. */
   emptyAction?: SearchableSelectEmptyAction
+  /** Reports what is being typed ('' when nothing is) — for a list too long to
+   * hold whole, where the caller asks the server for the matching options and
+   * passes them back in `options`. The control still filters whatever options
+   * it has by the typed text, so a caller that ignores this behaves as before. */
+  onQueryChange?: (typed: string) => void
 }
 
 /** Why a single-select changed: picked from the list (a click, or Enter), or
@@ -157,6 +162,7 @@ export default function SearchableSelect(props: Props) {
     ariaLabel,
     icon,
     emptyAction,
+    onQueryChange,
     chrome = {
       idle: 'border-gray-200',
       focused: 'border-prominent-purple-500 ring-1 ring-prominent-purple-500',
@@ -171,6 +177,12 @@ export default function SearchableSelect(props: Props) {
   // list down to that one option. Reopening should always show everything
   // until the user actually types.
   const [querySeeded, setQuerySeeded] = useState(false)
+  // Tell a caller that searches on the server what is being typed. A query
+  // seeded from the selection is for display only, so it reads as nothing.
+  useEffect(() => {
+    onQueryChange?.(querySeeded ? '' : query.trim())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, querySeeded])
   const [actionPending, setActionPending] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
