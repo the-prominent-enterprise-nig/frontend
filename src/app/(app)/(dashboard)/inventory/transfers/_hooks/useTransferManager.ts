@@ -188,8 +188,8 @@ export function useTransferManager(opts: { initialAnyWarehouseIds?: string[] } =
     },
   })
 
-  // The source custodian's edit before accepting: only the lines change, and
-  // the request stays Requested, so the toast says so rather than "resubmitted".
+  // The source custodian's edit before dispatch: only the lines change, and
+  // the request keeps its status, so the toast says so rather than "resubmitted".
   const sourceEditMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: CreateTransferFormValues }) =>
       editSourceLines(id, { lines: data.lines }),
