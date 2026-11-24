@@ -648,14 +648,9 @@ export function buildStockTransferHtml(data: unknown): string {
     if (!showStatus) return ''
     const received = Number(l.receivedQuantity ?? 0)
     const qty = Number(l.quantity ?? 0)
-    const lost = (l.serialNumber as { status?: string } | null)?.status === 'lost_in_transit'
     // A serial line not received yet prints plain — the sheet shows the
     // transfer as created, and the receipts say what arrived.
-    const text = lost
-      ? 'Lost in Transit'
-      : received >= qty || l.serialNumberId
-        ? ''
-        : `${received} of ${qty} received`
+    const text = received >= qty || l.serialNumberId ? '' : `${received} of ${qty} received`
     return text ? `<div class="line-status">${text}</div>` : ''
   }
 
