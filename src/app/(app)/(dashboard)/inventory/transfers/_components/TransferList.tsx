@@ -734,7 +734,7 @@ export default function TransferList({ session }: { session: SessionUser }) {
                         <td className="px-[18px] py-[13px]">
                           <div className="flex flex-col gap-px">
                             <span className={`${MONO} text-[12.5px] font-semibold`}>
-                              #{tr.id.slice(0, 8).toUpperCase()}
+                              {tr.transferNumber ?? `#${tr.id.slice(0, 8).toUpperCase()}`}
                             </span>
                             <span className="text-[11px] text-[#3d3d4a]">
                               {tr.transferDate
