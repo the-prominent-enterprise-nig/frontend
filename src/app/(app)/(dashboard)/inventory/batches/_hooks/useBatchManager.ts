@@ -10,7 +10,6 @@ import {
   placeBatchHold,
   releaseBatchHold,
 } from '../_actions/update-batch-status'
-import { getItems } from '../../items/_actions/get-items'
 import type {
   CreateBatchFormValues,
   UpdateBatchStatusFormValues,
@@ -47,12 +46,6 @@ export function useBatchManager() {
   const expiringQuery = useQuery({
     queryKey: ['inventory-batches-expiring'],
     queryFn: () => getExpiringBatches({ days: 30, limit: 50 }),
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const itemsQuery = useQuery({
-    queryKey: ['inventory-items-lookup'],
-    queryFn: () => getItems({ limit: 200 }),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -152,8 +145,6 @@ export function useBatchManager() {
 
     selectedBatch,
     setSelectedBatch,
-
-    itemOptions: itemsQuery.data?.data?.data ?? [],
 
     createBatch: createMutation.mutateAsync,
     isCreating: createMutation.isPending,

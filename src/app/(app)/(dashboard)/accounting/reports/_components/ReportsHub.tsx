@@ -11,7 +11,8 @@ import {
   fmtDate,
   type ExpensesByBranchResponse,
 } from '@/src/libs/data/AccountingV2Data'
-import { getCustomers, type Customer } from '@/src/libs/data/AccountingData'
+import { getCustomerById } from '@/src/libs/data/AccountingData'
+import { CustomerSearchCombobox } from '@/src/components/accounting/CustomerSearchCombobox'
 import {
   getBranches,
   type BranchDetail,
@@ -85,8 +86,13 @@ export default function ReportsHub({ ownBranch = null }: { ownBranch?: OwnBranch
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   // Customer statement: deep-linkable via ?tab=customer-statement&customerId=...
-  const [customers, setCustomers] = useState<Customer[]>([])
   const [customerId, setCustomerId] = useState(searchParams.get('customerId') ?? '')
+  // The name of a customer who arrived by link — the picker only learns a name
+  // by someone picking a result, so a deep link's id needs it looked up.
+  // `undefined` while that lookup is out; null if there was nothing to look up.
+  const [linkedCustomerName, setLinkedCustomerName] = useState<string | null | undefined>(
+    searchParams.get('customerId') ? undefined : null
+  )
   // P&L branch scoping (SCEN-14 Closing Gap 2) — empty means all branches
   const [branches, setBranches] = useState<BranchDetail[]>([])
   // A branch user is fixed to their own branch; head office picks one or all.
@@ -136,13 +142,15 @@ export default function ReportsHub({ ownBranch = null }: { ownBranch?: OwnBranch
     load()
   }, [tab])
 
-  // Customer list is only needed for the statement picker
+  // A statement opened by link (?customerId=...) names its customer in the
+  // picker. Looked up by id — never found in a loaded page of the list, which
+  // is hundreds of thousands of customers long.
   useEffect(() => {
-    if (tab !== 'customer-statement' || customers.length) return
-    getCustomers({ limit: 500 }).then((r) =>
-      setCustomers(((r.data as any)?.items ?? r.data ?? []) as Customer[])
-    )
-  }, [tab, customers.length])
+    const linkedId = searchParams.get('customerId')
+    if (!linkedId) return
+    getCustomerById(linkedId).then((r) => setLinkedCustomerName(r.data?.name ?? null))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Branch list is only needed for the P&L branch scope picker — which a branch
   // user doesn't get, so they never load it.
@@ -279,19 +287,17 @@ export default function ReportsHub({ ownBranch = null }: { ownBranch?: OwnBranch
         {needsCustomer && (
           <div>
             <label className="block text-xs text-gray-600 mb-1">Customer</label>
-            <select
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-              className="px-3 py-2 text-sm border border-gray-200 rounded-lg min-w-56"
-            >
-              <option value="">— Select a customer —</option>
-              {customers.map((c) => (
-                <option key={String(c.id)} value={String(c.id)}>
-                  {c.name}
-                  {c.customerCode ? ` (${c.customerCode})` : ''}
-                </option>
-              ))}
-            </select>
+            <div className="min-w-72">
+              {linkedCustomerName === undefined ? (
+                <div className="h-[38px] animate-pulse rounded-lg bg-gray-100" />
+              ) : (
+                <CustomerSearchCombobox
+                  value={customerId}
+                  onChange={setCustomerId}
+                  initialLabel={linkedCustomerName ?? undefined}
+                />
+              )}
+            </div>
           </div>
         )}
         <button

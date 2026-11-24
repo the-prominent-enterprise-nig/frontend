@@ -13,6 +13,9 @@ type Props = {
   isSubmitting: boolean
 }
 
+/** Users shown at once — the search narrows the rest. */
+const USER_PAGE = 50
+
 export default function AssignManagerModal({
   isOpen,
   currentManagerIds,
@@ -21,36 +24,54 @@ export default function AssignManagerModal({
   isSubmitting,
 }: Props) {
   const [users, setUsers] = useState<User[]>([])
+  const [total, setTotal] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isOpen) return
     setSearch('')
+    setDebouncedSearch('')
     setSelectedId(null)
+  }, [isOpen])
 
-    const fetchUsers = async () => {
-      setLoading(true)
-      const result = await getUsers({ page: 1, limit: 200, status: 'ACTIVE' })
+  // What is typed goes to the server after a short pause. The list used to be
+  // the first 200 active users, filtered in the browser — so a user outside
+  // them (of 399 and growing) could not be found by name or email.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
+    if (!isOpen) return
+    let cancelled = false
+    setLoading(true)
+    getUsers({
+      page: 1,
+      limit: USER_PAGE,
+      status: 'ACTIVE',
+      search: debouncedSearch || undefined,
+    }).then((result) => {
+      if (cancelled) return
       setLoading(false)
-
       if (result.success && result.data) {
         const raw = Array.isArray(result.data) ? result.data : ((result.data as any).data ?? [])
         setUsers(raw.filter((u: User) => u.isActive))
+        setTotal(Array.isArray(result.data) ? null : (result.data.meta?.total ?? null))
       }
+    })
+    return () => {
+      cancelled = true
     }
-
-    fetchUsers()
-  }, [isOpen])
+  }, [isOpen, debouncedSearch])
 
   if (!isOpen) return null
 
-  const filtered = users.filter((u) => {
-    const fullName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.name || ''
-    const q = search.toLowerCase()
-    return fullName.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
-  })
+  // Already narrowed by the server.
+  const filtered = users
 
   const canAssign = selectedId !== null && !currentManagerIds.has(selectedId)
 
@@ -92,6 +113,12 @@ export default function AssignManagerModal({
               autoFocus
             />
           </div>
+          {total != null && total > users.length && !debouncedSearch && (
+            <p className="mt-2 text-xs text-zinc-500">
+              Showing the first {users.length} of {total} active users — type a name or email to
+              find others.
+            </p>
+          )}
         </div>
 
         {/* User list */}

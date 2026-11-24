@@ -11,6 +11,7 @@ import {
   type BundleComponentFormValues,
 } from '@/src/schema/inventory/bundles'
 import type { ApiResponse } from '@/src/libs/api/client'
+import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 
 type Props = {
   isOpen: boolean
@@ -19,7 +20,6 @@ type Props = {
   availableQty: number | null | undefined
   isLoading: boolean
   onClose: () => void
-  itemOptions: ItemSummary[]
   onAddComponent: (data: BundleComponentFormValues) => Promise<ApiResponse<unknown>>
   isAddingComponent: boolean
   onRemoveComponent: (componentId: string) => Promise<ApiResponse<unknown>>
@@ -34,7 +34,6 @@ export default function BundleDetailModal({
   availableQty,
   isLoading,
   onClose,
-  itemOptions,
   onAddComponent,
   isAddingComponent,
   onRemoveComponent,
@@ -60,9 +59,9 @@ export default function BundleDetailModal({
   const isLowStock = availableQty !== null && availableQty !== undefined && availableQty <= 0
 
   const existingComponentIds = new Set(components.map((c) => c.componentItemId).filter(Boolean))
-  const addableItems = itemOptions.filter(
-    (item) => item.id !== bundle?.id && !existingComponentIds.has(item.id)
-  )
+  // Everything but the bundle itself and what it already holds — the items are
+  // searched on the server, so there is no list here to run out of.
+  const excludedItemIds = [...existingComponentIds, ...(bundle?.id ? [bundle.id] : [])] as string[]
 
   async function handleAddComponent(data: BundleComponentFormValues) {
     const result = await onAddComponent(data)
@@ -294,14 +293,12 @@ export default function BundleDetailModal({
                         name="componentItemId"
                         control={control}
                         render={({ field }) => (
-                          <select {...field} className={`${fieldClass} bg-white`}>
-                            <option value="">Select item…</option>
-                            {addableItems.map((item) => (
-                              <option key={item.id} value={item.id}>
-                                {item.sku} — {item.name}
-                              </option>
-                            ))}
-                          </select>
+                          <ItemSearchCombobox
+                            value={field.value}
+                            onChange={field.onChange}
+                            excludeBundles
+                            excludeIds={excludedItemIds}
+                          />
                         )}
                       />
                       {errors.componentItemId && (
@@ -336,7 +333,7 @@ export default function BundleDetailModal({
                     </div>
                     <button
                       type="submit"
-                      disabled={isAddingComponent || addableItems.length === 0}
+                      disabled={isAddingComponent}
                       className="mt-0.5 flex items-center gap-1.5 rounded-lg bg-prominent-purple-700 px-3 py-2 text-xs font-medium text-white hover:bg-prominent-purple-800 disabled:opacity-50"
                     >
                       {isAddingComponent ? (
@@ -347,11 +344,6 @@ export default function BundleDetailModal({
                       Add
                     </button>
                   </div>
-                  {addableItems.length === 0 && (
-                    <p className="mt-1.5 text-xs text-zinc-400">
-                      Every eligible item is already a component of this bundle.
-                    </p>
-                  )}
                 </form>
               )}
 

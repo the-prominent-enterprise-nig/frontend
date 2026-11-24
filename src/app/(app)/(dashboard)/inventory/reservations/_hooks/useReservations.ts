@@ -7,7 +7,6 @@ import { getReservations } from '../_actions/get-reservations'
 import { createReservation } from '../_actions/create-reservation'
 import { releaseReservation } from '../_actions/release-reservation'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import { getItems } from '../../items/_actions/get-items'
 import type { ReservationFormValues } from '@/src/schema/inventory/reservations'
 
 export function useReservations() {
@@ -29,12 +28,6 @@ export function useReservations() {
   const warehousesQuery = useQuery({
     queryKey: ['inventory-warehouses-lookup'],
     queryFn: () => getWarehouses({ limit: 200, status: 'active' }),
-    staleTime: 5 * 60 * 1000,
-  })
-
-  const itemsQuery = useQuery({
-    queryKey: ['inventory-items-lookup'],
-    queryFn: () => getItems({ limit: 200 }),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -78,7 +71,6 @@ export function useReservations() {
     error: listQuery.error,
     page,
     setPage,
-    itemOptions: itemsQuery.data?.data?.data ?? [],
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
     createReservation: createMutation.mutateAsync,
     isCreating: createMutation.isPending,

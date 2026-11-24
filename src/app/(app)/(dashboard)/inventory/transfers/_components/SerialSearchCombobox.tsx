@@ -9,7 +9,11 @@ type Props = {
   /** Fires alongside onChange with the full picked option — for callers
    * that need the serial's display label too, not just its id. */
   onSelect?: (option: SearchComboboxOption) => void
-  options: SerialNumberSummary[]
+  /** Asks the server for the serials matching what was typed ('' = the first
+   * few). Not a list handed in and filtered here: an item can have hundreds of
+   * units, and filtering the first page in the browser never reached the rest
+   * (Docket #94). */
+  search: (query: string) => Promise<SerialNumberSummary[]>
   queryKey: string
   disabled?: boolean
   placeholder?: string
@@ -18,15 +22,13 @@ type Props = {
   initialLabel?: string
 }
 
-// Unlike Branch/Item/Supplier combobox siblings, this doesn't fetch its own
-// list — the caller already scoped `options` to the chosen item + source
-// warehouse (see TransferLineRow's serialsQuery), so this just does a
-// client-side substring filter over that already-narrow list.
+// The caller scopes the search to the chosen item (and status/warehouse); the
+// typed text goes to the server with it.
 export function SerialSearchCombobox({
   value,
   onChange,
   onSelect,
-  options,
+  search: fetchSerials,
   queryKey,
   disabled,
   placeholder,
@@ -51,10 +53,7 @@ export function SerialSearchCombobox({
       typeToSearchMessage="Type to search serial numbers…"
       emptyMessage="No matching serial numbers"
       search={async (query) => {
-        const q = query.trim().toLowerCase()
-        const matches = q
-          ? options.filter((s) => s.serialNumber.toLowerCase().includes(q))
-          : options
+        const matches = await fetchSerials(query.trim())
         // Scenario 29 SN-01 — an override-capable picker's `options` isn't
         // pre-scoped to "valid at this warehouse" anymore, so surfacing
         // where each serial actually is lets a supervisor tell apart the

@@ -40,7 +40,6 @@ export default function ReservationsPageView({ session }: { session: SessionUser
     error,
     page,
     setPage,
-    itemOptions,
     warehouseOptions,
     createReservation,
     isCreating,
@@ -214,7 +213,6 @@ export default function ReservationsPageView({ session }: { session: SessionUser
         onClose={() => setIsModalOpen(false)}
         onSubmit={handleSubmit}
         isSubmitting={isCreating}
-        items={itemOptions}
         warehouses={warehouseOptions}
       />
     </div>

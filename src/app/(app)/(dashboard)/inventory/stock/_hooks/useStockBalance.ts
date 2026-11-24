@@ -4,7 +4,7 @@ import type { StockStateFilter } from '@/src/schema/inventory/goods-receiving'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { useState, useMemo, useEffect } from 'react'
 import { getStockBalances } from '../_actions/get-stock-balances'
-import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
+import { getAllCategoriesFlat } from '../../categories/_actions/get-categories-flat'
 import { flatToCategorySelectOptions } from '@/src/libs/format/category-tree'
 import type { LocationToken } from '@/src/libs/inventory/location-tokens'
 import { useLocationFilter } from '@/src/libs/inventory/useLocationFilter'
@@ -58,7 +58,7 @@ export function useStockBalance(
 
   const categoriesQuery = useQuery({
     queryKey: ['inventory-categories-flat'],
-    queryFn: () => getCategoriesFlat({ limit: 500 }),
+    queryFn: () => getAllCategoriesFlat(),
     staleTime: 5 * 60 * 1000,
   })
 

@@ -102,7 +102,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
     bundleComponents,
     bundleAvailableQty,
     isLoadingComponents,
-    itemOptions,
     addBundleComponent,
     isAddingBundleComponent,
     removeBundleComponent,
@@ -302,7 +301,6 @@ export default function ItemMasterList({ session }: { session: SessionUser }) {
         components={bundleComponents}
         availableQty={bundleAvailableQty}
         isLoading={isLoadingComponents}
-        itemOptions={itemOptions}
         onAddComponent={addBundleComponent}
         isAddingComponent={isAddingBundleComponent}
         onRemoveComponent={removeBundleComponent}

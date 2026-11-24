@@ -17,8 +17,8 @@ export type StockClassification = 'brand_new' | 'repo' | 'repair_return' | 'retu
 import { getCaravanItemGroups } from '../_actions/get-caravan-item-groups'
 import { registerSerialNumbers } from '../_actions/register-serial-numbers'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
-import { getItems } from '../../items/_actions/get-items'
-import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
+import { getBrands } from '../../brands/_actions/get-brands'
+import { getAllCategoriesFlat } from '../../categories/_actions/get-categories-flat'
 import { flatToCategorySelectOptions } from '@/src/libs/format/category-tree'
 import type {
   RegisterSerialsFormInput,
@@ -231,15 +231,21 @@ export function useSerialNumbers(
     staleTime: 5 * 60 * 1000,
   })
 
-  const itemsQuery = useQuery({
-    queryKey: ['inventory-items-lookup'],
-    queryFn: () => getItems({ limit: 200 }),
+  // Every brand, from the brands list itself. This used to be derived from the
+  // first 200 ITEMS, so a brand none of those items carried never appeared in
+  // the Brand filter.
+  const brandsQuery = useQuery({
+    queryKey: ['inventory-item-brands'],
+    queryFn: () => getBrands(),
     staleTime: 5 * 60 * 1000,
   })
+  const brandOptions = (brandsQuery.data?.data ?? [])
+    .map((b) => ({ id: b.id, name: b.name }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 
   const categoriesQuery = useQuery({
     queryKey: ['inventory-categories-flat'],
-    queryFn: () => getCategoriesFlat({ limit: 500 }),
+    queryFn: () => getAllCategoriesFlat(),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -380,7 +386,7 @@ export function useSerialNumbers(
     },
 
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
-    itemOptions: itemsQuery.data?.data?.data ?? [],
+    brandOptions,
     categoryOptions: flatToCategorySelectOptions(categoriesQuery.data?.data?.data ?? []),
 
     caravanView,

@@ -10,6 +10,7 @@ import type { SessionUser } from '@/src/libs/guards/permission'
 import PlaceOnHoldModal from './PlaceOnHoldModal'
 import ReleaseHoldModal from './ReleaseHoldModal'
 import { formatManilaDate } from '@/src/libs/format/manila-date'
+import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 
 function formatDate(dateStr?: string | null) {
   if (!dateStr) return '—'
@@ -37,7 +38,6 @@ export default function QualityHoldList({ session }: { session: SessionUser }) {
     setLimit,
     selectedBatch,
     setSelectedBatch,
-    itemOptions,
     warehouseOptions,
     placeOnHold,
     isPlacingHold,
@@ -75,18 +75,13 @@ export default function QualityHoldList({ session }: { session: SessionUser }) {
 
         {/* Filters */}
         <div className="flex items-center gap-3">
-          <select
-            value={itemFilter ?? ''}
-            onChange={(e) => setItemFilter(e.target.value || undefined)}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-prominent-purple-500"
-          >
-            <option value="">All Items</option>
-            {itemOptions.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name} ({i.sku})
-              </option>
-            ))}
-          </select>
+          <div className="w-72">
+            <ItemSearchCombobox
+              value={itemFilter ?? ''}
+              onChange={(id) => setItemFilter(id || undefined)}
+              placeholder="All items — search to filter"
+            />
+          </div>
           {itemFilter && (
             <button
               type="button"
@@ -228,7 +223,6 @@ export default function QualityHoldList({ session }: { session: SessionUser }) {
         onClose={() => setIsPlaceOpen(false)}
         onSubmit={(data) => placeOnHold(data)}
         isSubmitting={isPlacingHold}
-        itemOptions={itemOptions}
       />
 
       <ReleaseHoldModal

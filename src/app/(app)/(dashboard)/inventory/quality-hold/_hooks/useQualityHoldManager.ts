@@ -8,7 +8,6 @@ import { getQualityHolds } from '../_actions/get-quality-holds'
 import { getQualityHold } from '../_actions/get-quality-hold'
 import { placeOnHold } from '../_actions/place-on-hold'
 import { releaseHold } from '../_actions/release-hold'
-import { getItems } from '../../items/_actions/get-items'
 import { getWarehouses } from '../../warehouses/_actions/get-warehouses'
 import type {
   PlaceOnHoldFormValues,
@@ -46,12 +45,6 @@ export function useQualityHoldManager() {
     queryFn: () => getQualityHold(selectedBatch!.id),
     enabled: !!selectedBatch,
     staleTime: 30 * 1000,
-  })
-
-  const itemsQuery = useQuery({
-    queryKey: ['inventory-items-lookup'],
-    queryFn: () => getItems({ limit: 200, lifecycle: 'active' }),
-    staleTime: 5 * 60 * 1000,
   })
 
   const warehousesQuery = useQuery({
@@ -126,7 +119,6 @@ export function useQualityHoldManager() {
     batchDetail: batchDetailQuery.data?.data ?? selectedBatch,
     isLoadingDetail: batchDetailQuery.isLoading,
 
-    itemOptions: itemsQuery.data?.data?.data ?? [],
     warehouseOptions: warehousesQuery.data?.data?.data ?? [],
 
     placeOnHold: (data: PlaceOnHoldFormValues) => placeOnHoldMutation.mutateAsync(data),

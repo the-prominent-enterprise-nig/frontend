@@ -9,6 +9,7 @@ import { useRevaluation } from '../_hooks/useRevaluation'
 import { REASON_CODE_LABELS, REASON_CODES } from '@/src/schema/inventory/revaluation'
 import type { CreateRevaluationFormValues } from '@/src/schema/inventory/revaluation'
 import { MANILA_TZ } from '@/src/libs/format/manila-date'
+import { ItemSearchCombobox } from '../../purchase-requests/_components/ItemSearchCombobox'
 
 function formatCurrency(value?: number): string {
   if (value == null) return '—'
@@ -53,7 +54,6 @@ export default function RevaluationPageView({ session }: { session: SessionUser 
     isFetching,
     isModalOpen,
     setIsModalOpen,
-    itemOptions,
     warehouseOptions,
     createRevaluation,
     isCreating,
@@ -259,18 +259,11 @@ export default function RevaluationPageView({ session }: { session: SessionUser 
                 <label className="mb-1 block text-sm font-medium text-zinc-700">
                   Item <span className="text-red-500">*</span>
                 </label>
-                <select
+                <ItemSearchCombobox
                   value={form.itemId}
-                  onChange={(e) => setForm((f) => ({ ...f, itemId: e.target.value }))}
-                  className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-prominent-purple-500 focus:outline-none focus:ring-1 focus:ring-prominent-purple-500"
-                >
-                  <option value="">Select an item…</option>
-                  {itemOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(id) => setForm((f) => ({ ...f, itemId: id }))}
+                  placeholder="Search an item by name or SKU…"
+                />
                 {formErrors.itemId && (
                   <p className="mt-1 text-xs text-red-600">{formErrors.itemId}</p>
                 )}
