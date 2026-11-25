@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { saveStockTransferDraft } from '../../transfers/_components/stockTransferDraft'
 import Link from 'next/link'
@@ -283,7 +283,7 @@ export default function SerialNumberList({
     setPage,
     setLimit,
     warehouseOptions,
-    itemOptions,
+    brandOptions,
     registerSerials,
     isRegistering,
     caravanView: caravanViewState,
@@ -368,16 +368,6 @@ export default function SerialNumberList({
     setCaravanView(true)
     setCaravanId(undefined)
   }
-
-  const brandOptions = useMemo(() => {
-    const seen = new Map<string, string>()
-    for (const item of itemOptions) {
-      if (item.brand?.id && !seen.has(item.brand.id)) seen.set(item.brand.id, item.brand.name)
-    }
-    return Array.from(seen, ([id, name]) => ({ id, name })).sort((a, b) =>
-      a.name.localeCompare(b.name)
-    )
-  }, [itemOptions])
 
   // A count clicked again goes back to every status.
   const toggleStatus = (status: SerialStatus): void =>
@@ -1008,7 +998,6 @@ export default function SerialNumberList({
         onClose={() => setIsRegisterOpen(false)}
         onSubmit={registerSerials}
         isSubmitting={isRegistering}
-        items={itemOptions.filter((i) => i.isSerialTracked)}
         warehouses={warehouseOptions}
       />
 

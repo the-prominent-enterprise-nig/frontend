@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { useWidgetSize } from '../WidgetSizeContext'
 import { getTransactions } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
-import { customersApi } from '@/src/libs/api/crm'
 import { usePosBranchContext } from '@/src/stores/pos-branch-context.store'
 import type { PosTransaction } from '@/src/schema/pos'
 import { saleDocNo } from '@/src/libs/format/saleDocNo'
@@ -33,21 +32,16 @@ export default function RecentOrdersWidget() {
   const limit = isCompact ? 3 : 5
 
   const [transactions, setTransactions] = useState<PosTransaction[]>([])
-  const [customerNames, setCustomerNames] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(true)
   const branchId = usePosBranchContext((s) => s.branchId)
 
   useEffect(() => {
     let cancelled = false
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    Promise.all([
-      getTransactions({ dateFrom: thirtyDaysAgo.toISOString(), branchId: branchId ?? undefined }),
-      customersApi.list({ limit: 200 }),
-    ])
-      .then(([txRes, custRes]) => {
+    getTransactions({ dateFrom: thirtyDaysAgo.toISOString(), branchId: branchId ?? undefined })
+      .then((txRes) => {
         if (cancelled) return
         setTransactions(txRes.data ?? [])
-        setCustomerNames(new Map((custRes.data?.data ?? []).map((c) => [c.id, c.name] as const)))
         setLoading(false)
       })
       .catch(() => {
@@ -84,9 +78,9 @@ export default function RecentOrdersWidget() {
   return (
     <div className="flex flex-col gap-0.5">
       {transactions.slice(0, limit).map((t) => {
-        const customerName = t.customerId
-          ? (customerNames.get(t.customerId) ?? 'Customer')
-          : 'Walk-in Customer'
+        // The name comes with the sale — it used to be looked up in the first
+        // 200 customers of ~235,000, so almost everyone read "Customer".
+        const customerName = t.customerId ? (t.customerName ?? 'Customer') : 'Walk-in Customer'
         return (
           <div
             key={t.id}

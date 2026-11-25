@@ -15,7 +15,7 @@ import { rejectItemAccounting } from '../_actions/reject-item-accounting'
 import { approveItem } from '../_actions/approve-item'
 import { rejectItem } from '../_actions/reject-item'
 import { getUnitsOfMeasure, getItemBrands, getItemTypes } from '../_actions/get-lookup-data'
-import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
+import { getAllCategoriesFlat } from '../../categories/_actions/get-categories-flat'
 import { createBundle } from '../../bundles/_actions/create-bundle'
 import { getBundleComponents } from '../../bundles/_actions/get-bundle-components'
 import { addBundleComponent } from '../../bundles/_actions/add-bundle-component'
@@ -112,7 +112,7 @@ export function useItemMaster() {
 
   const categoriesQuery = useQuery({
     queryKey: ['inventory-categories-flat'],
-    queryFn: () => getCategoriesFlat({ limit: 500 }),
+    queryFn: () => getAllCategoriesFlat(),
     staleTime: 10 * 60 * 1000,
   })
 
@@ -253,12 +253,6 @@ export function useItemMaster() {
     queryFn: () => getBundleComponents(selectedBundleItem!.id),
     enabled: !!selectedBundleItem,
     staleTime: 30 * 1000,
-  })
-
-  const itemsLookupQuery = useQuery({
-    queryKey: ['inventory-items-lookup'],
-    queryFn: () => getItems({ limit: 200, lifecycle: 'active' }),
-    staleTime: 5 * 60 * 1000,
   })
 
   const createBundleMutation = useMutation({
@@ -485,7 +479,6 @@ export function useItemMaster() {
     bundleComponents: bundleComponentsQuery.data?.data?.components ?? [],
     bundleAvailableQty: bundleComponentsQuery.data?.data?.bundleAvailableQty ?? null,
     isLoadingComponents: bundleComponentsQuery.isLoading,
-    itemOptions: (itemsLookupQuery.data?.data?.data ?? []).filter((i) => !i.isBundle),
     createBundle: createBundleMutation.mutateAsync,
     isCreatingBundle: createBundleMutation.isPending,
     addBundleComponent: addBundleComponentMutation.mutateAsync,

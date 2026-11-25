@@ -60,13 +60,9 @@ export function ServiceCenterLocation({ serial }: { serial: Serial }): React.JSX
   )
 }
 
-/** What the location's name alone does not say: lost, written off, a
+/** What the location's name alone does not say: written off, a
  * customer's unit, or out on a pull-out / loan / repair ticket. */
 function locationNote(serial: Serial): string | null {
-  if (serial.status === 'lost_in_transit') {
-    const tr = serial.lostOnTransfer?.transferNumber
-    return tr ? `Lost on ${tr}` : 'Lost in transit'
-  }
   if (serial.status === 'scrapped') return 'Scrapped'
   if (serial.status === 'defective') return 'Defective'
   const ticket = serial.repairTicket
@@ -78,14 +74,7 @@ function locationNote(serial: Serial): string | null {
 export function LocationNote({ serial }: { serial: Serial }): React.JSX.Element | null {
   const note = locationNote(serial)
   if (!note) return null
-  const lost = serial.status === 'lost_in_transit'
-  return (
-    <span
-      className={`ml-1.5 text-[11.5px] font-normal ${lost ? 'text-red-700' : 'text-ink-muted'}`}
-    >
-      · {note}
-    </span>
-  )
+  return <span className="ml-1.5 text-[11.5px] font-normal text-ink-muted">· {note}</span>
 }
 
 /** Left the company on a posted DR: its recipient. */

@@ -138,6 +138,10 @@ export type CustomerFilters = {
   town?: string
   province?: string
   accountType?: CustomerAccountType
+  /** Only customers registered on/after this date (ISO). With `limit: 1`, `meta.total` is the count. */
+  createdFrom?: string
+  /** Only these customers — comma-separated ids, at most 200. */
+  ids?: string
   page?: number
   limit?: number
 } & Record<string, string | number | boolean | undefined>

@@ -51,7 +51,6 @@ export default function BackordersPageView({ session }: { session: SessionUser }
     setPage,
     limit,
     setLimit,
-    itemOptions,
     createBackorder,
     isCreating,
     updateBackorder,
@@ -209,7 +208,6 @@ export default function BackordersPageView({ session }: { session: SessionUser }
         onClose={() => setIsCreateOpen(false)}
         onSubmit={handleCreate}
         isSubmitting={isCreating}
-        items={itemOptions}
       />
 
       <BackorderUpdateModal

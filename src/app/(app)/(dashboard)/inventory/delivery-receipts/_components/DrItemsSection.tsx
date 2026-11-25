@@ -1,7 +1,8 @@
 'use client'
 
+import { useState } from 'react'
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import Tooltip from '@/src/components/ui/Tooltip'
 import {
@@ -10,6 +11,7 @@ import {
 } from '../../purchase-requests/_components/ItemSearchCombobox'
 import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbers'
+import { useDebouncedValue } from '@/src/hooks/useDebouncedValue'
 import {
   isCustomerUnitPurpose,
   isTicketedRepair,
@@ -261,26 +263,37 @@ function SerialCell({
   const customerUnit = isCustomerUnitPurpose(purpose)
   // A redeemed unit goes back only to the customer it was repossessed from.
   const redeemed = purpose === 'redeemed_unit'
+  // What is typed goes to the server too. The shelf list is capped at 500, and
+  // a warehouse can hold more of one item than that — a unit past the cap could
+  // never be picked. The previous list stays on screen while a search is out,
+  // so a scanned code still finds its unit in what is already loaded.
+  const [typed, setTyped] = useState('')
+  const search = useDebouncedValue(typed, 300)
   const serials = useQuery({
     queryKey: [
       'dr-serials',
       customerUnit ? 'customer' : warehouseId,
       line.itemId,
       redeemed ? customerId : '',
+      search,
     ],
     queryFn: () =>
       customerUnit
-        ? getSerialNumbers({ itemId: line.itemId, limit: 500 })
+        ? getSerialNumbers({ itemId: line.itemId, limit: 500, search: search || undefined })
         : getSerialNumbers({
             warehouseId,
             itemId: line.itemId,
             status: 'in_stock',
             limit: 500,
+            search: search || undefined,
             repossessedFromCustomerId: redeemed ? customerId : undefined,
           }),
     enabled: line.isSerialTracked && !!warehouseId && !!line.itemId && (!redeemed || !!customerId),
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   })
+  const shown = serials.data?.data?.data?.length ?? 0
+  const total = serials.data?.data?.total ?? shown
   if (!line.isSerialTracked) {
     return <div className={`${INPUT} flex items-center text-ink-subtle`}>Not serialized</div>
   }
@@ -323,7 +336,14 @@ function SerialCell({
         options={options}
         loading={serials.isLoading}
         loadingLabel="Loading units…"
-        placeholder={redeemed ? 'Units repossessed from this customer…' : 'Pick serials…'}
+        placeholder={
+          redeemed
+            ? 'Units repossessed from this customer…'
+            : total > shown && !search
+              ? `Pick serials… — type to search all ${total}`
+              : 'Pick serials…'
+        }
+        onQueryChange={setTyped}
         summaryNoun={`of ${line.quantity} serials`}
         ariaLabel="Serial numbers"
         portal

@@ -11,7 +11,6 @@ export const SerialStatusSchema = z.enum([
   'scrapped',
   'in_repair',
   'pulled_out',
-  'lost_in_transit',
   'in_transit',
   // Scenario 72 — left on a posted Delivery Receipt (raffle prize, giveaway,
   // office use, …). Gone for good, like sold, but without a sale.
@@ -28,7 +27,6 @@ export const SERIAL_STATUS_LABELS: Record<SerialStatus, string> = {
   scrapped: 'Scrapped',
   in_repair: 'In Repair',
   pulled_out: 'Pulled Out',
-  lost_in_transit: 'Lost in Transit',
   in_transit: 'In Transit',
   issued: 'Issued',
 }
@@ -42,7 +40,7 @@ export const SERIAL_STATUS_FILTER_GROUPS: { group: string; statuses: SerialStatu
   { group: 'On hand', statuses: ['in_stock', 'held'] },
   { group: 'Moving', statuses: ['in_transit'] },
   { group: 'Service', statuses: ['in_repair', 'defective', 'pulled_out'] },
-  { group: 'Gone', statuses: ['sold', 'issued', 'scrapped', 'lost_in_transit'] },
+  { group: 'Gone', statuses: ['sold', 'issued', 'scrapped'] },
 ]
 
 export const SERIAL_STATUS_COLORS: Record<SerialStatus, string> = {
@@ -56,7 +54,6 @@ export const SERIAL_STATUS_COLORS: Record<SerialStatus, string> = {
   scrapped: 'bg-zinc-100 text-zinc-600',
   in_repair: 'bg-orange-100 text-orange-700',
   pulled_out: 'bg-purple-100 text-purple-700',
-  lost_in_transit: 'bg-pink-100 text-pink-700',
   in_transit: 'bg-sky-100 text-sky-700',
   issued: 'bg-indigo-100 text-indigo-700',
 }
@@ -73,7 +70,6 @@ export const SERIAL_STATUS_DOT_COLORS: Record<SerialStatus, string> = {
   scrapped: 'bg-zinc-400',
   in_repair: 'bg-orange-500',
   pulled_out: 'bg-purple-500',
-  lost_in_transit: 'bg-pink-500',
   in_transit: 'bg-sky-500',
   issued: 'bg-indigo-500',
 }
@@ -86,7 +82,6 @@ export const NON_SALEABLE_SERIAL_STATUSES: SerialStatus[] = [
   'defective',
   'in_repair',
   'pulled_out',
-  'lost_in_transit',
   'in_transit',
 ]
 
@@ -287,11 +282,6 @@ export const SerialNumberSummarySchema = z.object({
       name: z.string().nullable(),
       since: z.string().nullable().optional(),
     })
-    .nullable()
-    .optional(),
-  // The transfer a lost unit went missing on.
-  lostOnTransfer: z
-    .object({ transferNumber: z.string(), fromWarehouseName: z.string() })
     .nullable()
     .optional(),
   // Scenario 56 — RR age (first received) and branch age (arrived here).

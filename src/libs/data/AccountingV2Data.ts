@@ -996,6 +996,9 @@ export interface AcknowledgementReceipt {
    * much of it each took. */
   depositAllocations?: {
     cashAmount: string | number
+    /** A receipt received in a clearing account (GCash) is banked by a
+     * clearing slip, so its share is here instead. */
+    clearingAmount?: string | number
     posDeposit: {
       id: string
       depositDate: string

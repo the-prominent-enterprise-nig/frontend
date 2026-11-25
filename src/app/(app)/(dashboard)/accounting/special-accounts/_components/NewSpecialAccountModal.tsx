@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { X } from 'lucide-react'
 import { Expenses, EmployeesApi, type EmployeeLite } from '@/src/libs/data/AccountingV2Data'
-import { getCustomers, type Customer } from '@/src/libs/data/AccountingData'
+import { CustomerSearchCombobox } from '@/src/components/accounting/CustomerSearchCombobox'
 
 /**
  * Opens a named balance under a control account.
@@ -27,7 +27,6 @@ export default function NewSpecialAccountModal({
 }) {
   const [accounts, setAccounts] = useState<{ id: string; number: string; name: string }[]>([])
   const [employees, setEmployees] = useState<EmployeeLite[]>([])
-  const [customers, setCustomers] = useState<Customer[]>([])
   const [form, setForm] = useState({
     name: '',
     controlAccountId: '',
@@ -45,10 +44,6 @@ export default function NewSpecialAccountModal({
     // the server refuses the rest, so offering them would only invite an error.
     Expenses.specialAccountControls().then((r) => setAccounts(r.data ?? []))
     EmployeesApi.search().then((r) => setEmployees(r.data ?? []))
-    getCustomers({ limit: 200 }).then((r) => {
-      const payload = r.data
-      setCustomers(Array.isArray(payload) ? payload : (payload?.items ?? []))
-    })
   }, [])
 
   const controlAccount = useMemo(
@@ -166,18 +161,13 @@ export default function NewSpecialAccountModal({
               </select>
             )}
             {form.linkType === 'customer' && (
-              <select
-                value={form.customerId}
-                onChange={(e) => setForm({ ...form, customerId: e.target.value })}
-                className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-              >
-                <option value="">— Select customer —</option>
-                {customers.map((c) => (
-                  <option key={String(c.id)} value={String(c.id)}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <div className="mt-2">
+                <CustomerSearchCombobox
+                  value={form.customerId}
+                  onChange={(id) => setForm({ ...form, customerId: id })}
+                  placeholder="Search customer…"
+                />
+              </div>
             )}
             <p className="mt-1 text-[11px] text-gray-500">
               Optional. The ledger is assembled by name either way — linking only lets it point back

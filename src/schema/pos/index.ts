@@ -390,6 +390,9 @@ export interface PosTransaction {
   transactionType: PosTransactionType
   invoiceType?: PosInvoiceType
   customerId?: string | null
+  /** The customer's name, on the transactions list — so a screen never has to
+   * look it up in a page of the customer list (which is 235,000 long). */
+  customerName?: string | null
   promoCodeId?: string | null
   subtotal: number
   discountTotal: number

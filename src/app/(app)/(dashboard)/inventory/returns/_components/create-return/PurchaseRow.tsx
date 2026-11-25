@@ -79,10 +79,9 @@ export default function PurchaseRow({
   const serialTracked = purchaseIsSerialTracked(purchase)
   const soldQty = Number(purchase.quantity)
 
-  const { units, isLoading } = useReplacementUnits({
+  const { count: replacementCount, isLoading } = useReplacementUnits({
     itemId: purchase.itemId,
     warehouseId,
-    returnedSerialNumberId: purchase.serialNumberId ?? undefined,
     serialTracked,
     enabled: picked,
   })
@@ -103,7 +102,7 @@ export default function PurchaseRow({
   // them here is what stops a return being filled in against an option that
   // was never going to post.
   const unavailable: Partial<Record<ReturnDisposition, DispositionBlock>> = {}
-  if (serialTracked && !isLoading && units.length === 0) {
+  if (serialTracked && !isLoading && replacementCount === 0) {
     unavailable.exchange = {
       note: 'none in stock',
       why: 'No replacement unit in this branch',
@@ -251,8 +250,11 @@ export default function PurchaseRow({
 
           {needs === 'swap' && (
             <ReplacementPicker
-              units={units}
+              count={replacementCount}
               isLoading={isLoading}
+              itemId={purchase.itemId}
+              warehouseId={warehouseId}
+              returnedSerialNumberId={purchase.serialNumberId ?? undefined}
               serialTracked={serialTracked}
               value={line.replacementSerialNumberId}
               onChange={(id) => onChange({ replacementSerialNumberId: id })}

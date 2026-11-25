@@ -6,7 +6,7 @@ import { showToast } from '@/src/components/ui/toast'
 import { getAttributes } from '../_actions/get-attributes'
 import { createAttribute } from '../_actions/create-attribute'
 import { updateAttribute } from '../_actions/update-attribute'
-import { getCategoriesFlat } from '../../categories/_actions/get-categories-flat'
+import { getAllCategoriesFlat } from '../../categories/_actions/get-categories-flat'
 import type { AttributeDefinitionFormValues } from '@/src/schema/inventory/attributes'
 
 export function useAttributes() {
@@ -27,7 +27,7 @@ export function useAttributes() {
 
   const categoriesQuery = useQuery({
     queryKey: ['inventory-categories-lookup'],
-    queryFn: () => getCategoriesFlat({ limit: 200, status: 'active' }),
+    queryFn: () => getAllCategoriesFlat({ status: 'active' }),
     staleTime: 5 * 60 * 1000,
   })
 

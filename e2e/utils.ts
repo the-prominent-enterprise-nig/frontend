@@ -758,3 +758,31 @@ export async function pickCheckoutSession(page: Page, match?: string | RegExp): 
     await expect(active).toBeVisible({ timeout: 3_000 })
   }).toPass({ timeout: 30_000 })
 }
+
+/**
+ * Open a SearchCombobox (it is a button while closed), type into it, pick the
+ * result that names `optionText`, and check the closed box now shows `label`.
+ * For a picker that searches on the server — the record may be anywhere in a
+ * table far longer than any page.
+ */
+export async function pickFromSearchCombobox(
+  page: Page,
+  placeholder: string,
+  query: string,
+  optionText: string,
+  label: string
+): Promise<void> {
+  // Found by its visible text: a labelled field names the button by its label
+  // ("Item *"), not by the placeholder it shows.
+  const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  await page
+    .locator('button')
+    .filter({ hasText: new RegExp(`^\\s*${escaped(placeholder)}\\s*$`) })
+    .first()
+    .click()
+  await page.getByPlaceholder(placeholder).fill(query)
+  const option = page.getByTestId('search-combobox-option').filter({ hasText: optionText }).first()
+  await expect(option).toBeVisible({ timeout: 20_000 })
+  await option.click()
+  await expect(page.locator('button', { hasText: label }).first()).toBeVisible()
+}

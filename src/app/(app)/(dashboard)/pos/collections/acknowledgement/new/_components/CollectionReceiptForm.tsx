@@ -177,8 +177,19 @@ export default function CollectionReceiptForm({
       }))
   }, [accounts])
 
+  // Never the account the money was received in: crediting it too posts
+  // Dr 1-01-041 / Cr 1-01-041, which records nothing (pilot, Pandan Nov 23 —
+  // two GCash receipts that never paid down the customers' MI).
+  const creditableOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      receivedIn.startsWith('gl:')
+        ? creditAccountOptions.filter((o) => o.value !== `acct:${receivedIn.slice(3)}`)
+        : creditAccountOptions,
+    [creditAccountOptions, receivedIn]
+  )
+
   const creditEntryOptions = useMemo<SearchableSelectOption[]>(() => {
-    if (payerKind !== 'CUSTOMER') return creditAccountOptions
+    if (payerKind !== 'CUSTOMER') return creditableOptions
     // Customer deposit already is that account, and the only way to it that also
     // records the deposit — listing the account beside it left a receipt that
     // posted but showed nowhere on the customer's profile.
@@ -186,9 +197,9 @@ export default function CollectionReceiptForm({
     return [
       { value: MONTHLY_INSTALMENT, label: 'Monthly instalment (MI)' },
       { value: CUSTOMER_DEPOSIT, label: 'Customer deposit' },
-      ...creditAccountOptions.filter((o) => !deposits || o.value !== `acct:${deposits.id}`),
+      ...creditableOptions.filter((o) => !deposits || o.value !== `acct:${deposits.id}`),
     ]
-  }, [payerKind, creditAccountOptions, accounts])
+  }, [payerKind, creditableOptions, accounts])
 
   // The customer's open aging accounts, for the Aging account pick.
   const [agingAccounts, setAgingAccounts] = useState<AgingAccountOption[]>([])
@@ -435,6 +446,10 @@ export default function CollectionReceiptForm({
             value={receivedIn}
             onChange={(value) => {
               setReceivedIn(value)
+              // A credit entry picked first is dropped once it is the account
+              // the money is now received in.
+              if (value.startsWith('gl:') && creditEntry === `acct:${value.slice(3)}`)
+                setCreditEntry('')
               clearError('receivedIn')
             }}
             options={receivedInOptions}

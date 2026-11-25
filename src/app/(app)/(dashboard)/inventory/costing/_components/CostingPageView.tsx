@@ -26,7 +26,6 @@ export default function CostingPageView({ session }: { session: SessionUser }) {
     warehouseFilter,
     setWarehouseFilter,
     warehouseOptions,
-    itemOptions,
     issueStock,
     isIssuing,
     previewCogs,
@@ -147,7 +146,6 @@ export default function CostingPageView({ session }: { session: SessionUser }) {
           onIssue={issueStock}
           onPreview={previewCogs}
           isIssuing={isIssuing}
-          itemOptions={itemOptions}
           warehouseOptions={warehouseOptions}
         />
       )}

@@ -1291,13 +1291,24 @@ interface DepositOwedTotals {
 }
 
 function owedTotals(sessions: LedgerRow[], receipts: AcknowledgementReceipt[]): DepositOwedTotals {
+  const receiptSum = (picked: AcknowledgementReceipt[]): number =>
+    picked.reduce((sum, r) => sum + Number(r.amount ?? 0), 0)
   return {
     cash: round2(
       sessions.reduce((sum, s) => sum + s.cash, 0) +
-        receipts.reduce((sum, r) => sum + Number(r.amount ?? 0), 0)
+        receiptSum(receipts.filter((r) => !onClearing(r)))
     ),
-    clearing: round2(sessions.reduce((sum, s) => sum + s.clearing, 0)),
+    clearing: round2(
+      sessions.reduce((sum, s) => sum + s.clearing, 0) + receiptSum(receipts.filter(onClearing))
+    ),
   }
+}
+
+/** A New Receipt received in a clearing account (GCash Soundpay into 1-01-041):
+ * its money waits there, so a clearing slip banks it, not a cash one. Pilot,
+ * Pandan Nov 23. */
+function onClearing(receipt: AcknowledgementReceipt): boolean {
+  return !!receipt.receivedInAccountId
 }
 
 /**
