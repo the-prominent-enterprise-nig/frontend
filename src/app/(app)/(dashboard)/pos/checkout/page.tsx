@@ -109,6 +109,7 @@ import {
   noCommonTermMessage,
   paymentBlockReason,
   termRuleReason,
+  typedPlanCapMessage,
 } from '@/src/libs/constants/price-use-rules'
 import { Select } from '@/src/components/ui/Select'
 import { DEFAULT_VAT_RATE } from '../_actions/pos-constants'
@@ -1125,6 +1126,8 @@ export default function CheckoutPage() {
   // Docket #92 — said when a price-use change made the till switch the payment
   // mode or provider, or clear a term or a typed plan the price use does not allow.
   const [ruleNotice, setRuleNotice] = useState<string | null>(null)
+  // Docket #92 — the plan (its key) the server refused for want of a 0% reason.
+  const [serverZeroPlanKey, setServerZeroPlanKey] = useState<string | null>(null)
 
   // Payment
   const [payments, setPayments] = useState<PaymentRow[]>([])
@@ -2699,8 +2702,11 @@ export default function CheckoutPage() {
   // is one choice for the whole cart, so what is offered is what every price use
   // on it allows. A price use with no rules (or none loaded) restricts nothing;
   // the server holds the same rules and is the one that counts.
-  const priceUseRulesOf = (l: CartLine) => priceUseTypes.find((t) => t.id === l.priceUseTypeId)
+  const priceUseRulesOf = (l: CartLine): PosPriceUseType | undefined =>
+    priceUseTypes.find((t) => t.id === l.priceUseTypeId)
+  // A freebie / tie-up is free and never financed, so it limits nothing.
   const cartRulesList = cart
+    .filter((l) => !l.promoTag)
     .map(priceUseRulesOf)
     .filter((r): r is PosPriceUseType => r != null && hasRules(r))
   const inhouseRulesList = inhouseInstallmentCartLines
@@ -2716,6 +2722,9 @@ export default function CheckoutPage() {
     inhouseRulesList.every((r) => isTermAllowed(r, t.termMonths))
   )
   const planAllowsTypedPlan = inhouseRulesList.every((r) => r.allowTypedPlan)
+  const typedCapMessage = planTyped
+    ? typedPlanCapMessage(inhouseRulesList, Number(inhouseInstallmentCartLines[0]?.manualTermInput))
+    : null
   // A 0% in-house installment on a price use that asks a reason for it (SPLIT
   // REGULAR, SPLIT OUT OF TOWN) is an exception like any other. The plan is one
   // schedule for the whole cart, so its preview says whether it collects no more
@@ -2724,7 +2733,7 @@ export default function CheckoutPage() {
     ...new Set(inhouseRulesList.filter((r) => r.zeroPercentNeedsReason).map((r) => r.name)),
   ]
   const planTermMonths = financingTerms.find((t) => t.id === planTermId)?.termMonths ?? null
-  const anyZeroPercent =
+  const previewZeroPercent =
     !planIsTpf &&
     !planTyped &&
     zeroPercentUseNames.length > 0 &&
@@ -2769,9 +2778,19 @@ export default function CheckoutPage() {
         l.installmentProvider,
         l.financingTermId,
         l.manualPlan,
+        l.promoTag,
       ].join(':')
     ),
   ].join('|')
+  // The server decides what is 0% from what it will post (a price row's own
+  // monthly), which the preview cannot always see. When it asks for the reason,
+  // show where to give it, for as long as the plan stays as it was refused.
+  const zeroPlanKey = [
+    ruleSignature,
+    planDownPayment,
+    ...cart.map((l) => [l.itemId, l.quantity, l.unitPrice].join(':')),
+  ].join('|')
+  const anyZeroPercent = previewZeroPercent || serverZeroPlanKey === zeroPlanKey
   useEffect(() => {
     if (saleMode !== 'sale' || cart.length === 0 || xDealActive) return
     const lineIds = cart.map((l) => l.lineId)
@@ -5538,13 +5557,15 @@ export default function CheckoutPage() {
     // monthly are the lines' shares added up.
     if (planTyped) {
       const holder = inhouseInstallmentCartLines[0]
-      const problem = typedPlanProblem({
-        months: holder.manualTermInput,
-        monthly: String(planTypedMonthly),
-        firstDueDate: holder.firstDueDateInput,
-        downPayment: planDownPayment,
-        saleAmount: planSaleAmount,
-      })
+      const problem =
+        typedCapMessage ??
+        typedPlanProblem({
+          months: holder.manualTermInput,
+          monthly: String(planTypedMonthly),
+          firstDueDate: holder.firstDueDateInput,
+          downPayment: planDownPayment,
+          saleAmount: planSaleAmount,
+        })
       if (problem) {
         setError(problem)
         return
@@ -5857,6 +5878,7 @@ export default function CheckoutPage() {
             /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
             (uuid) => idToName[uuid] ?? uuid
           )
+          if (/0% installment on /.test(errMsg)) setServerZeroPlanKey(zeroPlanKey)
 
           // Backend has no dedicated error code yet for a serial that was reserved or
           // sold from under the cashier — detect it by message content defensively and
@@ -8752,6 +8774,7 @@ export default function CheckoutPage() {
                               planTypedDraft.downPaymentInput ?? planDownPayment.toFixed(2),
                           }}
                           lineIds={planLineIds}
+                          capProblem={typedCapMessage}
                           saleAmount={planSaleAmount}
                           downPayment={planDownPayment}
                           preview={planPreview}

@@ -32,7 +32,7 @@ const PREFIX = 'E2E Split'
 const BRANCH = 'Bago'
 const ITEM_PRICE = 12000
 
-type UseKey = 'ZI' | 'TERM' | 'CASH' | 'REGULAR' | 'OUT_OF_TOWN' | 'NO_RULES'
+type UseKey = 'ZI' | 'TERM' | 'CASH' | 'REGULAR' | 'OUT_OF_TOWN' | 'ODD_CARD' | 'NO_RULES'
 type Fixtures = {
   itemNames: string[]
   itemIds: string[]
@@ -65,6 +65,8 @@ const RULES: Record<UseKey, Record<string, unknown>> = {
     allowTypedPlan: true,
     zeroPercentNeedsReason: true,
   },
+  // A use that asks a 0% reason, for SP-F13's price row with monthlies only.
+  ODD_CARD: { maxTermMonths: 12, zeroPercentNeedsReason: true },
   NO_RULES: {},
 }
 
@@ -642,6 +644,78 @@ test.describe('POS Checkout — Split price use rules (Docket #92)', () => {
     await expect(page.getByTestId('no-payment-type-note')).toHaveCount(0)
     await pickTerm(page, '6 months')
     await expect(exceptionSection(page)).toHaveCount(0)
+  })
+
+  test('SP-F12: a typed plan over the use’s cap is called out in the panel, with the server’s wording', async ({
+    page,
+  }) => {
+    await startSale(page, 'REGULAR')
+    await installmentButton(page).click()
+    await inhouseButton(page).click()
+    await page.getByTestId('type-terms').click()
+    const panel = page.getByTestId('typed-plan')
+    const problem = page.getByTestId('typed-plan-problem')
+    await panel.getByLabel('Typed months').fill('18')
+    await expect(problem).toContainText(`${fx.use.REGULAR.name} allows terms up to 12 months.`)
+    await panel.getByLabel('Typed months').fill('12')
+    await expect(page.getByText('allows terms up to 12 months')).toHaveCount(0)
+  })
+
+  test('SP-F13: when only the server can tell a plan is 0% (monthlies with no down payment on the price row), its refusal opens the reason card', async ({
+    page,
+    request,
+  }) => {
+    // 6 × 1,800 is exactly the sale less the 10% down payment: 0% by the rate
+    // card the posting uses, while the till previews it from the term's factor.
+    const prices = await request.post(`/api/inventory/items/${fx.itemIds[0]}/prices`, {
+      data: {
+        prices: [
+          {
+            priceUse: fx.use.ODD_CARD.name,
+            price: ITEM_PRICE,
+            terms: [{ termMonths: 6, monthlyInstallment: 1800, ppd: 0 }],
+          },
+        ],
+      },
+    })
+    expect(prices.ok(), await prices.text()).toBeTruthy()
+    const approve = await request.post(
+      `/api/inventory/price-lists/${fx.use.ODD_CARD.listId}/approve`,
+      { data: {} }
+    )
+    expect(approve.ok(), await approve.text()).toBeTruthy()
+
+    const { customer, applicationNumber } = await createApprovedApplication(
+      page.request,
+      'ODD_CARD'
+    )
+    await startSale(page, 'ODD_CARD')
+    await selectCustomer(page, customer.name)
+    await installmentButton(page).click()
+    await inhouseButton(page).click()
+    await pickApplication(page, applicationNumber)
+    await pickTerm(page, '6 months')
+    await expect(exceptionSection(page)).toHaveCount(0)
+
+    const invoice = `SI-SPL-F13-${Date.now()}`
+    await fillStable(page.getByLabel('Sales Invoice No.'), invoice)
+    await page
+      .getByTestId('dp-payment-mode-toggle')
+      .getByRole('button', { name: 'Cash', exact: true })
+      .click()
+    await fillStable(page.getByLabel('Amount received'), '1200')
+    await page.getByRole('button', { name: /Create Installment Plan/ }).click()
+
+    // Refused by the server, and the till now offers where to answer it.
+    await expect(exceptionSection(page)).toBeVisible({ timeout: 20_000 })
+    await expect(exceptionSection(page)).toContainText('0% Installment')
+    await fillReason(page, 'Split rules e2e card 0%')
+    await page.getByRole('button', { name: /Create Installment Plan/ }).click()
+    await expect(page.getByText('Installment Plan Created', { exact: true })).toBeVisible({
+      timeout: 30_000,
+    })
+    const sale = await saleDetail(page, invoice)
+    expect(sale.exceptionNote).toBe('Split rules e2e card 0%')
   })
 
   // ───────────────────────────── journeys (J1–J9) ─────────────────────────────
