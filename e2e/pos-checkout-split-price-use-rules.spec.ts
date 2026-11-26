@@ -718,6 +718,60 @@ test.describe('POS Checkout — Split price use rules (Docket #92)', () => {
     expect(sale.exceptionNote).toBe('Split rules e2e card 0%')
   })
 
+  test('SP-F14: a sale invoicing a Delivery Receipt is cash only, so a use not sold for cash is explained, not switched', async ({
+    page,
+    request,
+  }) => {
+    const warehouses = (
+      (await (await request.get('/api/inventory/warehouses?limit=200&status=active')).json())
+        .data as { id: string; branchId: string | null }[]
+    ).filter((w) => w.branchId === fx.branchId)
+    const customer = await createCustomer(request, 'F14')
+    const created = await request.post('/api/inventory/delivery-receipts', {
+      data: {
+        purpose: 'sales_invoice_to_follow',
+        issueDate: new Date().toISOString().slice(0, 10),
+        warehouseId: warehouses[0].id,
+        customerId: customer.id,
+        reason: `${PREFIX} DR sale`,
+        lines: [{ itemId: fx.itemIds[0], quantity: 1 }],
+      },
+    })
+    expect(created.ok(), await created.text()).toBeTruthy()
+    const dr = await created.json()
+    for (const step of ['submit', 'approve']) {
+      const res = await request.post(`/api/inventory/delivery-receipts/${dr.id}/${step}`)
+      expect(res.ok(), await res.text()).toBeTruthy()
+    }
+    try {
+      await gotoReady(page, `/inventory/delivery-receipts/${dr.id}`)
+      await page.getByRole('button', { name: 'Proceed to POS' }).click()
+      await page.waitForURL(/\/pos\/checkout/, { timeout: 30_000 })
+      await pickCheckoutSession(page, BRANCH)
+      await expect(page.getByText(`Invoicing ${dr.drNumber}`, { exact: false })).toBeVisible({
+        timeout: 45_000,
+      })
+
+      // Start from a use sold for cash, then move to one that is not.
+      await pickCartPriceUse(page, fx.use.REGULAR.name)
+      await page.getByTestId('payment-mode-cash').click()
+      await pickCartPriceUse(page, fx.use.ZI.name)
+      await expect(page.getByTestId('dr-cash-only-note')).toContainText(
+        `${fx.use.ZI.name} is sold for installment or TPF only. A sale invoicing a Delivery Receipt is cash only — pick another price use for this item.`
+      )
+      await expect(page.getByTestId('installment-plan')).toHaveCount(0)
+      await expect(page.getByText('Switched to Installment', { exact: false })).toHaveCount(0)
+
+      // The way out the note names: a use that is sold for cash.
+      await pickCartPriceUse(page, fx.use.REGULAR.name)
+      await expect(page.getByTestId('dr-cash-only-note')).toHaveCount(0)
+    } finally {
+      await request.post(`/api/inventory/delivery-receipts/${dr.id}/void`, {
+        data: { reason: 'E2E cleanup' },
+      })
+    }
+  })
+
   // ───────────────────────────── journeys (J1–J9) ─────────────────────────────
 
   test('J1 / J4: a cash sale on SPLIT FREE INSTALL CASH and on SPLIT REGULAR posts with no reason and no override entry', async ({

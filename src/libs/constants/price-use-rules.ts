@@ -112,8 +112,6 @@ export function allowedTermsFor(rules: PriceUseRules, activeMonths: number[]): n
   return [...new Set(activeMonths)].sort((a, b) => a - b).filter((m) => isTermAllowed(rules, m))
 }
 
-/** What a price use allows for the term, in a sentence: "SPLIT ZI allows 3
- * months only." / "SPLIT REGULAR allows terms up to 12 months." */
 /** A typed plan is held to a price use's cap (not to its allow-list): what to say
  * when the typed months go over the tightest cap on the cart, else null. */
 export function typedPlanCapMessage(rulesList: PriceUseRules[], months: number): string | null {
@@ -126,6 +124,8 @@ export function typedPlanCapMessage(rulesList: PriceUseRules[], months: number):
   return tightest ? `${tightest.name} allows terms up to ${tightest.maxTermMonths} months.` : null
 }
 
+/** What a price use allows for the term, in a sentence: "SPLIT ZI allows 3
+ * months only." / "SPLIT REGULAR allows terms up to 12 months." */
 export function termRuleReason(rules: PriceUseRules): string {
   if (rules.allowedTermMonths.length > 0) {
     return `${rules.name} allows ${formatMonths(rules.allowedTermMonths)} only.`

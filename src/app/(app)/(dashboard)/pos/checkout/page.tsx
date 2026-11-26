@@ -2765,7 +2765,12 @@ export default function CheckoutPage() {
   // refused, switch to the one that is open, or clear the one that is not, and
   // SAY so (the notice above the toggles). One fix per pass; each leaves the
   // cart valid for it, so the next pass finds the next thing, or nothing.
+  // A sale invoicing a Delivery Receipt is cash only (the server refuses an
+  // installment on it), so it is never switched off cash: say so instead.
+  const drSale = deliveryReceipt != null || arrivingDr != null
+  const drCashOnlyReason = drSale ? cashBlockedReason : null
   const ruleSignature = [
+    drSale,
     paymentMode,
     saleMode,
     xDealActive,
@@ -2794,7 +2799,7 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (saleMode !== 'sale' || cart.length === 0 || xDealActive) return
     const lineIds = cart.map((l) => l.lineId)
-    if (paymentMode === 'cash' && cashBlockedReason && !installmentBlockedReason) {
+    if (paymentMode === 'cash' && cashBlockedReason && !installmentBlockedReason && !drSale) {
       setPaymentMode('installment')
       if (cashSubMode === 'card') setCashSubMode('cash_on_hand')
       setLineInvoiceType(lineIds, 'installment')
@@ -8287,6 +8292,15 @@ export default function CheckoutPage() {
                       >
                         Dismiss
                       </button>
+                    </p>
+                  )}
+                  {drCashOnlyReason && (
+                    <p
+                      data-testid="dr-cash-only-note"
+                      className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700"
+                    >
+                      {drCashOnlyReason} A sale invoicing a Delivery Receipt is cash only — pick
+                      another price use for this item.
                     </p>
                   )}
                   {noCommonPaymentType && (
