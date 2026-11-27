@@ -817,6 +817,47 @@ test.describe('POS Checkout — Split price use rules (Docket #92)', () => {
     await expect(notice(page)).toHaveCount(0)
   })
 
+  test('SP-F17: the "typed terms were removed" notice stays even when the earlier term comes back', async ({
+    page,
+  }) => {
+    await startSale(page, 'REGULAR')
+    await installmentButton(page).click()
+    await inhouseButton(page).click()
+    await pickTerm(page, '6 months')
+    await page.getByTestId('type-terms').click()
+    await expect(page.getByTestId('typed-plan')).toBeVisible()
+
+    // TERM allows no typed plan, and does allow the 6 months that comes back.
+    await pickCartPriceUse(page, fx.use.TERM.name)
+    await expect(page.getByTestId('typed-plan')).toHaveCount(0)
+    const combo = page.getByTestId('installment-plan').getByRole('combobox').first()
+    await expect(combo).toHaveAttribute('aria-label', '6 months')
+    await page.waitForTimeout(1_000) // give a wrongly timed clear the chance to run
+    await expect(notice(page)).toContainText(
+      `Typed terms were removed: ${fx.use.TERM.name} does not allow typed terms.`
+    )
+  })
+
+  test('SP-F18: offline, the refusal names the 0% installment that needs a reason', async ({
+    page,
+  }) => {
+    await startSale(page, 'REGULAR')
+    await installmentButton(page).click()
+    await inhouseButton(page).click()
+    await pickTerm(page, '5 months')
+    await expect(page.getByTestId('zero-percent-note')).toBeVisible()
+
+    await page.context().setOffline(true)
+    try {
+      await page.getByTestId('things-left').locator('xpath=preceding-sibling::button[1]').click()
+      await expect(
+        page.getByText(`the 0% installment on ${fx.use.REGULAR.name}`, { exact: false })
+      ).toContainText('needs a network connection')
+    } finally {
+      await page.context().setOffline(false)
+    }
+  })
+
   // ───────────────────────────── journeys (J1–J9) ─────────────────────────────
 
   test('J1 / J4: a cash sale on SPLIT FREE INSTALL CASH and on SPLIT REGULAR posts with no reason and no override entry', async ({

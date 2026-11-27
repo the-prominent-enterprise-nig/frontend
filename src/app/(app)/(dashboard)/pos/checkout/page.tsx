@@ -2797,16 +2797,13 @@ export default function CheckoutPage() {
     ...cart.map((l) => [l.itemId, l.quantity, l.unitPrice].join(':')),
   ].join('|')
   const anyZeroPercent = previewZeroPercent || serverZeroPlanKey === zeroPlanKey
-  // A notice is about the price uses it was said for, and a cleared term's is
-  // answered once a term is picked. Both effects stay ABOVE the one that
-  // switches, so what it says in the same pass is kept.
+  // A notice is about the price uses it was said for; a cleared term's is also
+  // answered when the cashier picks a term (the term Select does that). This
+  // effect stays ABOVE the one that switches, so what it says is kept.
   const priceUseKey = cart.map((l) => l.priceUseTypeId).join('|')
   useEffect(() => {
     setRuleNotice(null)
   }, [priceUseKey])
-  useEffect(() => {
-    if (planTermId) setRuleNotice(null)
-  }, [planTermId])
   useEffect(() => {
     if (saleMode !== 'sale' || cart.length === 0) return
     const lineIds = cart.map((l) => l.lineId)
@@ -5381,12 +5378,6 @@ export default function CheckoutPage() {
     // Scenario 71 — a price override needs no approval, only a reason and a
     // note. The offline queue drops sale-level fields, so it cannot carry them.
     if (anyException) {
-      if (isOffline) {
-        setError(
-          'A price override, typed terms or a credit application waiver need a network connection — clear them, or wait until the POS is back online.'
-        )
-        return
-      }
       const what = [
         anyPriceOverridden && 'the price override',
         anyTypedPlan && 'the typed terms',
@@ -5396,6 +5387,12 @@ export default function CheckoutPage() {
       ]
         .filter(Boolean)
         .join(' and ')
+      if (isOffline) {
+        setError(
+          `The reason for ${what} needs a network connection — clear it, or wait until the POS is back online.`
+        )
+        return
+      }
       if (!exceptionReasonId) {
         setError(`Pick a reason for ${what}.`)
         exceptionSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -8837,6 +8834,7 @@ export default function CheckoutPage() {
                               onChange={(v) => {
                                 posEditedRef.current.term = true
                                 setLineFinancingTermId(planLineIds, v)
+                                setRuleNotice(null)
                               }}
                               options={planTermOptions.map((t) => ({
                                 value: t.id,
