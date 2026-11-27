@@ -14,6 +14,7 @@ import { getSupplierItems } from '@/src/app/(app)/(dashboard)/accounting/supplie
 import Tooltip from '@/src/components/ui/Tooltip'
 import { PLEX, MONO } from './procurementTokens'
 import { NoDestinationWarning } from './NoDestinationWarning'
+import { useRevealOnAdd } from '@/src/hooks/useRevealOnAdd'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -424,6 +425,7 @@ function LineItemsCard({
   showPrices: boolean
 }): React.ReactElement {
   const { fields, append, insert, remove } = useFieldArray({ control, name: 'lines' })
+  const { ref: addItemBarRef, reveal: revealAddItemBar } = useRevealOnAdd(fields.length)
   // Scenario 71 — the search lists the chosen supplier's approved items.
   const supplierId = useWatch({ control, name: 'supplierId' })
   const supplierItemsQuery = useQuery({
@@ -457,6 +459,7 @@ function LineItemsCard({
   const addFromCatalog = (option: SearchComboboxOption): void => {
     setLabels((s) => ({ ...s, [option.id]: { name: option.primary, sku: option.secondary } }))
     setNonce((n) => n + 1)
+    revealAddItemBar()
     append({ ...EMPTY_LINE, itemId: option.id })
   }
 
@@ -472,26 +475,6 @@ function LineItemsCard({
           </span>
         </div>
 
-        {/* Catalog search — adds a line per pick, sitting inline beside the
-            section label. The nonce remounts it after each pick so it resets
-            to empty, ready for the next item (it has no clear-on-select of
-            its own). */}
-        <div ref={searchRef} className="min-w-[220px] flex-1">
-          <ItemSearchCombobox
-            key={nonce}
-            value=""
-            onChange={() => {}}
-            onSelect={addFromCatalog}
-            compact
-            supplierId={supplierId || undefined}
-            placeholder="Search item by name or SKU to add a line…"
-          />
-          {noSupplierItems && (
-            <p className="mt-1 text-[11px] text-ink-muted">
-              No approved items on file for this supplier — searching the full catalog.
-            </p>
-          )}
-        </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -503,13 +486,6 @@ function LineItemsCard({
             className="rounded-[7px] border border-[#d3d3db] bg-white px-[11px] py-1.5 text-[12.5px] text-[#4b4b5a] hover:border-[#a3a3b2] hover:text-[#17171c]"
           >
             {anyOpen ? 'Collapse all stacks' : 'Expand all stacks'}
-          </button>
-          <button
-            type="button"
-            onClick={() => searchRef.current?.querySelector('button')?.click()}
-            className="rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-3 py-1.5 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
-          >
-            + Add item
           </button>
         </div>
       </div>
@@ -611,6 +587,39 @@ function LineItemsCard({
             </div>
           </>
         )}
+
+        <div
+          ref={addItemBarRef}
+          className="flex scroll-mb-24 flex-wrap items-center gap-2 border-t border-[#eeeef1] px-[18px] py-3"
+        >
+          {/* Catalog search — adds a line per pick, sitting below the
+            lines so it stays beside the newest one. The nonce remounts it after each pick so it resets
+            to empty, ready for the next item (it has no clear-on-select of
+            its own). */}
+          <div ref={searchRef} className="min-w-[220px] flex-1">
+            <ItemSearchCombobox
+              key={nonce}
+              value=""
+              onChange={() => {}}
+              onSelect={addFromCatalog}
+              compact
+              supplierId={supplierId || undefined}
+              placeholder="Search item by name or SKU to add a line…"
+            />
+            {noSupplierItems && (
+              <p className="mt-1 text-[11px] text-ink-muted">
+                No approved items on file for this supplier — searching the full catalog.
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => searchRef.current?.querySelector('button')?.click()}
+            className="rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-3 py-1.5 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
+          >
+            + Add item
+          </button>
+        </div>
       </div>
     </div>
   )

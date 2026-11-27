@@ -87,6 +87,7 @@ import { LocationName } from './transferStatus'
 import SerialLink from '@/src/components/inventory/serial-history/SerialLink'
 import { formatAge } from '@/src/libs/format/date'
 import { manilaToday, formatManilaDate, formatManilaDateTime } from '@/src/libs/format/manila-date'
+import { useRevealOnAdd } from '@/src/hooks/useRevealOnAdd'
 
 /** A transfer line's unit, opening its history when the line has one. */
 /** Statuses in which a serial-tracked line has no unit yet because the
@@ -1379,6 +1380,9 @@ export default function TransferDetailModal({
     control: receiveForm.control,
     name: 'extraLines',
   })
+  const { ref: addUnlistedBarRef, reveal: revealAddUnlistedBar } = useRevealOnAdd(
+    extraLineFields.length
+  )
   const watchedExtraLines = useWatch({ control: receiveForm.control, name: 'extraLines' }) ?? []
   function isDuplicateExtraSerial(lineIndex: number, unitIndex: number, value: string): boolean {
     const needle = value.trim()
@@ -2921,21 +2925,6 @@ export default function TransferDetailModal({
                         (received but not on the transfer)
                       </span>
                     </label>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        appendExtraLine({
-                          itemId: '',
-                          quantity: 1,
-                          notes: '',
-                          isSerialTracked: false,
-                          serialNumbers: undefined,
-                        })
-                      }
-                      className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:text-prominent-purple-800"
-                    >
-                      + Add unlisted item
-                    </button>
                   </div>
                   {extraLineFields.length > 0 && (
                     <div className="space-y-2 rounded-lg border border-zinc-200 bg-white p-3">
@@ -3028,6 +3017,24 @@ export default function TransferDetailModal({
                       })}
                     </div>
                   )}
+                  <div ref={addUnlistedBarRef} className="mt-2 scroll-mb-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        revealAddUnlistedBar()
+                        appendExtraLine({
+                          itemId: '',
+                          quantity: 1,
+                          notes: '',
+                          isSerialTracked: false,
+                          serialNumbers: undefined,
+                        })
+                      }}
+                      className="flex items-center gap-1 text-xs font-medium text-prominent-purple-700 hover:text-prominent-purple-800"
+                    >
+                      + Add unlisted item
+                    </button>
+                  </div>
                   <p className="mt-1 text-xs text-zinc-400">
                     A serial-tracked pick switches to serial entry — one box per unit, scanner
                     ready.

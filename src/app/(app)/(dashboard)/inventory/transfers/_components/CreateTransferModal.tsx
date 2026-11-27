@@ -41,6 +41,7 @@ import { getSerialNumbers } from '../../serial-numbers/_actions/get-serial-numbe
 import { getCrossBranchStock } from '@/src/app/(app)/(dashboard)/pos/_actions/pos-actions'
 import { PLEX, MONO, CONTROL_CHROME } from '../../purchase-orders/_components/procurementTokens'
 import { manilaToday } from '@/src/libs/format/manila-date'
+import { useRevealOnAdd } from '@/src/hooks/useRevealOnAdd'
 
 type Props = {
   isOpen: boolean
@@ -510,6 +511,7 @@ export default function CreateTransferModal({
   })
 
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
+  const { ref: addItemBarRef, reveal: revealAddItemBar } = useRevealOnAdd(fields.length)
   const fromId = watch('fromWarehouseId')
   const transferDate = watch('transferDate')
   const expectedArrival = watch('expectedArrival')
@@ -1177,34 +1179,6 @@ export default function CreateTransferModal({
                     {fields.length} {fields.length === 1 ? 'line' : 'lines'} · {totalUnits} units
                   </span>
                 </div>
-                {/* A dispatch carries exactly the units ticked in the
-                    stockbook — each line names its serial. */}
-                <div
-                  className={`w-full sm:w-[520px] sm:max-w-[55%] sm:flex-1 ${isDispatchMode ? 'hidden' : ''}`}
-                >
-                  <ItemSearchCombobox
-                    key={addItemKey}
-                    value=""
-                    onChange={() => {}}
-                    onSelect={(option) => {
-                      append({
-                        itemId: option.id,
-                        quantity: 1,
-                        itemLabel: option.primary,
-                        itemSku: option.secondary,
-                      })
-                      // The box never holds a confirmed value of its own —
-                      // remount it so it drops straight back to a blank
-                      // "add another" state instead of showing the last pick.
-                      setAddItemKey((k) => k + 1)
-                    }}
-                    placeholder="Add item — search name or SKU…"
-                    stockWarehouseId={fromId || undefined}
-                    stockFromOtherBranch
-                    // A caravan sends only what it holds — no catalog tail.
-                    stockOnly={isCaravanBranch(fromWarehouse?.branch)}
-                  />
-                </div>
               </div>
 
               {typeof errors.lines?.message === 'string' && (
@@ -1234,7 +1208,7 @@ export default function CreateTransferModal({
                   <PackageSearch className="h-7 w-7 text-ink-faint" />
                   <p className="text-[13.5px] font-semibold text-[#17171c]">No items yet</p>
                   <p className="max-w-[420px] text-[12px] leading-relaxed text-[#4b4b5a]">
-                    Use the search above to add stock held at{' '}
+                    Use the search below to add stock held at{' '}
                     {fromLabel ? branchLabel(fromLabel) : 'the source branch'}, then say how many
                     units you need.
                   </p>
@@ -1259,6 +1233,37 @@ export default function CreateTransferModal({
                     }
                   />
                 ))}
+              </div>
+
+              {/* A dispatch carries exactly the units ticked in the
+                    stockbook — each line names its serial. */}
+              <div
+                ref={addItemBarRef}
+                className={`scroll-mb-24 border-t border-[#eeeef1] px-[18px] py-3 ${isDispatchMode ? 'hidden' : ''}`}
+              >
+                <ItemSearchCombobox
+                  key={addItemKey}
+                  value=""
+                  onChange={() => {}}
+                  onSelect={(option) => {
+                    revealAddItemBar()
+                    append({
+                      itemId: option.id,
+                      quantity: 1,
+                      itemLabel: option.primary,
+                      itemSku: option.secondary,
+                    })
+                    // The box never holds a confirmed value of its own —
+                    // remount it so it drops straight back to a blank
+                    // "add another" state instead of showing the last pick.
+                    setAddItemKey((k) => k + 1)
+                  }}
+                  placeholder="Add item — search name or SKU…"
+                  stockWarehouseId={fromId || undefined}
+                  stockFromOtherBranch
+                  // A caravan sends only what it holds — no catalog tail.
+                  stockOnly={isCaravanBranch(fromWarehouse?.branch)}
+                />
               </div>
             </div>
           </div>

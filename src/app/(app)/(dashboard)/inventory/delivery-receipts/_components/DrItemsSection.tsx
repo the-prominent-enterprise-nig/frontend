@@ -19,6 +19,7 @@ import {
   type DrLineFormValues,
 } from '@/src/schema/inventory/delivery-receipts'
 import { Field, FieldError, INPUT, Section, TEXTAREA } from './drFormUi'
+import { useRevealOnAdd } from '@/src/hooks/useRevealOnAdd'
 
 export const EMPTY_LINE: DrLineFormValues = {
   itemId: '',
@@ -41,6 +42,7 @@ const GRID =
 export function DrItemsSection(): React.JSX.Element {
   const { control, formState } = useFormContext<DrFormValues>()
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
+  const { ref: addItemBarRef, reveal: revealAddItemBar } = useRevealOnAdd(fields.length)
   const [warehouseId, purpose, udsId] = useWatch({
     control,
     name: ['warehouseId', 'purpose', 'udsId'],
@@ -72,11 +74,14 @@ export function DrItemsSection(): React.JSX.Element {
         />
       ))}
       {linesError && <FieldError text={linesError} />}
-      <div>
+      <div ref={addItemBarRef} className="scroll-mb-24">
         <button
           type="button"
           disabled={!warehouseId}
-          onClick={() => append({ ...EMPTY_LINE })}
+          onClick={() => {
+            revealAddItemBar()
+            append({ ...EMPTY_LINE })
+          }}
           className="rounded-lg bg-[#f1ebfb] px-4 py-2 text-[13px] font-medium text-[#3f1490] hover:bg-[#e6dcf8] disabled:opacity-50"
         >
           Add item
