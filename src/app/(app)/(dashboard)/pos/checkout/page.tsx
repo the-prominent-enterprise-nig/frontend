@@ -2769,6 +2769,7 @@ export default function CheckoutPage() {
   // installment on it), so it is never switched off cash: say so instead.
   const drSale = deliveryReceipt != null || arrivingDr != null
   const drCashOnlyReason = drSale ? cashBlockedReason : null
+  const xDealUseReason = xDealActive ? inhouseBlockedReason : null
   const ruleSignature = [
     drSale,
     paymentMode,
@@ -2796,23 +2797,41 @@ export default function CheckoutPage() {
     ...cart.map((l) => [l.itemId, l.quantity, l.unitPrice].join(':')),
   ].join('|')
   const anyZeroPercent = previewZeroPercent || serverZeroPlanKey === zeroPlanKey
+  // A notice is about the price uses it was said for, and a cleared term's is
+  // answered once a term is picked. Both effects stay ABOVE the one that
+  // switches, so what it says in the same pass is kept.
+  const priceUseKey = cart.map((l) => l.priceUseTypeId).join('|')
   useEffect(() => {
-    if (saleMode !== 'sale' || cart.length === 0 || xDealActive) return
+    setRuleNotice(null)
+  }, [priceUseKey])
+  useEffect(() => {
+    if (planTermId) setRuleNotice(null)
+  }, [planTermId])
+  useEffect(() => {
+    if (saleMode !== 'sale' || cart.length === 0) return
     const lineIds = cart.map((l) => l.lineId)
-    if (paymentMode === 'cash' && cashBlockedReason && !installmentBlockedReason && !drSale) {
+    // An X-Deal is in-house installment: its mode and provider are not switched.
+    const fixed = xDealActive
+    if (
+      !fixed &&
+      paymentMode === 'cash' &&
+      cashBlockedReason &&
+      !installmentBlockedReason &&
+      !drSale
+    ) {
       setPaymentMode('installment')
       if (cashSubMode === 'card') setCashSubMode('cash_on_hand')
       setLineInvoiceType(lineIds, 'installment')
       setRuleNotice(`Switched to Installment: ${cashBlockedReason}`)
       return
     }
-    if (paymentMode === 'installment' && installmentBlockedReason && !cashBlockedReason) {
+    if (!fixed && paymentMode === 'installment' && installmentBlockedReason && !cashBlockedReason) {
       setPaymentMode('cash')
       setLineInvoiceType(lineIds, 'cash')
       setRuleNotice(`Switched to Cash: ${installmentBlockedReason}`)
       return
     }
-    if (installmentCartLines.length > 0) {
+    if (!fixed && installmentCartLines.length > 0) {
       if (planProvider === 'inhouse' && inhouseBlockedReason && !tpfBlockedReason) {
         setLineInstallmentProvider(planLineIds, 'tpf')
         setRuleNotice(`Switched to TPF: ${inhouseBlockedReason}`)
@@ -2845,10 +2864,6 @@ export default function CheckoutPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ruleSignature])
-  // The notice is about the cart it was said for.
-  useEffect(() => {
-    if (cart.length === 0) setRuleNotice(null)
-  }, [cart.length])
   // Scenario 71 — any line with a typed-over price makes the sale carry a
   // reason and a note.
   const anyPriceOverridden = cart.some((l) => l.priceOverridden)
@@ -8301,6 +8316,15 @@ export default function CheckoutPage() {
                     >
                       {drCashOnlyReason} A sale invoicing a Delivery Receipt is cash only — pick
                       another price use for this item.
+                    </p>
+                  )}
+                  {xDealUseReason && (
+                    <p
+                      data-testid="x-deal-use-note"
+                      className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700"
+                    >
+                      {xDealUseReason} An X-Deal is in-house installment only — pick another price
+                      use for this item.
                     </p>
                   )}
                   {noCommonPaymentType && (

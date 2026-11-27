@@ -146,7 +146,7 @@ function describeUses(rulesList: PriceUseRules[], what: (rules: PriceUseRules) =
 
 /** Price uses on one cart that leave no payment type to sell it with. */
 export function noCommonPaymentTypeMessage(rulesList: PriceUseRules[]): string {
-  const types = (rules: PriceUseRules) =>
+  const types = (rules: PriceUseRules): string[] =>
     rules.allowedPaymentTypes.length > 0 ? rules.allowedPaymentTypes : [...PAYMENT_TYPES]
   return (
     'The price uses on this sale have no payment type in common: ' +

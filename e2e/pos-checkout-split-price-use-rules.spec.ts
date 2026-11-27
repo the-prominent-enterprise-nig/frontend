@@ -772,6 +772,51 @@ test.describe('POS Checkout — Split price use rules (Docket #92)', () => {
     }
   })
 
+  test('SP-F15: on an X-Deal a term the price use forbids is still cleared and said, and a use not sold in-house says why', async ({
+    page,
+  }) => {
+    const customer = await createCustomer(page.request, 'F15')
+    await startSale(page, 'REGULAR')
+    await selectCustomer(page, customer.name)
+    await page.getByTestId('x-deal-checkbox').check()
+    await pickTerm(page, '12 months')
+
+    await pickCartPriceUse(page, fx.use.ZI.name)
+    await expect(notice(page)).toContainText(
+      `The 12-month term was cleared: ${fx.use.ZI.name} allows 3 months only.`
+    )
+    await expect(
+      page.getByTestId('installment-plan').getByRole('combobox').first()
+    ).toHaveAttribute('aria-label', 'Select a term…')
+
+    await pickCartPriceUse(page, fx.use.CASH.name)
+    await expect(page.getByTestId('x-deal-use-note')).toContainText(
+      `${fx.use.CASH.name} is sold for cash or TPF only. An X-Deal is in-house installment only — pick another price use for this item.`
+    )
+    await pickCartPriceUse(page, fx.use.REGULAR.name)
+    await expect(page.getByTestId('x-deal-use-note')).toHaveCount(0)
+  })
+
+  test('SP-F16: the notice about a switch or a cleared term goes once it no longer applies', async ({
+    page,
+  }) => {
+    await startSale(page, 'REGULAR')
+    await pickCartPriceUse(page, fx.use.ZI.name)
+    await expect(notice(page)).toContainText('Switched to Installment')
+    await pickCartPriceUse(page, fx.use.NO_RULES.name)
+    await expect(notice(page)).toHaveCount(0)
+
+    // A cleared term's notice goes when the cashier picks a term again.
+    await pickCartPriceUse(page, fx.use.REGULAR.name)
+    await installmentButton(page).click()
+    await inhouseButton(page).click()
+    await pickTerm(page, '12 months')
+    await pickCartPriceUse(page, fx.use.ZI.name)
+    await expect(notice(page)).toContainText('The 12-month term was cleared')
+    await pickTerm(page, '3 months')
+    await expect(notice(page)).toHaveCount(0)
+  })
+
   // ───────────────────────────── journeys (J1–J9) ─────────────────────────────
 
   test('J1 / J4: a cash sale on SPLIT FREE INSTALL CASH and on SPLIT REGULAR posts with no reason and no override entry', async ({
