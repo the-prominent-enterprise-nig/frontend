@@ -1993,9 +1993,24 @@ export async function getPriceOverrideLog(
 
 // ─── Price Use (Price List integration) ────────────────────────────────────────
 
+/** How a sale line is paid, as a price use limits it (Docket #92). `inhouse` is
+ * NIG's own installment; `tpf` is an outside financier paying NIG at the sale. */
+export type PriceUsePaymentType = 'cash' | 'inhouse' | 'tpf'
+
 export interface PosPriceUseType {
   id: string
   name: string
+  /** Docket #92 — the payment types a sale on this price use may take. Empty =
+   * no restriction. */
+  allowedPaymentTypes: PriceUsePaymentType[]
+  /** The terms (months) an in-house installment may take. Empty = any active term. */
+  allowedTermMonths: number[]
+  /** Cap on the term in months; null = no cap. */
+  maxTermMonths: number | null
+  /** Whether the cashier may type the plan ("Type the terms yourself"). */
+  allowTypedPlan: boolean
+  /** A 0% in-house installment on this price use needs a reason and a note. */
+  zeroPercentNeedsReason: boolean
 }
 
 export async function getPosPriceUseTypes(): Promise<ApiResponse<PosPriceUseType[]>> {

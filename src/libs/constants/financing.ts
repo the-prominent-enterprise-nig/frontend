@@ -56,3 +56,22 @@ export function isCardTerm(
     (row.cardTermMonths ?? []).includes(termMonths)
   )
 }
+
+/**
+ * Docket #92 — how much a 0% plan may come out above its cash price from
+ * rounding alone: a peso per month. A 0% promo whose monthly is rounded up to a
+ * whole peso (₱10,000 over 3 months at ₱3,334) totals a peso or two over; real
+ * interest on an appliance plan is hundreds or thousands of pesos.
+ *
+ * **Must stay in step with the backend**, whose `ZERO_PERCENT_ROUNDING_PER_MONTH`
+ * and `isZeroPercentPlan` (`src/pos/installment-calculation.util.ts`) decide it
+ * for real; this copy lets the till ask for the reason before the sale is sent.
+ */
+export const ZERO_PERCENT_ROUNDING_PER_MONTH = 1
+
+/** A plan is 0% when what it collects is no more than the cash price, give or
+ * take the monthly's rounding. `markup` is what the plan collects above the
+ * cash price (negative when it collects less). */
+export function isZeroPercentPlan(markup: number, termMonths: number): boolean {
+  return Math.round(markup * 100) / 100 <= Math.max(0, termMonths) * ZERO_PERCENT_ROUNDING_PER_MONTH
+}

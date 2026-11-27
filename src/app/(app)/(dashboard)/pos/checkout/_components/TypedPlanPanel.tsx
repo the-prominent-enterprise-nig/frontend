@@ -23,6 +23,8 @@ type Props = {
   lineIds: string[]
   /** What the line sells for, to the centavo. */
   saleAmount: number
+  /** Docket #92 — the typed months are over a price use's cap. */
+  capProblem?: string | null
   downPayment: number
   preview: Preview | null
   previewLoading: boolean
@@ -65,6 +67,7 @@ export default function TypedPlanPanel({
   line,
   lineIds,
   saleAmount,
+  capProblem,
   downPayment,
   preview,
   previewLoading,
@@ -72,13 +75,15 @@ export default function TypedPlanPanel({
   onSixtyDay,
   onRateCard,
 }: Props) {
-  const problem = typedPlanProblem({
-    months: line.manualTermInput,
-    monthly: line.manualMonthlyInput,
-    firstDueDate: line.firstDueDateInput,
-    downPayment,
-    saleAmount,
-  })
+  const problem =
+    capProblem ??
+    typedPlanProblem({
+      months: line.manualTermInput,
+      monthly: line.manualMonthlyInput,
+      firstDueDate: line.firstDueDateInput,
+      downPayment,
+      saleAmount,
+    })
   const months = Number(line.manualTermInput)
   const covering =
     Number.isInteger(months) && months >= 1 ? coveringMonthly(saleAmount, downPayment, months) : 0

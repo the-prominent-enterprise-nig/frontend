@@ -98,7 +98,19 @@ import {
   DOWN_PAYMENT_FLOOR_LABEL,
   DOWN_PAYMENT_FLOOR_TOLERANCE,
   isCardTerm,
+  isZeroPercentPlan,
 } from '@/src/libs/constants/financing'
+import {
+  commonPaymentTypes,
+  hasRules,
+  isTermAllowed,
+  noActiveTermMessage,
+  noCommonPaymentTypeMessage,
+  noCommonTermMessage,
+  paymentBlockReason,
+  termRuleReason,
+  typedPlanCapMessage,
+} from '@/src/libs/constants/price-use-rules'
 import { Select } from '@/src/components/ui/Select'
 import { DEFAULT_VAT_RATE } from '../_actions/pos-constants'
 import { getCreditApplications } from '../credit-applications/_actions/get-applications'
@@ -1111,6 +1123,11 @@ export default function CheckoutPage() {
   // instead of chosen per line). If any item needs a different mode, that's
   // a separate transaction.
   const [paymentMode, setPaymentMode] = useState<'cash' | 'installment'>('cash')
+  // Docket #92 — said when a price-use change made the till switch the payment
+  // mode or provider, or clear a term or a typed plan the price use does not allow.
+  const [ruleNotice, setRuleNotice] = useState<string | null>(null)
+  // Docket #92 — the plan (its key) the server refused for want of a 0% reason.
+  const [serverZeroPlanKey, setServerZeroPlanKey] = useState<string | null>(null)
 
   // Payment
   const [payments, setPayments] = useState<PaymentRow[]>([])
@@ -2680,6 +2697,170 @@ export default function CheckoutPage() {
   // Manager override check
   const discountPct = subtotal > 0 && promoDiscount > 0 ? (promoDiscount / subtotal) * 100 : 0
   const needsManagerOverride = discountThreshold > 0 && discountPct > discountThreshold
+  // Docket #92 — what each line's price use allows: the payment types, the
+  // terms, a typed plan, and whether a 0% needs a reason. A cart's payment mode
+  // is one choice for the whole cart, so what is offered is what every price use
+  // on it allows. A price use with no rules (or none loaded) restricts nothing;
+  // the server holds the same rules and is the one that counts.
+  const priceUseRulesOf = (l: CartLine): PosPriceUseType | undefined =>
+    priceUseTypes.find((t) => t.id === l.priceUseTypeId)
+  // A freebie / tie-up is free and never financed, so it limits nothing.
+  const cartRulesList = cart
+    .filter((l) => !l.promoTag)
+    .map(priceUseRulesOf)
+    .filter((r): r is PosPriceUseType => r != null && hasRules(r))
+  const inhouseRulesList = inhouseInstallmentCartLines
+    .map(priceUseRulesOf)
+    .filter((r): r is PosPriceUseType => r != null && hasRules(r))
+  // Why a payment choice is out (its tooltip); null while it is open.
+  const cashBlockedReason = paymentBlockReason(cartRulesList, ['cash'])
+  const installmentBlockedReason = paymentBlockReason(cartRulesList, ['inhouse', 'tpf'])
+  const inhouseBlockedReason = paymentBlockReason(cartRulesList, ['inhouse'])
+  const tpfBlockedReason = paymentBlockReason(cartRulesList, ['tpf'])
+  // The terms on offer: the ones every in-house line's price use allows.
+  const planTermOptions = financingTerms.filter((t) =>
+    inhouseRulesList.every((r) => isTermAllowed(r, t.termMonths))
+  )
+  const planAllowsTypedPlan = inhouseRulesList.every((r) => r.allowTypedPlan)
+  const typedCapMessage = planTyped
+    ? typedPlanCapMessage(inhouseRulesList, Number(inhouseInstallmentCartLines[0]?.manualTermInput))
+    : null
+  // A 0% in-house installment on a price use that asks a reason for it (SPLIT
+  // REGULAR, SPLIT OUT OF TOWN) is an exception like any other. The plan is one
+  // schedule for the whole cart, so its preview says whether it collects no more
+  // than the cash price; a typed plan already asks for a reason.
+  const zeroPercentUseNames = [
+    ...new Set(inhouseRulesList.filter((r) => r.zeroPercentNeedsReason).map((r) => r.name)),
+  ]
+  const planTermMonths = financingTerms.find((t) => t.id === planTermId)?.termMonths ?? null
+  const previewZeroPercent =
+    !planIsTpf &&
+    !planTyped &&
+    zeroPercentUseNames.length > 0 &&
+    planTermMonths != null &&
+    planPreview != null &&
+    planPreview.amountFinanced > 0 &&
+    isZeroPercentPlan(planPreview.totalPayable - planPreview.amountFinanced, planTermMonths)
+  // Docket #92 — what to say where the rules leave nothing to choose from.
+  const activeTermMonths = financingTerms.map((t) => t.termMonths)
+  const noCommonPaymentType =
+    cartRulesList.length >= 2 && commonPaymentTypes(cartRulesList).length === 0
+  const uniqueInhouseRules = inhouseRulesList.filter(
+    (r, i) => inhouseRulesList.findIndex((x) => x.name === r.name) === i
+  )
+  const noTermMessage =
+    financingTerms.length > 0 && planTermOptions.length === 0 && uniqueInhouseRules.length > 0
+      ? uniqueInhouseRules.length >= 2
+        ? noCommonTermMessage(uniqueInhouseRules, activeTermMonths, {
+            tpfAvailable: commonPaymentTypes(cartRulesList).includes('tpf'),
+          })
+        : noActiveTermMessage(uniqueInhouseRules[0])
+      : null
+  const typedPlanBlockedNames = [
+    ...new Set(inhouseRulesList.filter((r) => !r.allowTypedPlan).map((r) => r.name)),
+  ]
+  // A price-use change can leave the cart on something its price use does not
+  // allow: the cash / installment mode, the in-house / TPF provider, a typed
+  // plan, a term. Rather than leave the cashier on a choice that will be
+  // refused, switch to the one that is open, or clear the one that is not, and
+  // SAY so (the notice above the toggles). One fix per pass; each leaves the
+  // cart valid for it, so the next pass finds the next thing, or nothing.
+  // A sale invoicing a Delivery Receipt is cash only (the server refuses an
+  // installment on it), so it is never switched off cash: say so instead.
+  const drSale = deliveryReceipt != null || arrivingDr != null
+  const drCashOnlyReason = drSale ? cashBlockedReason : null
+  const xDealUseReason = xDealActive ? inhouseBlockedReason : null
+  const ruleSignature = [
+    drSale,
+    paymentMode,
+    saleMode,
+    xDealActive,
+    priceUseTypes.length,
+    financingTerms.length,
+    ...cart.map((l) =>
+      [
+        l.priceUseTypeId,
+        l.invoiceType,
+        l.installmentProvider,
+        l.financingTermId,
+        l.manualPlan,
+        l.promoTag,
+      ].join(':')
+    ),
+  ].join('|')
+  // The server decides what is 0% from what it will post (a price row's own
+  // monthly), which the preview cannot always see. When it asks for the reason,
+  // show where to give it, for as long as the plan stays as it was refused.
+  const zeroPlanKey = [
+    ruleSignature,
+    planDownPayment,
+    ...cart.map((l) => [l.itemId, l.quantity, l.unitPrice].join(':')),
+  ].join('|')
+  const anyZeroPercent = previewZeroPercent || serverZeroPlanKey === zeroPlanKey
+  // A notice is about the price uses it was said for; a cleared term's is also
+  // answered when the cashier picks a term (the term Select does that). This
+  // effect stays ABOVE the one that switches, so what it says is kept.
+  const priceUseKey = cart.map((l) => l.priceUseTypeId).join('|')
+  useEffect(() => {
+    setRuleNotice(null)
+  }, [priceUseKey])
+  useEffect(() => {
+    if (saleMode !== 'sale' || cart.length === 0) return
+    const lineIds = cart.map((l) => l.lineId)
+    // An X-Deal is in-house installment: its mode and provider are not switched.
+    const fixed = xDealActive
+    if (
+      !fixed &&
+      paymentMode === 'cash' &&
+      cashBlockedReason &&
+      !installmentBlockedReason &&
+      !drSale
+    ) {
+      setPaymentMode('installment')
+      if (cashSubMode === 'card') setCashSubMode('cash_on_hand')
+      setLineInvoiceType(lineIds, 'installment')
+      setRuleNotice(`Switched to Installment: ${cashBlockedReason}`)
+      return
+    }
+    if (!fixed && paymentMode === 'installment' && installmentBlockedReason && !cashBlockedReason) {
+      setPaymentMode('cash')
+      setLineInvoiceType(lineIds, 'cash')
+      setRuleNotice(`Switched to Cash: ${installmentBlockedReason}`)
+      return
+    }
+    if (!fixed && installmentCartLines.length > 0) {
+      if (planProvider === 'inhouse' && inhouseBlockedReason && !tpfBlockedReason) {
+        setLineInstallmentProvider(planLineIds, 'tpf')
+        setRuleNotice(`Switched to TPF: ${inhouseBlockedReason}`)
+        return
+      }
+      if (planProvider === 'tpf' && tpfBlockedReason && !inhouseBlockedReason) {
+        setLineInstallmentProvider(planLineIds, 'inhouse')
+        setRuleNotice(`Switched to Inhouse Installment: ${tpfBlockedReason}`)
+        return
+      }
+    }
+    if (planTyped && typedPlanBlockedNames.length > 0) {
+      applyRateCardPlan(planLineIds)
+      setRuleNotice(
+        `Typed terms were removed: ${typedPlanBlockedNames.join(' and ')} does not allow typed terms.`
+      )
+      return
+    }
+    if (planTermId && planTermMonths != null && !planTermOptions.some((t) => t.id === planTermId)) {
+      const stoppedBy = inhouseRulesList.find((r) => !isTermAllowed(r, planTermMonths))
+      const ids = new Set(
+        inhouseInstallmentCartLines.filter((l) => !l.manualPlan).map((l) => l.lineId)
+      )
+      setCart((prev) =>
+        prev.map((l) => (ids.has(l.lineId) ? { ...l, financingTermId: undefined } : l))
+      )
+      setRuleNotice(
+        `The ${planTermMonths}-month term was cleared: ${stoppedBy ? termRuleReason(stoppedBy) : 'the price use does not allow it.'}`
+      )
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ruleSignature])
   // Scenario 71 — any line with a typed-over price makes the sale carry a
   // reason and a note.
   const anyPriceOverridden = cart.some((l) => l.priceOverridden)
@@ -2688,6 +2869,7 @@ export default function CheckoutPage() {
   const anyException =
     anyPriceOverridden ||
     anyTypedPlan ||
+    anyZeroPercent ||
     creditApplicationWaivedActive ||
     creditApplicationOverriddenActive
   // Only a TPF installment sale still waits for approval (Scenario 71): an
@@ -2697,6 +2879,7 @@ export default function CheckoutPage() {
     [
       anyPriceOverridden,
       anyTypedPlan,
+      anyZeroPercent,
       creditApplicationWaivedActive,
       creditApplicationOverriddenActive,
     ].filter(Boolean).length > 1
@@ -2707,7 +2890,9 @@ export default function CheckoutPage() {
           ? 'Credit Application Waived'
           : anyTypedPlan
             ? 'Typed Installment Terms'
-            : 'Price Override'
+            : anyZeroPercent
+              ? '0% Installment'
+              : 'Price Override'
   // Nov UAT #28 — what is still missing before the sale can go through, as the
   // footer's "N things left". Each is a check Confirm already makes; the reason
   // and its note count as one thing (they are one card).
@@ -2716,6 +2901,8 @@ export default function CheckoutPage() {
     if (!documentDone) thingsLeft.push('document number')
     if (!selectedCustomer) thingsLeft.push('customer')
     if (serialsMissingOnCart) thingsLeft.push('serial numbers')
+    // Docket #92 — price uses on the cart that leave no payment type to sell with.
+    if (noCommonPaymentType) thingsLeft.push('payment type')
     if (inhouseInstallmentCartLines.some((l) => !l.manualPlan && !l.financingTermId)) {
       thingsLeft.push('financing term')
     }
@@ -5191,20 +5378,21 @@ export default function CheckoutPage() {
     // Scenario 71 — a price override needs no approval, only a reason and a
     // note. The offline queue drops sale-level fields, so it cannot carry them.
     if (anyException) {
-      if (isOffline) {
-        setError(
-          'A price override, typed terms or a credit application waiver need a network connection — clear them, or wait until the POS is back online.'
-        )
-        return
-      }
       const what = [
         anyPriceOverridden && 'the price override',
         anyTypedPlan && 'the typed terms',
+        anyZeroPercent && `the 0% installment on ${zeroPercentUseNames.join(' and ')}`,
         creditApplicationWaivedActive && 'the credit application waiver',
         creditApplicationOverriddenActive && 'the credit application override',
       ]
         .filter(Boolean)
         .join(' and ')
+      if (isOffline) {
+        setError(
+          `The reason for ${what} needs a network connection — clear it, or wait until the POS is back online.`
+        )
+        return
+      }
       if (!exceptionReasonId) {
         setError(`Pick a reason for ${what}.`)
         exceptionSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -5386,13 +5574,15 @@ export default function CheckoutPage() {
     // monthly are the lines' shares added up.
     if (planTyped) {
       const holder = inhouseInstallmentCartLines[0]
-      const problem = typedPlanProblem({
-        months: holder.manualTermInput,
-        monthly: String(planTypedMonthly),
-        firstDueDate: holder.firstDueDateInput,
-        downPayment: planDownPayment,
-        saleAmount: planSaleAmount,
-      })
+      const problem =
+        typedCapMessage ??
+        typedPlanProblem({
+          months: holder.manualTermInput,
+          monthly: String(planTypedMonthly),
+          firstDueDate: holder.firstDueDateInput,
+          downPayment: planDownPayment,
+          saleAmount: planSaleAmount,
+        })
       if (problem) {
         setError(problem)
         return
@@ -5705,6 +5895,7 @@ export default function CheckoutPage() {
             /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
             (uuid) => idToName[uuid] ?? uuid
           )
+          if (/0% installment on /.test(errMsg)) setServerZeroPlanKey(zeroPlanKey)
 
           // Backend has no dedicated error code yet for a serial that was reserved or
           // sold from under the cashier — detect it by message content defensively and
@@ -8098,6 +8289,49 @@ export default function CheckoutPage() {
                   <p className="text-[13px] font-semibold uppercase tracking-wide text-gray-500">
                     Payment Mode
                   </p>
+                  {/* Docket #92 — what the till switched or cleared because of a price use,
+                    and why; and when the price uses on the cart leave no payment type. */}
+                  {ruleNotice && (
+                    <p
+                      data-testid="price-use-rule-notice"
+                      className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700"
+                    >
+                      <span className="flex-1">{ruleNotice}</span>
+                      <button
+                        type="button"
+                        onClick={() => setRuleNotice(null)}
+                        className="font-semibold underline"
+                      >
+                        Dismiss
+                      </button>
+                    </p>
+                  )}
+                  {drCashOnlyReason && (
+                    <p
+                      data-testid="dr-cash-only-note"
+                      className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700"
+                    >
+                      {drCashOnlyReason} A sale invoicing a Delivery Receipt is cash only — pick
+                      another price use for this item.
+                    </p>
+                  )}
+                  {xDealUseReason && (
+                    <p
+                      data-testid="x-deal-use-note"
+                      className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700"
+                    >
+                      {xDealUseReason} An X-Deal is in-house installment only — pick another price
+                      use for this item.
+                    </p>
+                  )}
+                  {noCommonPaymentType && (
+                    <p
+                      data-testid="no-payment-type-note"
+                      className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700"
+                    >
+                      {noCommonPaymentTypeMessage(cartRulesList)}
+                    </p>
+                  )}
                   {/* Cash / Installment — one choice for
                     the whole cart, never per item. If any item needs a
                     different mode, it's a separate transaction. */}
@@ -8107,12 +8341,18 @@ export default function CheckoutPage() {
                         <button
                           key={mode}
                           type="button"
-                          // Scenario 67 — an X-Deal is installment-only.
-                          disabled={xDealActive && mode !== 'installment'}
+                          data-testid={`payment-mode-${mode}`}
+                          // Scenario 67 — an X-Deal is installment-only. Docket #92 — and a
+                          // price use on the cart may not sell for this payment mode.
+                          disabled={
+                            (xDealActive && mode !== 'installment') ||
+                            (mode === 'cash' ? cashBlockedReason : installmentBlockedReason) != null
+                          }
                           title={
                             xDealActive && mode !== 'installment'
                               ? 'An X-Deal is always an inhouse installment sale'
-                              : undefined
+                              : ((mode === 'cash' ? cashBlockedReason : installmentBlockedReason) ??
+                                undefined)
                           }
                           onClick={() => {
                             setPaymentMode(mode)
@@ -8145,8 +8385,18 @@ export default function CheckoutPage() {
                           key={provider}
                           type="button"
                           onClick={() => setLineInstallmentProvider(planLineIds, provider)}
-                          // Scenario 67 — an X-Deal is inhouse-only.
-                          disabled={xDealActive && provider === 'tpf'}
+                          data-testid={`payment-provider-${provider}`}
+                          // Scenario 67 — an X-Deal is inhouse-only. Docket #92 — and a price
+                          // use on the cart may not sell for this provider.
+                          disabled={
+                            (xDealActive && provider === 'tpf') ||
+                            (provider === 'inhouse' ? inhouseBlockedReason : tpfBlockedReason) !=
+                              null
+                          }
+                          title={
+                            (provider === 'inhouse' ? inhouseBlockedReason : tpfBlockedReason) ??
+                            undefined
+                          }
                           className={`flex-1 rounded-lg px-3 py-2 text-[13.5px] font-semibold transition-colors ${
                             planProvider === provider
                               ? 'bg-prominent-purple-200 text-prominent-purple-800'
@@ -8559,6 +8809,7 @@ export default function CheckoutPage() {
                               planTypedDraft.downPaymentInput ?? planDownPayment.toFixed(2),
                           }}
                           lineIds={planLineIds}
+                          capProblem={typedCapMessage}
                           saleAmount={planSaleAmount}
                           downPayment={planDownPayment}
                           preview={planPreview}
@@ -8570,19 +8821,29 @@ export default function CheckoutPage() {
                       )}
                       {planProvider === 'inhouse' && !planTyped && (
                         <>
-                          <Select
-                            value={planTermId}
-                            onChange={(v) => {
-                              posEditedRef.current.term = true
-                              setLineFinancingTermId(planLineIds, v)
-                            }}
-                            options={financingTerms.map((t) => ({
-                              value: t.id,
-                              label: `${t.termMonths} months`,
-                            }))}
-                            placeholder="Select a term…"
-                            compact
-                          />
+                          {noTermMessage ? (
+                            <p
+                              data-testid="no-term-note"
+                              className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700"
+                            >
+                              {noTermMessage}
+                            </p>
+                          ) : (
+                            <Select
+                              value={planTermId}
+                              onChange={(v) => {
+                                posEditedRef.current.term = true
+                                setLineFinancingTermId(planLineIds, v)
+                                setRuleNotice(null)
+                              }}
+                              options={planTermOptions.map((t) => ({
+                                value: t.id,
+                                label: `${t.termMonths} months`,
+                              }))}
+                              placeholder="Select a term…"
+                              compact
+                            />
+                          )}
                           {renderPlanDownPayment()}
                           {planOnCard && planUsesCardMonthly && !downPaymentFree && (
                             <p className="flex items-start gap-1 text-xs text-prominent-purple-500">
@@ -8623,7 +8884,13 @@ export default function CheckoutPage() {
                               )}
                             </div>
                           )}
-                          {!xDealActive && !employeeApplianceLoanActive && (
+                          {!xDealActive && !employeeApplianceLoanActive && !planAllowsTypedPlan && (
+                            <p data-testid="typed-plan-note" className="text-xs text-gray-500">
+                              Typed terms are not available on {typedPlanBlockedNames.join(' and ')}
+                              .
+                            </p>
+                          )}
+                          {!xDealActive && !employeeApplianceLoanActive && planAllowsTypedPlan && (
                             <div className="flex flex-wrap gap-x-4 gap-y-1">
                               <button
                                 type="button"
@@ -9232,6 +9499,15 @@ export default function CheckoutPage() {
                 <p className="mt-1 text-xs text-gray-600">
                   No approval needed. Management reviews it at the end of the day.
                 </p>
+                {anyZeroPercent && (
+                  <p
+                    className="mt-1 text-xs font-medium text-amber-800"
+                    data-testid="zero-percent-note"
+                  >
+                    A 0% installment on {zeroPercentUseNames.join(' and ')} needs a reason and a
+                    note.
+                  </p>
+                )}
 
                 {/* Nov UAT #28 — which unit(s) the override applies to. */}
                 {cart
