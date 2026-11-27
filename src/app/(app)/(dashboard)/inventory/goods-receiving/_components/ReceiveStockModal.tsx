@@ -62,6 +62,7 @@ import { collectRrBlockers, rrLineIssues, toIssueLines } from './create-rr/rrChe
 import { costFromPricing, invoiceKeyOf, rrTotals, type RrLine } from './create-rr/rrTotals'
 import type { RepairIntakeSale } from '../_actions/get-repair-intake-sales'
 import { PANEL, RR_LINE_GRID } from './create-rr/rrTokens'
+import { useRevealOnAdd } from '@/src/hooks/useRevealOnAdd'
 
 type Props = {
   isOpen: boolean
@@ -220,6 +221,7 @@ export default function ReceiveStockModal({
   })
 
   const { fields, append, insert, remove, replace } = useFieldArray({ control, name: 'lines' })
+  const { ref: addLineBarRef, reveal: revealAddLineBar } = useRevealOnAdd(fields.length)
 
   const [submitted, setSubmitted] = useState(false)
   // Scenario 55 (Stock-side Manual RR parity) — this and the maps below are
@@ -1104,6 +1106,7 @@ export default function ReceiveStockModal({
    * itself afterward — this screen no longer adds a line by scanning
    * straight into a header search box. */
   function addLine(): void {
+    revealAddLineBar()
     append({
       quantityReceived: 1,
       isFreebie: false,
@@ -1661,14 +1664,6 @@ export default function ReceiveStockModal({
                     {outstandingNotPulled.length === 1 ? 'line' : 'lines'}
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={addLine}
-                  className="flex items-center gap-1 rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-3 py-1.5 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Line
-                </button>
               </div>
             </div>
 
@@ -1785,6 +1780,20 @@ export default function ReceiveStockModal({
                     />
                   )
                 })}
+
+                <div
+                  ref={addLineBarRef}
+                  className="scroll-mb-24 border-t border-[#eeeef1] px-4.5 py-3"
+                >
+                  <button
+                    type="button"
+                    onClick={addLine}
+                    className="flex items-center gap-1 rounded-[7px] border border-[#ddd0f7] bg-[#f1ebfb] px-3 py-1.5 text-[12.5px] font-medium text-[#3f1490] hover:bg-[#e8ddfa]"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Line
+                  </button>
+                </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[#e4e4e9] bg-[#fbfbfc] px-4.5 py-3">
                   <span className="text-[11.5px] text-ink-muted">

@@ -18,6 +18,7 @@ import SearchableSelect from '@/src/components/ui/SearchableSelect'
 import { UdsSerialSearchCombobox } from './UdsSerialSearchCombobox'
 import { providerOptions as toProviderOptions } from '../_lib/providerOptions'
 import { RepairProvidersFallbackNote } from '@/src/components/inventory/RepairProvidersFallbackNote'
+import { useRevealOnAdd } from '@/src/hooks/useRevealOnAdd'
 
 type WarehouseOption = {
   id: string
@@ -97,6 +98,7 @@ export default function CreateUdsModal({
   })
 
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
+  const { ref: addUnitBarRef, reveal: revealAddUnitBar } = useRevealOnAdd(fields.length)
   const reason = watch('reason')
   const providerId = watch('repairProviderId')
   const providerOptions = toProviderOptions(supplierOptions)
@@ -298,14 +300,6 @@ export default function CreateUdsModal({
           <div>
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-zinc-800">Units</h3>
-              <button
-                type="button"
-                onClick={() => append({ serialNumberId: '', issueReason: '', notes: '' })}
-                className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add Unit
-              </button>
             </div>
 
             <div className="space-y-3">
@@ -357,6 +351,19 @@ export default function CreateUdsModal({
             {errors.lines && !Array.isArray(errors.lines) && (
               <p className="mt-1 text-xs text-red-600">{errors.lines.message}</p>
             )}
+            <div ref={addUnitBarRef} className="mt-2 scroll-mb-4">
+              <button
+                type="button"
+                onClick={() => {
+                  revealAddUnitBar()
+                  append({ serialNumberId: '', issueReason: '', notes: '' })
+                }}
+                className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-prominent-purple-700 hover:bg-prominent-purple-50"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Unit
+              </button>
+            </div>
           </div>
 
           {/* Notes */}

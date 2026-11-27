@@ -31,6 +31,7 @@ import { MONO, PLEX } from '@/src/libs/design/plex'
 import WaybillPanel, { uploadStagedWaybills } from './WaybillPanel'
 import { locationLabel } from '@/src/libs/format/locationLabel'
 import { lineGross } from '../_lib/debit-memo-format'
+import { useRevealOnAdd } from '@/src/hooks/useRevealOnAdd'
 
 type Props = {
   open: boolean
@@ -242,6 +243,8 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
   )
 
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' })
+  const { ref: addItemBarRef, reveal: revealAddItemBar } = useRevealOnAdd(fields.length)
+  const { ref: addChargeBarRef, reveal: revealAddChargeBar } = useRevealOnAdd(fields.length)
   const totals = useLineTotals(control)
   const watchedLines = useWatch({ control, name: 'lines' })
   const supplierId = useWatch({ control, name: 'supplierId' })
@@ -699,11 +702,15 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                   )}
 
                   <div
-                    className={`mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 ${fromDr ? 'hidden' : ''}`}
+                    ref={addItemBarRef}
+                    className={`mt-3 flex scroll-mb-24 flex-wrap items-center gap-x-3 gap-y-2 ${fromDr ? 'hidden' : ''}`}
                   >
                     <button
                       type="button"
-                      onClick={() => append(emptyGoodsLine)}
+                      onClick={() => {
+                        revealAddItemBar()
+                        append(emptyGoodsLine)
+                      }}
                       className="flex items-center gap-1.5 rounded-lg border border-[#ddd0f7] bg-[#f1ebfb] px-3 py-2 text-xs font-medium text-[#3f1490] hover:bg-[#e9dffa]"
                     >
                       <Plus className="h-3.5 w-3.5" />
@@ -725,14 +732,6 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                       moves for these, so each one needs the account to credit.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => append(emptyChargeLine)}
-                    className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#ddd0f7] bg-[#f1ebfb] px-3 py-2 text-xs font-medium text-[#3f1490] hover:bg-[#e9dffa]"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add charge
-                  </button>
                 </div>
 
                 {chargeRows.length === 0 ? (
@@ -750,6 +749,19 @@ export default function DebitMemoFormModal({ open, onClose, onSaved, memo }: Pro
                     ))}
                   </div>
                 )}
+                <div ref={addChargeBarRef} className="mt-3 scroll-mb-24">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      revealAddChargeBar()
+                      append(emptyChargeLine)
+                    }}
+                    className="flex items-center gap-1.5 rounded-lg border border-[#ddd0f7] bg-[#f1ebfb] px-3 py-2 text-xs font-medium text-[#3f1490] hover:bg-[#e9dffa]"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add charge
+                  </button>
+                </div>
               </section>
             )}
 
